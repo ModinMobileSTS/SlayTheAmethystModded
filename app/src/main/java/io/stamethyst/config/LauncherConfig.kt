@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
@@ -52,6 +53,8 @@ object LauncherConfig {
     private const val PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED =
         "built_in_soft_keyboard_enabled"
     private const val PREF_KEY_FLOATING_TOOL_BUTTONS = "floating_tool_buttons"
+    private const val PREF_KEY_HIDDEN_MAIN_CARDS = "hidden_main_cards"
+    private const val PREF_KEY_SHOW_REFRESH_RATE_DETECTOR = "show_refresh_rate_detector"
     private const val PREF_KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
@@ -104,6 +107,7 @@ object LauncherConfig {
     private const val PREF_KEY_RAM_SAVER_ENABLED = "ram_saver_enabled"
     private const val PREF_KEY_MTS_PATCH_CACHE_ENABLED = "mts_patch_cache_enabled"
     private const val PREF_KEY_SWAPPY_FRAME_PACING_ENABLED = "swappy_frame_pacing_enabled"
+    private const val PREF_KEY_FRAME_PACING_MODE = "frame_pacing_mode"
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
     private const val PREF_KEY_SUSTAINED_PERFORMANCE_MODE_ENABLED =
         "sustained_performance_mode_enabled"
@@ -163,6 +167,7 @@ object LauncherConfig {
     private const val PREF_KEY_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE =
         "compat_gpu_resource_guardian_safe_pressure_downscale"
     private const val LEGACY_GPU_RESOURCE_GUARDIAN_DIAGNOSTIC_MODE = "diagnostic"
+    private const val PREF_KEY_ACCELERATION_STRATEGY = "network_acceleration_strategy"
     private const val PREF_KEY_FORCE_LINEAR_MIPMAP_FILTER = "compat_force_linear_mipmap_filter"
     private const val PREF_KEY_HINA_CHARACTER_RENDER_COMPAT =
         "compat_hina_character_render"
@@ -221,6 +226,7 @@ object LauncherConfig {
     // Unified switch replacing the two legacy per-feature keys above.
     private const val PREF_KEY_WATT_ACCELERATION_ENABLED = "watt_acceleration_enabled"
     private const val PREF_KEY_WORKSHOP_STEAM_LANGUAGE = "workshop_steam_language"
+    private const val PREF_KEY_WORKSHOP_DEFAULT_SORT = "workshop_default_sort"
     private const val PREF_KEY_WORKSHOP_AUTO_IMPORT_ENABLED = "workshop_auto_import_enabled"
     private const val PREF_KEY_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_ENABLED =
         "workshop_auto_import_atlas_downscale_enabled"
@@ -250,6 +256,8 @@ object LauncherConfig {
         "developer_settings_warning_dismissed"
     private const val PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE =
         "steam_achievement_debug_mode"
+    private const val PREF_KEY_SLING_BREAK_AUDIO_DEBUG_MODE =
+        "sling_break_audio_debug_mode"
     private const val PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED =
         "steam_achievement_sync_enabled"
     private const val PREF_KEY_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED =
@@ -269,9 +277,15 @@ object LauncherConfig {
     val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
     const val DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED = true
-    const val DEFAULT_TARGET_FPS = 144
-    val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 144)
-    val NON_RECOMMENDED_TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 144, 240)
+    const val DEFAULT_TARGET_FPS = 60
+    const val UNLIMITED_TARGET_FPS = 0
+    const val MIN_TARGET_FPS = 5
+    const val MAX_TARGET_FPS = 240
+    const val TARGET_FPS_STEP = 5
+    val TARGET_FPS_OPTIONS = intArrayOf(UNLIMITED_TARGET_FPS) +
+        (MIN_TARGET_FPS..MAX_TARGET_FPS step TARGET_FPS_STEP).toList().toIntArray()
+    // Kept as an API alias for callers that still enumerate the supported values.
+    val NON_RECOMMENDED_TARGET_FPS_OPTIONS = TARGET_FPS_OPTIONS
     const val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES = 0
     const val DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES = KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES
     val KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS = intArrayOf(
@@ -326,6 +340,16 @@ object LauncherConfig {
         "lock",
         "wheel",
     )
+    val DEFAULT_HIDDEN_MAIN_CARDS: Set<String> = emptySet()
+    const val DEFAULT_SHOW_REFRESH_RATE_DETECTOR = true
+    val MAIN_CARD_IDS: List<String> = listOf(
+        "overview",
+        "feedback",
+        "update",
+        "steam_cloud",
+        "easytier",
+        "achievements",
+    )
     const val DEFAULT_HAPTIC_FEEDBACK_ENABLED = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK = false
@@ -340,6 +364,7 @@ object LauncherConfig {
     const val DEFAULT_RAM_SAVER_ENABLED = true
     const val DEFAULT_MTS_PATCH_CACHE_ENABLED = false
     const val DEFAULT_SWAPPY_FRAME_PACING_ENABLED = false
+    val DEFAULT_FRAME_PACING_MODE: FramePacingMode = FramePacingMode.OFF
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
     const val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED = true
     const val DEFAULT_LWJGL_DEBUG = false
@@ -366,6 +391,7 @@ object LauncherConfig {
     const val MAX_WORKSHOP_DOWNLOAD_THREADS = 8
     const val DEFAULT_WORKSHOP_WATT_ACCELERATION_ENABLED = DEFAULT_WATT_ACCELERATION_ENABLED
     const val DEFAULT_WORKSHOP_STEAM_LANGUAGE = "schinese"
+    const val DEFAULT_WORKSHOP_DEFAULT_SORT = "totaluniquesubscribers"
     const val DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED = true
     const val DEFAULT_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_ENABLED = false
     const val DEFAULT_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_MAX_EDGE_PX = 1024
@@ -406,6 +432,7 @@ object LauncherConfig {
     const val MAX_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 4
     val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode = GpuResourceGuardianMode.OFF
     const val DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED = false
+    val DEFAULT_ACCELERATION_STRATEGY: AccelerationStrategy = AccelerationStrategy.DEFAULT
     const val DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED = true
     const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = false
@@ -631,6 +658,16 @@ object LauncherConfig {
         }
     }
 
+    fun isSlingBreakAudioDebugModeEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_SLING_BREAK_AUDIO_DEBUG_MODE, false)
+    }
+
+    fun setSlingBreakAudioDebugModeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_SLING_BREAK_AUDIO_DEBUG_MODE, enabled)
+        }
+    }
+
     fun isSteamAchievementSyncEnabled(context: Context): Boolean {
         return prefs(context, crossProcess = true).getBoolean(
             PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED,
@@ -793,6 +830,34 @@ object LauncherConfig {
                 PREF_KEY_FLOATING_TOOL_BUTTONS,
                 buttons.intersect(FLOATING_TOOL_BUTTON_IDS.toSet()).toSet()
             )
+        }
+    }
+
+    fun readHiddenMainCards(context: Context): Set<String> {
+        val stored = prefs(context).getStringSet(PREF_KEY_HIDDEN_MAIN_CARDS, null)
+            ?: return DEFAULT_HIDDEN_MAIN_CARDS
+        return stored.intersect(MAIN_CARD_IDS.toSet())
+    }
+
+    fun saveHiddenMainCards(context: Context, cardIds: Set<String>) {
+        prefs(context).edit {
+            putStringSet(
+                PREF_KEY_HIDDEN_MAIN_CARDS,
+                cardIds.intersect(MAIN_CARD_IDS.toSet()).toSet()
+            )
+        }
+    }
+
+    fun isRefreshRateDetectorEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_SHOW_REFRESH_RATE_DETECTOR,
+            DEFAULT_SHOW_REFRESH_RATE_DETECTOR,
+        )
+    }
+
+    fun saveRefreshRateDetectorEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_SHOW_REFRESH_RATE_DETECTOR, enabled)
         }
     }
 
@@ -1202,15 +1267,33 @@ object LauncherConfig {
     }
 
     fun isSwappyFramePacingEnabled(context: Context): Boolean {
-        return prefs(context, crossProcess = true).getBoolean(
-            PREF_KEY_SWAPPY_FRAME_PACING_ENABLED,
-            DEFAULT_SWAPPY_FRAME_PACING_ENABLED
-        )
+        return readFramePacingMode(context) == FramePacingMode.SWAPPY
     }
 
     fun setSwappyFramePacingEnabled(context: Context, enabled: Boolean) {
+        saveFramePacingMode(
+            context,
+            if (enabled) FramePacingMode.SWAPPY else FramePacingMode.BUILT_IN
+        )
+    }
+
+    fun readFramePacingMode(context: Context): FramePacingMode {
+        val preferences = prefs(context, crossProcess = true)
+        FramePacingMode.fromPersistedValue(
+            preferences.getString(PREF_KEY_FRAME_PACING_MODE, null)
+        )?.let { return it }
+        return if (preferences.getBoolean(
+                PREF_KEY_SWAPPY_FRAME_PACING_ENABLED,
+                DEFAULT_SWAPPY_FRAME_PACING_ENABLED
+            )
+        ) FramePacingMode.SWAPPY else DEFAULT_FRAME_PACING_MODE
+    }
+
+    fun saveFramePacingMode(context: Context, mode: FramePacingMode) {
         prefs(context, crossProcess = true).edit(commit = true) {
-            putBoolean(PREF_KEY_SWAPPY_FRAME_PACING_ENABLED, enabled)
+            putString(PREF_KEY_FRAME_PACING_MODE, mode.persistedValue)
+            // Keep the legacy key synchronized for older launcher/runtime builds.
+            putBoolean(PREF_KEY_SWAPPY_FRAME_PACING_ENABLED, mode == FramePacingMode.SWAPPY)
         }
     }
 
@@ -1250,11 +1333,17 @@ object LauncherConfig {
     }
 
     fun normalizeTargetFps(targetFps: Int): Int {
-        return if (TARGET_FPS_OPTIONS.contains(targetFps)) {
-            targetFps
-        } else {
-            DEFAULT_TARGET_FPS
-        }
+        if (targetFps == UNLIMITED_TARGET_FPS) return UNLIMITED_TARGET_FPS
+        if (targetFps !in 1..MAX_TARGET_FPS) return DEFAULT_TARGET_FPS
+        val snapped = ((targetFps + TARGET_FPS_STEP / 2) / TARGET_FPS_STEP) * TARGET_FPS_STEP
+        return snapped.coerceIn(MIN_TARGET_FPS, MAX_TARGET_FPS)
+    }
+
+    internal fun normalizeTargetFps(targetFps: Float): Float {
+        return normalizeTargetFps(
+            targetFps.takeIf { it >= UNLIMITED_TARGET_FPS.toFloat() && !it.isNaN() }
+                ?.roundToInt() ?: DEFAULT_TARGET_FPS
+        ).toFloat()
     }
 
     fun readTargetFps(context: Context): Int {
@@ -1262,7 +1351,7 @@ object LauncherConfig {
         // setting changed in the launcher process cannot leave the game process on an old value.
         val preferences = prefs(context, crossProcess = true)
         readExactTargetFps(preferences)?.let {
-            return it.roundToInt()
+            return normalizeTargetFps(it.roundToInt())
         }
         if (preferences.contains(PREF_KEY_TARGET_FPS)) {
             val value = normalizeTargetFps(
@@ -1289,20 +1378,13 @@ object LauncherConfig {
     fun readTargetFpsValue(context: Context): Float {
         val preferences = prefs(context, crossProcess = true)
         readExactTargetFps(preferences)?.let {
-            return it
+            return normalizeTargetFps(it.roundToInt()).toFloat()
         }
         return readTargetFps(context).toFloat()
     }
 
-    fun isTargetFpsAutomatic(context: Context): Boolean {
-        val preferences = prefs(context, crossProcess = true)
-        return readExactTargetFps(preferences) == null &&
-            readTargetFps(context) == DEFAULT_TARGET_FPS
-    }
-
     fun saveTargetFps(context: Context, targetFps: Float) {
-        val normalizedTargetFps = targetFps.takeIf { it > 0f && !it.isNaN() }
-            ?: DEFAULT_TARGET_FPS.toFloat()
+        val normalizedTargetFps = normalizeTargetFps(targetFps)
         prefs(context, crossProcess = true).edit(commit = true) {
             putInt(PREF_KEY_TARGET_FPS, normalizedTargetFps.roundToInt())
             putString(PREF_KEY_TARGET_FPS_EXACT, normalizedTargetFps.toString())
@@ -1324,7 +1406,7 @@ object LauncherConfig {
         val value = preferences.getString(PREF_KEY_TARGET_FPS_EXACT, null)
             ?.toFloatOrNull()
             ?: return null
-        return value.takeIf { it > 0f && !it.isNaN() }
+        return value.takeIf { it >= 0f && !it.isNaN() }
     }
 
     fun normalizeJvmHeapMaxMb(heapMaxMb: Int): Int {
@@ -1770,6 +1852,23 @@ object LauncherConfig {
     @Suppress("UNUSED_PARAMETER")
     fun resolveDefaultGpuResourceGuardianMode(totalMemoryBytes: Long): GpuResourceGuardianMode {
         return DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
+    }
+
+    fun readAccelerationStrategy(context: Context): AccelerationStrategy {
+        val persisted = prefs(context).getString(PREF_KEY_ACCELERATION_STRATEGY, null)
+        return AccelerationStrategy.fromPersistedValue(persisted) ?: DEFAULT_ACCELERATION_STRATEGY
+    }
+
+    fun saveAccelerationStrategy(context: Context, strategy: AccelerationStrategy) {
+        prefs(context).edit {
+            putString(PREF_KEY_ACCELERATION_STRATEGY, strategy.persistedValue)
+        }
+    }
+
+    fun resetAccelerationStrategy(context: Context) {
+        prefs(context).edit {
+            remove(PREF_KEY_ACCELERATION_STRATEGY)
+        }
     }
 
     fun isForceLinearMipmapFilterEnabled(context: Context): Boolean {
@@ -2220,6 +2319,19 @@ object LauncherConfig {
     fun saveWorkshopSteamLanguage(context: Context, value: String) {
         prefs(context, crossProcess = true).edit(commit = true) {
             putString(PREF_KEY_WORKSHOP_STEAM_LANGUAGE, value.trim().ifBlank { DEFAULT_WORKSHOP_STEAM_LANGUAGE })
+        }
+    }
+
+    fun readWorkshopDefaultSort(context: Context): String {
+        return prefs(context, crossProcess = true).getString(
+            PREF_KEY_WORKSHOP_DEFAULT_SORT,
+            DEFAULT_WORKSHOP_DEFAULT_SORT
+        ) ?: DEFAULT_WORKSHOP_DEFAULT_SORT
+    }
+
+    fun saveWorkshopDefaultSort(context: Context, value: String) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putString(PREF_KEY_WORKSHOP_DEFAULT_SORT, value.trim().ifBlank { DEFAULT_WORKSHOP_DEFAULT_SORT })
         }
     }
 

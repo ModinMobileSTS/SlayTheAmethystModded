@@ -128,7 +128,7 @@ object DisplayConfigSync {
             return DisplayConfigState.defaults()
         }
         val fps =
-            if (lines.size > 2) parsePositiveInt(lines[2], DEFAULT_FPS_LIMIT) else DEFAULT_FPS_LIMIT
+            if (lines.size > 2) parseNonNegativeInt(lines[2], DEFAULT_FPS_LIMIT) else DEFAULT_FPS_LIMIT
         val fullscreen =
             if (lines.size > 3) parseBoolean(lines[3], DEFAULT_FULLSCREEN) else DEFAULT_FULLSCREEN
         val wfs =
@@ -159,6 +159,15 @@ object DisplayConfigSync {
         }
     }
 
+    private fun parseNonNegativeInt(raw: String?, fallback: Int): Int {
+        if (raw == null) return fallback
+        return try {
+            raw.trim().toInt().takeIf { it in 0..1000 } ?: fallback
+        } catch (_: Throwable) {
+            fallback
+        }
+    }
+
     private fun parseBoolean(raw: String?, fallback: Boolean): Boolean {
         if (raw == null) {
             return fallback
@@ -174,7 +183,7 @@ object DisplayConfigSync {
     }
 
     private fun normalizeTargetFpsLimit(targetFpsLimit: Int): Int {
-        return if (targetFpsLimit in 1..1000) {
+        return if (targetFpsLimit in 0..1000) {
             targetFpsLimit
         } else {
             DEFAULT_FPS_LIMIT

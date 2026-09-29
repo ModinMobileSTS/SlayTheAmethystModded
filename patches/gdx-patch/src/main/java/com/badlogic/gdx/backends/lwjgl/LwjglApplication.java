@@ -82,6 +82,7 @@ public class LwjglApplication implements Application {
 	private static final int GL_SURFACE_SWITCH_PENDING = 1;
 	private static final int GL_SURFACE_UNAVAILABLE = 2;
 	private static final String PACED_FRAME_RATE_PROP = "amethyst.gdx.paced_fps";
+	private static final String FRAME_PACING_MODE_PROP = "amethyst.gdx.frame_pacing_mode";
 	private static boolean audioCommandBridgeUnavailable;
 	// The LWJGL shim cannot discover the panel refresh rate (its DisplayMode frequency is 0 and
 	// getDesktopDisplayMode() is hardcoded to 60Hz), so the launcher publishes the real value.
@@ -89,6 +90,10 @@ public class LwjglApplication implements Application {
 		readIntSystemProperty(ACTIVE_REFRESH_RATE_PROP, 0, 0, 1000);
 	private static final double LAUNCHER_PACED_FRAME_RATE =
 		readDoubleSystemProperty(PACED_FRAME_RATE_PROP, 0.0, 0.0, 1000.0);
+	private static final boolean LAUNCHER_PACED_FRAME_RATE_CONFIGURED =
+		System.getProperty(PACED_FRAME_RATE_PROP) != null;
+	private static final boolean FRAME_PACING_OFF =
+		"off".equalsIgnoreCase(System.getProperty(FRAME_PACING_MODE_PROP, "built_in").trim());
 	private static final String GPU_LEAK_INJECTOR_MODE_PROP = "amethyst.gdx.debug_leak_injector";
 	private static final String EXPECTED_EXIT_MARKER_PROP = "amethyst.expected_exit_marker";
 	private static final String NO_CONTEXT_DIAGNOSTICS_PROP = "amethyst.lwjgl.diag.no_context_stack";
@@ -408,11 +413,18 @@ public class LwjglApplication implements Application {
 	// CPU than LWJGL's Display.sync(), with presented FPS and frame jitter unchanged.
 	// The schedule arithmetic lives in LwjglFramePacerSchedule so it can be unit tested.
 	private void syncSoftwareFrame (int configuredFrameRate) {
+		syncSoftwareFrame(configuredFrameRate, true);
+	}
+
+	private void syncSoftwareFrame (int configuredFrameRate, boolean capToActiveRefreshRate) {
 		if (configuredFrameRate <= 0) return;
 		double requestedFrameRate = LAUNCHER_PACED_FRAME_RATE > 0.0
 			? LAUNCHER_PACED_FRAME_RATE
 			: configuredFrameRate;
-		double frameRate = capFrameRateToActiveRefreshRate(requestedFrameRate);
+		if (requestedFrameRate <= 0.0) return;
+		double frameRate = capToActiveRefreshRate
+			? capFrameRateToActiveRefreshRate(requestedFrameRate)
+			: requestedFrameRate;
 		long frameNanos = LwjglFramePacerSchedule.frameNanos(frameRate);
 		if (androidFramePacerLastFrameNanos != frameNanos || androidFramePacerNextFrameNanos <= 0L) {
 			androidFramePacerLastFrameNanos = frameNanos;
@@ -426,9 +438,8 @@ public class LwjglApplication implements Application {
 	}
 
 	private void applyLauncherFrameRateOverride () {
-		if (LAUNCHER_PACED_FRAME_RATE <= 0.0) return;
+		if (!LAUNCHER_PACED_FRAME_RATE_CONFIGURED) return;
 		int targetFrameRate = (int)Math.round(LAUNCHER_PACED_FRAME_RATE);
-		if (targetFrameRate <= 0) return;
 		// The launcher is the source of truth for Android's target FPS. DisplayConfig can be stale
 		// when the game reads it during startup, especially inside compatibility containers.
 		graphics.config.foregroundFPS = targetFrameRate;
@@ -1530,6 +1541,9 @@ public class LwjglApplication implements Application {
 		} catch (LWJGLException e) {
 			throw new GdxRuntimeException(e);
 		}
+		// The first setVSync(false) runs before setupDisplay(), when the Android EGL bridge has no
+		// display yet. Reapply it after the window/surface exists so eglSwapInterval(0) is effective.
+		graphics.setVSync(false);
 		applyLauncherFrameRateOverride();
 		initializeAudioOnMainLoop();
 		if (audio != null) processQueuedAudioCommands();
@@ -1759,7 +1773,14 @@ public class LwjglApplication implements Application {
 				if (frameRate == 0) frameRate = 30;
 			}
 			boolean swappyPacing = shouldRender && isActive && runtimeForeground && isSwappyFramePacingEnabled();
-			if (!swappyPacing) syncSoftwareFrame(frameRate);
+			if (!swappyPacing) {
+				syncSoftwareFrame(
+					frameRate,
+					LwjglFramePacerSchedule.shouldCapToActiveRefreshRate(
+						FRAME_PACING_OFF, shouldRender, isActive, runtimeForeground
+					)
+				);
+			}
 		}
 
 		synchronized (lifecycleListeners) {

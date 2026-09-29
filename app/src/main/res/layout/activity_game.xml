@@ -11,6 +11,13 @@
         android:layout_height="match_parent"
         android:background="#000000" />
 
+    <ViewStub
+        android:id="@+id/slingBreakBootOverlayStub"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:inflatedId="@+id/slingBreakBootOverlay"
+        android:layout="@layout/boot_overlay_sling_break" />
+
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/bootOverlay"
         android:layout_width="match_parent"

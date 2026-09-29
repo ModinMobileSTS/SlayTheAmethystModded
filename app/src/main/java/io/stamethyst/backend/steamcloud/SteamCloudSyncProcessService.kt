@@ -271,7 +271,6 @@ class SteamCloudSyncProcessService : Service() {
             val resultCode = replacementResultCodeFor(operationPhase)
             deliverResult(applicationContext, extractResultReceiver(safeIntent), resultCode, Bundle().apply {
                 if (resultCode == RESULT_SYNC_STARTED) {
-                    putString(EXTRA_PROGRESS_MESSAGE, getString(R.string.main_steam_cloud_bar_summary_syncing))
                     operationSyncDirection?.let { direction ->
                         putString(EXTRA_SYNC_DIRECTION, direction.name)
                     }

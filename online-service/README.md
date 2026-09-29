@@ -77,7 +77,7 @@ PUBLIC_BASE_URL=https://online.example.com
 PRESENCE_DB_PATH=./data/presence.sqlite
 PRESENCE_HEARTBEAT_INTERVAL_SECONDS=30
 PRESENCE_OFFLINE_TIMEOUT_SECONDS=90
-QQ_GROUP_NUMBER=1029305387
+QQ_GROUP_NUMBER=675545914
 PRESENCE_PANEL_TOKEN=change-me
 PRESENCE_PANEL_SNAPSHOT_PUSH_INTERVAL_SECONDS=2
 PRESENCE_PANEL_STATS_PUSH_INTERVAL_SECONDS=300
@@ -276,7 +276,7 @@ the official QQ group used by launcher entry points:
     "wsUrl": "wss://online.example.com/api/presence/ws"
   },
   "qqGroup": {
-    "number": "1029305387"
+    "number": "675545914"
   },
   "easyTier": {
     "enabled": false,

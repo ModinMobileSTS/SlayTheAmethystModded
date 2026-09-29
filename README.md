@@ -43,7 +43,7 @@
 </p>
 
 > [!IMPORTANT]
-> 本仓库不包含私有构建依赖。构建前请从依赖发布页下载 `build-deps.tar.gz`，不需要安装 Steam 客户端。
+> 本仓库不包含私有构建依赖。构建前请按下文在 `build-deps/` 放置 `desktop.jar` 与 `jre8-pojav.zip`，不需要配置 Steam 路径或环境变量。
 
 <a id="highlights"></a>
 
@@ -65,17 +65,41 @@
 
 ### 1. 准备构建依赖
 
-从私有依赖发布页下载 `build-deps.tar.gz`，并在仓库根目录解压。构建只使用项目内的
-`build-deps/` 目录，不需要配置 Steam 路径或环境变量。
+构建只读取仓库内的 `build-deps/` 目录，不需要配置 Steam 路径或环境变量。必需文件：
 
-必需文件：
+| 文件 | 来源 |
+| --- | --- |
+| `build-deps/desktop.jar` | 从你自己的 Steam 安装复制 `steamapps/common/SlayTheSpire/desktop-1.0.jar` 并重命名为 `desktop.jar` |
+| `build-deps/jre8-pojav.zip` | https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/download/pojav-jre8/jre8-pojav.zip |
 
-- `build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar`
-- `build-deps/runtime-pack/jre8-pojav.zip`
+两个文件都可以手动放入 `build-deps/`。**若构建时发现缺失，`ensureBuildDependencies` 会自动从依赖包下载并解压补全**（默认地址 `build-deps.tar.gz`，内含这两个文件）：
+
+```
+https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/download/deps-20260305/build-deps.tar.gz
+```
+
+可用 `-PbuildDeps.bundleUrl=<url>` 覆盖下载地址；离线构建时请预先手动放入文件。
+
+可选签名目录（放置后所有 checkout 的 debug 签名一致，release 无需环境变量）：
+
+- `build-deps/debug-signature/`：覆盖 AGP 默认 debug keystore。
+- `build-deps/release-signature/`：release 签名。
+
+两个目录结构相同，内含 keystore 文件与一个 `signing.properties`：
+
+```properties
+# build-deps/release-signature/signing.properties
+storeFile=keystore.jks
+storePassword=...
+keyAlias=upload
+keyPassword=...
+```
+
+`storeFile` 省略时默认 `keystore.jks`；`keyPassword` 省略时默认等于 `storePassword`。release 构建仍优先读取 `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD` 环境变量及 `release.*` Gradle 属性，全部为空时才回退到 `build-deps/release-signature/`。
 
 依赖下载来源：
 
-- 构建依赖包：[ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases)
+- 构建依赖包（含 `desktop.jar` 与 `jre8-pojav.zip`）：[ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases)
 
 - 原生库市场：[ModinMobileSTS/SlayTheAmethystResource](https://github.com/ModinMobileSTS/SlayTheAmethystResource)
 
@@ -84,7 +108,17 @@
 
 资源包策略：slim APK 在需要时从固定的 GitHub/Gitee `resources-v1.6` 链接下载；full APK 可将同版本归档内置在 APK 中供离线首次安装。两种 APK 使用相同的本地资源仓库。只要 `resourcePack.version` 不变，应用升级会复用已安装的 generation，不会重新下载。资源包不随本仓库 CI 发版。
 
-### 2. 构建调试版 APK
+### 2. 检查构建环境
+
+一键检查工具链、网络连通性与依赖是否就绪（类似 `flutter doctor`）：
+
+```bash
+python3 scripts/build/main.py doctor
+```
+
+该命令会探测 Maven Central / Google Maven / Gradle Plugin Portal / foojay 以及依赖包下载地址的可达性；离线环境可用 `--no-network` 跳过网络检测。
+
+### 3. 构建调试版 APK
 
 ```powershell
 .\gradlew.bat :app:assembleDebug
@@ -102,12 +136,18 @@
 ./scripts/build-debug-install.sh <设备序列号>
 ```
 
-### 3. 构建签名发布版 APK
+### 4. 构建签名发布版 APK
 
 > [!IMPORTANT]
 > 建议使用[发布自动化指南](./docs/release-automation/README.md)中的方法进行`Release`版本的构建，以避免签名不同的问题
 
-使用标准 Android 签名环境变量：
+推荐把签名放在 `build-deps/release-signature/`（见上文），然后直接构建：
+
+```bash
+./gradlew :app:assembleRelease
+```
+
+也可以改用标准 Android 签名环境变量（优先级高于签名目录）：
 
 ```powershell
 $env:RELEASE_STORE_FILE="C:\path\to\release-signing.jks"

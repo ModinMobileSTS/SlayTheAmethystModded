@@ -41,6 +41,7 @@ import io.stamethyst.backend.easytier.EasyTierConnectionSnapshot
 import io.stamethyst.backend.easytier.EasyTierConnectionStatus
 import io.stamethyst.backend.easytier.EasyTierConfigRepository
 import io.stamethyst.backend.easytier.EasyTierCredentialStore
+import io.stamethyst.backend.easytier.EasyTierKickAckStore
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_PASSWORD_MAX_LENGTH
 import io.stamethyst.backend.easytier.EasyTierRoomApiClient
@@ -83,6 +84,9 @@ import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.MtsComponentUpdateProgress
 import io.stamethyst.backend.update.MtsComponentUpdateService
@@ -113,6 +117,7 @@ import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.StsExternalStorageAccess
+import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModUi
 import io.stamethyst.model.WorkshopModState
@@ -145,7 +150,13 @@ class MainScreenViewModel : ViewModel() {
         val allowNewJoins: Boolean,
     )
 
+    private data class PendingEasyTierRoomJoin(
+        val roomId: String,
+        val password: String,
+    )
+
     private var pendingEasyTierRoomCreation: PendingEasyTierRoomCreation? = null
+    private var pendingEasyTierRoomJoin: PendingEasyTierRoomJoin? = null
     data class ModFolder(
         val id: String,
         val name: String
@@ -350,6 +361,9 @@ class MainScreenViewModel : ViewModel() {
         val pendingWorkshopJarSelection: PendingWorkshopJarSelection? = null,
         val pendingEnabledModSizeLaunchWarning: PendingEnabledModSizeLaunchWarning? = null,
         val pendingMtsComponentUpdate: PendingMtsComponentUpdate? = null,
+        val rendererSelectionMode: RendererSelectionMode = RendererSelectionMode.AUTO,
+        val effectiveRendererBackend: RendererBackend = RendererBackend.OPENGL_ES_MOBILEGLUES,
+        val mobileGluesRendererAvailable: Boolean = true,
     )
 
     sealed interface Effect {
@@ -388,6 +402,7 @@ class MainScreenViewModel : ViewModel() {
     private val steamAchievementExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val launchExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val importedStsJarValidationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val initialRefreshExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val workshopUpdateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val modNameMigrationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val mtsComponentUpdateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -420,8 +435,14 @@ class MainScreenViewModel : ViewModel() {
     private var easyTierProcessEventReceiverContext: Context? = null
     private var easyTierHostActivityReference: WeakReference<Activity>? = null
     private var lastFullRefreshAtElapsedMs: Long? = null
+    private var initialRefreshHostReference: WeakReference<Activity>? = null
     @Volatile
     private var launchInFlight = false
+    @Volatile
+    private var initialRefreshInFlight = false
+    private var initialRefreshGeneration = 0L
+    private var pendingRefreshAfterInitial = false
+    private var pendingRepublishAfterInitial = false
     /**
      * Latched when [maybeLaunchFromDebugExtra] sees debug autoplay extras, and consumed in
      * [launchGameActivityInternal] so the autoplay settings flow to [StsGameActivity] without
@@ -457,6 +478,7 @@ class MainScreenViewModel : ViewModel() {
     @Volatile
     private var easyTierRoomBrowserReloadPendingShowLoading = false
     private var lastQueuedEasyTierKickKey = ""
+    private var lastEasyTierFailureNoticeKey = ""
     @Volatile
     private var steamAchievementLoadInFlight = false
 
@@ -497,6 +519,45 @@ class MainScreenViewModel : ViewModel() {
     )
 
     fun refresh(host: Activity) {
+        if (initialRefreshInFlight) {
+            initialRefreshHostReference = WeakReference(host)
+            pendingRefreshAfterInitial = true
+            return
+        }
+        refreshNow(host)
+    }
+
+    fun setQuickRendererBackend(host: Activity, backend: RendererBackend) {
+        if (uiState.busy || uiState.gameProcessRunning || uiState.launchInFlight) {
+            return
+        }
+        val decision = RendererBackendResolver.resolve(
+            context = host,
+            requestedSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(host),
+            selectionMode = LauncherPreferences.readRendererSelectionMode(host),
+            manualBackend = LauncherPreferences.readManualRendererBackend(host),
+        )
+        if (decision.availableBackends.none { it.backend == backend && it.available }) {
+            _effects.tryEmit(
+                Effect.ShowSnackbar(UiText.StringResource(R.string.main_renderer_quick_unavailable)),
+            )
+            republish(host)
+            return
+        }
+        LauncherPreferences.saveManualRendererBackend(host, backend)
+        LauncherPreferences.saveRendererSelectionMode(host, RendererSelectionMode.MANUAL)
+        republish(host)
+    }
+
+    fun restoreQuickRendererAuto(host: Activity) {
+        if (uiState.busy || uiState.gameProcessRunning || uiState.launchInFlight) {
+            return
+        }
+        LauncherPreferences.saveRendererSelectionMode(host, RendererSelectionMode.AUTO)
+        republish(host)
+    }
+
+    private fun refreshNow(host: Activity) {
         if (!launchInFlight) {
             clearLaunchInFlightState(clearPendingEnabledModSizeWarning = false)
         }
@@ -527,12 +588,113 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun refreshIfStale(host: Activity) {
+        if (uiState.initializing) {
+            startInitialRefreshInBackground(host)
+            return
+        }
         val now = SystemClock.elapsedRealtime()
         val lastRefreshAt = lastFullRefreshAtElapsedMs
         if (lastRefreshAt != null && now - lastRefreshAt < PASSIVE_REFRESH_DEBOUNCE_MS) {
             return
         }
         refresh(host)
+    }
+
+    private data class InitialRefreshPreparation(
+        val storageIssue: StorageIssueUi?,
+        val dependencyAvailability: DependencyAvailabilitySnapshot,
+        val modSuggestions: Map<String, String>,
+        val readModSuggestionKeys: Set<String>,
+    )
+
+    private fun startInitialRefreshInBackground(host: Activity) {
+        if (initialRefreshInFlight || host.isFinishing || host.isDestroyed) {
+            if (initialRefreshInFlight) {
+                initialRefreshHostReference = WeakReference(host)
+                pendingRefreshAfterInitial = true
+            }
+            return
+        }
+        initialRefreshInFlight = true
+        initialRefreshHostReference = WeakReference(host)
+        val generation = ++initialRefreshGeneration
+        uiState = uiState.copy(controlsEnabled = false)
+        initialRefreshExecutor.execute {
+            val preparationResult = runCatching {
+                val storageIssue = detectStorageIssue(host)
+                val dependencyAvailability = resolveDependencyAvailability(host)
+                InitialRefreshPreparation(
+                    storageIssue = storageIssue,
+                    dependencyAvailability = dependencyAvailability,
+                    modSuggestions = ModSuggestionService.loadCachedSuggestionMap(host),
+                    readModSuggestionKeys = ModSuggestionReadStateStore.loadReadKeys(host),
+                )
+            }
+            val refreshFailure = preparationResult.fold(
+                onSuccess = { preparation ->
+                    runCatching {
+                        modManagementController.refresh(
+                            host = host,
+                            storageAccessible = preparation.storageIssue == null,
+                        )
+                    }.exceptionOrNull()
+                },
+                onFailure = { it },
+            )
+            host.runOnUiThread {
+                val activeHost = initialRefreshHostReference?.get()
+                    ?.takeUnless { it.isFinishing || it.isDestroyed }
+                    ?: host.takeUnless { it.isFinishing || it.isDestroyed }
+                if (generation != initialRefreshGeneration) {
+                    return@runOnUiThread
+                }
+                initialRefreshInFlight = false
+                if (activeHost == null) {
+                    // A configuration change can destroy the launching Activity while the
+                    // snapshot is being built. Leave the VM restartable for the replacement UI.
+                    uiState = uiState.copy(initializing = true, controlsEnabled = false)
+                    return@runOnUiThread
+                }
+                if (refreshFailure != null) {
+                    pendingRefreshAfterInitial = false
+                    pendingRepublishAfterInitial = false
+                    Log.e(LOGCAT_TAG, "Initial background refresh failed", refreshFailure)
+                    refreshNow(activeHost)
+                    return@runOnUiThread
+                }
+
+                val preparation = preparationResult.getOrThrow()
+                currentModSuggestions = preparation.modSuggestions
+                currentReadModSuggestionKeys = preparation.readModSuggestionKeys
+                initialRefreshHostReference = null
+
+                val shouldRefreshAgain = pendingRefreshAfterInitial
+                val shouldRepublish = pendingRepublishAfterInitial
+                pendingRefreshAfterInitial = false
+                pendingRepublishAfterInitial = false
+                publishUiState(
+                    host = activeHost,
+                    hasJar = preparation.dependencyAvailability.hasJar,
+                    hasMts = preparation.dependencyAvailability.hasMts,
+                    hasBaseMod = preparation.dependencyAvailability.hasBaseMod,
+                    hasStsLib = preparation.dependencyAvailability.hasStsLib,
+                    hasRuntimeCompat = preparation.dependencyAvailability.hasRuntimeCompat,
+                    hasFloatingTools = preparation.dependencyAvailability.hasFloatingTools,
+                    hasRamSaver = preparation.dependencyAvailability.hasRamSaver,
+                    storageIssue = preparation.storageIssue,
+                )
+                refreshSteamAchievementCache(activeHost)
+                syncEasyTierProcessEventReceiver(activeHost)
+                syncEasyTierRoomSelection(activeHost)
+                lastFullRefreshAtElapsedMs = SystemClock.elapsedRealtime()
+                maybeStartStoredModNameMigration(activeHost)
+                maybePromptPendingWorkshopJarSelection(activeHost)
+                when {
+                    shouldRefreshAgain -> refreshNow(activeHost)
+                    shouldRepublish -> republish(activeHost)
+                }
+            }
+        }
     }
 
     fun syncEasyTierUi(host: Activity) {
@@ -544,9 +706,17 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    fun dismissEasyTierKickDialog() {
-        if (uiState.pendingEasyTierKickDialog != null) {
-            uiState = uiState.copy(pendingEasyTierKickDialog = null)
+    fun dismissEasyTierKickDialog(context: Context) {
+        if (uiState.pendingEasyTierKickDialog == null) {
+            return
+        }
+        uiState = uiState.copy(pendingEasyTierKickDialog = null)
+        // Record the acknowledgement so the persisted kicked snapshot does not re-open this dialog
+        // on the next cold start.
+        runCatching {
+            EasyTierKickAckStore.writeAcknowledgedEventKey(context, lastQueuedEasyTierKickKey)
+        }.onFailure { failure ->
+            Log.w(LOGCAT_TAG, "Failed to persist EasyTier kick dialog acknowledgement", failure)
         }
     }
 
@@ -719,20 +889,30 @@ class MainScreenViewModel : ViewModel() {
 
     fun onEasyTierVpnPermissionResult(host: Activity, granted: Boolean) {
         if (granted && EasyTierPermissionCoordinator.hasVpnPermission(host)) {
-            pendingEasyTierRoomCreation?.let { pending ->
-                pendingEasyTierRoomCreation = null
-                createEasyTierRoom(
+            val pendingCreation = pendingEasyTierRoomCreation
+            val pendingJoin = pendingEasyTierRoomJoin
+            pendingEasyTierRoomCreation = null
+            pendingEasyTierRoomJoin = null
+            when {
+                pendingCreation != null -> createEasyTierRoom(
                     host,
-                    pending.roomId,
-                    pending.description,
-                    pending.password,
-                    pending.allowNewJoins,
+                    pendingCreation.roomId,
+                    pendingCreation.description,
+                    pendingCreation.password,
+                    pendingCreation.allowNewJoins,
                 )
-            } ?: onConnectEasyTier(host)
+                pendingJoin != null -> joinEasyTierSharedRoom(
+                    host,
+                    roomId = pendingJoin.roomId,
+                    password = pendingJoin.password,
+                )
+                else -> onConnectEasyTier(host)
+            }
             return
         }
         val deniedSummary = host.getString(R.string.main_easytier_vpn_permission_denied)
         pendingEasyTierRoomCreation = null
+        pendingEasyTierRoomJoin = null
         clearEasyTierRoomCreation(
             host = host,
             errorSummary = deniedSummary,
@@ -742,12 +922,7 @@ class MainScreenViewModel : ViewModel() {
             summaryOverride = deniedSummary,
             extraLines = listOf("vpn_permission_denied_from_ui=true"),
         )
-        _effects.tryEmit(
-            Effect.ShowSnackbar(
-                message = UiText.StringResource(R.string.main_easytier_vpn_permission_denied),
-                duration = LauncherTransientNoticeDuration.LONG,
-            )
-        )
+        emitEasyTierFailureNotice(host, deniedSummary)
     }
 
     fun queueEasyTierRoomCreation(
@@ -774,6 +949,31 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
+    /**
+     * Starts joining a room that arrived as a shared clipboard invitation. The password travels
+     * with the invitation, so the normal password prompt is skipped when one is present.
+     */
+    fun joinEasyTierSharedRoom(host: Activity, roomId: String, password: String) {
+        val normalizedRoomId = roomId.trim()
+        if (normalizedRoomId.isBlank()) {
+            return
+        }
+        selectEasyTierRoom(host, normalizedRoomId)
+        onConnectEasyTier(
+            host = host,
+            roomIdOverride = normalizedRoomId,
+            password = password.take(EASY_TIER_ROOM_PASSWORD_MAX_LENGTH),
+        )
+    }
+
+    /** Remembers a shared-room join to resume after the system VPN permission dialog returns. */
+    fun queueEasyTierSharedRoomJoin(roomId: String, password: String) {
+        pendingEasyTierRoomJoin = PendingEasyTierRoomJoin(
+            roomId = roomId.trim(),
+            password = password.take(EASY_TIER_ROOM_PASSWORD_MAX_LENGTH),
+        )
+    }
+
     fun onConnectEasyTier(
         host: Activity,
         roomIdOverride: String? = null,
@@ -792,17 +992,12 @@ class MainScreenViewModel : ViewModel() {
                 snapshot = EasyTierSessionController.buildInitialSnapshot(host, config),
                 extraLines = listOf("connect_blocked_from_ui=config_unavailable"),
             )
-            publishEasyTierIndicator(snapshot)
+            publishEasyTierIndicator(host, snapshot)
             clearEasyTierRoomCreation(
                 host = host,
                 errorSummary = host.getString(R.string.main_easytier_config_missing),
             )
-            _effects.tryEmit(
-                Effect.ShowSnackbar(
-                    message = UiText.StringResource(R.string.main_easytier_config_missing),
-                    duration = LauncherTransientNoticeDuration.LONG,
-                )
-            )
+            emitEasyTierFailureNotice(host, host.getString(R.string.main_easytier_config_missing))
             return
         }
 
@@ -828,7 +1023,7 @@ class MainScreenViewModel : ViewModel() {
             ),
             extraLines = listOf("connect_requested_from_ui=true"),
         )
-        publishEasyTierIndicator(connectingSnapshot)
+        publishEasyTierIndicator(host, connectingSnapshot)
         EasyTierSessionController.requestConnect(
             context = host,
             mode = config.defaultMode,
@@ -1639,7 +1834,7 @@ class MainScreenViewModel : ViewModel() {
             ),
             extraLines = listOf("disconnect_requested_from_ui=true"),
         )
-        publishEasyTierIndicator(disconnectingSnapshot)
+        publishEasyTierIndicator(host, disconnectingSnapshot)
         EasyTierSessionController.requestDisconnect(
             context = host,
             receiver = buildEasyTierConnectionReceiver(host),
@@ -1678,7 +1873,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     internal fun onLaunchRequested(host: Activity): LaunchRequestAction {
-        if (uiState.busy || launchInFlight) {
+        if (uiState.initializing || uiState.busy || launchInFlight) {
             return LaunchRequestAction.NONE
         }
         if (steamCloudCheckInFlight || steamCloudSyncInFlight) {
@@ -1743,7 +1938,12 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onBackgroundUseLocalSteamCloudProgressAndLaunch(host: Activity) {
-        if (uiState.busy || launchInFlight || steamCloudCheckInFlight || steamCloudSyncInFlight) {
+        if (uiState.initializing ||
+            uiState.busy ||
+            launchInFlight ||
+            steamCloudCheckInFlight ||
+            steamCloudSyncInFlight
+        ) {
             return
         }
         if (!isSteamCloudSaveModeEnabled(host)) {
@@ -1764,7 +1964,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onBackgroundSteamCloudSyncAndLaunch(host: Activity) {
-        if (uiState.busy || launchInFlight) {
+        if (uiState.initializing || uiState.busy || launchInFlight) {
             return
         }
         val indicator = uiState.steamCloudIndicator
@@ -1928,6 +2128,16 @@ class MainScreenViewModel : ViewModel() {
             _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("找不到导入修补：$moduleId")))
             return
         }
+        refresh(host)
+    }
+
+    fun onSetAgentPatchEnabled(
+        host: Activity,
+        mod: ModItemUi,
+        patch: AgentPatchModUi,
+        enabled: Boolean,
+    ) {
+        modManagementController.onSetAgentPatchEnabled(host, mod, patch, enabled)
         refresh(host)
     }
 
@@ -2810,7 +3020,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onLaunch(host: Activity) {
-        if (steamCloudSyncInFlight) {
+        if (uiState.initializing || steamCloudSyncInFlight) {
             return
         }
         if (!tryBeginLaunchRequest()) {
@@ -3036,7 +3246,8 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun canEditMainScreenState(): Boolean {
-        return resolveControlsEnabled(uiState.busy, uiState.busyOperation, uiState.storageIssue != null)
+        return !uiState.initializing &&
+            resolveControlsEnabled(uiState.busy, uiState.busyOperation, uiState.storageIssue != null)
     }
 
     private data class DependencyAvailabilitySnapshot(
@@ -3119,6 +3330,10 @@ class MainScreenViewModel : ViewModel() {
                 }
                 cacheImportedStsJarValidation(importedStsJarFingerprint, isValid)
                 if (host.isFinishing || host.isDestroyed) {
+                    return@runOnUiThread
+                }
+                if (initialRefreshInFlight) {
+                    pendingRepublishAfterInitial = true
                     return@runOnUiThread
                 }
                 val currentFingerprint = buildImportedStsJarFingerprint(host)
@@ -4266,7 +4481,12 @@ class MainScreenViewModel : ViewModel() {
         val snapshot = data.easyTierSnapshotOrNull()
             ?: EasyTierSessionController.currentSnapshot(appContext)
         if (shouldPublishEasyTierIndicatorForResultCode(resultCode)) {
-            publishEasyTierIndicator(snapshot)
+            publishEasyTierIndicator(appContext, snapshot)
+            maybeShowEasyTierFailureNotice(
+                context = hostActivity ?: easyTierHostActivityReference?.get() ?: appContext,
+                snapshot = snapshot,
+                resultCode = resultCode,
+            )
         }
         updateEasyTierRoomCreationState(
             host = appContext,
@@ -4524,13 +4744,11 @@ class MainScreenViewModel : ViewModel() {
             ?: System.currentTimeMillis()
         val summary = data.getString(SteamCloudSyncProcessService.EXTRA_ERROR_SUMMARY)
             ?.takeIf { it.isNotBlank() }
-            ?: appContext.getString(
-                if (isCancellation) {
-                    R.string.main_steam_cloud_sync_cancelled_summary
-                } else {
-                    R.string.main_steam_cloud_bar_summary_failed
-                }
-            )
+            ?: if (isCancellation) {
+                appContext.getString(R.string.main_steam_cloud_sync_cancelled_summary)
+            } else {
+                ""
+            }
         val failureCategory = data.steamCloudFailureCategoryOrNull()
             ?: if (isCancellation) SteamCloudFailureCategory.CANCELLED else SteamCloudFailureCategory.UNKNOWN
         steamCloudCheckInFlight = false
@@ -5185,14 +5403,23 @@ class MainScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.common_busy_preparing_jvm_log_bundle))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(
+                R.string.common_busy_preparing_jvm_log_bundle_progress,
+                0
+            ),
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
+            progressPercent = 0
+        )
         diagnosticsExecutor.execute {
             runCatching {
                 val payload = JvmLogShareService.prepareCrashSharePayload(
                     host,
                     code,
                     isSignal,
-                    detail
+                    detail,
+                    exportArchiveProgressReporter(host)
                 )
                 val shareIntent = JvmLogShareService.buildShareIntent(host, payload)
                 Intent.createChooser(
@@ -5218,6 +5445,29 @@ class MainScreenViewModel : ViewModel() {
                             message = UiText.StringResource(R.string.sts_share_crash_report_failed),
                             duration = LauncherTransientNoticeDuration.LONG
                         )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Progress arrives on the main looper from the diagnostics process; keep it resilient by
+     * ignoring updates that race with a finished or unrelated operation.
+     */
+    private fun exportArchiveProgressReporter(host: Activity): (Int) -> Unit {
+        return { percent ->
+            val clamped = percent.coerceIn(0, 100)
+            host.runOnUiThread {
+                if (uiState.busy && uiState.busyOperation == UiBusyOperation.EXPORT_ARCHIVE) {
+                    setBusy(
+                        busy = true,
+                        message = UiText.StringResource(
+                            R.string.common_busy_preparing_jvm_log_bundle_progress,
+                            clamped
+                        ),
+                        operation = UiBusyOperation.EXPORT_ARCHIVE,
+                        progressPercent = clamped
                     )
                 }
             }
@@ -5297,6 +5547,10 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun republish(host: Activity) {
+        if (initialRefreshInFlight) {
+            pendingRepublishAfterInitial = true
+            return
+        }
         val dependencyAvailability = resolveDependencyAvailability(host)
         publishUiState(
             host = host,
@@ -5335,6 +5589,14 @@ class MainScreenViewModel : ViewModel() {
                 .ifBlank { EasyTierRoomSelectionStore.read(host).preferredRoomId }
         )
         val gameProcessRunning = GameLaunchReturnTracker.isGameProcessRunning(host)
+        val rendererSelectionMode = LauncherPreferences.readRendererSelectionMode(host)
+        val manualRendererBackend = LauncherPreferences.readManualRendererBackend(host)
+        val rendererDecision = RendererBackendResolver.resolve(
+            context = host,
+            requestedSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(host),
+            selectionMode = rendererSelectionMode,
+            manualBackend = manualRendererBackend,
+        )
         uiState = uiState.copy(
             initializing = false,
             busy = currentBusy,
@@ -5377,6 +5639,11 @@ class MainScreenViewModel : ViewModel() {
             steamCloudIndicator = currentSteamCloudIndicator,
             easyTierIndicator = currentEasyTierIndicator,
             easyTierRoomBrowser = currentEasyTierRoomBrowser,
+            rendererSelectionMode = rendererDecision.selectionMode,
+            effectiveRendererBackend = rendererDecision.effectiveBackend,
+            mobileGluesRendererAvailable = rendererDecision.availableBackends.any {
+                it.backend == RendererBackend.OPENGL_ES_MOBILEGLUES && it.available
+            },
         )
     }
 
@@ -5555,20 +5822,10 @@ class MainScreenViewModel : ViewModel() {
 
     private fun resolveEasyTierIndicatorAvailability(host: Activity): EasyTierIndicatorUi {
         val snapshot = EasyTierSessionController.currentSnapshot(host)
-        maybeQueueEasyTierKickDialog(snapshot)
+        maybeQueueEasyTierKickDialog(host, snapshot)
         return EasyTierIndicatorUi(
             visible = true,
-            state = when (snapshot.status) {
-                EasyTierConnectionStatus.IDLE -> EasyTierIndicatorState.IDLE
-                EasyTierConnectionStatus.PERMISSION_REQUIRED -> EasyTierIndicatorState.PERMISSION_REQUIRED
-                EasyTierConnectionStatus.CONNECTING -> EasyTierIndicatorState.CONNECTING
-                EasyTierConnectionStatus.SESSION_READY -> EasyTierIndicatorState.SESSION_READY
-                EasyTierConnectionStatus.CONNECTED -> EasyTierIndicatorState.CONNECTED
-                EasyTierConnectionStatus.RECONNECTING -> EasyTierIndicatorState.RECONNECTING
-                EasyTierConnectionStatus.DISCONNECTING -> EasyTierIndicatorState.DISCONNECTING
-                EasyTierConnectionStatus.DISCONNECTED -> EasyTierIndicatorState.DISCONNECTED
-                EasyTierConnectionStatus.FAILED -> EasyTierIndicatorState.CONNECTION_FAILED
-            },
+            state = easyTierIndicatorState(snapshot.status),
             mode = snapshot.mode,
             failureCategory = EasyTierErrorClassifier.classify(snapshot),
             errorSummary = snapshot.lastErrorSummary,
@@ -5653,25 +5910,15 @@ class MainScreenViewModel : ViewModel() {
             },
             extraLines = extraLines,
         )
-        publishEasyTierIndicator(snapshot)
+        publishEasyTierIndicator(host, snapshot)
     }
 
-    private fun publishEasyTierIndicator(snapshot: EasyTierConnectionSnapshot) {
-        maybeQueueEasyTierKickDialog(snapshot)
+    private fun publishEasyTierIndicator(context: Context, snapshot: EasyTierConnectionSnapshot) {
+        maybeQueueEasyTierKickDialog(context, snapshot)
         uiState = uiState.copy(
             easyTierIndicator = EasyTierIndicatorUi(
                 visible = true,
-                state = when (snapshot.status) {
-                EasyTierConnectionStatus.IDLE -> EasyTierIndicatorState.IDLE
-                EasyTierConnectionStatus.PERMISSION_REQUIRED -> EasyTierIndicatorState.PERMISSION_REQUIRED
-                EasyTierConnectionStatus.CONNECTING -> EasyTierIndicatorState.CONNECTING
-                EasyTierConnectionStatus.SESSION_READY -> EasyTierIndicatorState.SESSION_READY
-                EasyTierConnectionStatus.CONNECTED -> EasyTierIndicatorState.CONNECTED
-                EasyTierConnectionStatus.RECONNECTING -> EasyTierIndicatorState.RECONNECTING
-                EasyTierConnectionStatus.DISCONNECTING -> EasyTierIndicatorState.DISCONNECTING
-                    EasyTierConnectionStatus.DISCONNECTED -> EasyTierIndicatorState.DISCONNECTED
-                    EasyTierConnectionStatus.FAILED -> EasyTierIndicatorState.CONNECTION_FAILED
-                },
+                state = easyTierIndicatorState(snapshot.status),
                 mode = snapshot.mode,
                 failureCategory = EasyTierErrorClassifier.classify(snapshot),
                 errorSummary = snapshot.lastErrorSummary,
@@ -5692,9 +5939,14 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun maybeQueueEasyTierKickDialog(snapshot: EasyTierConnectionSnapshot) {
+    private fun maybeQueueEasyTierKickDialog(
+        context: Context,
+        snapshot: EasyTierConnectionSnapshot,
+    ) {
         val key = easyTierKickDialogEventKey(snapshot) ?: return
-        if (key == lastQueuedEasyTierKickKey) {
+        val acknowledgedKey = EasyTierKickAckStore.readAcknowledgedEventKey(context)
+        if (!shouldQueueEasyTierKickDialog(key, lastQueuedEasyTierKickKey, acknowledgedKey)) {
+            lastQueuedEasyTierKickKey = key
             return
         }
         lastQueuedEasyTierKickKey = key
@@ -5702,6 +5954,70 @@ class MainScreenViewModel : ViewModel() {
             pendingEasyTierKickDialog = EasyTierKickDialogUi(
                 message = snapshot.lastErrorSummary.trim(),
             ),
+        )
+    }
+
+    private fun easyTierIndicatorState(status: EasyTierConnectionStatus): EasyTierIndicatorState =
+        when (status) {
+            EasyTierConnectionStatus.IDLE -> EasyTierIndicatorState.IDLE
+            EasyTierConnectionStatus.PERMISSION_REQUIRED -> EasyTierIndicatorState.PERMISSION_REQUIRED
+            EasyTierConnectionStatus.CONNECTING -> EasyTierIndicatorState.CONNECTING
+            EasyTierConnectionStatus.SESSION_READY -> EasyTierIndicatorState.SESSION_READY
+            EasyTierConnectionStatus.CONNECTED -> EasyTierIndicatorState.CONNECTED
+            EasyTierConnectionStatus.RECONNECTING -> EasyTierIndicatorState.RECONNECTING
+            EasyTierConnectionStatus.DISCONNECTING -> EasyTierIndicatorState.DISCONNECTING
+            EasyTierConnectionStatus.DISCONNECTED -> EasyTierIndicatorState.DISCONNECTED
+            EasyTierConnectionStatus.FAILED -> EasyTierIndicatorState.CONNECTION_FAILED
+        }
+
+    /**
+     * Surfaces a connection failure as a transient, copyable snackbar.
+     *
+     * The overview card deliberately no longer renders [EasyTierConnectionSnapshot.lastErrorSummary]:
+     * that summary is persisted to disk and would keep showing a stale error after a restart, which
+     * reads as a live failure. The error is delivered once per failure event here instead, where the
+     * user can copy the exact text for a bug report.
+     */
+    private fun maybeShowEasyTierFailureNotice(
+        context: Context,
+        snapshot: EasyTierConnectionSnapshot,
+        resultCode: Int,
+    ) {
+        val state = easyTierIndicatorState(snapshot.status)
+        val category = EasyTierErrorClassifier.classify(snapshot, resultCode)
+        if (!shouldShowEasyTierFailureNotice(state, category)) {
+            return
+        }
+        val key = easyTierFailureNoticeEventKey(snapshot, category)
+        // One failure is delivered twice: to the per-request ResultReceiver and as a package-scoped
+        // broadcast. Only the first delivery becomes a snackbar.
+        if (key == lastEasyTierFailureNoticeKey) {
+            return
+        }
+        lastEasyTierFailureNoticeKey = key
+        val message = snapshot.lastErrorSummary.trim().ifBlank {
+            easyTierTroubleshootingMessageResId(state, category, snapshot.lastErrorSummary)
+                ?.let { resId -> context.getString(resId) }
+                .orEmpty()
+        }
+        emitEasyTierFailureNotice(context, message)
+    }
+
+    private fun emitEasyTierFailureNotice(context: Context, message: String) {
+        val resolved = message.trim().ifBlank {
+            context.getString(R.string.main_easytier_unknown_error)
+        }
+        _effects.tryEmit(
+            Effect.ShowSnackbar(
+                message = UiText.DynamicString(resolved),
+                duration = LauncherTransientNoticeDuration.LONG,
+                actionLabel = UiText.StringResource(R.string.main_easytier_failure_copy),
+                onAction = {
+                    context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+                        ClipData.newPlainText("stamethyst-easytier-error", resolved)
+                    )
+                },
+            )
         )
     }
 
@@ -5823,7 +6139,7 @@ class MainScreenViewModel : ViewModel() {
         operation: UiBusyOperation,
         hasStorageIssue: Boolean
     ): Boolean {
-        return !hasStorageIssue && (!busy || operation.usesBlockingOverlay())
+        return !hasStorageIssue && (!busy || operation.locksInteraction(busy))
     }
 
     private fun isRequiredModAvailable(host: Activity, modId: String): Boolean {
@@ -5868,11 +6184,15 @@ class MainScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        initialRefreshGeneration++
+        initialRefreshInFlight = false
+        initialRefreshHostReference = null
         steamCloudHostActivityReference = null
         easyTierHostActivityReference = null
         unregisterEasyTierProcessEventReceiver()
         unregisterSteamCloudProcessEventReceiver()
         importedStsJarValidationExecutor.shutdownNow()
+        initialRefreshExecutor.shutdownNow()
         launchExecutor.shutdownNow()
         diagnosticsExecutor.shutdownNow()
         suggestionExecutor.shutdownNow()
@@ -5895,6 +6215,21 @@ internal fun easyTierKickDialogEventKey(snapshot: EasyTierConnectionSnapshot): S
         snapshot.lastErrorSummary.trim(),
     ).joinToString("|")
 }
+
+/**
+ * Decides whether a kicked event should open the dialog.
+ *
+ * [acknowledgedEventKey] is the on-disk record of an already-dismissed kick. The kicked snapshot is
+ * persisted, so without this check a cold start re-queues the identical event and the player sees
+ * "removed from room" every time the launcher restarts.
+ */
+internal fun shouldQueueEasyTierKickDialog(
+    eventKey: String?,
+    lastQueuedEventKey: String,
+    acknowledgedEventKey: String,
+): Boolean = eventKey != null &&
+    eventKey != lastQueuedEventKey &&
+    eventKey != acknowledgedEventKey
 
 internal fun shouldCloseEasyTierRoomWhenOwnerLeaves(
     state: EasyTierConnectionStatus,
@@ -5983,6 +6318,35 @@ internal fun shouldDisconnectEasyTierUiState(
         state == MainScreenViewModel.EasyTierIndicatorState.RECONNECTING ||
         state == MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING
 }
+
+/**
+ * Decides whether a snapshot state should surface a transient failure snackbar.
+ *
+ * Kicked sessions are excluded because they already own the [MainScreenViewModel.EasyTierKickDialogUi]
+ * dialog, and a clean disconnect carries no failure context worth reporting.
+ */
+internal fun shouldShowEasyTierFailureNotice(
+    state: MainScreenViewModel.EasyTierIndicatorState,
+    failureCategory: EasyTierFailureCategory,
+): Boolean = when (state) {
+    MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED,
+    MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED -> true
+    MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED ->
+        failureCategory != EasyTierFailureCategory.None &&
+            failureCategory != EasyTierFailureCategory.SessionKicked
+    else -> false
+}
+
+internal fun easyTierFailureNoticeEventKey(
+    snapshot: EasyTierConnectionSnapshot,
+    failureCategory: EasyTierFailureCategory,
+): String = listOf(
+    snapshot.roomId.trim(),
+    snapshot.status.name,
+    failureCategory.name,
+    snapshot.lastUpdatedAtMs.toString(),
+    snapshot.lastErrorSummary.trim(),
+).joinToString("|")
 
 internal fun isSteamCloudStatusRefreshDue(
     lastCheckedAtMs: Long?,

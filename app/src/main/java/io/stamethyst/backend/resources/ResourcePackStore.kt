@@ -46,7 +46,26 @@ internal object ResourcePackStore {
     private val lockDepth = ThreadLocal.withInitial { 0 }
 
     @JvmStatic
-    fun inspect(context: Context): ResourcePackInspection {
+    fun inspect(context: Context): ResourcePackInspection = inspect(
+        context = context,
+        verifyContentHashes = true,
+    )
+
+    /**
+     * Reads the active generation metadata without hashing every resource file.
+     * Settings screens use this for status display; install, launch, and diagnostics
+     * continue to use [inspect] for the authoritative integrity check.
+     */
+    @JvmStatic
+    fun inspectQuick(context: Context): ResourcePackInspection = inspect(
+        context = context,
+        verifyContentHashes = false,
+    )
+
+    private fun inspect(
+        context: Context,
+        verifyContentHashes: Boolean,
+    ): ResourcePackInspection {
         val root = RuntimePaths.externalResourcesRoot(context)
         val pointer = readActivePointer(root)
         val legacyPaths = legacyCandidateRoots(context).map { file -> file.absolutePath }
@@ -82,7 +101,8 @@ internal object ResourcePackStore {
         val generation = generationDir(root, pointer.packId)
         val validation = ResourcePackArchive.validateGeneration(
             generation,
-            BuildConfig.RESOURCE_PACK_VERSION.trim()
+            BuildConfig.RESOURCE_PACK_VERSION.trim(),
+            verifyContentHashes = verifyContentHashes,
         )
         return ResourcePackInspection(
             ready = validation.issues.isEmpty(),
@@ -125,6 +145,14 @@ internal object ResourcePackStore {
         return ResourcePackContract.collectMissingContent(generation).isEmpty()
     }
 
+    /**
+     * Resolves the active generation directory using metadata checks only.
+     *
+     * This is a hot lookup used by [RuntimeResourceProvider] and the launcher refresh path,
+     * so it must never hash content: the resource pack is hundreds of megabytes and a full
+     * SHA-256 sweep on the UI thread stalls startup into an ANR. Authoritative content
+     * verification stays in [inspect]/[recover], which run on the install/launch path.
+     */
     @JvmStatic
     fun activeGenerationDir(context: Context): File? {
         val root = RuntimePaths.externalResourcesRoot(context)
@@ -134,7 +162,8 @@ internal object ResourcePackStore {
             generation.takeIf {
                 ResourcePackArchive.validateGeneration(
                     it,
-                    BuildConfig.RESOURCE_PACK_VERSION.trim()
+                    BuildConfig.RESOURCE_PACK_VERSION.trim(),
+                    verifyContentHashes = false,
                 ).issues.isEmpty()
             }
         }.getOrNull()
@@ -316,8 +345,15 @@ internal object ResourcePackStore {
     }
 
     @JvmStatic
-    fun buildDiagnostics(context: Context): String {
-        val inspection = runCatching { inspect(context) }.getOrElse { error ->
+    fun buildDiagnostics(context: Context): String = buildDiagnostics(context, inspection = null)
+
+    /**
+     * [inspection] lets a caller that already ran [inspect] (and paid for full content hashing)
+     * reuse the result instead of hashing the resource pack a second time in the same export.
+     */
+    @JvmStatic
+    fun buildDiagnostics(context: Context, inspection: ResourcePackInspection?): String {
+        val resolvedInspection = inspection ?: runCatching { inspect(context) }.getOrElse { error ->
             return "resourcePack.formatVersion=2\n" +
                 "resourcePack.state=inspection_failed\n" +
                 "resourcePack.error=${sanitize(summarizeError(error))}\n"
@@ -336,13 +372,13 @@ internal object ResourcePackStore {
             append("resourcePack.embeddedArchive=")
                 .append(embeddedArchiveExists(context))
                 .append('\n')
-            append("resourcePack.ready=").append(inspection.ready).append('\n')
-            append("resourcePack.packId=").append(inspection.packId ?: "none").append('\n')
-            append("resourcePack.version=").append(inspection.version ?: "none").append('\n')
+            append("resourcePack.ready=").append(resolvedInspection.ready).append('\n')
+            append("resourcePack.packId=").append(resolvedInspection.packId ?: "none").append('\n')
+            append("resourcePack.version=").append(resolvedInspection.version ?: "none").append('\n')
             append("resourcePack.generation=")
-                .append(inspection.generationDir?.absolutePath ?: "none")
+                .append(resolvedInspection.generationDir?.absolutePath ?: "none")
                 .append('\n')
-            append("resourcePack.state=").append(inspection.state ?: "none").append('\n')
+            append("resourcePack.state=").append(resolvedInspection.state ?: "none").append('\n')
             append("resourcePack.stateOperation=")
                 .append(stateProperties?.getProperty(STATE_OPERATION_ID_KEY) ?: "none")
                 .append('\n')
@@ -356,9 +392,9 @@ internal object ResourcePackStore {
                 .append(buildFileState(RuntimePaths.externalResourcesActivePointerFile(context)))
                 .append('\n')
             append("resourcePack.legacyPaths=")
-                .append(inspection.legacyPaths.joinToString("|"))
+                .append(resolvedInspection.legacyPaths.joinToString("|"))
                 .append('\n')
-            inspection.issues.forEachIndexed { index, issue ->
+            resolvedInspection.issues.forEachIndexed { index, issue ->
                 append("resourcePack.issue.").append(index).append('=').append(sanitize(issue)).append('\n')
             }
             append("resourcePack.staging=")

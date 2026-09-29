@@ -1,6 +1,9 @@
 package io.stamethyst.ui.main
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
@@ -12,6 +15,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -61,6 +65,7 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
@@ -100,11 +105,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
@@ -148,11 +155,16 @@ import io.stamethyst.backend.easytier.EasyTierFailureCategory
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import io.stamethyst.backend.easytier.EasyTierRoomMember
+import io.stamethyst.backend.easytier.EasyTierRoomShareCodec
+import io.stamethyst.backend.easytier.EasyTierSharedRoomInvite
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
 import io.stamethyst.backend.easytier.EasyTierCredentialStore
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_PASSWORD_MAX_LENGTH
 import io.stamethyst.backend.easytier.EASY_TIER_KICK_MESSAGE_MAX_LENGTH
 import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.backend.render.RendererSelectionMode
+import io.stamethyst.backend.render.DisplayRefreshRatePolicy
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
 import io.stamethyst.backend.steamcloud.SteamCloudUserWarning
@@ -195,7 +207,6 @@ import io.stamethyst.ui.workshop.WorkshopViewModel
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
-import java.io.File
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -212,7 +223,21 @@ private enum class SteamCloudNetworkPromptAction {
     USE_CLOUD,
 }
 
+private enum class GamePageCard(
+    val storageId: String,
+    @StringRes val labelResId: Int,
+) {
+    OVERVIEW("overview", R.string.main_game_card_visibility_overview),
+    FEEDBACK("feedback", R.string.main_game_card_visibility_feedback),
+    UPDATE("update", R.string.main_game_card_visibility_update),
+    STEAM_CLOUD("steam_cloud", R.string.main_game_card_visibility_steam_cloud),
+    EASY_TIER("easytier", R.string.main_game_card_visibility_easytier),
+    ACHIEVEMENTS("achievements", R.string.main_game_card_visibility_achievements),
+    RENDERER("renderer", R.string.main_game_card_visibility_renderer),
+}
+
 private const val MODS_CONTENT_MOUNT_DELAY_MS = 80L
+private const val MODS_PULL_REFRESH_MIN_DURATION_MS = 500L
 private const val TOGETHER_IN_SPIRE_WORKSHOP_ID = 2384072973UL
 private const val EASY_TIER_WORKSHOP_APP_ID = 646570u
 private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_WORKSHOP_ID = 3766232527UL
@@ -247,13 +272,45 @@ private fun LauncherGamePage(
 ) {
     val steamCloudIndicator = uiState.steamCloudIndicator
     val easyTierIndicator = uiState.easyTierIndicator
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var refreshRateSnapshot by remember {
+        mutableStateOf(DisplayRefreshRatePolicy.Snapshot(0f, 0f))
+    }
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                refreshRateSnapshot = DisplayRefreshRatePolicy.readSnapshot(context)
+                delay(500L)
+            }
+        }
+    }
+    var hiddenGameCards by remember {
+        mutableStateOf(LauncherPreferences.readHiddenMainCards(context))
+    }
+    var showRefreshRateDetector by remember {
+        mutableStateOf(LauncherPreferences.isRefreshRateDetectorEnabled(context))
+    }
+    fun isGameCardVisible(card: GamePageCard): Boolean = card.storageId !in hiddenGameCards
+    fun toggleGameCardVisibility(storageId: String) {
+        val updated = if (storageId in hiddenGameCards) {
+            hiddenGameCards - storageId
+        } else {
+            hiddenGameCards + storageId
+        }
+        hiddenGameCards = updated
+        LauncherPreferences.saveHiddenMainCards(context, updated)
+    }
     val enabledMods = remember(uiState.optionalMods) {
         uiState.optionalMods.filter { mod -> mod.enabled && mod.installed && !mod.required }
     }
     val enabledModBytes = remember(enabledMods) {
-        enabledMods.sumOf { mod -> File(mod.storagePath).takeIf { it.isFile }?.length() ?: 0L }
+        enabledMods.sumOf { mod -> mod.fileSizeBytes.coerceAtLeast(0L) }
     }
-    val launchEnabled = !uiState.busy && uiState.storageIssue == null && !uiState.launchInFlight
+    val launchEnabled = !uiState.initializing &&
+        !uiState.busy &&
+        uiState.storageIssue == null &&
+        !uiState.launchInFlight
     val headerActionsEnabled = !uiState.busy &&
         steamCloudIndicator.state != MainScreenViewModel.SteamCloudIndicatorState.SYNCING
     val gameHeaderHazeState = rememberHazeState()
@@ -276,10 +333,10 @@ private fun LauncherGamePage(
         ) {
             Spacer(modifier = Modifier.height(gameHeaderContentTopInset))
 
-            if (uiState.busy && !uiState.busyOperation.usesBlockingOverlay()) {
+            if (uiState.busy && !uiState.busyOperation.locksInteraction(uiState.busy)) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 uiState.busyMessage?.let { message ->
-                    Text(
+                    SlidingTextSwap(
                         text = message.resolve(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -298,17 +355,21 @@ private fun LauncherGamePage(
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                GameStatusHeroCard(
-                    enabledModCount = enabledMods.size,
-                    totalModCount = uiState.optionalMods.size,
-                    enabledModBytes = enabledModBytes,
-                    gameRunning = uiState.gameProcessRunning,
-                    hasStorageIssue = uiState.storageIssue != null,
-                    onEnabledModsClick = onEnabledModsClick,
-                    onModSizeClick = onModSizeClick,
-                )
+                if (isGameCardVisible(GamePageCard.OVERVIEW)) {
+                    GameStatusHeroCard(
+                        enabledModCount = enabledMods.size,
+                        totalModCount = uiState.optionalMods.size,
+                        enabledModBytes = enabledModBytes,
+                        gameRunning = uiState.gameProcessRunning,
+                        hasStorageIssue = uiState.storageIssue != null,
+                        onEnabledModsClick = onEnabledModsClick,
+                        onModSizeClick = onModSizeClick,
+                    )
+                }
 
-                if (feedbackUnreadCount > 0 || feedbackActiveIssueCount > 0) {
+                if ((feedbackUnreadCount > 0 || feedbackActiveIssueCount > 0) &&
+                    isGameCardVisible(GamePageCard.FEEDBACK)
+                ) {
                     FeedbackReplyUpdateCard(
                         unreadCount = feedbackUnreadCount,
                         activeIssueCount = feedbackActiveIssueCount,
@@ -316,28 +377,51 @@ private fun LauncherGamePage(
                     )
                 }
 
-                updateNotice?.let { notice ->
-                    LauncherUpdateNoticeCard(
-                        notice = notice,
-                        onClick = onUpdateNoticeClick,
+                if (isGameCardVisible(GamePageCard.UPDATE)) {
+                    updateNotice?.let { notice ->
+                        LauncherUpdateNoticeCard(
+                            notice = notice,
+                            onClick = onUpdateNoticeClick,
+                        )
+                    }
+                }
+
+                if (isGameCardVisible(GamePageCard.STEAM_CLOUD)) {
+                    SteamCloudOverviewCard(
+                        indicator = steamCloudIndicator,
+                        onClick = onSteamCloudClick,
                     )
                 }
 
-                SteamCloudOverviewCard(
-                    indicator = steamCloudIndicator,
-                    onClick = onSteamCloudClick,
-                )
+                if (isGameCardVisible(GamePageCard.EASY_TIER)) {
+                    EasyTierOverviewCard(
+                        indicator = easyTierIndicator,
+                        onClick = onEasyTierClick,
+                        onReinstallResourcePack = actions.onReinstallResourcePack,
+                    )
+                }
 
-                EasyTierOverviewCard(
-                    indicator = easyTierIndicator,
-                    onClick = onEasyTierClick,
-                    onReinstallResourcePack = actions.onReinstallResourcePack,
-                )
+                if (isGameCardVisible(GamePageCard.ACHIEVEMENTS)) {
+                    SteamAchievementOverviewCard(
+                        state = uiState.steamAchievements,
+                        onClick = onSteamAchievementsClick,
+                    )
+                }
 
-                SteamAchievementOverviewCard(
-                    state = uiState.steamAchievements,
-                    onClick = onSteamAchievementsClick,
-                )
+                if (isGameCardVisible(GamePageCard.RENDERER)) {
+                    RendererQuickSwitchCard(
+                        currentBackend = uiState.effectiveRendererBackend,
+                        mobileGluesAvailable = uiState.mobileGluesRendererAvailable,
+                        enabled = actions.isHostAvailable &&
+                            !uiState.busy &&
+                            !uiState.gameProcessRunning &&
+                            !uiState.launchInFlight,
+                        onSelect = actions.onSetQuickRenderer,
+                    )
+                }
+                if (showRefreshRateDetector && refreshRateSnapshot.shouldShowMismatch) {
+                    RefreshRateMismatchCard(snapshot = refreshRateSnapshot)
+                }
             }
         }
 
@@ -362,7 +446,17 @@ private fun LauncherGamePage(
                 GameHeader(
                     feedbackUnreadCount = feedbackUnreadCount,
                     headerActionsEnabled = headerActionsEnabled,
+                    hiddenGameCards = hiddenGameCards,
+                    showRefreshRateDetector = showRefreshRateDetector,
                     onOpenFeedbackUpdates = onOpenFeedbackUpdates,
+                    onToggleCardVisibility = ::toggleGameCardVisibility,
+                    onToggleRefreshRateDetector = {
+                        showRefreshRateDetector = !showRefreshRateDetector
+                        LauncherPreferences.saveRefreshRateDetectorEnabled(
+                            context,
+                            showRefreshRateDetector,
+                        )
+                    },
                 )
             },
         )
@@ -373,8 +467,14 @@ private fun LauncherGamePage(
 private fun GameHeader(
     feedbackUnreadCount: Int,
     headerActionsEnabled: Boolean,
+    hiddenGameCards: Set<String>,
+    showRefreshRateDetector: Boolean,
     onOpenFeedbackUpdates: () -> Unit,
+    onToggleCardVisibility: (String) -> Unit,
+    onToggleRefreshRateDetector: () -> Unit,
 ) {
+    var cardVisibilityMenuExpanded by remember { mutableStateOf(false) }
+    val hasHiddenGameCard = hiddenGameCards.isNotEmpty() || !showRefreshRateDetector
     HeaderPinnedRow(
         iconResId = R.drawable.ic_dock_game,
         iconContentDescription = null,
@@ -398,6 +498,49 @@ private fun GameHeader(
                         contentDescription = stringResource(R.string.main_feedback_updates_content_description),
                     )
                 }
+            }
+        }
+        Box {
+            CompactTopBarIconButton(
+                onClick = { cardVisibilityMenuExpanded = true },
+                enabled = headerActionsEnabled,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_dashboard_customize),
+                    contentDescription = stringResource(R.string.main_game_card_visibility_title),
+                    tint = if (hasHiddenGameCard) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            DropdownMenu(
+                expanded = cardVisibilityMenuExpanded,
+                onDismissRequest = { cardVisibilityMenuExpanded = false },
+            ) {
+                GamePageCard.values().forEach { card ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(card.labelResId)) },
+                        onClick = { onToggleCardVisibility(card.storageId) },
+                        leadingIcon = {
+                            Checkbox(
+                                checked = card.storageId !in hiddenGameCards,
+                                onCheckedChange = null,
+                            )
+                        },
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.main_game_card_visibility_refresh_rate_detector)) },
+                    onClick = onToggleRefreshRateDetector,
+                    leadingIcon = {
+                        Checkbox(
+                            checked = showRefreshRateDetector,
+                            onCheckedChange = null,
+                        )
+                    },
+                )
             }
         }
     }
@@ -523,7 +666,7 @@ private fun GameLaunchActionBar(
             modifier = Modifier.size(20.dp),
         )
         Spacer(modifier = Modifier.width(8.dp))
-        Text(
+        SlidingTextSwap(
             text = if (gameRunning) {
                 stringResource(R.string.main_restart_game)
             } else {
@@ -531,6 +674,8 @@ private fun GameLaunchActionBar(
             },
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -801,16 +946,457 @@ private fun GameStatusHeroCard(
                     onClick = onModSizeClick,
                 )
             }
-            TextButton(onClick = onEnabledModsClick) {
-                Text(
-                    text = when {
-                        hasStorageIssue -> stringResource(R.string.main_status_storage_unavailable_os_issue)
-                        gameRunning -> stringResource(R.string.main_status_game_running)
-                        else -> stringResource(R.string.main_status_mods_ok)
-                    },
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+            val statusText = when {
+                hasStorageIssue -> stringResource(R.string.main_status_storage_unavailable_os_issue)
+                gameRunning -> stringResource(R.string.main_status_game_running)
+                else -> null
+            }
+            if (statusText != null) {
+                TextButton(onClick = onEnabledModsClick) {
+                    SlidingTextSwap(
+                        text = statusText,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RefreshRateMismatchCard(
+    snapshot: DisplayRefreshRatePolicy.Snapshot,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            ) {
+                Icon(
+                    imageVector = RendererIcons.Clock,
+                    contentDescription = null,
+                    modifier = Modifier.padding(10.dp),
                 )
             }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.main_refresh_rate_mismatch_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.main_refresh_rate_mismatch_message,
+                        snapshot.requestedRefreshRateHz,
+                        snapshot.actualRefreshRateHz,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RendererQuickSwitchCard(
+    currentBackend: RendererBackend,
+    mobileGluesAvailable: Boolean,
+    enabled: Boolean,
+    onSelect: (RendererBackend) -> Unit,
+) {
+    val selectedBackend = when (currentBackend) {
+        RendererBackend.OPENGL_ES_MOBILEGLUES,
+        RendererBackend.OPENGL_ES2_NATIVE -> currentBackend
+        else -> null
+    }
+    val targetBackend = when (selectedBackend) {
+        RendererBackend.OPENGL_ES_MOBILEGLUES -> RendererBackend.OPENGL_ES2_NATIVE
+        RendererBackend.OPENGL_ES2_NATIVE -> RendererBackend.OPENGL_ES_MOBILEGLUES
+        null -> if (mobileGluesAvailable) {
+            RendererBackend.OPENGL_ES_MOBILEGLUES
+        } else {
+            RendererBackend.OPENGL_ES2_NATIVE
+        }
+        else -> error("Unexpected quick renderer backend")
+    }
+    val mobileGluesFraction by animateFloatAsState(
+        targetValue = when (selectedBackend) {
+            RendererBackend.OPENGL_ES_MOBILEGLUES -> 0.62264f
+            RendererBackend.OPENGL_ES2_NATIVE -> 0.37736f
+            null -> 0.5f
+            else -> error("Unexpected quick renderer backend")
+        },
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchFraction",
+    )
+    val selectedContainerColor by animateColorAsState(
+        targetValue = if (selectedBackend != RendererBackend.OPENGL_ES2_NATIVE) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchContainerColor",
+    )
+    val selectionDepth by animateFloatAsState(
+        targetValue = when (selectedBackend) {
+            RendererBackend.OPENGL_ES_MOBILEGLUES -> 1f
+            RendererBackend.OPENGL_ES2_NATIVE -> -1f
+            else -> 0f
+        },
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererSelectionDepth",
+    )
+    val selectorOutlineColor = MaterialTheme.colorScheme.outlineVariant
+    val edgeHighlight = MaterialTheme.colorScheme.surface
+    val selectorShape = RoundedCornerShape(8.dp)
+    val rendererAccent = GameCardAccents.renderer
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = accentTileColor(rendererAccent),
+                    contentColor = rendererAccent,
+                ) {
+                    Icon(
+                        imageVector = RendererIcons.RenderViewport,
+                        contentDescription = null,
+                        modifier = Modifier.padding(10.dp),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.main_renderer_quick_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(R.string.main_renderer_quick_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(164.dp)
+                    .clip(selectorShape)
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .clickable(
+                        enabled = enabled &&
+                            (targetBackend != RendererBackend.OPENGL_ES_MOBILEGLUES || mobileGluesAvailable),
+                        role = Role.Button,
+                    ) {
+                        onSelect(targetBackend)
+                    },
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val splitX = size.width * mobileGluesFraction
+                    val slant = 18.dp.toPx()
+                    val selectedPath = Path().apply {
+                        if (selectionDepth > 0f) {
+                            moveTo(0f, 0f)
+                            lineTo(splitX + slant, 0f)
+                            lineTo(splitX - slant, size.height)
+                            lineTo(0f, size.height)
+                        } else if (selectionDepth < 0f) {
+                            moveTo(splitX + slant, 0f)
+                            lineTo(size.width, 0f)
+                            lineTo(size.width, size.height)
+                            lineTo(splitX - slant, size.height)
+                        }
+                        close()
+                    }
+                    val depth = kotlin.math.abs(selectionDepth)
+                    val direction = if (selectionDepth > 0f) 1f else -1f
+                    if (depth > 0f) {
+                        drawPath(path = selectedPath, color = selectedContainerColor, alpha = depth)
+                        // A soft cast shadow sits exclusively on the lower panel.
+                        for (step in 8 downTo 1) {
+                            val distance = step / 8f
+                            val offset = direction * step.dp.toPx() * depth
+                            drawLine(
+                                color = Color.Black.copy(alpha = 0.065f * depth * (1f - distance) * (1f - distance)),
+                                start = Offset(splitX + slant + offset, 0f),
+                                end = Offset(splitX - slant + offset, size.height),
+                                strokeWidth = 1.5.dp.toPx(),
+                            )
+                        }
+                        val rimOffset = -direction * 1.dp.toPx()
+                        drawLine(
+                            color = edgeHighlight.copy(alpha = 0.3f * depth),
+                            start = Offset(splitX + slant + rimOffset, 0f),
+                            end = Offset(splitX - slant + rimOffset, size.height),
+                            strokeWidth = 1.dp.toPx(),
+                        )
+                    }
+                    drawLine(
+                        color = selectorOutlineColor.copy(alpha = 0.25f + 0.1f * depth),
+                        start = Offset(splitX + slant, 0f),
+                        end = Offset(splitX - slant, size.height),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
+                Row(modifier = Modifier.fillMaxSize()) {
+                    RendererQuickSwitchOption(
+                        modifier = Modifier.weight(mobileGluesFraction),
+                        backend = RendererBackend.OPENGL_ES_MOBILEGLUES,
+                        selected = selectedBackend == RendererBackend.OPENGL_ES_MOBILEGLUES,
+                        accentColor = MaterialTheme.colorScheme.primary,
+                    )
+                    RendererQuickSwitchOption(
+                        modifier = Modifier.weight(1f - mobileGluesFraction),
+                        backend = RendererBackend.OPENGL_ES2_NATIVE,
+                        selected = selectedBackend == RendererBackend.OPENGL_ES2_NATIVE,
+                        accentColor = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.animateContentSize(animationSpec = tween(durationMillis = 220)),
+            ) {
+                SlidingTextSwap(
+                    text = stringResource(
+                        when (selectedBackend) {
+                            RendererBackend.OPENGL_ES_MOBILEGLUES -> R.string.main_renderer_quick_mobileglues_summary
+                            RendererBackend.OPENGL_ES2_NATIVE -> R.string.main_renderer_quick_gles2_summary
+                            null -> R.string.main_renderer_quick_other_summary
+                            else -> error("Unexpected quick renderer backend")
+                        },
+                        *if (selectedBackend == null) arrayOf(currentBackend.displayName) else emptyArray(),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+
+}
+
+@Composable
+private fun RendererQuickSwitchOption(
+    modifier: Modifier,
+    backend: RendererBackend,
+    selected: Boolean,
+    accentColor: Color,
+) {
+    val lift by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererOptionLift",
+    )
+    val iconRotation by animateFloatAsState(
+        targetValue = when (backend) {
+            RendererBackend.OPENGL_ES_MOBILEGLUES -> -12f
+            RendererBackend.OPENGL_ES2_NATIVE -> if (selected) 0f else 12f
+            else -> 0f
+        },
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchIconRotation",
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.12f else 1f,
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchIconScale",
+    )
+    val iconAlpha by animateFloatAsState(
+        targetValue = if (selected) 0.19f else 0.10f,
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchIconAlpha",
+    )
+    val iconRightOffset by animateDpAsState(
+        targetValue = if (selected) 14.dp else 30.dp,
+        animationSpec = tween(durationMillis = 360),
+        label = "rendererQuickSwitchIconOffset",
+    )
+    val titleStyle = MaterialTheme.typography.titleMedium
+    val titleFontSize by animateFloatAsState(
+        targetValue = if (selected) {
+            MaterialTheme.typography.titleLarge.fontSize.value
+        } else {
+            titleStyle.fontSize.value
+        },
+        animationSpec = tween(durationMillis = 220),
+        label = "rendererQuickSwitchTitleSize",
+    )
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clipToBounds(),
+    ) {
+        if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 8.dp, y = 4.dp)
+                    .size(108.dp),
+            ) {
+                for (layer in 0..2) {
+                    Icon(
+                        imageVector = RendererIcons.RenderLayer,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val separation = 7.dp.toPx() + 8.dp.toPx() * lift
+                                translationY = (1 - layer) * separation - 3.dp.toPx() * lift
+                                scaleX = 0.9f + layer * 0.04f
+                                scaleY = scaleX
+                                alpha = (0.09f + layer * 0.035f) + lift * 0.09f
+                            },
+                    )
+                }
+            }
+        } else {
+            Icon(
+                imageVector = RendererIcons.CpuBackground,
+                contentDescription = null,
+                tint = accentColor.copy(alpha = iconAlpha),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = iconRightOffset, y = 15.dp)
+                    .size(116.dp)
+                    .graphicsLayer {
+                        rotationZ = iconRotation
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    },
+            )
+        }
+        AnimatedVisibility(
+            visible = !selected,
+            modifier = Modifier
+                .align(
+                    if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                        Alignment.TopStart
+                    } else {
+                        Alignment.TopEnd
+                    },
+                )
+                .padding(horizontal = 12.dp, vertical = 14.dp),
+            enter = fadeIn(animationSpec = tween(durationMillis = 140)) +
+                scaleIn(initialScale = 0.82f, animationSpec = tween(durationMillis = 180)),
+            exit = fadeOut(animationSpec = tween(durationMillis = 90)) +
+                scaleOut(targetScale = 0.82f, animationSpec = tween(durationMillis = 90)),
+        ) {
+            Icon(
+                imageVector = RendererIcons.SwitchTile,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        AnimatedVisibility(
+            visible = selected,
+            modifier = Modifier.align(
+                if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                    Alignment.TopStart
+                } else {
+                    Alignment.TopEnd
+                },
+            ).padding(horizontal = 12.dp, vertical = 14.dp),
+            enter = fadeIn(animationSpec = tween(durationMillis = 160)) +
+                slideInHorizontally(
+                    initialOffsetX = { width ->
+                        if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) -width / 2 else width / 2
+                    },
+                    animationSpec = tween(durationMillis = 220),
+                ),
+            exit = fadeOut(animationSpec = tween(durationMillis = 100)) +
+                slideOutHorizontally(
+                    targetOffsetX = { width ->
+                        if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) -width / 3 else width / 3
+                    },
+                    animationSpec = tween(durationMillis = 160),
+                ),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = RendererIcons.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = accentColor,
+                )
+                Text(
+                    text = stringResource(R.string.main_renderer_quick_selected),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accentColor,
+                )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .graphicsLayer {
+                    translationY = -4.dp.toPx() * lift
+                }
+                .padding(
+                    start = if (backend == RendererBackend.OPENGL_ES2_NATIVE) 22.dp else 16.dp,
+                    end = if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) 24.dp else 16.dp,
+                    bottom = 14.dp,
+                ),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) "MobileGlues" else "GLES2",
+                style = titleStyle.copy(fontSize = titleFontSize.sp),
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) accentColor else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+            )
+            Text(
+                text = stringResource(
+                    if (backend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                        R.string.main_renderer_quick_mobileglues_caption
+                    } else {
+                        R.string.main_renderer_quick_gles2_caption
+                    },
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -842,7 +1428,7 @@ private fun GameMetricCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
+            SlidingTextSwap(
                 text = value,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
@@ -897,15 +1483,17 @@ private fun FeedbackReplyUpdateCard(
                     )
                 }
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .animateContentSize(animationSpec = tween(durationMillis = 220)),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
+                    SlidingTextSwap(
                         text = stringResource(titleResId),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Text(
+                    SlidingTextSwap(
                         text = summaryText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.82f),
@@ -960,7 +1548,7 @@ private fun LauncherUpdateNoticeCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(
+                SlidingTextSwap(
                     text = stringResource(
                         R.string.main_update_notice_card_version,
                         notice.currentVersion,
@@ -1029,7 +1617,9 @@ private fun SteamCloudOverviewCard(
                 )
             }
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .animateContentSize(animationSpec = tween(durationMillis = 220)),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
@@ -1037,7 +1627,7 @@ private fun SteamCloudOverviewCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(
+                SlidingTextSwap(
                     text = if (visibleIndicator) {
                         steamCloudActionBarTitle(indicator.state)
                     } else {
@@ -1045,15 +1635,18 @@ private fun SteamCloudOverviewCard(
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Text(
-                    text = if (visibleIndicator) {
-                        steamCloudActionBarSummary(indicator)
-                    } else {
-                        stringResource(R.string.main_steam_cloud_disabled_summary)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                val summaryText = if (visibleIndicator) {
+                    steamCloudActionBarSummary(indicator)
+                } else {
+                    stringResource(R.string.main_steam_cloud_disabled_summary)
+                }
+                if (summaryText.isNotBlank()) {
+                    SlidingTextSwap(
+                        text = summaryText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -1117,7 +1710,7 @@ private fun EasyTierOverviewCard(
                             )
                         } else {
                             Icon(
-                                painter = painterResource(R.drawable.ic_link),
+                                imageVector = RendererIcons.Network,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
                             )
@@ -1214,11 +1807,6 @@ private fun EasyTierOverviewDetails(
     }
 }
 
-private fun hasEasyTierFailureContext(
-    indicator: MainScreenViewModel.EasyTierIndicatorUi,
-): Boolean = indicator.failureCategory != EasyTierFailureCategory.None ||
-    indicator.errorSummary.isNotBlank()
-
 @Composable
 private fun easyTierStatusTitle(
     state: MainScreenViewModel.EasyTierIndicatorState,
@@ -1247,7 +1835,7 @@ private fun easyTierStatusTitle(
         stringResource(R.string.main_easytier_status_disconnecting)
     }
     MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED -> {
-        stringResource(R.string.main_easytier_status_failed)
+        stringResource(R.string.main_easytier_status_not_connected)
     }
 }
 
@@ -1260,11 +1848,7 @@ private fun easyTierOverviewSummary(
         stringResource(R.string.main_easytier_summary_not_connected)
     }
     MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED -> {
-        if (hasEasyTierFailureContext(indicator)) {
-            localizedEasyTierFailureSummary(indicator)
-        } else {
-            stringResource(R.string.main_easytier_summary_not_connected)
-        }
+        stringResource(R.string.main_easytier_summary_not_connected)
     }
     MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED -> {
         localizedEasyTierFailureSummary(indicator)
@@ -1285,10 +1869,7 @@ private fun easyTierOverviewSummary(
         stringResource(R.string.main_easytier_summary_disconnecting)
     }
     MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED -> {
-        stringResource(
-            R.string.main_easytier_summary_failed,
-            localizedEasyTierFailureSummary(indicator),
-        )
+        stringResource(R.string.main_easytier_summary_not_connected)
     }
 }
 
@@ -1387,12 +1968,13 @@ internal fun easyTierTroubleshootingMessageResId(
 private fun easyTierIndicatorTint(
     state: MainScreenViewModel.EasyTierIndicatorState,
 ): Color = when (state) {
-    MainScreenViewModel.EasyTierIndicatorState.CONNECTED -> MaterialTheme.colorScheme.tertiary
-    MainScreenViewModel.EasyTierIndicatorState.SESSION_READY -> MaterialTheme.colorScheme.secondary
+    MainScreenViewModel.EasyTierIndicatorState.CONNECTED,
+    MainScreenViewModel.EasyTierIndicatorState.SESSION_READY,
     MainScreenViewModel.EasyTierIndicatorState.CONNECTING,
     MainScreenViewModel.EasyTierIndicatorState.RECONNECTING,
-    MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING -> MaterialTheme.colorScheme.primary
-    MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED -> MaterialTheme.colorScheme.secondary
+    MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING,
+    MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED ->
+        GameCardAccents.virtualLan
     MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED -> MaterialTheme.colorScheme.error
     MainScreenViewModel.EasyTierIndicatorState.HIDDEN,
     MainScreenViewModel.EasyTierIndicatorState.IDLE,
@@ -2687,12 +3269,12 @@ internal fun EasyTierBottomSheetContent(
     onKickMember: (String, String) -> Unit,
     onConnect: (String?) -> Unit,
     onDisconnect: () -> Unit,
+    onRoomInviteShared: (String) -> Unit = {},
     tutorialWorkshopDownloadState: (WorkshopItemSummary) -> WorkshopModDownloadState = {
         WorkshopModDownloadState.NotDownloaded
     },
     onOpenTutorialWorkshopDetails: (WorkshopItemSummary) -> Unit = {},
     onDownloadTutorialWorkshopItem: (WorkshopItemSummary) -> Unit = {},
-    onReinstallResourcePack: () -> Unit = {},
     initialLoading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -2715,7 +3297,10 @@ internal fun EasyTierBottomSheetContent(
     // The launcher's snackbar host sits below this full-height sheet, so confirmations have to be
     // rendered inside the sheet to be visible at all.
     var sheetNotice by remember { mutableStateOf<LauncherTransientNoticeRequest?>(null) }
+    val context = LocalContext.current
     val sheetView = LocalView.current
+    val uriHandler = LocalUriHandler.current
+    val cloudControlSettings by rememberCloudControlSettings()
     val memberWorkshopDetailViewModel: WorkshopViewModel = viewModel()
     // Secondary sheet pages own the system back gesture so it steps back one level
     // instead of tearing down the whole sheet and discarding in-progress form drafts.
@@ -2778,16 +3363,6 @@ internal fun EasyTierBottomSheetContent(
         roomsLoading = roomsLoading,
     )
     val pullToRefreshState = rememberPullToRefreshState()
-    val troubleshootingMessageResId = easyTierTroubleshootingMessageResId(
-        state = indicator.state,
-        failureCategory = indicator.failureCategory,
-        errorSummary = indicator.errorSummary,
-    )
-    val troubleshootingToastMessageResId = troubleshootingMessageResId.takeIf {
-        page != EasyTierRoomSheetPage.Tutorial &&
-            page != EasyTierRoomSheetPage.MemberMods &&
-            memberWorkshopDetailItem == null
-    }
     // Mirror launcher notices into the sheet. Room actions report success through the shared
     // notice bus, whose host is stacked below this sheet and therefore invisible while it is open.
     LaunchedEffect(Unit) {
@@ -2800,21 +3375,6 @@ internal fun EasyTierBottomSheetContent(
         if (sheetNotice != null) {
             delay(EASY_TIER_SHEET_NOTICE_DURATION_MS)
             sheetNotice = null
-        }
-    }
-    LaunchedEffect(troubleshootingToastMessageResId, indicator.errorSummary) {
-        if (troubleshootingToastMessageResId != null) {
-            val resourcePackMissing = isEasyTierResourcePackMissing(indicator)
-            LauncherTransientNoticeBus.show(
-                message = UiText.StringResource(troubleshootingToastMessageResId),
-                duration = LauncherTransientNoticeDuration.LONG,
-                actionLabel = if (resourcePackMissing) {
-                    UiText.StringResource(R.string.settings_reinstall_resource_pack_title)
-                } else {
-                    null
-                },
-                onAction = onReinstallResourcePack.takeIf { resourcePackMissing },
-            )
         }
     }
     LaunchedEffect(roomBrowser.creating, selectedRoom?.roomId, roomBrowser.errorSummary) {
@@ -2986,6 +3546,103 @@ internal fun EasyTierBottomSheetContent(
                             text = targetSummary,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (targetPage == EasyTierRoomSheetPage.Rooms) {
+                    OutlinedButton(
+                        onClick = { uriHandler.openUri(cloudControlSettings.qqGroupUrl) },
+                        modifier = Modifier.heightIn(min = 40.dp),
+                        shape = CircleShape,
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                        ),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.main_easytier_create_room_join_group),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                if (targetPage == EasyTierRoomSheetPage.Rooms && joinedSelectedRoom) {
+                    selectedRoom?.let { joinedRoom ->
+                        EasyTierRoomHeaderBadge(
+                            iconRes = R.drawable.ic_lan_room_key,
+                            label = stringResource(R.string.main_easytier_badge_password),
+                            onClick = {
+                                LauncherHaptics.perform(
+                                    sheetView,
+                                    HapticFeedbackConstants.KEYBOARD_TAP,
+                                )
+                                val password = EasyTierCredentialStore
+                                    .roomPassword(context, joinedRoom.roomId)
+                                sheetNotice = if (password.isEmpty()) {
+                                    LauncherTransientNoticeRequest(
+                                        message = UiText.StringResource(
+                                            R.string.main_easytier_room_password_unavailable,
+                                        ),
+                                    )
+                                } else {
+                                    LauncherTransientNoticeRequest(
+                                        message = UiText.StringResource(
+                                            R.string.main_easytier_room_password_reveal,
+                                            password,
+                                        ),
+                                        duration = LauncherTransientNoticeDuration.LONG,
+                                        actionLabel = UiText.StringResource(
+                                            R.string.main_easytier_room_password_copy,
+                                        ),
+                                        onAction = {
+                                            copyEasyTierRoomTextToClipboard(
+                                                context = context,
+                                                label = "stamethyst-room-password",
+                                                value = password,
+                                            )
+                                            sheetNotice = LauncherTransientNoticeRequest(
+                                                message = UiText.StringResource(
+                                                    R.string.main_easytier_room_password_copied,
+                                                ),
+                                            )
+                                        },
+                                    )
+                                }
+                            },
+                        )
+                        EasyTierRoomHeaderBadge(
+                            iconRes = R.drawable.ic_lan_room_share,
+                            label = stringResource(R.string.main_easytier_badge_share),
+                            onClick = {
+                                LauncherHaptics.perform(
+                                    sheetView,
+                                    HapticFeedbackConstants.KEYBOARD_TAP,
+                                )
+                                val password = EasyTierCredentialStore
+                                    .roomPassword(context, joinedRoom.roomId)
+                                val shareText = buildEasyTierRoomShareText(
+                                    context = context,
+                                    room = joinedRoom,
+                                    password = password,
+                                )
+                                copyEasyTierRoomTextToClipboard(
+                                    context = context,
+                                    label = "stamethyst-easytier-room-invite",
+                                    value = shareText,
+                                )
+                                onRoomInviteShared(shareText)
+                                sheetNotice = LauncherTransientNoticeRequest(
+                                    message = UiText.StringResource(
+                                        R.string.main_easytier_share_room_copied,
+                                    ),
+                                    duration = LauncherTransientNoticeDuration.LONG,
+                                )
+                            },
                         )
                     }
                 }
@@ -3538,6 +4195,90 @@ internal fun isEasyTierRoomJoined(
         indicator.state == MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING
 }
 
+@Composable
+private fun EasyTierRoomHeaderBadge(
+    @DrawableRes iconRes: Int,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+private fun buildEasyTierRoomShareText(
+    context: Context,
+    room: EasyTierRoomInfo,
+    password: String,
+): String {
+    val uri = EasyTierRoomShareCodec.buildShareUri(
+        roomId = room.roomId,
+        description = room.description,
+        password = password,
+    )
+    return buildString {
+        append(context.getString(R.string.main_easytier_share_invite_header))
+        append('\n')
+        append(context.getString(R.string.main_easytier_share_invite_room, room.roomId))
+        if (password.isNotEmpty()) {
+            append('\n')
+            append(context.getString(R.string.main_easytier_share_invite_password, password))
+        }
+        if (room.description.isNotBlank()) {
+            append('\n')
+            append(
+                context.getString(
+                    R.string.main_easytier_share_invite_description,
+                    room.description,
+                ),
+            )
+        }
+        append('\n')
+        append(context.getString(R.string.main_easytier_share_invite_hint))
+        append('\n')
+        append(uri)
+    }
+}
+
+private fun copyEasyTierRoomTextToClipboard(context: Context, label: String, value: String) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+}
+
+internal fun readEasyTierRoomClipboardText(context: Context): String? {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return null
+    if (!clipboard.hasPrimaryClip()) {
+        return null
+    }
+    val clip = clipboard.primaryClip ?: return null
+    if (clip.itemCount <= 0) {
+        return null
+    }
+    return clip.getItemAt(0).coerceToText(context)?.toString()
+}
+
 private enum class LauncherMainContentMode {
     GAME,
     MODS,
@@ -3589,6 +4330,7 @@ fun LauncherMainScreen(
     onOpenFeedback: () -> Unit = {},
     onOpenWorkshop: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    onOpenAiEditor: (ModItemUi) -> Unit = {},
     updateNotice: LauncherUpdateNoticeUiState? = null,
     feedbackUnreadCount: Int = 0,
     feedbackActiveIssueCount: Int = 0,
@@ -3602,6 +4344,7 @@ fun LauncherMainScreen(
         viewModel = viewModel,
         onOpenWorkshop = onOpenWorkshop,
         onOpenWorkshopDetails = onOpenWorkshopDetails,
+        onOpenAiEditor = onOpenAiEditor,
     ) { routeModifier, uiState, actions ->
         LauncherGameScreenContent(
             modifier = routeModifier,
@@ -3627,6 +4370,7 @@ fun LauncherModsScreen(
     onOpenFeedback: () -> Unit = {},
     onOpenWorkshop: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    onOpenAiEditor: (ModItemUi) -> Unit = {},
     feedbackUnreadCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
     onBatchSelectionModeChange: (Boolean) -> Unit = {},
@@ -3650,6 +4394,7 @@ fun LauncherModsScreen(
         viewModel = viewModel,
         onOpenWorkshop = onOpenWorkshop,
         onOpenWorkshopDetails = onOpenWorkshopDetails,
+        onOpenAiEditor = onOpenAiEditor,
     ) { routeModifier, uiState, actions ->
         LauncherModsScreenContent(
             modifier = routeModifier,
@@ -3745,6 +4490,7 @@ internal fun LauncherMainRoute(
     viewModel: MainScreenViewModel,
     onOpenWorkshop: () -> Unit,
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    onOpenAiEditor: (ModItemUi) -> Unit = {},
     handleEffects: Boolean = true,
     pollWorkshopDownloads: Boolean = true,
     content: @Composable (
@@ -3809,6 +4555,7 @@ internal fun LauncherMainRoute(
         easyTierVpnPermissionLauncher = easyTierVpnPermissionLauncher,
         onOpenWorkshop = onOpenWorkshop,
         onOpenWorkshopDetails = onOpenWorkshopDetails,
+        onOpenAiEditor = onOpenAiEditor,
     )
 
     LaunchedEffect(hostActivity) {
@@ -3819,7 +4566,7 @@ internal fun LauncherMainRoute(
             if (pollWorkshopDownloads && !viewModel.uiState.launchInFlight) {
                 viewModel.refreshWorkshopDownloadCards(hostActivity)
             }
-            viewModel.refresh(hostActivity)
+            viewModel.refreshIfStale(hostActivity)
             viewModel.syncModSuggestionsIfNeeded(hostActivity)
             // Automatic entry refreshes should respect the normal Steam Cloud cooldown so a
             // freshly completed sync does not immediately restart on recomposition.
@@ -3848,7 +4595,7 @@ internal fun LauncherMainRoute(
         } else {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) {
-                    viewModel.refresh(activity)
+                    viewModel.refreshIfStale(activity)
                     viewModel.syncModSuggestionsIfNeeded(activity)
                     viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = false)
                 }
@@ -3994,7 +4741,7 @@ internal fun LauncherMainRoute(
 
     uiState.pendingEasyTierKickDialog?.let { dialog ->
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = viewModel::dismissEasyTierKickDialog,
+            onDismissRequest = { viewModel.dismissEasyTierKickDialog(context) },
             title = { Text(stringResource(R.string.main_easytier_kicked_dialog_title)) },
             text = {
                 Text(
@@ -4004,7 +4751,7 @@ internal fun LauncherMainRoute(
                 )
             },
             confirmButton = {
-                Button(onClick = viewModel::dismissEasyTierKickDialog) {
+                Button(onClick = { viewModel.dismissEasyTierKickDialog(context) }) {
                     Text(stringResource(R.string.common_action_confirm))
                 }
             },
@@ -4403,7 +5150,7 @@ private fun LauncherMainScreenContent(
         enabledMods.map { mod ->
             EnabledModSizeItem(
                 name = resolveModDisplayName(mod),
-                bytes = File(mod.storagePath).takeIf { it.isFile }?.length() ?: 0L,
+                bytes = mod.fileSizeBytes.coerceAtLeast(0L),
             )
         }
     }
@@ -4422,6 +5169,12 @@ private fun LauncherMainScreenContent(
     var showEasyTierBottomSheet by remember { mutableStateOf(false) }
     var showSteamAchievementsBottomSheet by remember { mutableStateOf(false) }
     var showEasyTierCompatibilityUpdateDialog by remember { mutableStateOf(false) }
+    // The clipboard invitation popup. `handledClipboardText` suppresses repeat popups for the same
+    // clipboard contents and also ignores the invitation this device just copied for someone else.
+    var sharedEasyTierRoomInvite by remember { mutableStateOf<EasyTierSharedRoomInvite?>(null) }
+    var handledEasyTierClipboardText by remember { mutableStateOf<String?>(null) }
+    val clipboardContext = LocalContext.current
+    val currentUiState = rememberUpdatedState(uiState)
     var easyTierRoomLoadBaselineAtOpen by remember { mutableStateOf<Long?>(null) }
     var steamCloudAutoRetryAttemptIndex by remember { mutableIntStateOf(0) }
     var steamCloudAutoRetryCurrentDelaySeconds by remember {
@@ -4569,6 +5322,38 @@ private fun LauncherMainScreenContent(
         }
     }
 
+    fun handleEasyTierClipboardText(text: String?) {
+        if (text.isNullOrBlank() || text == handledEasyTierClipboardText) {
+            return
+        }
+        val invite = EasyTierRoomShareCodec.parseShareText(text) ?: return
+        // Never prompt to join the room this device is already in. This also swallows the
+        // invitation this device just copied for someone else, including from the in-game overlay
+        // whose `:game` process cannot share Compose state with the launcher.
+        val indicator = currentUiState.value.easyTierIndicator
+        handledEasyTierClipboardText = text
+        if (isEasyTierRoomJoined(indicator, invite.roomId)) {
+            return
+        }
+        sharedEasyTierRoomInvite = invite
+    }
+
+    // Android only exposes clipboard contents to a focused app, so the invitation is read when the
+    // launcher returns to the foreground, plus once on entry in case it was already resumed.
+    DisposableEffect(lifecycleOwner, clipboardContext) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                handleEasyTierClipboardText(readEasyTierRoomClipboardText(clipboardContext))
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(clipboardContext) {
+        handleEasyTierClipboardText(readEasyTierRoomClipboardText(clipboardContext))
+    }
+
     if (pendingLaunchUnreadSuggestionModNames.isNotEmpty()) {
         val unreadMessage = buildUnreadSuggestionLaunchWarningMessage(
             pendingLaunchUnreadSuggestionModNames
@@ -4636,6 +5421,61 @@ private fun LauncherMainScreenContent(
         )
     }
 
+    sharedEasyTierRoomInvite?.let { invite ->
+        AlertDialog(
+            onDismissRequest = { sharedEasyTierRoomInvite = null },
+            title = {
+                Text(stringResource(R.string.main_easytier_shared_invite_dialog_title))
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(stringResource(R.string.main_easytier_shared_invite_dialog_message))
+                    Text(
+                        stringResource(
+                            R.string.main_easytier_shared_invite_dialog_room,
+                            invite.roomId,
+                        ),
+                    )
+                    Text(
+                        if (invite.password.isEmpty()) {
+                            stringResource(R.string.main_easytier_shared_invite_dialog_no_password)
+                        } else {
+                            stringResource(
+                                R.string.main_easytier_shared_invite_dialog_password,
+                                invite.password,
+                            )
+                        },
+                    )
+                    if (invite.description.isNotBlank()) {
+                        Text(
+                            stringResource(
+                                R.string.main_easytier_shared_invite_dialog_description,
+                                invite.description,
+                            ),
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sharedEasyTierRoomInvite = null }) {
+                    Text(stringResource(R.string.main_easytier_action_cancel))
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val roomId = invite.roomId
+                        val password = invite.password
+                        sharedEasyTierRoomInvite = null
+                        actions.onJoinSharedEasyTierRoom(roomId, password)
+                    },
+                ) {
+                    Text(stringResource(R.string.main_easytier_shared_invite_dialog_join))
+                }
+            },
+        )
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { scaffoldPaddingValues ->
@@ -4684,15 +5524,26 @@ private fun LauncherMainScreenContent(
                         var modsHeaderHeightPx by remember { mutableIntStateOf(0) }
                         var modsHeaderCollapsed by remember { mutableStateOf(false) }
                         var modsContentMountReady by remember { mutableStateOf(false) }
+                        var modsRefreshing by remember { mutableStateOf(false) }
                         var showEnabledModsOnly by rememberSaveable { mutableStateOf(false) }
                         var showUpdateAvailableModsOnly by rememberSaveable { mutableStateOf(false) }
+                        val modsPullToRefreshState = rememberPullToRefreshState()
                         val measuredModsHeaderHeight = with(density) { modsHeaderHeightPx.toDp() }
                         val modsHeaderContentTopInset =
                             (if (modsHeaderHeightPx == 0) 232.dp else measuredModsHeaderHeight) - 20.dp
+                        val modsRefreshIndicatorTopInset =
+                            (if (modsHeaderHeightPx == 0) 232.dp else measuredModsHeaderHeight) + 8.dp
 
                         LaunchedEffect(Unit) {
                             delay(MODS_CONTENT_MOUNT_DELAY_MS)
                             modsContentMountReady = true
+                        }
+
+                        LaunchedEffect(modsRefreshing) {
+                            if (modsRefreshing) {
+                                delay(MODS_PULL_REFRESH_MIN_DURATION_MS)
+                                modsRefreshing = false
+                            }
                         }
 
                         Box(
@@ -4700,31 +5551,53 @@ private fun LauncherMainScreenContent(
                                 .fillMaxSize()
                                 .testTag(MODS_SCREEN_ROOT_TAG)
                         ) {
-                            Column(
+                            PullToRefreshBox(
+                                isRefreshing = modsRefreshing,
+                                onRefresh = {
+                                    if (!modsRefreshing && !batchSelectionMode && !uiState.busy) {
+                                        modsRefreshing = true
+                                        actions.onRefreshMods()
+                                    }
+                                },
+                                state = modsPullToRefreshState,
+                                indicator = {
+                                    PullToRefreshDefaults.Indicator(
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .padding(top = modsRefreshIndicatorTopInset),
+                                        isRefreshing = modsRefreshing,
+                                        state = modsPullToRefreshState,
+                                    )
+                                },
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .hazeSource(state = hazeState)
-                                    .padding(start = 16.dp, top = 18.dp, end = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    .hazeSource(state = hazeState),
                             ) {
-                                if (uiState.busy && !uiState.busyOperation.usesBlockingOverlay()) {
-                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                                    uiState.busyMessage?.let {
-                                        Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(start = 16.dp, top = 18.dp, end = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    if (uiState.busy && !uiState.busyOperation.locksInteraction(uiState.busy)) {
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                        uiState.busyMessage?.let {
+                                            Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
+                                        }
                                     }
-                                }
 
-                                MainContentSwitcher(
-                                    uiState = uiState,
-                                    showInitializing = showInitializing || !modsContentMountReady,
-                                    contentTopInset = modsHeaderContentTopInset,
-                                    actionBarBottomPadding = launcherDockContentPadding + batchEditBarContentPadding,
-                                    showEnabledModsOnly = showEnabledModsOnly,
-                                    showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
-                                    onHeaderCollapsedChange = { modsHeaderCollapsed = it },
-                                    onBatchEditBarStateChange = { batchEditBarState = it },
-                                    actions = actions
-                                )
+                                    MainContentSwitcher(
+                                        uiState = uiState,
+                                        showInitializing = showInitializing || !modsContentMountReady,
+                                        contentTopInset = modsHeaderContentTopInset,
+                                        actionBarBottomPadding = launcherDockContentPadding + batchEditBarContentPadding,
+                                        showEnabledModsOnly = showEnabledModsOnly,
+                                        showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
+                                        onHeaderCollapsedChange = { modsHeaderCollapsed = it },
+                                        onBatchEditBarStateChange = { batchEditBarState = it },
+                                        actions = actions
+                                    )
+                                }
                             }
 
                             CollapsibleFloatingGlassHeader(
@@ -4851,10 +5724,10 @@ private fun LauncherMainScreenContent(
                 onKickMember = actions.onKickEasyTierRoomMember,
                 onConnect = actions.onConnectEasyTier,
                 onDisconnect = actions.onDisconnectEasyTier,
+                onRoomInviteShared = { shareText -> handledEasyTierClipboardText = shareText },
                 tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,
                 onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
                 onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,
-                onReinstallResourcePack = actions.onReinstallResourcePack,
                 initialLoading = easyTierInitialLoadPending,
             )
         }
@@ -5785,11 +6658,6 @@ private fun isExternalResourcePackFailure(report: String): Boolean {
         )
 }
 
-private fun isEasyTierResourcePackMissing(
-    indicator: MainScreenViewModel.EasyTierIndicatorUi,
-): Boolean = indicator.failureCategory == EasyTierFailureCategory.RuntimeBridgeUnavailable &&
-    isExternalResourcePackFailure(indicator.errorSummary)
-
 @Composable
 private fun CrashRecoveryCard(
     content: @Composable ColumnScope.() -> Unit
@@ -6156,11 +7024,13 @@ private fun SteamCloudBottomSheetContent(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text(
-                    text = summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (summary.isNotBlank()) {
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
@@ -6657,10 +7527,8 @@ private fun steamCloudActionBarSummary(
     return when (indicator.state) {
         MainScreenViewModel.SteamCloudIndicatorState.HIDDEN ->
             stringResource(R.string.main_steam_cloud_bar_summary_hidden)
-        MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE ->
-            stringResource(R.string.main_steam_cloud_bar_summary_up_to_date)
-        MainScreenViewModel.SteamCloudIndicatorState.CHECKING ->
-            stringResource(R.string.main_steam_cloud_bar_summary_checking)
+        MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE -> ""
+        MainScreenViewModel.SteamCloudIndicatorState.CHECKING -> ""
         MainScreenViewModel.SteamCloudIndicatorState.CONFLICT -> {
             if (indicator.plan == null) {
                 stringResource(R.string.main_steam_cloud_bar_summary_conflict_missing)
@@ -6669,15 +7537,9 @@ private fun steamCloudActionBarSummary(
             }
         }
         MainScreenViewModel.SteamCloudIndicatorState.SYNCING ->
-            indicator.progressMessage.ifBlank {
-                stringResource(R.string.main_steam_cloud_bar_summary_syncing)
-            }
+            indicator.progressMessage
         MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED ->
-            if (indicator.errorSummary.isNotBlank()) {
-                indicator.errorSummary
-            } else {
-                stringResource(R.string.main_steam_cloud_bar_summary_failed)
-            }
+            indicator.errorSummary
     }
 }
 
@@ -6916,8 +7778,10 @@ private fun ColumnScope.MainContentSwitcher(
                         onRetryWorkshopDownload = actions.onRetryWorkshopDownload,
                         onUpdateWorkshopMod = actions.onUpdateWorkshopMod,
                         onUpgradeWorkshopImportPatches = actions.onUpgradeWorkshopImportPatches,
-                        onOpenWorkshopDetails = actions.onOpenWorkshopDetails,
-                        onSetImportPatchEnabled = actions.onSetImportPatchEnabled,
+                         onOpenWorkshopDetails = actions.onOpenWorkshopDetails,
+                         onOpenAiEditor = actions.onOpenAiEditor,
+                         onSetAgentPatchEnabled = actions.onSetAgentPatchEnabled,
+                         onSetImportPatchEnabled = actions.onSetImportPatchEnabled,
                         onAssociateMods = actions.onAssociateMods,
                         onRemoveModAssociation = actions.onRemoveModAssociation,
                         onClearModAssociationGroup = actions.onClearModAssociationGroup,
@@ -7142,18 +8006,18 @@ private fun StorageIssueCard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
+            SlidingTextSwap(
                 text = issue.title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
-            Text(
+            SlidingTextSwap(
                 text = issue.message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
-            Text(
+            SlidingTextSwap(
                 text = issue.recovery,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer

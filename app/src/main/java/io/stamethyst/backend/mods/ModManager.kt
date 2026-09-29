@@ -669,10 +669,13 @@ object ModManager {
         val launchModFiles = ArrayList<File>()
         val launchModIds = ArrayList<String>()
         val filesByModId = LinkedHashMap<String, File>()
+        val enabledOptionalModIds = LinkedHashSet(optionalSelection.enabledOptionalModIds)
+        val enabledParentModIds = LinkedHashSet<String>()
         requiredEntries.forEach { entry ->
             launchModFiles.add(entry.jarFile)
             launchModIds.add(entry.launchModId)
             filesByModId.putIfAbsent(entry.normalizedModId, entry.jarFile)
+            enabledParentModIds.add(entry.normalizedModId)
         }
         optionalSelection.launchEntries.forEach { entry ->
             launchModFiles.add(entry.jarFile)
@@ -685,12 +688,26 @@ object ModManager {
             if (normalizedLaunchModId.isNotEmpty()) {
                 filesByModId.putIfAbsent(normalizedLaunchModId, entry.jarFile)
             }
+            if (entry.normalizedModId.isNotEmpty()) {
+                enabledParentModIds.add(entry.normalizedModId)
+            }
+            if (entry.normalizedManifestModId.isNotEmpty()) {
+                enabledParentModIds.add(entry.normalizedManifestModId)
+            }
+        }
+        // AI patch mods are loaded from agent_mods/ directly; a patch only launches while its
+        // parent mod is enabled, otherwise ModTheSpire would fail its dependency check.
+        AgentPatchModManager.listEnabledForLaunch(context, enabledParentModIds).forEach { patch ->
+            launchModFiles.add(patch.jarFile)
+            launchModIds.add(patch.patchModId)
+            filesByModId.putIfAbsent(patch.patchModId, patch.jarFile)
+            enabledOptionalModIds.add(patch.patchModId)
         }
         return LaunchModSnapshot(
             enabledLibraryFiles = ArrayList(optionalSelection.enabledLibraryFiles),
             launchModFiles = ArrayList(launchModFiles),
             launchModIds = ArrayList(launchModIds),
-            enabledOptionalModIds = LinkedHashSet(optionalSelection.enabledOptionalModIds),
+            enabledOptionalModIds = enabledOptionalModIds,
             launchModFilesByModId = LinkedHashMap(filesByModId)
         )
     }
@@ -754,18 +771,22 @@ object ModManager {
     @Throws(IOException::class)
     fun listMtsLaunchModFiles(context: Context): List<File> {
         val launchModFiles = ArrayList<File>()
+        val enabledParentModIds = LinkedHashSet<String>()
+        enabledParentModIds.add(MOD_ID_BASEMOD)
         launchModFiles.add(
             resolveRequiredLaunchModFile(
                 RuntimePaths.importedBaseModJar(context),
                 "BaseMod.jar"
             )
         )
+        enabledParentModIds.add(MOD_ID_STSLIB)
         launchModFiles.add(
             resolveRequiredLaunchModFile(
                 RuntimePaths.importedStsLibJar(context),
                 "StSLib.jar"
             )
         )
+        enabledParentModIds.add(MOD_ID_AMETHYST_RUNTIME_COMPAT)
         launchModFiles.add(
             resolveRequiredLaunchModFile(
                 RuntimePaths.importedAmethystRuntimeCompatJar(context),
@@ -773,6 +794,7 @@ object ModManager {
             )
         )
         if (LauncherConfig.readSpecialKeyInputMode(context) == SpecialKeyInputMode.BUILT_IN_MOD) {
+            enabledParentModIds.add(MOD_ID_AMETHYST_FLOATING_TOOLS)
             launchModFiles.add(
                 resolveRequiredLaunchModFile(
                     RuntimePaths.importedAmethystFloatingToolsJar(context),
@@ -781,6 +803,7 @@ object ModManager {
             )
         }
         if (LauncherConfig.isRamSaverEnabled(context)) {
+            enabledParentModIds.add(MOD_ID_RAM_SAVER)
             launchModFiles.add(
                 resolveRequiredLaunchModFile(
                     RuntimePaths.importedRamSaverJar(context),
@@ -789,6 +812,7 @@ object ModManager {
             )
         }
         if (isFrameProbeEnabled(context)) {
+            enabledParentModIds.add(MOD_ID_AMETHYST_FRAME_PROBE)
             launchModFiles.add(
                 resolveRequiredLaunchModFile(
                     RuntimePaths.importedAmethystFrameProbeJar(context),
@@ -798,6 +822,15 @@ object ModManager {
         }
         resolveOptionalLaunchSelection(context).launchEntries.forEach { entry ->
             launchModFiles.add(entry.jarFile)
+            if (entry.normalizedModId.isNotEmpty()) {
+                enabledParentModIds.add(entry.normalizedModId)
+            }
+            if (entry.normalizedManifestModId.isNotEmpty()) {
+                enabledParentModIds.add(entry.normalizedManifestModId)
+            }
+        }
+        AgentPatchModManager.listEnabledForLaunch(context, enabledParentModIds).forEach { patch ->
+            launchModFiles.add(patch.jarFile)
         }
         return launchModFiles
     }

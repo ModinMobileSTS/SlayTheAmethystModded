@@ -10,24 +10,23 @@ import io.stamethyst.ui.settings.native_library.*
 import io.stamethyst.ui.settings.services.*
 import io.stamethyst.ui.settings.steamcloud.*
 
-import android.view.HapticFeedbackConstants
+import android.content.Context
+import android.hardware.display.DisplayManager
+import android.os.Handler
+import android.os.Looper
+import android.view.Display
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,26 +35,31 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.CardPlayOptimizationMode
+import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.config.TouchscreenInputMode
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.main.ModSuggestionInfoButton
+import io.stamethyst.ui.main.SlidingTextSwap
 import kotlin.math.roundToInt
 
 
 internal data class PerformanceSettingsActions(
     val onRenderScaleSelected: (Float) -> Unit,
     val onTargetFpsSelected: (Float) -> Unit,
-    val onNonRecommendedFpsEnabledChanged: (Boolean) -> Unit,
-    val onSwappyFramePacingEnabledChanged: (Boolean) -> Unit,
+    val onFramePacingModeChanged: (FramePacingMode) -> Unit,
     val onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
     val onRamSaverEnabledChanged: (Boolean) -> Unit,
     val onMtsPatchCacheEnabledChanged: (Boolean) -> Unit,
@@ -110,12 +114,37 @@ internal fun SettingsPerformanceSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: PerformanceSettingsActions,
 ) {
-    val view = LocalView.current
+    val context = LocalContext.current
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
         mutableFloatStateOf(uiState.selectedRenderScale)
     }
-    var lastRenderScaleStep by remember(uiState.selectedRenderScale) {
-        mutableIntStateOf(renderScaleToStep(uiState.selectedRenderScale))
+    var targetFpsSliderValue by remember(uiState.selectedTargetFps) {
+        mutableFloatStateOf(targetFpsToSliderValue(uiState.selectedTargetFps))
+    }
+    var showFpsRecommendationDialog by rememberSaveable { mutableStateOf(false) }
+    var displayRefreshRateHz by remember(context) {
+        mutableFloatStateOf(readDefaultDisplayRefreshRateHz(context))
+    }
+    val displayManager = remember(context) {
+        context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+    }
+
+    DisposableEffect(displayManager, context) {
+        if (displayManager == null) {
+            onDispose { }
+        } else {
+            val listener = object : DisplayManager.DisplayListener {
+                override fun onDisplayAdded(displayId: Int) = Unit
+                override fun onDisplayRemoved(displayId: Int) = Unit
+                override fun onDisplayChanged(displayId: Int) {
+                    if (displayId == Display.DEFAULT_DISPLAY) {
+                        displayRefreshRateHz = readDefaultDisplayRefreshRateHz(context)
+                    }
+                }
+            }
+            displayManager.registerDisplayListener(listener, Handler(Looper.getMainLooper()))
+            onDispose { displayManager.unregisterDisplayListener(listener) }
+        }
     }
 
     SettingsSwitchItem(
@@ -140,39 +169,28 @@ internal fun SettingsPerformanceSection(
         )
     )
 
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.swappyFramePacingEnabled,
-            enabled = !uiState.busy,
-            title = stringResource(R.string.settings_swappy_frame_pacing_title),
-            description = stringResource(R.string.settings_swappy_frame_pacing_desc),
-            onCheckedChange = actions.onSwappyFramePacingEnabledChanged,
-            chipText = stringResource(R.string.settings_ram_saver_experimental_chip),
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = stringResource(R.string.settings_render_scale_title),
+            style = MaterialTheme.typography.bodyMedium,
         )
-    )
-
-    Text(
-        text = stringResource(R.string.settings_render_scale_title),
-        style = MaterialTheme.typography.bodyMedium
-    )
-    Text(
-        text = RenderScaleService.format(renderScaleSliderValue),
-        style = MaterialTheme.typography.bodySmall
-    )
+        SlidingTextSwap(
+            text = RenderScaleService.format(renderScaleSliderValue),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
     Text(
         text = stringResource(R.string.settings_render_scale_desc),
-        style = MaterialTheme.typography.bodySmall
+        style = MaterialTheme.typography.bodySmall,
     )
-    Slider(
+    SettingsDiscreteSlider(
         value = renderScaleSliderValue,
-        onValueChange = { value ->
-            renderScaleSliderValue = value
-            val step = renderScaleToStep(value)
-            if (step != lastRenderScaleStep) {
-                lastRenderScaleStep = step
-                performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
-            }
-        },
+        onValueChange = { renderScaleSliderValue = it },
         onValueChangeFinished = { actions.onRenderScaleSelected(renderScaleSliderValue) },
         valueRange = RenderScaleService.MIN_RENDER_SCALE..RenderScaleService.MAX_RENDER_SCALE,
         steps = ((RenderScaleService.MAX_RENDER_SCALE - RenderScaleService.MIN_RENDER_SCALE) / 0.01f)
@@ -181,51 +199,80 @@ internal fun SettingsPerformanceSection(
         modifier = Modifier.fillMaxWidth()
     )
 
-    androidx.compose.foundation.layout.Row(
+    val sliderTargetFps = targetFpsFromSliderValue(targetFpsSliderValue)
+    val targetFpsDescription = if (sliderTargetFps == LauncherConfig.UNLIMITED_TARGET_FPS) {
+        stringResource(R.string.settings_target_fps_unlimited)
+    } else {
+        stringResource(R.string.settings_target_fps_option, sliderTargetFps)
+    }
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Checkbox(
-            checked = uiState.nonRecommendedFpsEnabled,
-            onCheckedChange = actions.onNonRecommendedFpsEnabledChanged,
-            enabled = !uiState.busy
-        )
-        Text(
-            text = stringResource(R.string.settings_non_recommended_fps_enabled),
-            style = MaterialTheme.typography.bodyMedium
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.settings_target_fps_title),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            ModSuggestionInfoButton(
+                enabled = !uiState.busy && displayRefreshRateHz > 0f,
+                contentDescription = stringResource(R.string.settings_target_fps_recommendation_button),
+                onClick = { showFpsRecommendationDialog = true },
+            )
+        }
+        SlidingTextSwap(
+            text = targetFpsDescription,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    AnimatedVisibility(
-        visible = uiState.nonRecommendedFpsEnabled,
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut()
-    ) {
-        Text(
-            text = stringResource(R.string.settings_non_recommended_fps_notice),
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-    SettingsChoiceDialogItem(
-        SettingsChoiceSpec(
-            title = stringResource(R.string.settings_target_fps_title),
-            valueText = if (uiState.selectedTargetFps == uiState.selectedTargetFps.roundToInt().toFloat()) {
-                stringResource(R.string.settings_target_fps_option, uiState.selectedTargetFps.roundToInt())
-            } else {
-                stringResource(R.string.settings_target_fps_option_decimal, uiState.selectedTargetFps)
+    SettingsDiscreteSlider(
+        value = targetFpsSliderValue,
+        onValueChange = { targetFpsSliderValue = it },
+        onValueChangeFinished = {
+            actions.onTargetFpsSelected(targetFpsFromSliderValue(targetFpsSliderValue).toFloat())
+        },
+        valueRange = 0f..LauncherConfig.MAX_TARGET_FPS.toFloat(),
+        steps = LauncherConfig.MAX_TARGET_FPS / LauncherConfig.TARGET_FPS_STEP - 1,
+        enabled = !uiState.busy,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                stateDescription = targetFpsDescription
             },
-            enabled = !uiState.busy,
-            selectedValue = uiState.selectedTargetFps,
-            options = uiState.targetFpsOptions,
-            optionLabel = { fps ->
-                if (fps == fps.roundToInt().toFloat()) {
-                    stringResource(R.string.settings_target_fps_option, fps.roundToInt())
-                } else {
-                    stringResource(R.string.settings_target_fps_option_decimal, fps)
+    )
+    if (showFpsRecommendationDialog) {
+        val recommendedTargetFps = recommendTargetFps(displayRefreshRateHz)
+        AlertDialog(
+            onDismissRequest = { showFpsRecommendationDialog = false },
+            title = { Text(stringResource(R.string.settings_target_fps_recommendation_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.settings_target_fps_recommendation_message,
+                        displayRefreshRateHz,
+                        recommendedTargetFps,
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        actions.onTargetFpsSelected(recommendedTargetFps.toFloat())
+                        showFpsRecommendationDialog = false
+                    }
+                ) {
+                    Text(stringResource(R.string.settings_target_fps_set_recommended))
                 }
             },
-            onOptionSelected = actions.onTargetFpsSelected,
-        ),
-    )
+            dismissButton = {
+                TextButton(onClick = { showFpsRecommendationDialog = false }) {
+                    Text(stringResource(R.string.settings_target_fps_recommendation_confirm))
+                }
+            },
+        )
+    }
 
     SettingsChoiceDialogItem(
         SettingsChoiceSpec(
@@ -236,11 +283,58 @@ internal fun SettingsPerformanceSection(
             options = VirtualResolutionMode.entries,
             optionLabel = { mode -> virtualResolutionModeDisplayName(mode) },
             onOptionSelected = actions.onVirtualResolutionModeChanged,
-            description = virtualResolutionModeDescription(uiState.virtualResolutionMode),
+            description = null,
             dialogDescription = virtualResolutionModeDescription(uiState.virtualResolutionMode),
         )
     )
 
+    SettingsChoiceDialogItem(
+        SettingsChoiceSpec(
+            title = stringResource(R.string.settings_frame_pacing_mode_title),
+            valueText = framePacingModeDisplayName(uiState.framePacingMode),
+            enabled = !uiState.busy,
+            selectedValue = uiState.framePacingMode,
+            options = FramePacingMode.entries,
+            optionLabel = { mode -> framePacingModeDisplayName(mode) },
+            onOptionSelected = actions.onFramePacingModeChanged,
+            description = stringResource(R.string.settings_frame_pacing_mode_hint),
+            dialogDescription = null,
+        )
+    )
+
+}
+
+internal fun targetFpsToSliderValue(targetFps: Float): Float {
+    return if (targetFps <= 0f) {
+        LauncherConfig.MAX_TARGET_FPS.toFloat()
+    } else {
+        (targetFps - LauncherConfig.MIN_TARGET_FPS)
+            .coerceIn(0f, (LauncherConfig.MAX_TARGET_FPS - LauncherConfig.TARGET_FPS_STEP).toFloat())
+    }
+}
+
+internal fun targetFpsFromSliderValue(sliderValue: Float): Int {
+    val snappedValue = (sliderValue / LauncherConfig.TARGET_FPS_STEP).roundToInt() *
+        LauncherConfig.TARGET_FPS_STEP
+    return if (snappedValue >= LauncherConfig.MAX_TARGET_FPS) {
+        LauncherConfig.UNLIMITED_TARGET_FPS
+    } else {
+        snappedValue + LauncherConfig.MIN_TARGET_FPS
+    }
+}
+
+internal fun recommendTargetFps(refreshRateHz: Float): Int {
+    val steppedRecommendation = (refreshRateHz * 1.5f / LauncherConfig.TARGET_FPS_STEP)
+        .roundToInt() * LauncherConfig.TARGET_FPS_STEP
+    return steppedRecommendation.coerceIn(LauncherConfig.MIN_TARGET_FPS, LauncherConfig.MAX_TARGET_FPS)
+}
+
+private fun readDefaultDisplayRefreshRateHz(context: Context): Float {
+    return runCatching {
+        val manager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+        @Suppress("DEPRECATION")
+        manager?.getDisplay(Display.DEFAULT_DISPLAY)?.refreshRate
+    }.getOrNull()?.takeIf { it > 0f && !it.isNaN() } ?: 0f
 }
 
 
@@ -249,12 +343,8 @@ internal fun SettingsGameplayDisplaySection(
     uiState: SettingsScreenViewModel.UiState,
     actions: GameplayDisplaySettingsActions,
 ) {
-    val view = LocalView.current
     var gameplayFontScaleSliderValue by remember(uiState.gameplayFontScale) {
         mutableFloatStateOf(uiState.gameplayFontScale)
-    }
-    var lastGameplayFontScaleStep by remember(uiState.gameplayFontScale) {
-        mutableIntStateOf(gameplayFontScaleToStep(uiState.gameplayFontScale))
     }
 
     SettingsSwitchItem(
@@ -302,16 +392,10 @@ internal fun SettingsGameplayDisplaySection(
         text = stringResource(R.string.settings_gameplay_font_scale_desc),
         style = MaterialTheme.typography.bodySmall,
     )
-    Slider(
+    SettingsDiscreteSlider(
         value = gameplayFontScaleSliderValue,
         onValueChange = { value ->
-            val normalized = GameplaySettingsService.normalizeFontScale(value)
-            gameplayFontScaleSliderValue = normalized
-            val step = gameplayFontScaleToStep(normalized)
-            if (step != lastGameplayFontScaleStep) {
-                lastGameplayFontScaleStep = step
-                performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
-            }
+            gameplayFontScaleSliderValue = GameplaySettingsService.normalizeFontScale(value)
         },
         onValueChangeFinished = { actions.onGameplayFontScaleChanged(gameplayFontScaleSliderValue) },
         valueRange = GameplaySettingsService.MIN_FONT_SCALE..GameplaySettingsService.MAX_FONT_SCALE,
@@ -331,19 +415,6 @@ internal fun SettingsGameplayDisplaySection(
         optionLabel = { timeoutMinutes -> keepScreenOnTimeoutDisplayName(timeoutMinutes) },
         onOptionSelected = actions.onKeepScreenOnTimeoutSelected,
     )
-}
-
-
-private fun renderScaleToStep(value: Float): Int {
-    return ((value - RenderScaleService.MIN_RENDER_SCALE) / 0.01f).roundToInt()
-}
-
-
-private fun gameplayFontScaleToStep(value: Float): Int {
-    return (
-        (GameplaySettingsService.normalizeFontScale(value) - GameplaySettingsService.MIN_FONT_SCALE) /
-            GameplaySettingsService.FONT_SCALE_STEP
-        ).roundToInt()
 }
 
 
@@ -649,6 +720,18 @@ private fun virtualResolutionModeDisplayName(mode: VirtualResolutionMode): Strin
         VirtualResolutionMode.RATIO_16_9 ->
             stringResource(R.string.settings_virtual_resolution_mode_16_9)
     }
+}
+
+
+@Composable
+private fun framePacingModeDisplayName(mode: FramePacingMode): String {
+    return stringResource(
+        when (mode) {
+            FramePacingMode.BUILT_IN -> R.string.settings_frame_pacing_mode_built_in
+            FramePacingMode.SWAPPY -> R.string.settings_frame_pacing_mode_swappy
+            FramePacingMode.OFF -> R.string.settings_frame_pacing_mode_off
+        }
+    )
 }
 
 

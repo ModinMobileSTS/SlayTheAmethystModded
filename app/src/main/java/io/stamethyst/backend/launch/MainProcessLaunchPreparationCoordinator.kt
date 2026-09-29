@@ -3,6 +3,7 @@ package io.stamethyst.backend.launch
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.process.AppProcess
 import java.io.IOException
 
@@ -17,7 +18,8 @@ object MainProcessLaunchPreparationCoordinator {
     fun prepareBeforeLaunch(
         context: Context,
         launchMode: String,
-        progressCallback: StartupProgressCallback? = null
+        progressCallback: StartupProgressCallback? = null,
+        launchSnapshotOverride: ModManager.LaunchModSnapshot? = null
     ) {
         val startedAtMs = SystemClock.elapsedRealtime()
         val appContext = context.applicationContext
@@ -40,7 +42,8 @@ object MainProcessLaunchPreparationCoordinator {
                             progressCallback,
                             0,
                             COMMON_PREPARATION_END_PERCENT
-                        )
+                        ),
+                        launchSnapshotOverride = launchSnapshotOverride
                     )
                 }
                 measureStep(appContext, "game_body_patch") {

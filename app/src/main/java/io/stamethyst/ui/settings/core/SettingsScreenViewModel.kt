@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
+import io.stamethyst.clearSlingBreakWebViewData
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
 import io.stamethyst.backend.fs.LauncherJunkFileCleaner
@@ -75,7 +76,9 @@ import io.stamethyst.backend.nativelib.NativeLibraryMarketPackageState
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.resources.ArthasResourcePackService
+import io.stamethyst.backend.resources.ArthasResourcePackState
 import io.stamethyst.backend.resources.ResourcePackStore
+import io.stamethyst.backend.resources.ResourcePackInspection
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -86,7 +89,6 @@ import io.stamethyst.backend.render.MobileGluesMultidrawMode
 import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
 import io.stamethyst.backend.render.MobileGluesPreset
 import io.stamethyst.backend.render.MobileGluesSettings
-import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.RendererAvailability
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
@@ -118,9 +120,11 @@ import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.BaiduTranslationCredentials
 import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.FramePacingMode
 import kotlin.math.roundToInt
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
@@ -128,6 +132,7 @@ import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconController
@@ -157,6 +162,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 import java.io.IOException
+import java.lang.ref.WeakReference
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -313,7 +319,7 @@ class SettingsScreenViewModel : ViewModel() {
         val selectedRenderScale: Float = RenderScaleService.DEFAULT_RENDER_SCALE,
         val selectedTargetFps: Float = LauncherPreferences.DEFAULT_TARGET_FPS.toFloat(),
         val nonRecommendedFpsEnabled: Boolean = false,
-        val swappyFramePacingEnabled: Boolean = LauncherPreferences.DEFAULT_SWAPPY_FRAME_PACING_ENABLED,
+        val framePacingMode: FramePacingMode = LauncherPreferences.DEFAULT_FRAME_PACING_MODE,
         val virtualResolutionMode: VirtualResolutionMode =
             LauncherPreferences.DEFAULT_VIRTUAL_RESOLUTION_MODE,
         val renderSurfaceBackend: RenderSurfaceBackend = LauncherPreferences.DEFAULT_RENDER_SURFACE_BACKEND,
@@ -356,6 +362,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_MODE,
         val gpuResourceGuardianPressureDownscaleEnabled: Boolean =
             LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED,
+        val accelerationStrategy: AccelerationStrategy =
+            LauncherPreferences.DEFAULT_ACCELERATION_STRATEGY,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val themeColor: LauncherThemeColor = LauncherPreferences.DEFAULT_THEME_COLOR,
         val launcherIconMode: LauncherIconMode = LauncherPreferences.DEFAULT_LAUNCHER_ICON_MODE,
@@ -401,6 +409,7 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED,
         val localTestCloudControlEnabled: Boolean = false,
         val steamAchievementDebugModeEnabled: Boolean = false,
+        val slingBreakAudioDebugModeEnabled: Boolean = false,
         val localTestOnlineServiceBaseUrl: String = "http://10.126.126.2:3001",
         val localTestConfigServerUrl: String = "udp://10.126.126.2:22020",
         val localTestEntryNodeUrl: String = "tcp://10.126.126.2:11010",
@@ -485,6 +494,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_WORKSHOP_WATT_ACCELERATION_ENABLED,
         val workshopSteamLanguage: SteamLanguagePreference =
             LauncherPreferences.DEFAULT_WORKSHOP_STEAM_LANGUAGE,
+        val workshopDefaultSort: WorkshopBrowseSort =
+            LauncherPreferences.DEFAULT_WORKSHOP_DEFAULT_SORT,
         val workshopAutoImportEnabled: Boolean =
             LauncherPreferences.DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED,
         val workshopAutoImportAtlasDownscaleEnabled: Boolean =
@@ -524,6 +535,38 @@ class SettingsScreenViewModel : ViewModel() {
         val totalMemoryBytes: Long
     )
 
+    private data class StatusRefreshResult(
+        val snapshot: SettingsRepository.SettingsSnapshot,
+        val targetFpsOptions: List<Float>,
+        val selectedTargetFps: Float,
+        val statusText: String,
+        val logPathText: String,
+        val resourcePack: ResourcePackInspection,
+        val arthasResource: ArthasResourcePackState,
+        val steamCloudAccountName: String,
+        val steamCloudRefreshTokenConfigured: Boolean,
+        val steamCloudGuardDataConfigured: Boolean,
+        val steamCloudPersonaName: String,
+        val steamCloudAvatarUrl: String,
+        val steamCloudSaveMode: SteamCloudSaveMode,
+        val steamCloudSyncBlacklistPaths: Set<String>,
+        val steamCloudSyncBlacklistCandidates: List<String>,
+        val steamCloudWattAccelerationEnabled: Boolean,
+        val steamCloudAutoLaunchAfterSyncEnabled: Boolean,
+        val steamGamePresenceEnabled: Boolean,
+        val richPresenceDisplayPreferences: RichPresenceDisplayPreferences,
+        val steamAchievementSyncEnabled: Boolean,
+        val achievementUnlockNotificationEnabled: Boolean,
+        val workshopMaxConcurrentDownloads: Int,
+        val workshopDownloadThreads: Int,
+        val workshopWattAccelerationEnabled: Boolean,
+        val steamCloudCredentialsSummary: String,
+        val steamCloudStatusText: String,
+        val steamCloudManifestSummary: String,
+        val steamCloudManifestAvailable: Boolean,
+        val easyTierSettings: EasyTierSettingsUiState,
+    )
+
     private class PauseController {
         private val lock = ReentrantLock()
         private val resumed: Condition = lock.newCondition()
@@ -553,10 +596,29 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    internal class StatusRefreshBusyTracker {
+        private var clearBusyRequested = false
+
+        @Synchronized
+        fun begin(clearBusy: Boolean): Boolean {
+            clearBusyRequested = clearBusyRequested || clearBusy
+            return clearBusyRequested
+        }
+
+        @Synchronized
+        fun complete() {
+            clearBusyRequested = false
+        }
+    }
+
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val statusRefreshExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val steamCloudLoginCleanupExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     // A slow refresh must not overwrite a newer setting change with its older snapshot.
     private val statusRefreshGeneration = AtomicLong(0L)
+    private var statusRefreshTask: Future<*>? = null
+    private val statusRefreshBusyTracker = StatusRefreshBusyTracker()
+    private var boundActivityReference: WeakReference<Activity>? = null
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
     private var nativeLibraryMarketCatalog: List<NativeLibraryMarketCatalogEntry> = emptyList()
     private var pendingSteamCloudCodeFuture: CompletableFuture<String>? = null
@@ -588,30 +650,21 @@ class SettingsScreenViewModel : ViewModel() {
         keepScreenOnTimeoutMinuteOptions: IntArray =
             LauncherPreferences.KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS
     ) {
-        syncThemeAppearance(activity)
-        val options = resolveTargetFpsOptions(activity, uiState.nonRecommendedFpsEnabled)
-        if (uiState.targetFpsOptions != options) {
-            uiState = uiState.copy(targetFpsOptions = options)
-        }
         val keepScreenOnOptions = keepScreenOnTimeoutMinuteOptions.toList()
         if (uiState.keepScreenOnTimeoutMinuteOptions != keepScreenOnOptions) {
             uiState = uiState.copy(keepScreenOnTimeoutMinuteOptions = keepScreenOnOptions)
         }
+        if (boundActivityReference?.get() === activity) {
+            return
+        }
+        boundActivityReference = WeakReference(activity)
+
+        // LauncherActivity synchronizes the theme before composing the root content. The
+        // remaining settings snapshot is loaded by refreshStatus so entering settings does
+        // not synchronously scan storage on the UI thread.
         syncStoredUpdateState(activity)
-        runCatching {
-            SettingsRepository.loadSettingsSnapshot(activity)
-        }.getOrNull()?.let { snapshot ->
-            applySnapshot(activity, snapshot)
-        }
-        val selectedTargetFps = uiState.selectedTargetFps
-        if (!uiState.nonRecommendedFpsEnabled && selectedTargetFps !in uiState.targetFpsOptions) {
-            val recommendedTargetFps = uiState.targetFpsOptions.first()
-            uiState = uiState.copy(selectedTargetFps = recommendedTargetFps)
-            saveTargetFpsSelection(activity, recommendedTargetFps)
-        }
         seedSteamCloudIdentityFromStore(activity)
         refreshStatus(activity, clearBusy = false)
-        refreshArthasResourceState(activity)
     }
 
     /**
@@ -1247,24 +1300,18 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun refreshStatus(host: Activity, clearBusy: Boolean = true) {
         val refreshGeneration = statusRefreshGeneration.incrementAndGet()
-        executor.execute {
+        val refreshClearBusy = statusRefreshBusyTracker.begin(clearBusy)
+        val previousUiState = uiState
+        statusRefreshTask?.cancel(true)
+        statusRefreshTask = statusRefreshExecutor.submit {
             try {
+                throwIfStatusRefreshStale(refreshGeneration)
                 val hasJar = hasValidImportedStsJar(host)
-                val snapshot = SettingsRepository.loadSettingsSnapshot(host)
-                val rendering = snapshot.rendering
-                val jvm = snapshot.jvm
-                val input = snapshot.input
-                val diagnostics = snapshot.diagnostics
-                val compatibility = snapshot.compatibility
-                val rendererDecision = rendering.rendererDecision
-                val mobileGluesSettings = rendering.mobileGluesSettings
-                val rendererBackendOptions = rendererDecision.availableBackends.map { availability ->
-                    RendererBackendOptionState(
-                        backend = availability.backend,
-                        available = availability.available,
-                        reasonText = availability.describeUnavailable(host)
-                    )
-                }
+                val loadedSnapshot = SettingsRepository.loadSettingsSnapshot(host)
+                throwIfStatusRefreshStale(refreshGeneration)
+                val selectedTargetFps = loadedSnapshot.rendering.targetFps
+                val targetFpsOptions = resolveTargetFpsOptions()
+                val snapshot = loadedSnapshot
 
                 val mods = ModManager.listInstalledMods(host)
                 var optionalTotal = 0
@@ -1315,8 +1362,9 @@ class SettingsScreenViewModel : ViewModel() {
                     bundledAssetPath = "components/mods/RamSaver.jar"
                 )
                 val deviceRuntimeStatus = collectDeviceRuntimeStatus(host)
-                val resourcePack = ResourcePackStore.inspect(host)
-                val previousUiState = uiState
+                val resourcePack = ResourcePackStore.inspectQuick(host)
+                val arthasResource = ArthasResourcePackService.stateQuick(host)
+                throwIfStatusRefreshStale(refreshGeneration)
                 val steamCloudAuthRead = runCatching {
                     SteamCloudAuthStore.readSnapshotWithStatus(host)
                 }.getOrElse { error ->
@@ -1401,6 +1449,10 @@ class SettingsScreenViewModel : ViewModel() {
                     }
                 }
 
+                if (!arthasResource.valid && snapshot.diagnostics.arthasAnalysisEnabled) {
+                    saveArthasAnalysisSelection(host, false)
+                }
+
                 val status = buildStatusText(
                     host = host,
                     snapshot = snapshot,
@@ -1422,6 +1474,10 @@ class SettingsScreenViewModel : ViewModel() {
                     steamCloudBaselineSnapshot,
                 )
                 val easyTierSettings = buildEasyTierSettingsUiState()
+                val logPathText = buildLogPathText(
+                    host = host,
+                    logs = JvmLogRotationManager.listLogFiles(host),
+                )
 
                 val displayedAccountName =
                     if (preserveSteamCloudDisplay) previousUiState.steamCloudAccountName
@@ -1451,65 +1507,115 @@ class SettingsScreenViewModel : ViewModel() {
                     if (preserveSteamCloudDisplay) previousUiState.steamCloudManifestAvailable
                     else steamCloudManifestSnapshot != null
 
+                val result = StatusRefreshResult(
+                    snapshot = snapshot,
+                    targetFpsOptions = targetFpsOptions,
+                    selectedTargetFps = selectedTargetFps,
+                    statusText = status,
+                    logPathText = logPathText,
+                    resourcePack = resourcePack,
+                    arthasResource = arthasResource,
+                    steamCloudAccountName = displayedAccountName,
+                    steamCloudRefreshTokenConfigured = displayedRefreshTokenConfigured,
+                    steamCloudGuardDataConfigured = displayedGuardDataConfigured,
+                    steamCloudPersonaName = displayedPersonaName,
+                    steamCloudAvatarUrl = displayedAvatarUrl,
+                    steamCloudSaveMode = steamCloudSaveMode,
+                    steamCloudSyncBlacklistPaths = steamCloudSyncBlacklistPaths,
+                    steamCloudSyncBlacklistCandidates = steamCloudSyncBlacklistCandidates,
+                    steamCloudWattAccelerationEnabled =
+                        LauncherPreferences.isSteamCloudWattAccelerationEnabled(host),
+                    steamCloudAutoLaunchAfterSyncEnabled =
+                        LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host),
+                    steamGamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(host),
+                    richPresenceDisplayPreferences =
+                        LauncherPreferences.readRichPresenceDisplayPreferences(host),
+                    steamAchievementSyncEnabled = LauncherPreferences.isSteamAchievementSyncEnabled(host),
+                    achievementUnlockNotificationEnabled =
+                        LauncherPreferences.isAchievementUnlockNotificationEnabled(host),
+                    workshopMaxConcurrentDownloads = snapshot.market.workshopMaxConcurrentDownloads,
+                    workshopDownloadThreads = snapshot.market.workshopDownloadThreads,
+                    workshopWattAccelerationEnabled = snapshot.market.workshopWattAccelerationEnabled,
+                    steamCloudCredentialsSummary = displayedCredentialsSummary,
+                    steamCloudStatusText = displayedStatusText,
+                    steamCloudManifestSummary = displayedManifestSummary,
+                    steamCloudManifestAvailable = displayedManifestAvailable,
+                    easyTierSettings = easyTierSettings,
+                )
+
                 host.runOnUiThread {
                     if (refreshGeneration != statusRefreshGeneration.get()) {
                         return@runOnUiThread
                     }
-                    applySnapshot(host, snapshot)
+                    applySnapshot(host, result.snapshot)
                     uiState = uiState.copy(
-                        busy = if (clearBusy) false else uiState.busy,
-                        busyOperation = if (clearBusy) UiBusyOperation.NONE else uiState.busyOperation,
-                        busyMessage = if (clearBusy) null else uiState.busyMessage,
-                        busyProgressPercent = if (clearBusy) null else uiState.busyProgressPercent,
-                        statusText = status,
-                        logPathText = buildLogPathText(host),
-                        steamCloudAccountName = displayedAccountName,
-                        steamCloudRefreshTokenConfigured = displayedRefreshTokenConfigured,
-                        steamCloudGuardDataConfigured = displayedGuardDataConfigured,
-                        steamCloudPersonaName = displayedPersonaName,
-                        steamCloudAvatarUrl = displayedAvatarUrl,
-                        steamCloudSaveMode = steamCloudSaveMode,
-                        steamCloudSyncBlacklistPaths = steamCloudSyncBlacklistPaths,
-                        steamCloudSyncBlacklistCandidates = steamCloudSyncBlacklistCandidates,
-                        steamCloudWattAccelerationEnabled =
-                            LauncherPreferences.isSteamCloudWattAccelerationEnabled(host),
-                        steamCloudAutoLaunchAfterSyncEnabled =
-                            LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host),
-                        steamGamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(host),
-                        richPresenceDisplayPreferences =
-                            LauncherPreferences.readRichPresenceDisplayPreferences(host),
-                        steamAchievementSyncEnabled = LauncherPreferences.isSteamAchievementSyncEnabled(host),
-                        achievementUnlockNotificationEnabled =
-                            LauncherPreferences.isAchievementUnlockNotificationEnabled(host),
-                        workshopMaxConcurrentDownloads = LauncherPreferences.readWorkshopMaxConcurrentDownloads(host),
-                        workshopDownloadThreads = LauncherPreferences.readWorkshopDownloadThreads(host),
-                        workshopWattAccelerationEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(host),
-                        baiduTranslationCredentialsConfigured = BaiduTranslationCredentialsRepository(host).hasConfiguredCredentials(),
-                        steamCloudCredentialsSummary = displayedCredentialsSummary,
-                        steamCloudStatusText = displayedStatusText,
-                        steamCloudManifestSummary = displayedManifestSummary,
-                        steamCloudManifestAvailable = displayedManifestAvailable,
-                        resourcePackReady = resourcePack.ready,
-                        resourcePackVersion = resourcePack.version.orEmpty(),
-                        resourcePackId = resourcePack.packId.orEmpty(),
-                        resourcePackIssues = resourcePack.issues.joinToString("; "),
-                        easyTierSettings = easyTierSettings,
+                        busy = if (refreshClearBusy) false else uiState.busy,
+                        busyOperation = if (refreshClearBusy) UiBusyOperation.NONE else uiState.busyOperation,
+                        busyMessage = if (refreshClearBusy) null else uiState.busyMessage,
+                        busyProgressPercent = if (refreshClearBusy) null else uiState.busyProgressPercent,
+                        targetFpsOptions = result.targetFpsOptions,
+                        selectedTargetFps = result.selectedTargetFps,
+                        statusText = result.statusText,
+                        logPathText = result.logPathText,
+                        steamCloudAccountName = result.steamCloudAccountName,
+                        steamCloudRefreshTokenConfigured = result.steamCloudRefreshTokenConfigured,
+                        steamCloudGuardDataConfigured = result.steamCloudGuardDataConfigured,
+                        steamCloudPersonaName = result.steamCloudPersonaName,
+                        steamCloudAvatarUrl = result.steamCloudAvatarUrl,
+                        steamCloudSaveMode = result.steamCloudSaveMode,
+                        steamCloudSyncBlacklistPaths = result.steamCloudSyncBlacklistPaths,
+                        steamCloudSyncBlacklistCandidates = result.steamCloudSyncBlacklistCandidates,
+                        steamCloudWattAccelerationEnabled = result.steamCloudWattAccelerationEnabled,
+                        steamCloudAutoLaunchAfterSyncEnabled = result.steamCloudAutoLaunchAfterSyncEnabled,
+                        steamGamePresenceEnabled = result.steamGamePresenceEnabled,
+                        richPresenceDisplayPreferences = result.richPresenceDisplayPreferences,
+                        steamAchievementSyncEnabled = result.steamAchievementSyncEnabled,
+                        achievementUnlockNotificationEnabled = result.achievementUnlockNotificationEnabled,
+                        workshopMaxConcurrentDownloads = result.workshopMaxConcurrentDownloads,
+                        workshopDownloadThreads = result.workshopDownloadThreads,
+                        workshopWattAccelerationEnabled = result.workshopWattAccelerationEnabled,
+                        steamCloudCredentialsSummary = result.steamCloudCredentialsSummary,
+                        steamCloudStatusText = result.steamCloudStatusText,
+                        steamCloudManifestSummary = result.steamCloudManifestSummary,
+                        steamCloudManifestAvailable = result.steamCloudManifestAvailable,
+                        slingBreakAudioDebugModeEnabled = LauncherPreferences
+                            .isSlingBreakAudioDebugModeEnabled(host),
+                        arthasAnalysisEnabled = uiState.arthasAnalysisEnabled &&
+                            result.arthasResource.valid,
+                        arthasResourceInstalled = result.arthasResource.valid,
+                        arthasResourceVersion = result.arthasResource.version,
+                        resourcePackReady = result.resourcePack.ready,
+                        resourcePackVersion = result.resourcePack.version.orEmpty(),
+                        resourcePackId = result.resourcePack.packId.orEmpty(),
+                        resourcePackIssues = result.resourcePack.issues.joinToString("; "),
+                        easyTierSettings = result.easyTierSettings,
                     )
+                    statusRefreshBusyTracker.complete()
                 }
             } catch (_: Throwable) {
                 host.runOnUiThread {
                     if (refreshGeneration != statusRefreshGeneration.get()) {
                         return@runOnUiThread
                     }
-                    if (clearBusy) {
+                    if (refreshClearBusy) {
                         uiState = uiState.copy(
                             busy = false,
+                            busyOperation = UiBusyOperation.NONE,
                             busyMessage = null,
                             busyProgressPercent = null
                         )
                     }
+                    statusRefreshBusyTracker.complete()
                 }
             }
+        }
+    }
+
+    private fun throwIfStatusRefreshStale(refreshGeneration: Long) {
+        if (refreshGeneration != statusRefreshGeneration.get() ||
+            Thread.currentThread().isInterrupted
+        ) {
+            throw CancellationException("Settings status refresh was superseded")
         }
     }
 
@@ -2150,22 +2256,29 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onSteamCloudWattAccelerationChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamCloudWattAccelerationEnabled(host, enabled)
-        refreshStatus(host)
+        val effectiveEnabled = LauncherPreferences.isSteamCloudWattAccelerationEnabled(host)
+        uiState = uiState.copy(
+            steamCloudWattAccelerationEnabled = effectiveEnabled,
+            workshopWattAccelerationEnabled = effectiveEnabled,
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onSteamCloudAutoLaunchAfterSyncChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamCloudAutoLaunchAfterSyncEnabled(host, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(steamCloudAutoLaunchAfterSyncEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onSteamGamePresenceChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamGamePresenceEnabled(host, enabled)
+        uiState = uiState.copy(steamGamePresenceEnabled = enabled)
         if (enabled) {
             SteamGamePresenceService.startIfEnabled(host)
         } else {
             SteamGamePresenceService.stop(host)
         }
-        refreshStatus(host)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onRichPresenceDisplayPreferencesChanged(
@@ -2173,17 +2286,20 @@ class SettingsScreenViewModel : ViewModel() {
         settings: RichPresenceDisplayPreferences,
     ) {
         LauncherPreferences.saveRichPresenceDisplayPreferences(host, settings)
-        refreshStatus(host)
+        uiState = uiState.copy(richPresenceDisplayPreferences = settings)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onSteamAchievementSyncChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamAchievementSyncEnabled(host, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(steamAchievementSyncEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onAchievementUnlockNotificationChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setAchievementUnlockNotificationEnabled(host, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(achievementUnlockNotificationEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onClearSteamCloudNetworkCache(host: Activity) {
@@ -2203,17 +2319,28 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onWorkshopMaxConcurrentDownloadsChanged(host: Activity, value: Int) {
         LauncherPreferences.saveWorkshopMaxConcurrentDownloads(host, value)
-        refreshStatus(host)
+        uiState = uiState.copy(
+            workshopMaxConcurrentDownloads = LauncherConfig.normalizeWorkshopMaxConcurrentDownloads(value)
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopDownloadThreadsChanged(host: Activity, value: Int) {
         LauncherPreferences.saveWorkshopDownloadThreads(host, value)
-        refreshStatus(host)
+        uiState = uiState.copy(
+            workshopDownloadThreads = LauncherConfig.normalizeWorkshopDownloadThreads(value)
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopWattAccelerationChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setWorkshopWattAccelerationEnabled(host, enabled)
-        refreshStatus(host)
+        val effectiveEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(host)
+        uiState = uiState.copy(
+            steamCloudWattAccelerationEnabled = effectiveEnabled,
+            workshopWattAccelerationEnabled = effectiveEnabled,
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onQuickStartSteamAccelerationChanged(host: Activity, enabled: Boolean) {
@@ -2301,22 +2428,35 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onWorkshopSteamLanguageChanged(host: Activity, language: SteamLanguagePreference) {
         LauncherPreferences.saveWorkshopSteamLanguage(host, language)
-        refreshStatus(host)
+        uiState = uiState.copy(workshopSteamLanguage = language)
+        refreshStatus(host, clearBusy = false)
+    }
+
+    fun onWorkshopDefaultSortChanged(host: Activity, sort: WorkshopBrowseSort) {
+        LauncherPreferences.saveWorkshopDefaultSort(host, sort)
+        uiState = uiState.copy(workshopDefaultSort = sort)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopAutoImportChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setWorkshopAutoImportEnabled(host, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(workshopAutoImportEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopAutoImportAtlasDownscaleChanged(host: Activity, enabled: Boolean) {
         ImportPatchRegistry.setEnabled(host, AtlasOfflineDownscalePatchModule.id, enabled)
-        refreshStatus(host)
+        uiState = uiState.copy(workshopAutoImportAtlasDownscaleEnabled = enabled)
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onWorkshopAutoImportAtlasDownscaleMaxEdgeChanged(host: Activity, maxEdgePx: Int) {
         LauncherPreferences.saveWorkshopAutoImportAtlasDownscaleMaxEdgePx(host, maxEdgePx)
-        refreshStatus(host)
+        uiState = uiState.copy(
+            workshopAutoImportAtlasDownscaleMaxEdgePx =
+                LauncherConfig.normalizeWorkshopAutoImportAtlasDownscaleMaxEdgePx(maxEdgePx)
+        )
+        refreshStatus(host, clearBusy = false)
     }
 
     fun onClearWorkshopPreviewCache(host: Activity) {
@@ -2352,6 +2492,12 @@ class SettingsScreenViewModel : ViewModel() {
             host.runOnUiThread {
                 showToast(host, message)
             }
+        }
+    }
+
+    fun onClearSlingBreakData(host: Activity) {
+        clearSlingBreakWebViewData(host) {
+            showToast(host, UiText.StringResource(R.string.settings_developer_slingbreak_clear_done))
         }
     }
 
@@ -2770,10 +2916,24 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.common_busy_preparing_jvm_log_bundle))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(
+                R.string.common_busy_preparing_jvm_log_bundle_progress,
+                0
+            ),
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
+            progressPercent = 0
+        )
         executor.execute {
             try {
-                val payload = JvmLogShareService.prepareSharePayload(host)
+                val payload = JvmLogShareService.prepareSharePayload(
+                    host,
+                    exportProgressReporter(
+                        host,
+                        R.string.common_busy_preparing_jvm_log_bundle_progress
+                    )
+                )
                 host.runOnUiThread {
                     setBusy(false, null)
                     _effects.tryEmit(Effect.ShareJvmLogsBundle(payload))
@@ -2812,10 +2972,24 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.settings_busy_preparing_performance_logs))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(
+                R.string.settings_busy_preparing_performance_logs_progress,
+                0
+            ),
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
+            progressPercent = 0
+        )
         executor.execute {
             try {
-                val payload = JvmLogShareService.preparePerformanceSharePayload(host)
+                val payload = JvmLogShareService.preparePerformanceSharePayload(
+                    host,
+                    exportProgressReporter(
+                        host,
+                        R.string.settings_busy_preparing_performance_logs_progress
+                    )
+                )
                 host.runOnUiThread {
                     setBusy(false, null)
                     _effects.tryEmit(Effect.SharePerformanceLogsBundle(payload))
@@ -2842,10 +3016,22 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_performance_logs))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(
+                R.string.settings_busy_exporting_performance_logs_progress,
+                0
+            ),
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
+            progressPercent = 0
+        )
         executor.execute {
             try {
-                val exportedCount = SettingsFileService.exportPerformanceLogBundle(host, uri)
+                val exportedCount = SettingsFileService.exportPerformanceLogBundle(
+                    host,
+                    uri,
+                    exportProgressReporter(host, R.string.settings_busy_exporting_performance_logs_progress)
+                )
                 host.runOnUiThread {
                     setBusy(false, null)
                     showToast(
@@ -2875,10 +3061,19 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_jvm_logs))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.settings_busy_exporting_jvm_logs_progress, 0),
+            operation = UiBusyOperation.EXPORT_ARCHIVE,
+            progressPercent = 0
+        )
         executor.execute {
             try {
-                val exportedCount = SettingsFileService.exportJvmLogBundle(host, uri)
+                val exportedCount = SettingsFileService.exportJvmLogBundle(
+                    host,
+                    uri,
+                    exportProgressReporter(host, R.string.settings_busy_exporting_jvm_logs_progress)
+                )
                 host.runOnUiThread {
                     if (exportedCount > 0) {
                         showToast(
@@ -2892,6 +3087,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
+                    setBusy(false, null)
                     showToast(
                         host,
                         UiText.DynamicString(
@@ -2903,6 +3099,26 @@ class SettingsScreenViewModel : ViewModel() {
                         )
                     )
                     refreshStatus(host)
+                }
+            }
+        }
+    }
+
+    /**
+     * Progress arrives on the main looper from the diagnostics process; keep it resilient by
+     * ignoring updates that race with a finished or unrelated operation.
+     */
+    private fun exportProgressReporter(host: Activity, messageRes: Int): (Int) -> Unit {
+        return { percent ->
+            val clamped = percent.coerceIn(0, 100)
+            host.runOnUiThread {
+                if (uiState.busy && uiState.busyOperation == UiBusyOperation.EXPORT_ARCHIVE) {
+                    setBusy(
+                        busy = true,
+                        message = UiText.StringResource(messageRes, clamped),
+                        operation = UiBusyOperation.EXPORT_ARCHIVE,
+                        progressPercent = clamped
+                    )
                 }
             }
         }
@@ -2977,29 +3193,6 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onNonRecommendedFpsEnabledChanged(host: Activity, enabled: Boolean) {
-        if (uiState.busy || uiState.nonRecommendedFpsEnabled == enabled) {
-            return
-        }
-        LauncherPreferences.setNonRecommendedFpsEnabled(host, enabled)
-        val options = resolveTargetFpsOptions(host, enabled)
-        val targetFps = if (uiState.selectedTargetFps in options) {
-            uiState.selectedTargetFps
-        } else {
-            options.first()
-        }
-        val targetFpsChanged = targetFps != uiState.selectedTargetFps
-        uiState = uiState.copy(
-            nonRecommendedFpsEnabled = enabled,
-            targetFpsOptions = options,
-            selectedTargetFps = targetFps
-        )
-        if (targetFpsChanged) {
-            saveTargetFpsSelection(host, targetFps)
-        }
-        refreshStatus(host)
-    }
-
     fun onVirtualResolutionModeChanged(host: Activity, mode: VirtualResolutionMode) {
         if (uiState.busy || uiState.virtualResolutionMode == mode) {
             return
@@ -3051,6 +3244,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(gpuResourceGuardianPressureDownscaleEnabled = enabled)
         LauncherPreferences.setGpuResourceGuardianPressureDownscaleEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onAccelerationStrategyChanged(host: Activity, strategy: AccelerationStrategy) {
+        if (uiState.busy || uiState.accelerationStrategy == strategy) {
+            return
+        }
+        uiState = uiState.copy(accelerationStrategy = strategy)
+        saveAccelerationStrategySelection(host, strategy)
         refreshStatus(host)
     }
 
@@ -3521,7 +3723,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        if (enabled && !ArthasResourcePackService.isInstalled(host)) {
+        if (enabled && !ArthasResourcePackService.isInstalledQuick(host)) {
             return
         }
         uiState = uiState.copy(gpuResourceDiagEnabled = enabled)
@@ -3533,7 +3735,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy || !uiState.gpuResourceDiagEnabled) {
             return
         }
-        if (enabled && !ArthasResourcePackService.isInstalled(host)) {
+        if (enabled && !ArthasResourcePackService.isInstalledQuick(host)) {
             return
         }
         uiState = uiState.copy(arthasAnalysisEnabled = enabled)
@@ -3585,22 +3787,10 @@ class SettingsScreenViewModel : ViewModel() {
                         ),
                         Toast.LENGTH_LONG
                     )
-                    refreshArthasResourceState(host)
+                    refreshStatus(host)
                 }
             }
         }
-    }
-
-    private fun refreshArthasResourceState(host: Activity) {
-        val state = ArthasResourcePackService.state(host)
-        if (!state.valid && uiState.arthasAnalysisEnabled) {
-            saveArthasAnalysisSelection(host, false)
-        }
-        uiState = uiState.copy(
-            arthasAnalysisEnabled = uiState.arthasAnalysisEnabled && state.valid,
-            arthasResourceInstalled = state.valid,
-            arthasResourceVersion = state.version,
-        )
     }
 
     fun onGdxPadCursorDebugChanged(host: Activity, enabled: Boolean) {
@@ -3675,6 +3865,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onSlingBreakAudioDebugModeChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(slingBreakAudioDebugModeEnabled = enabled)
+        LauncherPreferences.setSlingBreakAudioDebugModeEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onLocalTestEndpointsChanged(
         host: Activity,
         onlineServiceBaseUrl: String,
@@ -3737,12 +3936,12 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onSwappyFramePacingEnabledChanged(host: Activity, enabled: Boolean) {
+    fun onFramePacingModeChanged(host: Activity, mode: FramePacingMode) {
         if (uiState.busy) {
             return
         }
-        uiState = uiState.copy(swappyFramePacingEnabled = enabled)
-        saveSwappyFramePacingEnabledSelection(host, enabled)
+        uiState = uiState.copy(framePacingMode = mode)
+        LauncherPreferences.saveFramePacingMode(host, mode)
         refreshStatus(host)
     }
 
@@ -4304,7 +4503,7 @@ class SettingsScreenViewModel : ViewModel() {
             selectedRenderScale = rendering.renderScale,
             selectedTargetFps = rendering.targetFps,
             nonRecommendedFpsEnabled = rendering.nonRecommendedFpsEnabled,
-            swappyFramePacingEnabled = rendering.swappyFramePacingEnabled,
+            framePacingMode = rendering.framePacingMode,
             virtualResolutionMode = rendering.virtualResolutionMode,
             renderSurfaceBackend = rendering.renderSurfaceBackend,
             rendererSelectionMode = rendering.rendererSelectionMode,
@@ -4328,6 +4527,7 @@ class SettingsScreenViewModel : ViewModel() {
             gpuResourceGuardianMode = rendering.gpuResourceGuardianMode,
             gpuResourceGuardianPressureDownscaleEnabled =
                 rendering.gpuResourceGuardianPressureDownscaleEnabled,
+            accelerationStrategy = LauncherPreferences.readAccelerationStrategy(host),
             selectedJvmHeapMaxMb = jvm.heapMaxMb,
             compressedPointersEnabled = jvm.compressedPointersEnabled,
             stringDeduplicationEnabled = jvm.stringDeduplicationEnabled,
@@ -4384,6 +4584,7 @@ class SettingsScreenViewModel : ViewModel() {
             workshopDownloadThreads = market.workshopDownloadThreads,
             workshopWattAccelerationEnabled = market.workshopWattAccelerationEnabled,
             workshopSteamLanguage = market.workshopSteamLanguage,
+            workshopDefaultSort = market.workshopDefaultSort,
             workshopAutoImportEnabled = market.workshopAutoImportEnabled,
             workshopAutoImportAtlasDownscaleEnabled = market.workshopAutoImportAtlasDownscaleEnabled,
             workshopAutoImportAtlasDownscaleMaxEdgePx = market.workshopAutoImportAtlasDownscaleMaxEdgePx,
@@ -4488,7 +4689,11 @@ class SettingsScreenViewModel : ViewModel() {
         targetMode: SteamCloudSaveMode,
         targetLabel: String,
     ) {
-        setBusy(true, UiText.StringResource(R.string.settings_busy_importing_save_archive))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.settings_busy_importing_save_archive),
+            operation = UiBusyOperation.EXPORT_ARCHIVE
+        )
         executor.execute {
             try {
                 val result = SteamCloudOperationMutex.runExclusive(host) {
@@ -4536,7 +4741,11 @@ class SettingsScreenViewModel : ViewModel() {
         if (uri == null) {
             return
         }
-        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_save_archive))
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.settings_busy_exporting_save_archive),
+            operation = UiBusyOperation.EXPORT_ARCHIVE
+        )
         executor.execute {
             try {
                 val exportedCount = SettingsFileService.exportSaveBundle(host, uri, sourceMode)
@@ -4896,7 +5105,7 @@ class SettingsScreenViewModel : ViewModel() {
         )
         lines += host.getString(
             R.string.settings_status_target_fps,
-            formatTargetFps(rendering.targetFps)
+            formatTargetFps(host, rendering.targetFps)
         )
         lines += host.getString(
             R.string.settings_status_virtual_resolution_mode,
@@ -5005,6 +5214,10 @@ class SettingsScreenViewModel : ViewModel() {
         lines += host.getString(
             R.string.settings_status_string_dedup,
             toggleStateText(host, jvm.stringDeduplicationEnabled)
+        )
+        lines += host.getString(
+            R.string.settings_status_acceleration_strategy,
+            LauncherPreferences.readAccelerationStrategy(host).displayName(host)
         )
         lines += host.getString(
             R.string.settings_status_back_behavior,
@@ -5666,9 +5879,6 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun saveSwappyFramePacingEnabledSelection(host: Activity, enabled: Boolean) {
-        LauncherPreferences.setSwappyFramePacingEnabled(host, enabled)
-    }
 
     private fun saveLwjglDebugSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setLwjglDebugEnabled(host, enabled)
@@ -5719,6 +5929,10 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveGpuResourceGuardianModeSelection(host: Activity, mode: GpuResourceGuardianMode) {
         LauncherPreferences.saveGpuResourceGuardianMode(host, mode)
+    }
+
+    private fun saveAccelerationStrategySelection(host: Activity, strategy: AccelerationStrategy) {
+        LauncherPreferences.saveAccelerationStrategy(host, strategy)
     }
 
     private fun persistMobileGluesSettings(
@@ -5795,15 +6009,12 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.saveTargetFps(host, targetFps)
     }
 
-    private fun resolveTargetFpsOptions(context: Activity, includeNonRecommended: Boolean): List<Float> {
-        return if (includeNonRecommended) {
-            LauncherPreferences.NON_RECOMMENDED_TARGET_FPS_OPTIONS.map(Int::toFloat)
-        } else {
-            DisplayRefreshRateController.resolveIdealTargetFpsOptions(context)
-        }
+    private fun resolveTargetFpsOptions(): List<Float> {
+        return LauncherPreferences.TARGET_FPS_OPTIONS.map(Int::toFloat)
     }
 
-    private fun formatTargetFps(targetFps: Float): String {
+    private fun formatTargetFps(host: Activity, targetFps: Float): String {
+        if (targetFps <= 0f) return host.getString(R.string.settings_target_fps_unlimited)
         if (targetFps == targetFps.roundToInt().toFloat()) {
             return targetFps.roundToInt().toString()
         }
@@ -5978,11 +6189,10 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun buildLogPathText(host: Activity): String {
+    private fun buildLogPathText(host: Activity, logs: List<File>): String {
         val latestLog = RuntimePaths.latestLog(host)
         val archivedDir = RuntimePaths.jvmLogsDir(host)
         val logcatDir = RuntimePaths.logcatDir(host)
-        val logs = JvmLogRotationManager.listLogFiles(host)
         val lines = mutableListOf(
             host.getString(
                 R.string.settings_log_slots,
@@ -6005,6 +6215,9 @@ class SettingsScreenViewModel : ViewModel() {
 
     override fun onCleared() {
         cancelActiveSteamCloudLogin("Settings screen cleared.", clearBusy = false)
+        statusRefreshGeneration.incrementAndGet()
+        statusRefreshTask?.cancel(true)
+        statusRefreshExecutor.shutdownNow()
         executor.shutdownNow()
         steamCloudLoginCleanupExecutor.shutdown()
         super.onCleared()
@@ -6405,6 +6618,15 @@ class SettingsScreenViewModel : ViewModel() {
                 host.getString(R.string.settings_gpu_resource_guardian_mode_ultra_aggressive)
             GpuResourceGuardianMode.LEGACY ->
                 host.getString(R.string.settings_gpu_resource_guardian_mode_legacy)
+        }
+    }
+
+    private fun AccelerationStrategy.displayName(host: Activity): String {
+        return when (this) {
+            AccelerationStrategy.RMBGAME_FIRST ->
+                host.getString(R.string.settings_developer_acceleration_strategy_rmbgame_first)
+            AccelerationStrategy.BEST_PATH ->
+                host.getString(R.string.settings_developer_acceleration_strategy_best_path)
         }
     }
 }

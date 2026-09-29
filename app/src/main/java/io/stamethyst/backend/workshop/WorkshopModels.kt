@@ -22,7 +22,18 @@ enum class WorkshopBrowseSort(
     MostPopular("trend", "trend", "热门", usesTimeFilter = true),
     MostRecent("mostrecent", "mostrecent", "最新发布"),
     LastUpdated("lastupdated", "lastupdated", "最近更新"),
-    MostSubscribed("totaluniquesubscribers", "totaluniquesubscribers", "订阅最多"),
+    MostSubscribed("totaluniquesubscribers", "totaluniquesubscribers", "订阅最多");
+
+    companion object {
+        /**
+         * Default browse ordering for the market: cumulative (historical) subscription/download
+         * count, i.e. `MostSubscribed`.
+         */
+        val Default: WorkshopBrowseSort = MostSubscribed
+
+        fun fromStorageValue(value: String?): WorkshopBrowseSort =
+            entries.firstOrNull { it.browseSortValue == value?.trim() } ?: Default
+    }
 }
 
 enum class WorkshopBrowseTimeFilter(

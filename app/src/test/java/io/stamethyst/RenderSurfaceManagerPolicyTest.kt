@@ -216,6 +216,7 @@ class RenderSurfaceManagerPolicyTest {
             RenderSurfaceManager.resolveWindowConstrainedCropHint(
                 rootLeft = 0,
                 rootWidth = 2304,
+                rootHeight = 1080,
                 displayWidth = 2400
             )
         )
@@ -224,6 +225,7 @@ class RenderSurfaceManagerPolicyTest {
             RenderSurfaceManager.resolveWindowConstrainedCropHint(
                 rootLeft = 96,
                 rootWidth = 2304,
+                rootHeight = 1080,
                 displayWidth = 2400
             )
         )
@@ -232,7 +234,64 @@ class RenderSurfaceManagerPolicyTest {
             RenderSurfaceManager.resolveWindowConstrainedCropHint(
                 rootLeft = 0,
                 rootWidth = 2400,
+                rootHeight = 1080,
                 displayWidth = 2400
+            )
+        )
+    }
+
+    @Test
+    fun resolveWindowConstrainedCropHint_doesNotTreatPortraitBootWindowAsCutout() {
+        assertEquals(
+            null,
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 0,
+                rootWidth = 1080,
+                rootHeight = 2400,
+                displayWidth = 2400
+            )
+        )
+        val viewport = RenderSurfaceManager.resolveFixedVirtualViewportLayout(
+            rootWidth = 1080,
+            rootHeight = 2400,
+            cropInsets = RenderViewportInsets(),
+            virtualWidth = 1920,
+            virtualHeight = 1080
+        )
+        assertEquals(1080, viewport?.width)
+        assertTrue((viewport?.height ?: 0) > 1)
+    }
+
+    @Test
+    fun resolveWindowConstrainedCropHint_rejectsGapLargerThanLandscapeWindow() {
+        assertEquals(
+            null,
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 0,
+                rootWidth = 1000,
+                rootHeight = 600,
+                displayWidth = 2400
+            )
+        )
+    }
+
+    @Test
+    fun resolveFixedVirtualViewportLayout_keepsLockedCroppedWindowAlignedWithView() {
+        assertEquals(
+            RenderViewportLayout(
+                width = 2319,
+                height = 1080,
+                leftMargin = 81,
+                topMargin = 0,
+                rightMargin = 0,
+                bottomMargin = 0
+            ),
+            RenderSurfaceManager.resolveFixedVirtualViewportLayout(
+                rootWidth = 2400,
+                rootHeight = 1080,
+                cropInsets = RenderViewportInsets(left = 81),
+                virtualWidth = 2319,
+                virtualHeight = 1080
             )
         )
     }
@@ -388,6 +447,56 @@ class RenderSurfaceManagerPolicyTest {
                 rootHeight = 1080,
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
                 multiWindow = false
+            )
+        )
+    }
+
+    @Test
+    fun shouldDeferToDisplayDerivedCanvas_onlyForMeasuredPortraitWindow() {
+        assertTrue(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 1116,
+                rootHeight = 2712
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 2712,
+                rootHeight = 1220
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 0,
+                rootHeight = 0
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 2400,
+                rootHeight = 2400
+            )
+        )
+    }
+
+    @Test
+    fun shouldDeferToDisplayDerivedCanvas_rejectsDegenerateMeasuredSize() {
+        assertTrue(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 1,
+                rootHeight = 1
+            )
+        )
+        assertTrue(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 1,
+                rootHeight = 1920
+            )
+        )
+        assertTrue(
+            RenderSurfaceManager.shouldDeferToDisplayDerivedCanvas(
+                rootWidth = 1920,
+                rootHeight = 1
             )
         )
     }

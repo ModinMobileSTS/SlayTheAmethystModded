@@ -86,4 +86,25 @@ class DisplayConfigSyncTest {
             lines
         )
     }
+
+    @Test
+    fun buildTargetFpsConfigLines_persistsUnlimitedAsZero() {
+        val lines = DisplayConfigSync.buildTargetFpsConfigLines(
+            existingLines = listOf("1920", "1080", "60", "true", "false", "true"),
+            targetFpsLimit = 0
+        )
+
+        assertEquals(listOf("1920", "1080", "0", "true", "false", "true"), lines)
+    }
+
+    @Test
+    fun buildConfigLines_preservesUnlimitedTargetFps() {
+        val lines = DisplayConfigSync.buildConfigLines(
+            existingLines = listOf("1920", "1080", "0", "true", "false", "true"),
+            width = 1920,
+            height = 1080
+        )
+
+        assertEquals(listOf("1920", "1080", "0", "true", "false", "true"), lines)
+    }
 }

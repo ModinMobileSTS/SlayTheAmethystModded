@@ -19,6 +19,7 @@ object RuntimePaths {
     private const val STS_JAR_IMPORT_LOG_DIR_NAME = "sts_jar_import_logs"
     private const val WORKSHOP_BROWSE_FAILURE_LOG_DIR_NAME = "workshop_browse_failure_logs"
     private const val MEMORY_DIAGNOSTICS_LOG_FILE_NAME = "memory_diagnostics.log"
+    private const val ACCELERATED_ROUTE_LOG_FILE_NAME = "accelerated_route.log"
     private const val ACHIEVEMENT_SYNC_LOG_FILE_NAME = "achievement_sync.log"
     private const val PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME = "performance_launch_audit.log"
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
@@ -60,6 +61,8 @@ object RuntimePaths {
     private const val LOGCAT_DIR_NAME = "logcat"
     private const val WINDOW_DIAGNOSTICS_DIR_NAME = "window"
     private const val WINDOW_DIAGNOSTICS_LOG_FILE_NAME = "window_diagnostics.log"
+    private const val WEBVIEW_DIAGNOSTICS_DIR_NAME = "webview"
+    private const val WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME = "webview_diagnostics.log"
     private const val LEGACY_LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
     private const val LOGCAT_APP_CAPTURE_FILE_NAME = "logcat_app_capture.log"
     private const val LOGCAT_SYSTEM_CAPTURE_FILE_NAME = "logcat_system_capture.log"
@@ -173,6 +176,87 @@ object RuntimePaths {
     fun optionalModsLibraryDir(context: Context): File = File(stsRoot(context), "mods_library")
 
     @JvmStatic
+    fun agentWorkspaceRoot(context: Context): File = File(stsRoot(context), "agent_workspace")
+
+    @JvmStatic
+    fun agentModWorkspaceRoot(context: Context, modId: String): File =
+        File(agentWorkspaceRoot(context), modId)
+
+    @JvmStatic
+    fun agentModSourceRoot(context: Context, modId: String): File =
+        File(agentModWorkspaceRoot(context, modId), "source")
+
+    @JvmStatic
+    fun agentModPatchSourcesRoot(context: Context, modId: String): File =
+        File(agentModWorkspaceRoot(context, modId), "patch_source")
+
+    @JvmStatic
+    fun agentModPatchSourceRoot(context: Context, modId: String, patchId: String): File =
+        File(agentModPatchSourcesRoot(context, modId), patchId)
+
+    @JvmStatic
+    fun agentModConversationsRoot(context: Context, modId: String): File =
+        File(File(agentWorkspaceRoot(context), ".conversations"), modId)
+
+    @JvmStatic
+    fun agentModsRoot(context: Context): File = File(stsRoot(context), "agent_mods")
+
+    @JvmStatic
+    fun agentModsForModRoot(context: Context, modId: String): File =
+        File(agentModsRoot(context), modId)
+
+    /**
+     * Coordinates the AI patch smoke test between the launcher process (which writes the request and
+     * reads the verdict) and the `:game` process service that actually runs the game.
+     */
+    @JvmStatic
+    fun agentSmokeTestDir(context: Context): File =
+        File(stsRoot(context), "agent_smoke_test")
+
+    @JvmStatic
+    fun agentSmokeTestRequestFile(context: Context): File =
+        File(agentSmokeTestDir(context), "request.json")
+
+    @JvmStatic
+    fun agentSmokeTestResultFile(context: Context): File =
+        File(agentSmokeTestDir(context), "result.json")
+
+    /**
+     * Present for the whole duration of a smoke-test run.
+     *
+     * ExitActivity consults this to stay silent: the native JVM exit trap normally restarts the
+     * launcher (with FLAG_ACTIVITY_CLEAR_TASK), which would destroy the AI editor and cancel the
+     * tool call that is waiting for this run.
+     */
+    @JvmStatic
+    fun agentSmokeTestRunMarker(context: Context): File =
+        File(agentSmokeTestDir(context), "run.active")
+
+    /** Verdict of the last smoke test run triggered over adb in a debug build. */
+    @JvmStatic
+    fun agentSmokeTestAdbResultFile(context: Context): File =
+        File(agentSmokeTestDir(context), "adb_result.json")
+
+    /**
+     * Run-scoped MTS mod list for a smoke test.
+     *
+     * The shared `.mts_mod_file_list` is rewritten by other components from the user's enabled-mod
+     * selection, so a smoke run cannot rely on it. This file belongs to the run alone.
+     */
+    @JvmStatic
+    fun agentSmokeTestModFileList(context: Context): File =
+        File(agentSmokeTestDir(context), "mod_file_list.txt")
+
+    /**
+     * What ModTheSpire actually loaded for a smoke run, written by `MtsModFileListOverride`.
+     *
+     * Read back to prove the run used the requested mod set, instead of assuming nothing rewrote it.
+     */
+    @JvmStatic
+    fun agentSmokeTestModFileListAudit(context: Context): File =
+        File(agentSmokeTestDir(context), "mod_file_list_audit.txt")
+
+    @JvmStatic
     fun importedBaseModJar(context: Context): File = File(requiredModsDir(context), "BaseMod.jar")
 
     @JvmStatic
@@ -198,6 +282,17 @@ object RuntimePaths {
 
     @JvmStatic
     fun enabledModsConfig(context: Context): File = File(stsRoot(context), "enabled_mods.txt")
+
+    /**
+     * Stores the `patchModId` of every enabled AI patch mod under `agent_mods/`.
+     *
+     * AI patch mods are loaded straight from `agent_mods/`, so they keep their own enablement
+     * list instead of sharing `enabled_mods.txt`, whose normalization only recognizes JARs in
+     * the optional-mod library.
+     */
+    @JvmStatic
+    fun enabledAgentPatchModsConfig(context: Context): File =
+        File(stsRoot(context), "enabled_agent_patch_mods.txt")
 
     @JvmStatic
     fun priorityModsConfig(context: Context): File = File(stsRoot(context), "priority_mod_roots.txt")
@@ -319,6 +414,10 @@ object RuntimePaths {
         File(jvmLogsDir(context), MEMORY_DIAGNOSTICS_LOG_FILE_NAME)
 
     @JvmStatic
+    fun acceleratedRouteLog(context: Context): File =
+        File(jvmLogsDir(context), ACCELERATED_ROUTE_LOG_FILE_NAME)
+
+    @JvmStatic
     fun achievementSyncLog(context: Context): File =
         File(jvmLogsDir(context), ACHIEVEMENT_SYNC_LOG_FILE_NAME)
 
@@ -365,6 +464,31 @@ object RuntimePaths {
     @JvmStatic
     fun windowDiagnosticsLog(context: Context): File =
         File(windowDiagnosticsDir(context), WINDOW_DIAGNOSTICS_LOG_FILE_NAME)
+
+    @JvmStatic
+    fun webViewDiagnosticsDir(context: Context): File =
+        File(stsRoot(context), WEBVIEW_DIAGNOSTICS_DIR_NAME)
+
+    @JvmStatic
+    fun webViewDiagnosticsLog(context: Context): File =
+        File(webViewDiagnosticsDir(context), WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME)
+
+    @JvmStatic
+    fun listWebViewDiagnosticsFiles(context: Context): List<File> {
+        val directory = webViewDiagnosticsDir(context)
+        if (!directory.isDirectory) {
+            return listOf(webViewDiagnosticsLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isWebViewDiagnosticsFileName(file.name) }
+            ?.sortedWith { left, right ->
+                compareWebViewDiagnosticsFileNames(left.name, right.name)
+            }
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(webViewDiagnosticsLog(context)) }
+    }
 
     @JvmStatic
     fun listWindowDiagnosticsFiles(context: Context): List<File> {
@@ -488,6 +612,23 @@ object RuntimePaths {
             ?.toList()
             .orEmpty()
             .ifEmpty { listOf(achievementSyncLog(context)) }
+    }
+
+    @JvmStatic
+    fun listAcceleratedRouteLogFiles(context: Context): List<File> {
+        val directory = jvmLogsDir(context)
+        if (!directory.isDirectory) {
+            return listOf(acceleratedRouteLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isAcceleratedRouteLogFileName(file.name) }
+            ?.sortedWith { left, right ->
+                compareAcceleratedRouteLogFileNames(left.name, right.name)
+            }
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(acceleratedRouteLog(context)) }
     }
 
     @JvmStatic
@@ -953,6 +1094,7 @@ object RuntimePaths {
         jvmHistogramsDir(context).mkdirs()
         logcatDir(context).mkdirs()
         windowDiagnosticsDir(context).mkdirs()
+        webViewDiagnosticsDir(context).mkdirs()
         launcherCrashReportsDir(context).mkdirs()
         bootOverlayImagesDir(context).mkdirs()
         mtsPatchCacheDir(context).mkdirs()
@@ -991,9 +1133,19 @@ object RuntimePaths {
             name.startsWith("$ACHIEVEMENT_SYNC_LOG_FILE_NAME.")
     }
 
+    internal fun isAcceleratedRouteLogFileName(name: String): Boolean {
+        return name == ACCELERATED_ROUTE_LOG_FILE_NAME ||
+            name.startsWith("$ACCELERATED_ROUTE_LOG_FILE_NAME.")
+    }
+
     internal fun isWindowDiagnosticsFileName(name: String): Boolean {
         return name == WINDOW_DIAGNOSTICS_LOG_FILE_NAME ||
             name.startsWith("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.")
+    }
+
+    internal fun isWebViewDiagnosticsFileName(name: String): Boolean {
+        return name == WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME ||
+            name.startsWith("$WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME.")
     }
 
     internal fun isLauncherCrashReportFileName(name: String): Boolean {
@@ -1037,9 +1189,27 @@ object RuntimePaths {
         return left.compareTo(right)
     }
 
+    internal fun compareAcceleratedRouteLogFileNames(left: String, right: String): Int {
+        val byRotationIndex = rotationIndexForAcceleratedRouteLogFile(left)
+            .compareTo(rotationIndexForAcceleratedRouteLogFile(right))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
+        return left.compareTo(right)
+    }
+
     internal fun compareWindowDiagnosticsFileNames(left: String, right: String): Int {
         val byRotationIndex = rotationIndexForWindowDiagnosticsFile(left)
             .compareTo(rotationIndexForWindowDiagnosticsFile(right))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
+        return left.compareTo(right)
+    }
+
+    internal fun compareWebViewDiagnosticsFileNames(left: String, right: String): Int {
+        val byRotationIndex = rotationIndexForWebViewDiagnosticsFile(left)
+            .compareTo(rotationIndexForWebViewDiagnosticsFile(right))
         if (byRotationIndex != 0) {
             return byRotationIndex
         }
@@ -1121,6 +1291,18 @@ object RuntimePaths {
             ?: Int.MAX_VALUE
     }
 
+    private fun rotationIndexForAcceleratedRouteLogFile(name: String): Int {
+        if (!isAcceleratedRouteLogFileName(name)) {
+            return Int.MAX_VALUE
+        }
+        if (name == ACCELERATED_ROUTE_LOG_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfter("$ACCELERATED_ROUTE_LOG_FILE_NAME.", "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
     private fun rotationIndexForWindowDiagnosticsFile(name: String): Int {
         if (!isWindowDiagnosticsFileName(name)) {
             return Int.MAX_VALUE
@@ -1129,6 +1311,18 @@ object RuntimePaths {
             return 0
         }
         return name.substringAfter("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.", "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
+    private fun rotationIndexForWebViewDiagnosticsFile(name: String): Int {
+        if (!isWebViewDiagnosticsFileName(name)) {
+            return Int.MAX_VALUE
+        }
+        if (name == WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfter("$WEBVIEW_DIAGNOSTICS_LOG_FILE_NAME.", "")
             .toIntOrNull()
             ?: Int.MAX_VALUE
     }

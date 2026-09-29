@@ -85,7 +85,11 @@ internal object ResourcePackArchive {
         )
     }
 
-    fun validateGeneration(root: File, expectedVersion: String): ResourcePackGenerationValidation {
+    fun validateGeneration(
+        root: File,
+        expectedVersion: String,
+        verifyContentHashes: Boolean = true,
+    ): ResourcePackGenerationValidation {
         val issues = ArrayList<String>()
         if (!root.isDirectory) {
             return ResourcePackGenerationValidation(
@@ -119,7 +123,10 @@ internal object ResourcePackArchive {
         }
         issues += ResourcePackContract.collectMissingContent(root)
 
-        val actualRecords = runCatching { listContentFiles(root).sortedBy(ResourcePackFileRecord::path) }
+        val actualRecords = runCatching {
+            listContentFiles(root, includeHashes = verifyContentHashes)
+                .sortedBy(ResourcePackFileRecord::path)
+        }
             .getOrElse { error ->
                 issues += summarizeError(error)
                 emptyList()
@@ -134,7 +141,7 @@ internal object ResourcePackArchive {
                 if (actual.size != expected.size) {
                     issues += "size mismatch: ${expected.path}"
                 }
-                if (!actual.sha256.equals(expected.sha256, ignoreCase = true)) {
+                if (verifyContentHashes && !actual.sha256.equals(expected.sha256, ignoreCase = true)) {
                     issues += "hash mismatch: ${expected.path}"
                 }
             }
@@ -144,11 +151,13 @@ internal object ResourcePackArchive {
         if (manifest.files.size != actualRecords.size) {
             issues += "manifest file count ${manifest.files.size} != ${actualRecords.size}"
         }
-        val computedPackId = runCatching {
-            computePackId(manifest.resourcePackVersion, manifest.abi, actualRecords)
-        }.getOrNull()
-        if (computedPackId != null && computedPackId != manifest.packId) {
-            issues += "pack id does not match content"
+        if (verifyContentHashes) {
+            val computedPackId = runCatching {
+                computePackId(manifest.resourcePackVersion, manifest.abi, actualRecords)
+            }.getOrNull()
+            if (computedPackId != null && computedPackId != manifest.packId) {
+                issues += "pack id does not match content"
+            }
         }
         return ResourcePackGenerationValidation(manifest, limitIssues(issues))
     }
@@ -254,7 +263,10 @@ internal object ResourcePackArchive {
             packId.all { character -> character in "0123456789abcdefABCDEF" }
     }
 
-    private fun listContentFiles(root: File): List<ResourcePackFileRecord> {
+    private fun listContentFiles(
+        root: File,
+        includeHashes: Boolean = true,
+    ): List<ResourcePackFileRecord> {
         if (!root.isDirectory) {
             throw IOException("Resource pack root is not a directory: ${root.absolutePath}")
         }
@@ -284,7 +296,7 @@ internal object ResourcePackArchive {
             records += ResourcePackFileRecord(
                 path = relative,
                 size = file.length(),
-                sha256 = sha256(file)
+                sha256 = if (includeHashes) sha256(file) else ""
             )
             if (records.size > MAX_ENTRY_COUNT) {
                 throw IOException("Resource pack contains too many files: ${records.size}")

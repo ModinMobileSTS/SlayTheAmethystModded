@@ -37,6 +37,16 @@ internal enum class WorkshopLoadPhase {
     /** Response received, extracting entries. */
     Parsing,
 
+    /**
+     * Detail page: waiting on the steamcommunity.com filedetails HTML, which carries the
+     * description, preview media and comment thread context. This is the dominant slow
+     * request in a detail load, so it gets its own stage instead of hiding inside [Parsing].
+     */
+    LoadingCommunityDetail,
+
+    /** Detail page: resolving dependency metadata for the required-item ids. */
+    LoadingDependencies,
+
     /** Terminal success. */
     Completed,
 

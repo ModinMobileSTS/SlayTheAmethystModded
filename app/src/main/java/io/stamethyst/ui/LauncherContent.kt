@@ -50,6 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -57,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +87,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.R
+import io.stamethyst.BuildConfig
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.backend.workshop.WorkshopItemSummary
@@ -112,6 +115,7 @@ import io.stamethyst.ui.main.LauncherModsScreen
 import io.stamethyst.ui.main.LauncherModsScreenContent
 import io.stamethyst.ui.main.LauncherUpdateNoticeUiState
 import io.stamethyst.ui.main.MainScreenViewModel
+import io.stamethyst.ui.main.RendererIcons
 import io.stamethyst.ui.modimport.ModImportHost
 import io.stamethyst.ui.workshop.WorkshopScreen
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterScreen
@@ -124,6 +128,9 @@ import io.stamethyst.ui.quickstart.QuickStartScreen
 import io.stamethyst.ui.quickstart.QuickStartAutomaticImportScreen
 import io.stamethyst.ui.quickstart.QuickStartJarImportScreen
 import io.stamethyst.ui.quickstart.QuickStartSteamDownloadScreen
+import io.stamethyst.ui.whatsnew.WhatsNewScreen
+import io.stamethyst.ui.whatsnew.WhatsNewContent
+import io.stamethyst.ui.whatsnew.WhatsNewActionRoute
 import io.stamethyst.ui.settings.first_run.LauncherFirstRunSetupScreen
 import io.stamethyst.ui.settings.core.LauncherDeveloperSettingsScreen
 import io.stamethyst.ui.settings.baidu.LauncherBaiduTranslationCredentialsScreen
@@ -137,6 +144,9 @@ import io.stamethyst.ui.settings.core.LauncherSettingsLauncherScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsMarketCloudScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsWorkshopAutoImportDefaultsScreen
+import io.stamethyst.ui.settings.llm.LauncherLlmSettingsScreen
+import io.stamethyst.ui.settings.llm.LauncherLlmTutorialScreen
+import io.stamethyst.ui.aimod.LauncherAiModEditorScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudGuardScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudLoginScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudLoginMethodScreen
@@ -247,6 +257,9 @@ fun LauncherContent(
     var pendingDockRoute by remember { mutableStateOf<Route?>(null) }
     var dockNavigationRequestId by remember { mutableStateOf(0) }
     var dockNavigationJob by remember { mutableStateOf<Job?>(null) }
+    val whatsNewRelease = remember { WhatsNewContent.releaseFor(BuildConfig.VERSION_NAME) }
+    var showWhatsNew by rememberSaveable { mutableStateOf(false) }
+    var whatsNewDismissedThisSession by rememberSaveable { mutableStateOf(false) }
     val dockPageRoute = pendingDockRoute ?: dockPagerState.currentLauncherDockRoute()
     val showDockPager = rootRoute.launcherDockIndex() != null || currentRoute.launcherDockIndex() != null
     val showOverlayNav = currentRoute.launcherDockIndex() == null || navigator.stackSize > 1
@@ -254,9 +267,9 @@ fun LauncherContent(
     var modsBatchSelectionMode by remember { mutableStateOf(false) }
     val showAnimatedLauncherDock = showDockPager && !showOverlayNav && !modsBatchSelectionMode
     val launcherDockHazeState = rememberHazeState()
-    val isBlockingBusyInteractionLocked =
-        mainUiState.busyOperation.usesBlockingOverlay() ||
-            settingsUiState.busyOperation.usesBlockingOverlay()
+    val mainBlockingBusy = mainUiState.busyOperation.locksInteraction(mainUiState.busy)
+    val settingsBlockingBusy = settingsUiState.busyOperation.locksInteraction(settingsUiState.busy)
+    val isBlockingBusyInteractionLocked = mainBlockingBusy || settingsBlockingBusy
     val shouldShowBlockingBusyWindow =
         isBlockingBusyInteractionLocked &&
             currentRoute != Route.QuickStart &&
@@ -264,15 +277,13 @@ fun LauncherContent(
             currentRoute != Route.QuickStartJarImport &&
             currentRoute != Route.QuickStartSteamDownload
     val blockingBusyMessage = when {
-        mainUiState.busyOperation.usesBlockingOverlay() -> mainUiState.busyMessage
-        settingsUiState.busyOperation.usesBlockingOverlay() -> settingsUiState.busyMessage
+        mainBlockingBusy -> mainUiState.busyMessage
+        settingsBlockingBusy -> settingsUiState.busyMessage
         else -> null
     }
     val blockingBusyProgressPercent = when {
-        mainUiState.busyOperation.usesBlockingOverlay() ->
-            mainUiState.busyProgressPercent
-        settingsUiState.busyOperation.usesBlockingOverlay() ->
-            settingsUiState.busyProgressPercent
+        mainBlockingBusy -> mainUiState.busyProgressPercent
+        settingsBlockingBusy -> settingsUiState.busyProgressPercent
         else -> null
     }
 
@@ -370,6 +381,16 @@ fun LauncherContent(
         openWorkshopDetail(workshop.appId, workshop.publishedFileId)
     }
 
+    fun openAiModEditor(mod: ModItemUi) {
+        navigator.push(
+            Route.AiModEditor(
+                storagePath = mod.storagePath,
+                modName = mod.name,
+                modId = mod.manifestModId.ifBlank { mod.modId },
+            )
+        )
+    }
+
     LaunchedEffect(Unit) {
         LauncherNavigationRequestBus.workshopDetailRequests.collect(::openWorkshopItemDetails)
     }
@@ -380,10 +401,30 @@ fun LauncherContent(
         }
     }
 
+    LaunchedEffect(Unit) {
+        LauncherNavigationRequestBus.modsRefreshRequests.collect {
+            mainViewModel.refresh(activity)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        LauncherNavigationRequestBus.aiEditorRequests.collect { route ->
+            navigator.push(route)
+        }
+    }
+
     LaunchedEffect(currentRoute) {
         onCurrentDockRouteChanged(currentRoute.launcherDockRoute())
         if (currentRoute != Route.Mods) {
             modsBatchSelectionMode = false
+        }
+    }
+
+    LaunchedEffect(activity, whatsNewRelease?.id) {
+        if (whatsNewRelease != null && !whatsNewDismissedThisSession &&
+            LauncherPreferences.lastSeenWhatsNewVersion(activity) != whatsNewRelease.id
+        ) {
+            showWhatsNew = true
         }
     }
 
@@ -536,7 +577,8 @@ fun LauncherContent(
                             onOpenDownloadCenter = { navigator.push(Route.WorkshopDownloadCenter) },
                             onOpenSubscriptions = { navigator.push(Route.WorkshopSubscriptions) },
                             onOpenWorkshopDetails = ::openWorkshopItemDetails,
-                            onOpenInstalledWorkshopDetails = ::openInstalledWorkshopDetails,
+                             onOpenInstalledWorkshopDetails = ::openInstalledWorkshopDetails,
+                             onOpenAiEditor = ::openAiModEditor,
                             onCheckEasyTierCompatibilityUpdate = ::checkForEasyTierCompatibilityUpdate,
                             onBatchSelectionModeChange = { modsBatchSelectionMode = it },
                             userScrollEnabled = !modsBatchSelectionMode && !showOverlayNav,
@@ -684,7 +726,8 @@ fun LauncherContent(
                                     modifier = Modifier.fillMaxSize(),
                                     onOpenFeedback = { navigator.push(Route.Feedback) },
                                     onOpenWorkshop = { selectDockRoute(Route.Workshop) },
-                                    onOpenWorkshopDetails = ::openInstalledWorkshopDetails,
+                                     onOpenWorkshopDetails = ::openInstalledWorkshopDetails,
+                                     onOpenAiEditor = ::openAiModEditor,
                                     updateNotice = updateNotice,
                                     feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
                                     feedbackActiveIssueCount = feedbackInboxState.subscriptions.count { !it.isClosed },
@@ -721,7 +764,8 @@ fun LauncherContent(
                                     modifier = Modifier.fillMaxSize(),
                                     onOpenFeedback = { navigator.push(Route.Feedback) },
                                     onOpenWorkshop = { selectDockRoute(Route.Workshop) },
-                                    onOpenWorkshopDetails = ::openInstalledWorkshopDetails,
+                                     onOpenWorkshopDetails = ::openInstalledWorkshopDetails,
+                                     onOpenAiEditor = ::openAiModEditor,
                                     feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
                                     onOpenFeedbackUpdates = { openFeedbackUpdates() },
                                     onBatchSelectionModeChange = { modsBatchSelectionMode = it }
@@ -773,6 +817,14 @@ fun LauncherContent(
                             )
                         }
 
+                        entry<Route.SettingsLlm> {
+                            LauncherLlmSettingsScreen(modifier = Modifier.fillMaxSize(), uiState = settingsUiState)
+                        }
+
+                        entry<Route.SettingsLlmTutorial> {
+                            LauncherLlmTutorialScreen(modifier = Modifier.fillMaxSize(), uiState = settingsUiState)
+                        }
+
                         entry<Route.SettingsWorkshopAutoImportDefaults> {
                             LauncherSettingsWorkshopAutoImportDefaultsScreen(
                                 viewModel = settingsViewModel,
@@ -794,6 +846,16 @@ fun LauncherContent(
                         entry<Route.SettingsAbout> {
                             LauncherSettingsAboutScreen(
                                 viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        entry<Route.AiModEditor> { route ->
+                            LauncherAiModEditorScreen(
+                                storagePath = route.storagePath,
+                                modName = route.modName,
+                                modId = route.modId,
+                                conversationId = route.conversationId,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
@@ -998,6 +1060,7 @@ fun LauncherContent(
                                 issueNumber = route.issueNumber
                             )
                         }
+
                     }
                     )
                 }
@@ -1255,6 +1318,37 @@ fun LauncherContent(
                 )
             }
         }
+        if (showWhatsNew && whatsNewRelease != null) {
+            WhatsNewScreen(
+                release = whatsNewRelease,
+                onClose = { suppressFutureDisplay ->
+                    if (suppressFutureDisplay) {
+                        LauncherPreferences.markWhatsNewSeen(activity, whatsNewRelease.id)
+                    }
+                    whatsNewDismissedThisSession = true
+                    showWhatsNew = false
+                },
+                onAction = { route, suppressFutureDisplay ->
+                    if (suppressFutureDisplay) {
+                        LauncherPreferences.markWhatsNewSeen(activity, whatsNewRelease.id)
+                    }
+                    whatsNewDismissedThisSession = true
+                    showWhatsNew = false
+                    if (route == WhatsNewActionRoute.SETTINGS_LLM) {
+                        navigator.push(Route.SettingsLlm)
+                    } else {
+                        selectDockRoute(
+                            when (route) {
+                                WhatsNewActionRoute.SETTINGS -> Route.Settings
+                                WhatsNewActionRoute.WORKSHOP -> Route.Workshop
+                                WhatsNewActionRoute.MODS -> Route.Mods
+                                WhatsNewActionRoute.SETTINGS_LLM -> Route.SettingsLlm
+                            }
+                        )
+                    }
+                },
+            )
+        }
     }
     }
 }
@@ -1280,6 +1374,7 @@ private fun LauncherDockPager(
     onOpenSubscriptions: () -> Unit,
     onOpenWorkshopDetails: (WorkshopItemSummary) -> Unit,
     onOpenInstalledWorkshopDetails: (ModItemUi) -> Unit,
+    onOpenAiEditor: (ModItemUi) -> Unit,
     onCheckEasyTierCompatibilityUpdate: () -> Unit,
     onBatchSelectionModeChange: (Boolean) -> Unit,
     userScrollEnabled: Boolean,
@@ -1318,12 +1413,15 @@ private fun LauncherDockPager(
         viewModel = mainViewModel,
         onOpenWorkshop = onOpenWorkshop,
         onOpenWorkshopDetails = onOpenInstalledWorkshopDetails,
+        onOpenAiEditor = onOpenAiEditor,
         handleEffects = handleMainEffects,
         pollWorkshopDownloads = shouldPollMainWorkshopDownloads,
     ) { routeModifier, uiState, actions ->
         HorizontalPager(
             state = pagerState,
             modifier = routeModifier,
+            // Keep dock pages composed so switching tabs does not dispose their state or restart
+            // page-entry effects when the user returns to a tab.
             beyondViewportPageCount = LauncherDockRoutes.lastIndex,
             userScrollEnabled = userScrollEnabled,
             key = { page -> LauncherDockRoutes[page].launcherDockTagSuffix() },
@@ -1441,28 +1539,28 @@ private fun LauncherDockBar(
             LauncherDockItem(
                 selected = selectedRoute == Route.Main,
                 route = Route.Main,
-                iconResId = R.drawable.ic_dock_game,
+                icon = RendererIcons.Gamepad2,
                 label = stringResource(R.string.main_dock_game),
                 onSelectRoute = onSelectRoute,
             )
             LauncherDockItem(
                 selected = selectedRoute == Route.Mods,
                 route = Route.Mods,
-                iconResId = R.drawable.ic_dock_mods,
+                icon = RendererIcons.Package,
                 label = stringResource(R.string.main_dock_mods),
                 onSelectRoute = onSelectRoute,
             )
             LauncherDockItem(
                 selected = selectedRoute == Route.Workshop,
                 route = Route.Workshop,
-                iconResId = R.drawable.ic_dock_market,
+                icon = RendererIcons.Store,
                 label = stringResource(R.string.main_dock_market),
                 onSelectRoute = onSelectRoute,
             )
             LauncherDockItem(
                 selected = selectedRoute == Route.Settings,
                 route = Route.Settings,
-                iconResId = R.drawable.ic_dock_settings,
+                icon = RendererIcons.Settings2,
                 label = stringResource(R.string.main_dock_settings),
                 onSelectRoute = onSelectRoute,
             )
@@ -1474,7 +1572,7 @@ private fun LauncherDockBar(
 private fun RowScope.LauncherDockItem(
     selected: Boolean,
     route: Route,
-    @androidx.annotation.DrawableRes iconResId: Int,
+    icon: ImageVector,
     label: String,
     onSelectRoute: (Route) -> Unit,
 ) {
@@ -1504,7 +1602,7 @@ private fun RowScope.LauncherDockItem(
             contentColor = contentColor,
         ) {
             Icon(
-                painter = painterResource(iconResId),
+                imageVector = icon,
                 contentDescription = label,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
@@ -1593,10 +1691,12 @@ private fun Route?.launcherDockRoute(): Route? {
          Route.SettingsLauncher,
          Route.SettingsGame,
          Route.SettingsPerformance,
-         Route.SettingsMarketCloud,
-        Route.SettingsWorkshopAutoImportDefaults,
-        Route.SettingsFeedback,
-        Route.SettingsAbout -> Route.Settings
+          Route.SettingsMarketCloud,
+           Route.SettingsLlm,
+           Route.SettingsLlmTutorial,
+          Route.SettingsWorkshopAutoImportDefaults,
+         Route.SettingsFeedback,
+         Route.SettingsAbout -> Route.Settings
         Route.CrashRecovery,
         is Route.WorkshopDetail,
         Route.WorkshopDownloadCenter,
@@ -1622,9 +1722,10 @@ private fun Route?.launcherDockRoute(): Route? {
         Route.Feedback,
         Route.FeedbackSubscriptions,
         Route.FeedbackIssueBrowser,
-        is Route.FeedbackConversation,
-        is Route.FeedbackIssuePreview,
-        null -> null
+          is Route.FeedbackConversation,
+          is Route.FeedbackIssuePreview,
+          is Route.AiModEditor,
+          null -> null
     }
 }
 

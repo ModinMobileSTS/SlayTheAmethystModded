@@ -44,6 +44,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.navigation.Route
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
@@ -139,7 +140,7 @@ internal fun LauncherSettingsScreenContent(
     feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
     onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
-    val blockingInteractionLocked = uiState.busyOperation.usesBlockingOverlay()
+    val blockingInteractionLocked = uiState.busyOperation.locksInteraction(uiState.busy)
     val context = LocalContext.current.applicationContext
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
@@ -517,8 +518,7 @@ internal fun LauncherSettingsPerformanceScreenContent(
     onGoBack: () -> Unit = {},
     onRenderScaleSelected: (Float) -> Unit = {},
     onTargetFpsSelected: (Float) -> Unit = {},
-    onNonRecommendedFpsEnabledChanged: (Boolean) -> Unit = {},
-    onSwappyFramePacingEnabledChanged: (Boolean) -> Unit = {},
+    onFramePacingModeChanged: (io.stamethyst.config.FramePacingMode) -> Unit = {},
     onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit = {},
     onRamSaverEnabledChanged: (Boolean) -> Unit = {},
     onMtsPatchCacheEnabledChanged: (Boolean) -> Unit = {},
@@ -537,8 +537,7 @@ internal fun LauncherSettingsPerformanceScreenContent(
                     actions = PerformanceSettingsActions(
                         onRenderScaleSelected = onRenderScaleSelected,
                         onTargetFpsSelected = onTargetFpsSelected,
-                        onNonRecommendedFpsEnabledChanged = onNonRecommendedFpsEnabledChanged,
-                        onSwappyFramePacingEnabledChanged = onSwappyFramePacingEnabledChanged,
+                        onFramePacingModeChanged = onFramePacingModeChanged,
                         onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
                         onRamSaverEnabledChanged = onRamSaverEnabledChanged,
                         onMtsPatchCacheEnabledChanged = onMtsPatchCacheEnabledChanged,
@@ -579,6 +578,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
     onWorkshopDownloadThreadsChanged: (Int) -> Unit = {},
     onWorkshopWattAccelerationChanged: (Boolean) -> Unit = {},
     onWorkshopSteamLanguageChanged: (SteamLanguagePreference) -> Unit = {},
+    onWorkshopDefaultSortChanged: (WorkshopBrowseSort) -> Unit = {},
     onWorkshopAutoImportChanged: (Boolean) -> Unit = {},
     onOpenWorkshopAutoImportDefaults: () -> Unit = {},
     onClearWorkshopPreviewCache: () -> Unit = {},
@@ -676,6 +676,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
                         onWorkshopDownloadThreadsChanged = onWorkshopDownloadThreadsChanged,
                         onWorkshopWattAccelerationChanged = onWorkshopWattAccelerationChanged,
                         onWorkshopSteamLanguageChanged = onWorkshopSteamLanguageChanged,
+                        onWorkshopDefaultSortChanged = onWorkshopDefaultSortChanged,
                         onWorkshopAutoImportChanged = onWorkshopAutoImportChanged,
                         onOpenWorkshopAutoImportDefaults = onOpenWorkshopAutoImportDefaults,
                         onClearWorkshopPreviewCache = onClearWorkshopPreviewCache,

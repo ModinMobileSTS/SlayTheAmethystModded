@@ -554,6 +554,14 @@ internal class WorkshopService(
                 null
             }
             val (detail, payload) = apiDetail.await()
+            // The API metadata is in hand; the community HTML page (description, preview media,
+            // comment thread) is still downloading. Narrate that wait explicitly so the bar does
+            // not sit on "Parsing" while the biggest request is still in flight.
+            if (includeCommunityData) {
+                progressSessionId?.let { sessionId ->
+                    WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.LoadingCommunityDetail)
+                }
+            }
             // Dependencies are almost fully described by the API payload (children), so fetch them
             // while the community page is still downloading instead of after it. The community page
             // only contributes a few extra required-item ids; those go out as a small follow-up
@@ -633,6 +641,11 @@ internal class WorkshopService(
                 emptyList()
             }
             val depsMs = SystemClock.elapsedRealtime() - depsStartedAtMs
+            if (includeDependencyData && (primaryDependencyDetailsDeferred != null || extraDependencyDetailsDeferred != null)) {
+                progressSessionId?.let { sessionId ->
+                    WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.LoadingDependencies)
+                }
+            }
             val dependencyDetailsById = buildMap<ULong?, PublishedFileDetailsDto> {
                 primaryDependencyDetailsDeferred?.let { deferred -> putAll(deferred.await()) }
                 extraDependencyDetailsDeferred?.let { deferred ->

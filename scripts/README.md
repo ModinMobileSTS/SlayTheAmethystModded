@@ -18,15 +18,28 @@ Commands:
 - `fast-release-slim`: alias of `fast-release`.
 - `fast-release-full`: build the fast full release APK with the embedded resource-pack archive and skip slow cleanup by default.
 - `prepare-release`: run local release preparation checks and signing setup validation.
+- `doctor`: check the local build environment (JDK, Android SDK/NDK/CMake, network reachability, build-deps, release and debug signing, Sling Break source, toolchains) and print a flutter-doctor style report.
 - `package-cloud-function`: package `cloud-function/` into a zip.
 
 Common release options:
 
-- `--store-file` / `-StoreFile`: signing keystore path.
-- `--key-alias` / `-KeyAlias`: signing key alias, default `upload`.
+- `--store-file` / `-StoreFile`: signing keystore path. Defaults to `build-deps/release-signature/` (`signing.properties` `storeFile`, else `keystore.jks`).
+- `--key-alias` / `-KeyAlias`: signing key alias. Defaults to `RELEASE_KEY_ALIAS`, then `signing.properties` `keyAlias`, then `upload`.
 - `--skip-lint-check` / `-SkipLintCheck`: available on non-fast release commands.
 - `--run-lint-check` / `-RunLintCheck`: available on fast release commands.
 - `--skip-local-check` / `-SkipLocalCheck`: available on `prepare-release`.
+- `--verbose` / `-Verbose`, `--no-color` / `-NoColor`, `--json` / `-Json`, `--no-network` / `-NoNetwork`: available on `doctor`. `doctor` exits non-zero only when a required check fails.
+
+Doctor states: `[✓]` ok, `[!]` warning (builds can still run), `[✗]` issue (build will fail), `[-]` skipped because a prerequisite is missing.
+
+Signing is probed as two separate checks: `Release signing` (RELEASE_* env vars or `build-deps/release-signature/`) and `Debug signing` (`build-deps/debug-signature/`, else the AGP default keystore). Each runs a `keytool` probe to confirm the keystore opens and the alias resolves; the probe is skipped, not failed, when `keytool` is unavailable.
+
+The `Network` check probes the repositories a build pulls from (Maven Central, Google Maven, Gradle Plugin Portal, foojay toolchains) plus the build's archive inputs: the dependency bundle, the direct `jre8-pojav.zip` URL, and the resolved Sling Break archive (from `slingBreak.sourceUrl` or `slingBreak.repository` + `slingBreak.ref`). Archive inputs are verified by transferring a 1 MiB slice of the body with a `Range` GET, not just a `HEAD`, because a header round-trip can succeed while the transfer stalls — which is how `:app:fetchSlingBreakSource` times out even after a passing doctor.
+
+Severity follows what the build actually needs: an endpoint is `[✗]` build-blocking only when the build cannot proceed without it. The dependency bundle is blocking while `build-deps/` is incomplete; the Sling Break archive is blocking only when there is no local `slingBreak.sourceDir` and no cached extraction under `app/build/generated/slingbreak-source/`. Everything else is a `[!]` warning that builds may still survive. If `slingBreak.sourceDir` is set, the Sling Break endpoint is not probed at all. It honours `HTTPS_PROXY`/`HTTP_PROXY` and reads `buildDeps.bundleUrl` from `gradle.properties` when set; use `--no-network` to skip it.
+
+The `Sling Break source` check reflects how packaging resolves the minigame bundle. By default `fetchSlingBreakSource` revalidates the upstream archive on every packaging build and only downloads it when the server's `ETag` / `Last-Modified` validators changed, so no local checkout is required and an unchanged upstream is cheap. The URL comes from `slingBreak.repository` + `slingBreak.ref`, or a full `slingBreak.sourceUrl`. The check reports the same three states the build uses: a valid `slingBreak.sourceDir` override, a cached extraction under `app/build/generated/slingbreak-source/` (which the fetch task reuses when the upstream is unreachable), or a pending remote fetch. When `slingBreak.sourceDir` is set but missing `index.html` or `launcher-mode.js`, it fails. The bundle is no longer stored under `app/src/main/assets/slingbreak/`; only `fetchSlingBreakSource` produces it.
+
 - `--source-dir` / `-SourceDir` and `--output-zip` / `-OutputZip`: available on `package-cloud-function`.
 
 Examples:
@@ -36,6 +49,8 @@ python scripts/build/main.py debug
 python scripts/build/main.py release
 python scripts/build/main.py release-full
 python scripts/build/main.py fast-release
+python scripts/build/main.py doctor
+python scripts/build/main.py doctor --json
 python scripts/build/main.py package-cloud-function
 python scripts/build/main.py prepare-release
 ```
@@ -45,6 +60,7 @@ Implementation files:
 - `scripts/build/main.py`: thin entrypoint.
 - `scripts/build/lib/cli.py`: parses build command arguments and dispatches subcommands.
 - `scripts/build/lib/commands.py`: implements Gradle builds, release preparation, and cloud function packaging.
+- `scripts/build/lib/doctor.py`: implements the `doctor` environment checks and report rendering.
 
 ## Tools Entrypoint
 

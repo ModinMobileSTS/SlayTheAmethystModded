@@ -236,7 +236,7 @@ sealed interface UpdateCheckExecutionResult {
 
 object LauncherUpdateVersioning {
     private val releaseVersionPattern =
-        Regex("""^(\d+)\.(\d+)\.(\d+)(?:(?:-dev(\d+))|(?:-hotfix(\d+)))?$""")
+        Regex("""^(\d+)\.(\d+)\.(\d+)(?:(?:-dev(\d+))|(?:-RC(\d+))|(?:-hotfix(\d+)))?$""")
     private val publishedAtFormatter =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.US)
 
@@ -312,17 +312,19 @@ object LauncherUpdateVersioning {
     private fun parseReleaseVersion(value: String): ParsedReleaseVersion? {
         val match = releaseVersionPattern.matchEntire(value) ?: return null
         val devNumber = match.groupValues[4].toIntOrNull()
-        val hotfixNumber = match.groupValues[5].toIntOrNull()
+        val rcNumber = match.groupValues[5].toIntOrNull()
+        val hotfixNumber = match.groupValues[6].toIntOrNull()
         return ParsedReleaseVersion(
             major = match.groupValues[1].toInt(),
             minor = match.groupValues[2].toInt(),
             patch = match.groupValues[3].toInt(),
             stage = when {
-                devNumber != null -> -1
+                devNumber != null -> -2
+                rcNumber != null -> -1
                 hotfixNumber != null -> 1
                 else -> 0
             },
-            stageNumber = devNumber ?: hotfixNumber ?: 0
+            stageNumber = devNumber ?: rcNumber ?: hotfixNumber ?: 0
         )
     }
 }

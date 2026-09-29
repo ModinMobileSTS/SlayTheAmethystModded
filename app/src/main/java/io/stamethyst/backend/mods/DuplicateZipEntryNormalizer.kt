@@ -1,12 +1,16 @@
 package io.stamethyst.backend.mods
 
 import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.LinkedHashSet
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
@@ -124,6 +128,64 @@ internal object DuplicateZipEntryNormalizer {
         } finally {
             if (tempFile.exists()) {
                 tempFile.delete()
+            }
+        }
+    }
+
+    /**
+     * Writes a duplicate-free copy of [source] to [target] without touching the original.
+     *
+     * Android's `java.util.zip.ZipFile` rejects archives with duplicate entry names (the shipped
+     * `desktop-1.0.jar` has one), which makes such jars unusable as an ECJ classpath entry.
+     * `ZipInputStream` reads sequentially and tolerates the duplicates, so this rebuilds a jar that
+     * `ZipFile` can open. Used to prepare on-device compilation classpaths.
+     */
+    @Throws(IOException::class)
+    fun copyDeduplicated(source: File, target: File) {
+        val seenNames = LinkedHashSet<String>()
+        ZipInputStream(BufferedInputStream(FileInputStream(source))).use { zipInput ->
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(target, false))).use { zipOut ->
+                while (true) {
+                    val entry = zipInput.nextEntry ?: break
+                    if (!seenNames.add(entry.name)) {
+                        continue
+                    }
+                    val outEntry = ZipEntry(entry.name)
+                    if (entry.time >= 0L) {
+                        outEntry.time = entry.time
+                    }
+                    zipOut.putNextEntry(outEntry)
+                    if (!entry.isDirectory) {
+                        JarFileIoUtils.copyStream(zipInput, zipOut)
+                    }
+                    zipOut.closeEntry()
+                }
+            }
+        }
+    }
+
+    /**
+     * Creates a duplicate-free classpath overlay containing only class entries.
+     *
+     * A parent mod may be hundreds of megabytes because of textures, audio, or other resources.
+     * ECJ and CFR need bytecode for symbol resolution, not those resources, so copying only classes
+     * avoids turning a duplicate-entry workaround into a second full-size archive.
+     */
+    @Throws(IOException::class)
+    fun copyClassEntries(source: File, target: File) {
+        val seenNames = LinkedHashSet<String>()
+        ZipArchiveInputStream(BufferedInputStream(FileInputStream(source))).use { zipInput ->
+            ZipOutputStream(BufferedOutputStream(FileOutputStream(target, false))).use { zipOut ->
+                while (true) {
+                    val entry = zipInput.nextZipEntry ?: break
+                    if (entry.isDirectory || !entry.name.endsWith(".class", ignoreCase = true)) continue
+                    if (!seenNames.add(entry.name)) continue
+                    val outEntry = ZipEntry(entry.name)
+                    if (entry.time >= 0L) outEntry.time = entry.time
+                    zipOut.putNextEntry(outEntry)
+                    JarFileIoUtils.copyStream(zipInput, zipOut)
+                    zipOut.closeEntry()
+                }
             }
         }
     }

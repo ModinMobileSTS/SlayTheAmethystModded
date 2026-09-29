@@ -15,6 +15,7 @@ import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayAnimation
@@ -22,6 +23,7 @@ import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -31,8 +33,23 @@ import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 
 object LauncherPreferences {
+    private const val PREF_WHATS_NEW = "whats_new"
+    private const val KEY_LAST_SEEN_VERSION = "last_seen_version"
+
+    fun lastSeenWhatsNewVersion(context: Context): String? =
+        context.getSharedPreferences(PREF_WHATS_NEW, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_SEEN_VERSION, null)
+
+    fun markWhatsNewSeen(context: Context, version: String) {
+        context.getSharedPreferences(PREF_WHATS_NEW, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LAST_SEEN_VERSION, version)
+            .apply()
+    }
+
     val DEFAULT_BACK_BEHAVIOR: BackBehavior
         get() = LauncherConfig.DEFAULT_BACK_BEHAVIOR
     val DEFAULT_BACK_IMMEDIATE_EXIT: Boolean
@@ -109,6 +126,12 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_FLOATING_TOOL_BUTTONS
     val FLOATING_TOOL_BUTTON_IDS: List<String>
         get() = LauncherConfig.FLOATING_TOOL_BUTTON_IDS
+    val DEFAULT_HIDDEN_MAIN_CARDS: Set<String>
+        get() = LauncherConfig.DEFAULT_HIDDEN_MAIN_CARDS
+    val DEFAULT_SHOW_REFRESH_RATE_DETECTOR: Boolean
+        get() = LauncherConfig.DEFAULT_SHOW_REFRESH_RATE_DETECTOR
+    val MAIN_CARD_IDS: List<String>
+        get() = LauncherConfig.MAIN_CARD_IDS
     val DEFAULT_HAPTIC_FEEDBACK_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_HAPTIC_FEEDBACK_ENABLED
     val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK: Boolean
@@ -139,6 +162,9 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_MTS_PATCH_CACHE_ENABLED
     val DEFAULT_SWAPPY_FRAME_PACING_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_SWAPPY_FRAME_PACING_ENABLED
+
+    val DEFAULT_FRAME_PACING_MODE: FramePacingMode
+        get() = LauncherConfig.DEFAULT_FRAME_PACING_MODE
     val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
     val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED: Boolean
@@ -161,6 +187,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_GPU_RESOURCE_GUARDIAN_MODE
     val DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED
+    val DEFAULT_ACCELERATION_STRATEGY: AccelerationStrategy
+        get() = LauncherConfig.DEFAULT_ACCELERATION_STRATEGY
     val DEFAULT_GDX_PAD_CURSOR_DEBUG: Boolean
         get() = LauncherConfig.DEFAULT_GDX_PAD_CURSOR_DEBUG
     val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG: Boolean
@@ -191,6 +219,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_WORKSHOP_WATT_ACCELERATION_ENABLED
     val DEFAULT_WORKSHOP_STEAM_LANGUAGE: SteamLanguagePreference
         get() = SteamLanguagePreference.fromStorageValue(LauncherConfig.DEFAULT_WORKSHOP_STEAM_LANGUAGE)
+    val DEFAULT_WORKSHOP_DEFAULT_SORT: WorkshopBrowseSort
+        get() = WorkshopBrowseSort.fromStorageValue(LauncherConfig.DEFAULT_WORKSHOP_DEFAULT_SORT)
     val DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED
     val DEFAULT_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_ENABLED: Boolean
@@ -297,6 +327,14 @@ object LauncherPreferences {
         LauncherConfig.setSteamAchievementDebugModeEnabled(context, enabled)
     }
 
+    fun isSlingBreakAudioDebugModeEnabled(context: Context): Boolean {
+        return LauncherConfig.isSlingBreakAudioDebugModeEnabled(context)
+    }
+
+    fun setSlingBreakAudioDebugModeEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSlingBreakAudioDebugModeEnabled(context, enabled)
+    }
+
     fun isSteamAchievementSyncEnabled(context: Context): Boolean {
         return LauncherConfig.isSteamAchievementSyncEnabled(context)
     }
@@ -388,6 +426,22 @@ object LauncherPreferences {
 
     fun saveFloatingToolButtons(context: Context, buttons: Set<String>) {
         LauncherConfig.saveFloatingToolButtons(context, buttons)
+    }
+
+    fun readHiddenMainCards(context: Context): Set<String> {
+        return LauncherConfig.readHiddenMainCards(context)
+    }
+
+    fun saveHiddenMainCards(context: Context, cardIds: Set<String>) {
+        LauncherConfig.saveHiddenMainCards(context, cardIds)
+    }
+
+    fun isRefreshRateDetectorEnabled(context: Context): Boolean {
+        return LauncherConfig.isRefreshRateDetectorEnabled(context)
+    }
+
+    fun saveRefreshRateDetectorEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.saveRefreshRateDetectorEnabled(context, enabled)
     }
 
     fun isHapticFeedbackEnabled(context: Context): Boolean {
@@ -586,6 +640,13 @@ object LauncherPreferences {
         LauncherConfig.setSwappyFramePacingEnabled(context, enabled)
     }
 
+    fun readFramePacingMode(context: Context): FramePacingMode =
+        LauncherConfig.readFramePacingMode(context)
+
+    fun saveFramePacingMode(context: Context, mode: FramePacingMode) {
+        LauncherConfig.saveFramePacingMode(context, mode)
+    }
+
     fun isGamePerformanceOverlayEnabled(context: Context): Boolean {
         return LauncherConfig.isGamePerformanceOverlayEnabled(context)
     }
@@ -678,6 +739,18 @@ object LauncherPreferences {
 
     fun resetGpuResourceGuardianMode(context: Context) {
         LauncherConfig.resetGpuResourceGuardianMode(context)
+    }
+
+    fun readAccelerationStrategy(context: Context): AccelerationStrategy {
+        return LauncherConfig.readAccelerationStrategy(context)
+    }
+
+    fun saveAccelerationStrategy(context: Context, strategy: AccelerationStrategy) {
+        LauncherConfig.saveAccelerationStrategy(context, strategy)
+    }
+
+    fun resetAccelerationStrategy(context: Context) {
+        LauncherConfig.resetAccelerationStrategy(context)
     }
 
     fun isGdxPadCursorDebugEnabled(context: Context): Boolean {
@@ -775,6 +848,14 @@ object LauncherPreferences {
 
     fun saveWorkshopSteamLanguage(context: Context, value: SteamLanguagePreference) {
         LauncherConfig.saveWorkshopSteamLanguage(context, value.storageValue)
+    }
+
+    fun readWorkshopDefaultSort(context: Context): WorkshopBrowseSort {
+        return WorkshopBrowseSort.fromStorageValue(LauncherConfig.readWorkshopDefaultSort(context))
+    }
+
+    fun saveWorkshopDefaultSort(context: Context, value: WorkshopBrowseSort) {
+        LauncherConfig.saveWorkshopDefaultSort(context, value.browseSortValue)
     }
 
     fun isWorkshopAutoImportEnabled(context: Context): Boolean {
@@ -907,10 +988,6 @@ object LauncherPreferences {
 
     fun readTargetFpsValue(context: Context): Float {
         return LauncherConfig.readTargetFpsValue(context)
-    }
-
-    fun isTargetFpsAutomatic(context: Context): Boolean {
-        return LauncherConfig.isTargetFpsAutomatic(context)
     }
 
     fun saveTargetFps(context: Context, targetFps: Int) {

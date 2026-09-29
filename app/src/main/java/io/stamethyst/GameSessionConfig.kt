@@ -7,11 +7,11 @@ import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.render.AndroidGameModeSnapshot
 import io.stamethyst.backend.render.AndroidGameModeSupport
-import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.SpecialKeyInputMode
@@ -22,7 +22,7 @@ internal data class GameSessionConfig(
     val requestedRenderScale: Float,
     val requestedTargetFps: Float,
     val effectiveTargetFps: Float,
-    val swappyFramePacingEnabled: Boolean,
+    val framePacingMode: FramePacingMode,
     val launchMode: String,
     val debugMode: Boolean,
     val backBehavior: BackBehavior,
@@ -81,15 +81,11 @@ internal data class GameSessionConfig(
             val requestedTargetFps = intent.getFloatExtra(
                 StsGameActivity.EXTRA_TARGET_FPS,
                 Float.NaN
-            ).takeIf { it > 0f && !it.isNaN() }
+            ).takeIf { it >= LauncherConfig.UNLIMITED_TARGET_FPS.toFloat() && !it.isNaN() }
                 ?: LauncherConfig.readTargetFpsValue(context)
             val effectiveRenderScale =
                 AndroidGameModeSupport.resolveRenderScale(requestedRenderScale, systemGameMode)
-            val effectiveTargetFps = if (LauncherConfig.isTargetFpsAutomatic(context)) {
-                DisplayRefreshRateController.resolveAutomaticTargetFps(context)
-            } else {
-                requestedTargetFps
-            }
+            val effectiveTargetFps = requestedTargetFps
 
             val specialKeyInputMode = LauncherConfig.readSpecialKeyInputMode(context)
 
@@ -98,10 +94,9 @@ internal data class GameSessionConfig(
                 requestedRenderScale = requestedRenderScale,
                 requestedTargetFps = requestedTargetFps,
                 effectiveTargetFps = effectiveTargetFps,
-                swappyFramePacingEnabled = intent.getBooleanExtra(
-                    StsGameActivity.EXTRA_SWAPPY_FRAME_PACING_ENABLED,
-                    LauncherConfig.isSwappyFramePacingEnabled(context)
-                ),
+                framePacingMode = FramePacingMode.fromPersistedValue(
+                    intent.getStringExtra(StsGameActivity.EXTRA_FRAME_PACING_MODE)
+                ) ?: LauncherConfig.readFramePacingMode(context),
                 launchMode = launchMode,
                 debugMode = intent.getBooleanExtra(StsGameActivity.EXTRA_DEBUG_MODE, false),
                 backBehavior = parseBackBehavior(intent),

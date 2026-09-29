@@ -26,31 +26,51 @@ internal object DiagnosticsProcessClient {
         data class Failure(val exception: IOException) : DiagnosticsResult
     }
 
-    fun exportJvmLogBundle(context: Context, destination: Uri): Int {
-        val result = execute(context) { serviceIntent ->
+    fun exportJvmLogBundle(context: Context, destination: Uri): Int =
+        exportJvmLogBundle(context, destination, null)
+
+    fun exportJvmLogBundle(
+        context: Context,
+        destination: Uri,
+        onProgress: ((Int) -> Unit)?
+    ): Int {
+        val result = execute(context, onProgress) { serviceIntent ->
             serviceIntent.action = DiagnosticsProcessService.ACTION_EXPORT_JVM_LOG_BUNDLE
             serviceIntent.putExtra(DiagnosticsProcessService.EXTRA_DESTINATION_URI, destination)
         }
         return result.getInt(DiagnosticsProcessService.EXTRA_ENTRY_COUNT, 0)
     }
 
-    fun buildJvmLogShareArchive(context: Context): DiagnosticsArchiveResult {
-        val result = execute(context) { serviceIntent ->
+    fun buildJvmLogShareArchive(
+        context: Context,
+        onProgress: ((Int) -> Unit)? = null
+    ): DiagnosticsArchiveResult {
+        val result = execute(context, onProgress) { serviceIntent ->
             serviceIntent.action = DiagnosticsProcessService.ACTION_BUILD_JVM_LOG_SHARE
         }
         return parseArchiveResult(result)
     }
 
-    fun exportPerformanceLogBundle(context: Context, destination: Uri): Int {
-        val result = execute(context) { serviceIntent ->
+    fun exportPerformanceLogBundle(context: Context, destination: Uri): Int =
+        exportPerformanceLogBundle(context, destination, null)
+
+    fun exportPerformanceLogBundle(
+        context: Context,
+        destination: Uri,
+        onProgress: ((Int) -> Unit)?
+    ): Int {
+        val result = execute(context, onProgress) { serviceIntent ->
             serviceIntent.action = DiagnosticsProcessService.ACTION_EXPORT_PERFORMANCE_LOG_BUNDLE
             serviceIntent.putExtra(DiagnosticsProcessService.EXTRA_DESTINATION_URI, destination)
         }
         return result.getInt(DiagnosticsProcessService.EXTRA_ENTRY_COUNT, 0)
     }
 
-    fun buildPerformanceLogShareArchive(context: Context): DiagnosticsArchiveResult {
-        val result = execute(context) { serviceIntent ->
+    fun buildPerformanceLogShareArchive(
+        context: Context,
+        onProgress: ((Int) -> Unit)? = null
+    ): DiagnosticsArchiveResult {
+        val result = execute(context, onProgress) { serviceIntent ->
             serviceIntent.action = DiagnosticsProcessService.ACTION_BUILD_PERFORMANCE_LOG_SHARE
         }
         return parseArchiveResult(result)
@@ -58,9 +78,10 @@ internal object DiagnosticsProcessClient {
 
     fun buildCrashShareArchive(
         context: Context,
-        crashContext: CrashArchiveContext
+        crashContext: CrashArchiveContext,
+        onProgress: ((Int) -> Unit)? = null
     ): DiagnosticsArchiveResult {
-        val result = execute(context) { serviceIntent ->
+        val result = execute(context, onProgress) { serviceIntent ->
             serviceIntent.action = DiagnosticsProcessService.ACTION_BUILD_CRASH_SHARE
             serviceIntent.putExtra(DiagnosticsProcessService.EXTRA_CRASH_CODE, crashContext.code)
             serviceIntent.putExtra(
@@ -89,6 +110,7 @@ internal object DiagnosticsProcessClient {
 
     private fun execute(
         context: Context,
+        onProgress: ((Int) -> Unit)?,
         configureIntent: (Intent) -> Unit
     ): Bundle {
         val appContext = context.applicationContext
@@ -97,6 +119,15 @@ internal object DiagnosticsProcessClient {
         val resultRef = AtomicReference<DiagnosticsResult?>()
         val receiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
             override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                if (resultCode == DiagnosticsProcessService.RESULT_PROGRESS) {
+                    val percent = resultData
+                        ?.getInt(DiagnosticsProcessService.EXTRA_PROGRESS_PERCENT, -1)
+                        ?: -1
+                    if (percent >= 0) {
+                        onProgress?.invoke(percent)
+                    }
+                    return
+                }
                 if (!settled.compareAndSet(false, true)) {
                     return
                 }

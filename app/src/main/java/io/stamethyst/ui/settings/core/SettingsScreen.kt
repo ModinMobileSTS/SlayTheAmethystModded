@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import io.stamethyst.SlingBreakActivity
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
@@ -202,11 +203,8 @@ fun LauncherSettingsPerformanceScreen(
         onGoBack = navigator::goBack,
         onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
-        onNonRecommendedFpsEnabledChanged = { enabled ->
-            viewModel.onNonRecommendedFpsEnabledChanged(activity, enabled)
-        },
-        onSwappyFramePacingEnabledChanged = { enabled ->
-            viewModel.onSwappyFramePacingEnabledChanged(activity, enabled)
+        onFramePacingModeChanged = { mode ->
+            viewModel.onFramePacingModeChanged(activity, mode)
         },
         onVirtualResolutionModeChanged = { mode ->
             viewModel.onVirtualResolutionModeChanged(activity, mode)
@@ -274,6 +272,9 @@ fun LauncherSettingsMarketCloudScreen(
         },
         onWorkshopSteamLanguageChanged = { language ->
             viewModel.onWorkshopSteamLanguageChanged(activity, language)
+        },
+        onWorkshopDefaultSortChanged = { sort ->
+            viewModel.onWorkshopDefaultSortChanged(activity, sort)
         },
         onWorkshopAutoImportChanged = { enabled ->
             viewModel.onWorkshopAutoImportChanged(activity, enabled)
@@ -410,6 +411,9 @@ fun LauncherDeveloperSettingsScreen(
         onSteamAchievementDebugModeEnabledChanged = { enabled ->
             viewModel.onSteamAchievementDebugModeEnabledChanged(activity, enabled)
         },
+        onSlingBreakAudioDebugModeChanged = { enabled ->
+            viewModel.onSlingBreakAudioDebugModeChanged(activity, enabled)
+        },
         onLocalTestEndpointsChanged = { onlineServiceBaseUrl, configServerUrl, entryNodeUrl ->
             viewModel.onLocalTestEndpointsChanged(
                 activity,
@@ -433,6 +437,9 @@ fun LauncherDeveloperSettingsScreen(
         },
         onGpuResourceGuardianPressureDownscaleChanged = { enabled ->
             viewModel.onGpuResourceGuardianPressureDownscaleChanged(activity, enabled)
+        },
+        onAccelerationStrategyChanged = { strategy ->
+            viewModel.onAccelerationStrategyChanged(activity, strategy)
         },
         onJvmHeapMaxSelected = { value -> viewModel.onJvmHeapMaxSelected(activity, value) },
         onJvmCompressedPointersChanged = { enabled ->
@@ -463,6 +470,10 @@ fun LauncherDeveloperSettingsScreen(
         onExportPerformanceLogs = viewModel::onExportPerformanceLogsToFile,
         onInstallArthasResource = { viewModel.onInstallArthasResourceRequested(activity) },
         onRepairResourcePack = LauncherNavigationRequestBus::requestResourcePack,
+        onOpenSlingBreak = { SlingBreakActivity.launch(activity) },
+        onClearSlingBreakData = {
+            viewModel.onClearSlingBreakData(activity)
+        },
         onGdxPadCursorDebugChanged = { enabled ->
             viewModel.onGdxPadCursorDebugChanged(activity, enabled)
         },

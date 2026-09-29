@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.ResultReceiver
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.stamethyst.R
 import io.stamethyst.LauncherActivity
@@ -67,12 +68,16 @@ class WorkshopDownloadProcessService : Service() {
         const val RESULT_CANCELLED = 5
         private const val CHANNEL_ID = "workshop_download"
         private const val NOTIFICATION_ID = 646570
+        private const val TAG = "WorkshopDownloadService"
         private const val ACTIVE_MARKER_STALE_MS = 30_000L
         private const val ACTIVE_MARKER_HEARTBEAT_MS = 5_000L
         private const val ACTIVE_MARKER_DIR = "workshop/active_downloads"
 
         @Volatile
         private var activeDownloadKeySnapshot: Set<String> = emptySet()
+
+        @Volatile
+        private var runningService: WorkshopDownloadProcessService? = null
 
         fun isActiveDownload(publishedFileId: ULong): Boolean {
             return activeDownloadKeySnapshot.any { it.substringAfter(':') == publishedFileId.toString() }
@@ -88,18 +93,20 @@ class WorkshopDownloadProcessService : Service() {
         private fun activeDownloadMarkerFile(context: Context, publishedFileId: ULong): File =
             File(context.applicationContext.filesDir, "$ACTIVE_MARKER_DIR/$publishedFileId.active")
 
-        fun start(context: Context, details: WorkshopItemDetails, receiver: ResultReceiver? = null) {
+        fun start(context: Context, details: WorkshopItemDetails, receiver: ResultReceiver? = null): Boolean {
             val appContext = context.applicationContext
-            val intent = Intent(appContext, WorkshopDownloadProcessService::class.java).apply {
-                action = ACTION_DOWNLOAD
-                putExtra(EXTRA_RESULT_RECEIVER, receiver)
-                putExtra(EXTRA_APP_ID, details.summary.appId.toString())
-                putExtra(EXTRA_PUBLISHED_FILE_ID, details.summary.publishedFileId.toString())
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                appContext.startForegroundService(intent)
-            } else {
-                appContext.startService(intent)
+            return try {
+                val intent = downloadIntent(appContext, details, receiver)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    appContext.startForegroundService(intent)
+                } else {
+                    appContext.startService(intent)
+                }
+                true
+            } catch (error: IllegalStateException) {
+                if (!isForegroundServiceStartRejected(error)) throw error
+                Log.w(TAG, "Workshop download service start deferred until the launcher is visible", error)
+                false
             }
         }
 
@@ -109,19 +116,64 @@ class WorkshopDownloadProcessService : Service() {
 
         fun startNextQueued(context: Context) {
             val taskStore = WorkshopDownloadTaskStore(context)
-            taskStore.claimNextQueuedTasks(availableDownloadSlots(context)).forEach { task ->
-                runCatching { start(context, task.details, null) }.onFailure { error ->
-                    taskStore.update(task.publishedFileId) {
-                        it.copy(
-                            status = WorkshopDownloadTaskStatus.Failed,
-                            message = "启动下载服务失败：${error.message ?: error.javaClass.simpleName}",
-                            errorClass = error.javaClass.name,
-                            errorMessage = error.message ?: error.javaClass.simpleName,
-                            errorStackTrace = error.stackTraceToString(),
-                            updatedAtMillis = System.currentTimeMillis(),
-                        )
-                    }
+            val claimedTasks = taskStore.claimNextQueuedTasks(availableDownloadSlots(context))
+            if (claimedTasks.isEmpty()) return
+
+            // A running foreground service can continue its own queue without asking Android to
+            // start another foreground service from a worker thread after the old worker exits.
+            runningService?.let { service ->
+                service.startClaimedTasks(claimedTasks)
+                return
+            }
+
+            claimedTasks.forEach { task ->
+                val started = runCatching { start(context, task.details, null) }.getOrElse { error ->
+                    taskStore.markStartFailure(task, error)
+                    false
                 }
+                if (!started) taskStore.requeueAfterDeferredStart(task.publishedFileId)
+            }
+        }
+
+        private fun downloadIntent(
+            context: Context,
+            details: WorkshopItemDetails,
+            receiver: ResultReceiver?,
+        ): Intent = Intent(context, WorkshopDownloadProcessService::class.java).apply {
+            action = ACTION_DOWNLOAD
+            putExtra(EXTRA_RESULT_RECEIVER, receiver)
+            putExtra(EXTRA_APP_ID, details.summary.appId.toString())
+            putExtra(EXTRA_PUBLISHED_FILE_ID, details.summary.publishedFileId.toString())
+        }
+
+        private fun isForegroundServiceStartRejected(error: IllegalStateException): Boolean {
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                error.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
+        }
+
+        private fun WorkshopDownloadTaskStore.requeueAfterDeferredStart(publishedFileId: ULong) {
+            update(publishedFileId) { task ->
+                task.copy(
+                    status = WorkshopDownloadTaskStatus.Queued,
+                    message = "等待前台启动下载",
+                    errorClass = "",
+                    errorMessage = "",
+                    errorStackTrace = "",
+                    updatedAtMillis = System.currentTimeMillis(),
+                )
+            }
+        }
+
+        private fun WorkshopDownloadTaskStore.markStartFailure(task: WorkshopDownloadTaskRecord, error: Throwable) {
+            update(task.publishedFileId) {
+                it.copy(
+                    status = WorkshopDownloadTaskStatus.Failed,
+                    message = "启动下载服务失败：${error.message ?: error.javaClass.simpleName}",
+                    errorClass = error.javaClass.name,
+                    errorMessage = error.message ?: error.javaClass.simpleName,
+                    errorStackTrace = error.stackTraceToString(),
+                    updatedAtMillis = System.currentTimeMillis(),
+                )
             }
         }
 
@@ -162,6 +214,11 @@ class WorkshopDownloadProcessService : Service() {
 
     @Volatile
     private var workerThreads: MutableMap<String, Thread> = ConcurrentHashMap()
+
+    override fun onCreate() {
+        super.onCreate()
+        runningService = this
+    }
 
     private val requestedStops: MutableMap<String, StopReason> = ConcurrentHashMap()
     private val activeServices: MutableMap<String, WorkshopService> = ConcurrentHashMap()
@@ -291,6 +348,7 @@ class WorkshopDownloadProcessService : Service() {
     }
 
     override fun onDestroy() {
+        if (runningService === this) runningService = null
         val threads = workerThreads.values.toList()
         activeServices.values.forEach { it.cancelActiveCalls() }
         activeServices.clear()
@@ -819,11 +877,29 @@ class WorkshopDownloadProcessService : Service() {
             activeServices.remove(downloadKey)
             requestedStops.remove(downloadKey)
             activeDownloadKeySnapshot = workerThreads.keys.toSet()
+            startNextQueued(applicationContext)
             if (workerThreads.isEmpty()) {
                 stopForegroundCompat()
                 stopSelf()
             }
-            startNextQueued(applicationContext)
+        }
+    }
+
+    private fun startClaimedTasks(tasks: List<WorkshopDownloadTaskRecord>) {
+        tasks.forEach { task ->
+            runCatching {
+                onStartCommand(
+                    Intent(applicationContext, WorkshopDownloadProcessService::class.java).apply {
+                        action = ACTION_DOWNLOAD
+                        putExtra(EXTRA_APP_ID, task.details.summary.appId.toString())
+                        putExtra(EXTRA_PUBLISHED_FILE_ID, task.details.summary.publishedFileId.toString())
+                    },
+                    0,
+                    0,
+                )
+            }.onFailure { error ->
+                WorkshopDownloadTaskStore(applicationContext).markStartFailure(task, error)
+            }
         }
     }
 

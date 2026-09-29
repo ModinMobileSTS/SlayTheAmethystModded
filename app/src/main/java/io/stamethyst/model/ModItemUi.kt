@@ -3,6 +3,16 @@ package io.stamethyst.model
 import androidx.compose.runtime.Stable
 
 @Stable
+data class AgentPatchModUi(
+    val patchId: String,
+    val patchModId: String,
+    val name: String,
+    val version: String,
+    val description: String,
+    val enabled: Boolean,
+)
+
+@Stable
 data class ModItemUi(
     val modId: String,
     val manifestModId: String,
@@ -23,7 +33,8 @@ data class ModItemUi(
     val newlyImported: Boolean = false,
     val favorite: Boolean = false,
     val workshop: WorkshopModUi? = null,
-    val alias: String = ""
+    val alias: String = "",
+    val agentPatchMods: List<AgentPatchModUi> = emptyList(),
 )
 
 @Stable

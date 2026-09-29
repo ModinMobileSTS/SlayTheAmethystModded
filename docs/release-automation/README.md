@@ -13,41 +13,56 @@ Workflow file:
 
 ## 1. Prepare Signing Key
 
-Generate upload keystore:
+Generate the release keystore into the repository-local signing directory:
 
 ```powershell
 keytool -genkeypair -v `
-  -keystore .\signing\stamethyst-upload.jks `
+  -keystore .\build-deps\release-signature\keystore.jks `
   -alias upload `
   -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Write the credentials the build reads:
+
+```properties
+# build-deps/release-signature/signing.properties
+storeFile=keystore.jks
+storePassword=<your password>
+keyAlias=upload
+keyPassword=<your password>
 ```
 
 Export public certificate (safe to share):
 
 ```powershell
 keytool -export -rfc `
-  -keystore .\signing\stamethyst-upload.jks `
+  -keystore .\build-deps\release-signature\keystore.jks `
   -alias upload `
-  -file .\signing\upload_certificate.pem
+  -file .\build-deps\release-signature\upload_certificate.pem
 ```
 
 Convert keystore to Base64 for GitHub secret:
 
 ```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes(".\signing\stamethyst-upload.jks")) `
+[Convert]::ToBase64String([IO.File]::ReadAllBytes(".\build-deps\release-signature\keystore.jks")) `
   | Set-Content -NoNewline .\signing\keystore.base64.txt
 ```
 
 Notes:
-- Never commit `.jks` or Base64 secret files.
+- `build-deps/` is gitignored; never commit `.jks` or Base64 secret files.
 - For PKCS12 keystores, `RELEASE_KEY_PASSWORD` is commonly the same as `RELEASE_STORE_PASSWORD`.
+- A debug keystore can be placed under `build-deps/debug-signature/` with the same `signing.properties` shape, so local debug builds share one signature.
 
 ## 2. Prepare Private Build Dependency Bundle
 
-The CI runner needs these files packaged as `build-deps.tar.gz`:
+The CI runner needs these files packaged as `build-deps.tar.gz` (canonical flat layout):
 
-- `build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar`
-- `build-deps/runtime-pack/jre8-pojav.zip`
+- `desktop.jar`
+- `jre8-pojav.zip`
+
+The workflow also accepts the legacy nested layout (`steamapps/common/SlayTheSpire/desktop-1.0.jar` and `runtime-pack/jre8-pojav.zip`) and normalizes it into `build-deps/desktop.jar` and `build-deps/jre8-pojav.zip`.
+
+Local builds fetch the same bundle automatically when `build-deps/desktop.jar` or `build-deps/jre8-pojav.zip` is missing; the CI download step remains so releases pin and verify the exact bundle by SHA256.
 
 Compute SHA256:
 
@@ -120,7 +135,7 @@ What the script does:
 
 Notes:
 - The script intentionally does not include unrelated working tree changes in the release commit.
-- The local preflight uses the same signing inputs as local release builds. `RELEASE_STORE_PASSWORD` and `RELEASE_KEY_PASSWORD` must be configured as environment variables before running the script. On Windows, the scripts can read process, user, or machine-level environment variables.
+- The local preflight uses the same signing inputs as local release builds: `build-deps/release-signature/` (or `--store-file`), with `RELEASE_STORE_PASSWORD` and `RELEASE_KEY_PASSWORD` environment variables taking precedence when set. On Windows, the scripts can read process, user, or machine-level environment variables.
 - On Windows, run it from Git Bash or another Bash environment.
 - On Windows Command Prompt or PowerShell, you can use `scripts\prepare-release.bat`.
 - If you explicitly want to skip the preflight, use `scripts\prepare-release.bat -SkipLocalCheck` or `bash scripts/prepare-release.sh --skip-local-check`.

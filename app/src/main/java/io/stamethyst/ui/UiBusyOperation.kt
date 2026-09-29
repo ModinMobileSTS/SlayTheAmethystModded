@@ -9,6 +9,7 @@ enum class UiBusyOperation {
     GAME_PROCESS_CLEANUP,
     GAME_STARTUP_WARMUP,
     STEAM_CLOUD_SYNC,
+    EXPORT_ARCHIVE,
     OTHER_BUSY
 
     ;
@@ -21,9 +22,14 @@ enum class UiBusyOperation {
             MTS_COMPONENT_UPDATE,
             GAME_PROCESS_CLEANUP,
             GAME_STARTUP_WARMUP,
-            STEAM_CLOUD_SYNC -> true
+            STEAM_CLOUD_SYNC,
+            EXPORT_ARCHIVE -> true
             NONE,
             OTHER_BUSY -> false
         }
+    }
+
+    fun locksInteraction(busy: Boolean): Boolean {
+        return busy && usesBlockingOverlay()
     }
 }

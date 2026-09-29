@@ -50,7 +50,21 @@ internal object ArthasResourcePackService {
     private val JAR_NAMES = listOf("arthas-core.jar", "arthas-spy.jar", "arthas-bridge.jar")
     private val ALLOWED_ENTRIES = (JAR_NAMES + MANIFEST_NAME).toSet()
 
-    fun state(context: Context): ArthasResourcePackState {
+    fun state(context: Context): ArthasResourcePackState = state(
+        context = context,
+        verifyContentHashes = true,
+    )
+
+    /** Reads the installed pack metadata and file sizes without hashing the JARs. */
+    fun stateQuick(context: Context): ArthasResourcePackState = state(
+        context = context,
+        verifyContentHashes = false,
+    )
+
+    private fun state(
+        context: Context,
+        verifyContentHashes: Boolean,
+    ): ArthasResourcePackState {
         val current = RuntimePaths.arthasResourceCurrentDir(context)
         val manifestFile = File(current, MANIFEST_NAME)
         if (!manifestFile.isFile) return ArthasResourcePackState(installed = false)
@@ -58,7 +72,11 @@ internal object ArthasResourcePackService {
             val manifest = Properties().apply {
                 FileInputStream(manifestFile).use(::load)
             }
-            validateInstalledDirectory(current, manifest)
+            validateInstalledDirectory(
+                directory = current,
+                manifest = manifest,
+                verifyContentHashes = verifyContentHashes,
+            )
             ArthasResourcePackState(
                 installed = true,
                 version = manifest.getProperty("packageVersion").orEmpty(),
@@ -70,6 +88,9 @@ internal object ArthasResourcePackService {
     }
 
     fun isInstalled(context: Context): Boolean = state(context).let { it.installed && it.valid }
+
+    fun isInstalledQuick(context: Context): Boolean =
+        stateQuick(context).let { it.installed && it.valid }
 
     @Throws(IOException::class)
     fun downloadAndInstall(
@@ -169,7 +190,11 @@ internal object ArthasResourcePackService {
             val manifest = Properties().apply {
                 FileInputStream(File(staging, MANIFEST_NAME)).use(::load)
             }
-            validateInstalledDirectory(staging, manifest)
+            validateInstalledDirectory(
+                directory = staging,
+                manifest = manifest,
+                verifyContentHashes = true,
+            )
             replaceCurrent(context, staging)
             return state(context).also {
                 if (!it.valid) throw IOException("Installed Arthas resource pack failed validation")
@@ -202,7 +227,11 @@ internal object ArthasResourcePackService {
         }
     }
 
-    private fun validateInstalledDirectory(directory: File, manifest: Properties) {
+    private fun validateInstalledDirectory(
+        directory: File,
+        manifest: Properties,
+        verifyContentHashes: Boolean,
+    ) {
         val installedEntries = directory.listFiles()?.map { it.name }?.toSet().orEmpty()
         if (installedEntries != ALLOWED_ENTRIES) {
             throw IOException("Installed Arthas resource entries do not match required files")
@@ -221,7 +250,9 @@ internal object ArthasResourcePackService {
             if (!file.isFile || file.length() != expectedSize || expectedSize <= 0L) {
                 throw IOException("Invalid Arthas resource size: $name")
             }
-            if (!expectedHash.matches(Regex("[0-9a-f]{64}")) || sha256(file) != expectedHash) {
+            if (!expectedHash.matches(Regex("[0-9a-f]{64}")) ||
+                (verifyContentHashes && sha256(file) != expectedHash)
+            ) {
                 throw IOException("Arthas resource checksum mismatch: $name")
             }
         }

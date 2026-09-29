@@ -1,7 +1,10 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 import java.util.Properties
+import java.util.zip.ZipFile
 import org.gradle.api.tasks.PathSensitivity
 
 plugins {
@@ -10,6 +13,49 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     id("io.stamethyst.android-app-build")
+}
+
+// Incremental dex outputs can occasionally go stale while the Java compilation output is intact.
+// Fail the debug build instead of producing an APK that crashes before Application.onCreate.
+val verifyDebugApkEntrypoints = tasks.register("verifyDebugApkEntrypoints") {
+    dependsOn("packageDebug")
+    val apk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    inputs.file(apk)
+    doLast {
+        val requiredClasses = listOf(
+            "Lio/stamethyst/StsApplication;",
+            "Lio/stamethyst/LauncherActivity;",
+        )
+        ZipFile(apk.get().asFile).use { archive ->
+            val classes = archive.entries().asSequence()
+                .filter { it.name.matches(Regex("classes[0-9]*\\.dex")) }
+                .flatMap { entry ->
+                    val bytes = archive.getInputStream(entry).use { it.readBytes() }
+                    val dex = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+                    val stringIdsOffset = dex.getInt(0x3c)
+                    val typeIdsOffset = dex.getInt(0x44)
+                    val classDefsSize = dex.getInt(0x60)
+                    val classDefsOffset = dex.getInt(0x64)
+                    (0 until classDefsSize).asSequence().map { index ->
+                        val typeIndex = dex.getInt(classDefsOffset + index * 32)
+                        val stringIndex = dex.getInt(typeIdsOffset + typeIndex * 4)
+                        var offset = dex.getInt(stringIdsOffset + stringIndex * 4)
+                        while (bytes[offset++].toInt() and 0x80 != 0) Unit // skip ULEB128 length
+                        val start = offset
+                        while (bytes[offset] != 0.toByte()) offset++
+                        String(bytes, start, offset - start, Charsets.UTF_8)
+                    }.toList().asSequence()
+                }.toSet()
+            val missing = requiredClasses.filterNot { it in classes }
+            check(missing.isEmpty()) {
+                "Debug APK is missing startup classes: ${missing.joinToString()}. " +
+                    "Rebuild with :app:assembleDebug --rerun-tasks before installing."
+            }
+        }
+    }
+}
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    dependsOn(verifyDebugApkEntrypoints)
 }
 
 dependencies {
@@ -37,6 +83,46 @@ fun readReleaseSigningProperty(envName: String, gradlePropertyName: String): Str
     providers.environmentVariable(envName).orNull?.trim().orEmpty()
         .ifEmpty { readGradleProperty(gradlePropertyName, readLocalProperty(gradlePropertyName)) }
 
+data class SigningMaterial(
+    val storeFile: File,
+    val storePassword: String,
+    val keyAlias: String,
+    val keyPassword: String
+)
+
+// The keystore and its credentials live together under build-deps/<kind>-signature/ so a
+// fresh clone only needs one directory per variant. Environment variables and Gradle
+// properties still win for release builds so CI keeps using its stored secrets.
+fun readSignatureDirectory(kind: String): SigningMaterial? {
+    val directory = rootProject.layout.projectDirectory.dir("build-deps/${kind}-signature").asFile
+    if (!directory.isDirectory) {
+        return null
+    }
+
+    val properties = Properties().apply {
+        val file = File(directory, "signing.properties")
+        if (file.isFile) {
+            file.reader(StandardCharsets.UTF_8).use(::load)
+        }
+    }
+
+    fun value(name: String, default: String = ""): String =
+        properties.getProperty(name)?.trim().orEmpty().ifEmpty { default }
+
+    val storeFile = File(directory, value("storeFile", "keystore.jks"))
+    val storePassword = value("storePassword")
+    val keyAlias = value("keyAlias")
+    if (!storeFile.isFile || storePassword.isEmpty() || keyAlias.isEmpty()) {
+        return null
+    }
+    return SigningMaterial(
+        storeFile = storeFile,
+        storePassword = storePassword,
+        keyAlias = keyAlias,
+        keyPassword = value("keyPassword").ifEmpty { storePassword }
+    )
+}
+
 fun String?.toBuildConfigStringLiteral(): String =
     "\"" + (this ?: "").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
@@ -51,10 +137,16 @@ fun Iterable<String>.toBuildConfigStringArrayLiteral(): String =
 fun File.normalizedBuildPath(): String =
     absolutePath.replace('\\', '/').lowercase()
 
+val releaseSignature = readSignatureDirectory("release")
+val debugSignature = readSignatureDirectory("debug")
 val releaseStoreFilePath = readReleaseSigningProperty("RELEASE_STORE_FILE", "release.storeFile")
+    .ifEmpty { releaseSignature?.storeFile?.absolutePath.orEmpty() }
 val releaseStorePassword = readReleaseSigningProperty("RELEASE_STORE_PASSWORD", "release.storePassword")
+    .ifEmpty { releaseSignature?.storePassword.orEmpty() }
 val releaseKeyAlias = readReleaseSigningProperty("RELEASE_KEY_ALIAS", "release.keyAlias")
+    .ifEmpty { releaseSignature?.keyAlias.orEmpty() }
 val releaseKeyPassword = readReleaseSigningProperty("RELEASE_KEY_PASSWORD", "release.keyPassword")
+    .ifEmpty { releaseSignature?.keyPassword.orEmpty() }
 val defaultResourcePackDownloadUrl =
     "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/v1.6/resources.zip"
 val defaultResourcePackDownloadFallbackUrls = listOf(
@@ -93,17 +185,23 @@ val hasReleaseSigning = listOf(
     releaseKeyAlias,
     releaseKeyPassword
 ).all(String::isNotEmpty)
+// Signing config used when no release keystore is configured: the shared repository debug
+// keystore when present, otherwise AGP's built-in debug config.
+val fallbackSigningConfigName = if (debugSignature != null) "sharedDebug" else "debug"
 val isReleaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
     taskName.contains("Release", ignoreCase = true)
 }
 
 if (hasReleaseSigning && !File(releaseStoreFilePath).isFile) {
-    throw GradleException("RELEASE_STORE_FILE does not exist: $releaseStoreFilePath")
+    throw GradleException(
+        "Release keystore does not exist: $releaseStoreFilePath. " +
+            "Place it under build-deps/release-signature/ or set RELEASE_STORE_FILE."
+    )
 }
 if (isReleaseTaskRequested && !hasReleaseSigning) {
     logger.warn(
         "Release signing configuration missing; falling back to the debug signing config " +
-            "for local release tasks."
+            "for local release tasks. Provide build-deps/release-signature/ or RELEASE_STORE_* env vars."
     )
 }
 
@@ -153,6 +251,16 @@ android {
                 keyPassword = releaseKeyPassword
             }
         }
+        // A repository-local debug keystore so every checkout shares one debug signature.
+        // Left untouched when build-deps/debug-signature/ is absent.
+        debugSignature?.let { signature ->
+            create("sharedDebug") {
+                storeFile = signature.storeFile
+                storePassword = signature.storePassword
+                keyAlias = signature.keyAlias
+                keyPassword = signature.keyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -162,7 +270,7 @@ android {
             signingConfig = if (hasReleaseSigning) {
                 signingConfigs.getByName("release")
             } else {
-                signingConfigs.getByName("debug")
+                signingConfigs.getByName(fallbackSigningConfigName)
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -185,12 +293,16 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            if (debugSignature != null) {
+                signingConfig = signingConfigs.getByName("sharedDebug")
+            }
         }
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     externalNativeBuild {
@@ -238,7 +350,7 @@ android {
 
 kotlin {
     compilerOptions {
-        jvmTarget = JvmTarget.JVM_1_8
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
@@ -326,6 +438,7 @@ configurations.configureEach {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(project(":lan-core"))
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity.compose)
@@ -358,7 +471,14 @@ dependencies {
     implementation(libs.android.zstd)
     implementation(libs.ow2.asm)
     implementation(libs.ow2.asm.tree)
+    implementation(libs.eclipse.ecj)
+    implementation(libs.cfr.decompiler)
     implementation(libs.lottie.compose)
+    implementation(libs.langchain4j.open.ai)
+    implementation(libs.langchain4j.http.client.okhttp) {
+        // LangChain4j publishes a JVM variant, but Android already provides the same OkHttp API.
+        exclude(group = "com.squareup.okhttp3", module = "okhttp-jvm")
+    }
     implementation(project(":workshop-core"))
     implementation(project(":steam-protocol"))
 
@@ -370,6 +490,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.apache.commons.compress)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

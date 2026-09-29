@@ -8,6 +8,7 @@ import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
@@ -67,7 +68,7 @@ class GameSessionConfigTest {
             requestedRenderScale = renderScale,
             requestedTargetFps = 60f,
             effectiveTargetFps = 60f,
-            swappyFramePacingEnabled = false,
+            framePacingMode = FramePacingMode.BUILT_IN,
             launchMode = "vanilla",
             debugMode = false,
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,

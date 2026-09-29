@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicLong
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val DEFAULT_QQ_GROUP_NUMBER_VALUE = "1029305387"
+private const val DEFAULT_QQ_GROUP_NUMBER_VALUE = "675545914"
 private const val STEAM_DEPOT_KEY_BYTES = 32
 private const val DEFAULT_CLOUD_CONTROL_ASSET_NAME = "cloud-control.json"
 private const val LOCAL_TEST_CLOUD_CONTROL_ASSET_NAME = "cloud-control-test.json"

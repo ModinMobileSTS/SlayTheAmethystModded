@@ -94,7 +94,7 @@ internal data class SettingsChoiceSpec<T>(
 internal fun SettingsBusyIndicator(
     uiState: SettingsScreenViewModel.UiState
 ) {
-    if (!uiState.busy || uiState.busyOperation.usesBlockingOverlay()) {
+    if (!uiState.busy || uiState.busyOperation.locksInteraction(uiState.busy)) {
         return
     }
     val progressFraction = uiState.busyProgressPercent

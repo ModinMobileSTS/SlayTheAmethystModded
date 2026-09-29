@@ -2,6 +2,7 @@ package io.stamethyst.backend.fs
 
 import android.content.Context
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.backend.mods.AgentPatchSourceCompiler
 import io.stamethyst.backend.resources.ResourcePackStore
 import java.io.File
 import java.util.LinkedHashMap
@@ -35,6 +36,11 @@ internal object LauncherJunkFileCleaner {
         add(File(context.cacheDir, MOD_IMPORT_PREVIEW_DIR_NAME))
         add(File(context.cacheDir, "native-market-staging"))
         add(File(context.cacheDir, "runtime-staging"))
+        // AI patch compilation scratch (deduplicated classpath jars).
+        listOf(AgentPatchSourceCompiler.COMPILE_CLASSPATH_CACHE_DIR).forEach { name ->
+            add(File(context.cacheDir, name))
+            add(File(context.filesDir, name))
+        }
         context.externalCacheDir?.let { externalCacheDir ->
             add(File(externalCacheDir, MOD_IMPORT_SESSIONS_DIR_NAME))
             add(File(externalCacheDir, MOD_IMPORT_PREVIEW_DIR_NAME))

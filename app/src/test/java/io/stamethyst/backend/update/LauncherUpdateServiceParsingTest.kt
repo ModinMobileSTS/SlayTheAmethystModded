@@ -134,6 +134,31 @@ class LauncherUpdateServiceParsingTest {
     }
 
     @Test
+    fun buildPendingReleaseNotesText_includesRcAfterDevAndKeepsLatestRcPerPatch() {
+        val latestRelease = UpdateReleaseInfo(
+            rawTagName = "v1.6.1-RC2",
+            normalizedVersion = "1.6.1-RC2",
+            publishedAtRaw = null,
+            publishedAtDisplayText = "",
+            notesText = "latest fallback notes",
+            assetName = "SlayTheAmethyst-release-1.6.1-RC2.apk",
+            assetDownloadUrl = "https://github.com/example/releases/download/v1.6.1-RC2/app.apk"
+        )
+
+        val notesText = LauncherUpdateService.buildPendingReleaseNotesText(
+            currentVersion = "1.6.1-dev2",
+            latestRelease = latestRelease,
+            historyEntries = listOf(
+                historyEntry("v1.6.1-RC2", "1.6.1-RC2", "rc two notes"),
+                historyEntry("v1.6.1-RC1", "1.6.1-RC1", "rc one notes"),
+                historyEntry("v1.6.1-dev2", "1.6.1-dev2", "dev notes")
+            )
+        )
+
+        assertEquals("# v1.6.1-RC2\n\nrc two notes", notesText)
+    }
+
+    @Test
     fun buildPendingReleaseNotesText_fallsBackToLatestNotesWhenHistoryHasNoComparableEntries() {
         val latestRelease = UpdateReleaseInfo(
             rawTagName = "nightly-2",

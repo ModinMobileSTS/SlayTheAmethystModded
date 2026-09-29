@@ -28,7 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,6 +47,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,9 +64,6 @@ internal fun ModCardBodyContent(
     mod: ModItemUi,
     isExpanded: Boolean,
     showModFileName: Boolean,
-    showActionsButton: Boolean,
-    actionsEnabled: Boolean,
-    onActionsClick: () -> Unit,
     modSuggestionText: String? = null,
     suggestionUnread: Boolean = false,
     suggestionBadgeEnabled: Boolean = true,
@@ -79,6 +77,8 @@ internal fun ModCardBodyContent(
     onUpdateBadgeClick: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     workshopBadgeEnabled: Boolean = true,
+    agentPatchMods: List<io.stamethyst.model.AgentPatchModUi> = emptyList(),
+    onSetAgentPatchEnabled: (io.stamethyst.model.AgentPatchModUi, Boolean) -> Unit = { _, _ -> },
     headerLeading: @Composable RowScope.() -> Unit = {},
     headerTrailing: @Composable RowScope.() -> Unit
 ) {
@@ -108,7 +108,9 @@ internal fun ModCardBodyContent(
             Text(
                 text = stringResource(R.string.main_mod_modid_format, resolvedModId),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             ModCardBadges(
                 mod = mod,
@@ -162,17 +164,40 @@ internal fun ModCardBodyContent(
             color = MaterialTheme.colorScheme.secondary
         )
     }
-    if (showActionsButton && isExpanded) {
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            OutlinedButton(
-                onClick = onActionsClick,
-                enabled = actionsEnabled
+    if (isExpanded && agentPatchMods.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.main_mod_agent_patches),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        agentPatchMods.forEach { patch ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(text = stringResource(R.string.main_mod_actions))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = patch.name.ifBlank { patch.patchModId },
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = buildString {
+                            append(patch.version)
+                            append(" · ")
+                            append(patch.patchId)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                Checkbox(
+                    checked = patch.enabled,
+                    enabled = mod.enabled,
+                    onCheckedChange = { enabled -> onSetAgentPatchEnabled(patch, enabled) },
+                )
             }
         }
     }
@@ -496,6 +521,32 @@ private fun ModSuggestionBadge(
 }
 
 @Composable
+internal fun ModSuggestionInfoButton(
+    enabled: Boolean,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .clickable(
+                enabled = enabled,
+                onClickLabel = contentDescription,
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        ModCardIconBadge(
+            iconResId = R.drawable.ic_error_outline,
+            contentDescription = null,
+            enabled = enabled,
+        )
+    }
+}
+
+@Composable
 private fun WorkshopUpdateBadge(
     enabled: Boolean,
     onClick: () -> Unit,
@@ -549,7 +600,7 @@ private fun WorkshopBadge(
     onClick: () -> Unit,
 ) {
     ModCardIconBadge(
-        iconResId = R.drawable.ic_dock_market,
+        iconResId = R.drawable.ic_settings_market,
         contentDescription = stringResource(R.string.main_mod_workshop_badge_content_description),
         enabled = enabled,
         onClick = onClick
@@ -586,7 +637,7 @@ private fun PriorityLoadBadge(priority: Int) {
 }
 
 @Composable
-private fun ModCardIconBadge(
+internal fun ModCardIconBadge(
     iconResId: Int,
     contentDescription: String?,
     enabled: Boolean = true,

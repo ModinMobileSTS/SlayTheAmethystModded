@@ -6,9 +6,20 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import io.stamethyst.backend.easytier.EasyTierConnectionStatus
 import io.stamethyst.backend.easytier.EasyTierSessionController
+import io.stamethyst.config.LauncherConfig
 import java.util.Locale
 
 object NetworkAccelerationPolicy {
+    /**
+     * Strategy used to pick the upstream hop for every accelerated link.
+     *
+     * Read per call so a developer-settings change takes effect without restarting the
+     * launcher: the OkHttp runtimes hold a provider, not a snapshot.
+     */
+    @JvmStatic
+    fun currentAccelerationStrategy(context: Context): AccelerationStrategy =
+        LauncherConfig.readAccelerationStrategy(context)
+
     @JvmStatic
     fun shouldUseAcceleratedLinks(
         context: Context,

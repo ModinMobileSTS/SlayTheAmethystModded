@@ -6,36 +6,45 @@ import org.junit.Test
 
 class LauncherConfigTargetFpsTest {
     @Test
-    fun defaultTargetFps_is144FpsAutomaticCeiling() {
-        assertEquals(144, LauncherConfig.DEFAULT_TARGET_FPS)
+    fun defaultTargetFps_isASelectableFixedCap() {
+        assertEquals(60, LauncherConfig.DEFAULT_TARGET_FPS)
     }
 
     @Test
-    fun targetFpsOptions_include90Fps() {
+    fun targetFpsOptions_includeEveryFiveFpsAndUnlimitedEndpoint() {
         assertArrayEquals(
-            intArrayOf(24, 30, 60, 90, 120, 144),
+            intArrayOf(0) + (5..240 step 5).toList().toIntArray(),
             LauncherConfig.TARGET_FPS_OPTIONS
         )
     }
 
     @Test
-    fun nonRecommendedTargetFpsOptions_preserveTheLegacy240FpsChoice() {
+    fun nonRecommendedTargetFpsOptions_matchTheSelectableChoices() {
         assertArrayEquals(
-            intArrayOf(24, 30, 60, 90, 120, 144, 240),
+            LauncherConfig.TARGET_FPS_OPTIONS,
             LauncherConfig.NON_RECOMMENDED_TARGET_FPS_OPTIONS
         )
     }
 
     @Test
     fun normalizeTargetFps_acceptsSupportedFpsValues() {
-        assertEquals(24, LauncherConfig.normalizeTargetFps(24))
-        assertEquals(30, LauncherConfig.normalizeTargetFps(30))
+        assertEquals(LauncherConfig.UNLIMITED_TARGET_FPS, LauncherConfig.normalizeTargetFps(0))
+        assertEquals(5, LauncherConfig.normalizeTargetFps(5))
+        assertEquals(235, LauncherConfig.normalizeTargetFps(235))
+        assertEquals(240, LauncherConfig.normalizeTargetFps(240))
         assertEquals(90, LauncherConfig.normalizeTargetFps(90))
     }
 
     @Test
+    fun normalizeTargetFpsFloat_preservesUnlimitedEndpoint() {
+        assertEquals(0f, LauncherConfig.normalizeTargetFps(0f), 0f)
+    }
+
+    @Test
     fun normalizeTargetFps_stillFallsBackToDefaultForUnsupportedValues() {
-        assertEquals(LauncherConfig.DEFAULT_TARGET_FPS, LauncherConfig.normalizeTargetFps(25))
-        assertEquals(LauncherConfig.DEFAULT_TARGET_FPS, LauncherConfig.normalizeTargetFps(59))
+        assertEquals(5, LauncherConfig.normalizeTargetFps(4))
+        assertEquals(25, LauncherConfig.normalizeTargetFps(24))
+        assertEquals(LauncherConfig.DEFAULT_TARGET_FPS, LauncherConfig.normalizeTargetFps(241))
+        assertEquals(90, LauncherConfig.normalizeTargetFps(91))
     }
 }

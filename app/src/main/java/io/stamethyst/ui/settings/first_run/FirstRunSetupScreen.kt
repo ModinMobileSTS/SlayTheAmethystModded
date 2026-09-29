@@ -187,7 +187,7 @@ fun LauncherFirstRunSetupScreen(
     val steps = FirstRunSetupStep.entries
     var currentStepIndex by rememberSaveable { mutableIntStateOf(0) }
     val currentStep = steps[currentStepIndex]
-    val blockingInteractionLocked = uiState.busyOperation.usesBlockingOverlay()
+    val blockingInteractionLocked = uiState.busyOperation.locksInteraction(uiState.busy)
     val previousRoute = navigator.backStack.getOrNull(navigator.backStack.lastIndex - 1)
     val canExitToPreviousRoute =
         navigator.backStack.lastIndex > 0 &&
@@ -1076,4 +1076,3 @@ private fun gameplayFontScaleToStep(value: Float): Int {
             GameplaySettingsService.FONT_SCALE_STEP
         ).roundToInt()
 }
-

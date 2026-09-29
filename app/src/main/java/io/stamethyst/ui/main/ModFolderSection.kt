@@ -1176,7 +1176,11 @@ internal fun ModFolderSection(
                                     onUpgradeWorkshopImportPatches = {
                                         latestCallbacks.value.onUpgradeWorkshopImportPatches(it)
                                     },
-                                    onOpenWorkshopDetails = { latestCallbacks.value.onOpenWorkshopDetails(it) },
+                                     onOpenWorkshopDetails = { latestCallbacks.value.onOpenWorkshopDetails(it) },
+                                     onOpenAiEditor = { latestCallbacks.value.onOpenAiEditor(it) },
+                                    onSetAgentPatchEnabled = { item, patch, enabled ->
+                                        latestCallbacks.value.onSetAgentPatchEnabled(item, patch, enabled)
+                                    },
                                     onSetImportPatchEnabled = { item, moduleId, enabled ->
                                         latestCallbacks.value.onSetImportPatchEnabled(item, moduleId, enabled)
                                     },
@@ -1457,7 +1461,6 @@ private fun DependencyFolderListItem(
                             isExpanded = interactionState.expandedCards[mod.storagePath] == true,
                             isDraggedInOverlay = false,
                             showModFileName = showModFileName,
-                            showActionsButton = false,
                             setExpanded = setCardExpanded,
                             selectionEnabled = false,
                             fileActionsEnabled = false,

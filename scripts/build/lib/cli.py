@@ -4,11 +4,12 @@ import argparse
 import sys
 
 from .commands import build_debug, package_cloud_function, prepare_release, release_build, repo_root
+from . import doctor
 
 
 def add_release_args(parser: argparse.ArgumentParser, *, fast_variant: bool = False) -> None:
     parser.add_argument("--store-file", "-StoreFile", default="")
-    parser.add_argument("--key-alias", "-KeyAlias", default="upload")
+    parser.add_argument("--key-alias", "-KeyAlias", default="")
     if fast_variant:
         parser.add_argument("--run-lint-check", "-RunLintCheck", action="store_true")
     else:
@@ -29,12 +30,18 @@ def create_parser() -> argparse.ArgumentParser:
 
     prepare = subparsers.add_parser("prepare-release")
     prepare.add_argument("--store-file", "-StoreFile", default="")
-    prepare.add_argument("--key-alias", "-KeyAlias", default="upload")
+    prepare.add_argument("--key-alias", "-KeyAlias", default="")
     prepare.add_argument("--skip-local-check", "-SkipLocalCheck", action="store_true")
 
     package = subparsers.add_parser("package-cloud-function")
     package.add_argument("--source-dir", "-SourceDir", default=str(repo_root() / "cloud-function"))
     package.add_argument("--output-zip", "-OutputZip", default=str(repo_root() / "artifacts" / "cloud-function-scf.zip"))
+
+    doctor_parser = subparsers.add_parser("doctor", help="Check the local build environment.")
+    doctor_parser.add_argument("--verbose", "-Verbose", action="store_true")
+    doctor_parser.add_argument("--no-color", "-NoColor", action="store_true")
+    doctor_parser.add_argument("--json", "-Json", action="store_true")
+    doctor_parser.add_argument("--no-network", "-NoNetwork", action="store_true", help="Skip the network reachability check.")
     return parser
 
 
@@ -92,6 +99,13 @@ def main(argv: list[str] | None = None) -> int:
             prepare_release(args.store_file, args.key_alias, args.skip_local_check)
         elif args.command == "package-cloud-function":
             package_cloud_function(args.source_dir, args.output_zip)
+        elif args.command == "doctor":
+            return doctor.run(
+                verbose=args.verbose,
+                no_color=args.no_color,
+                as_json=args.json,
+                no_network=args.no_network,
+            )
         return 0
     except Exception as exc:
         print(str(exc), file=sys.stderr)

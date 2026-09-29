@@ -309,41 +309,17 @@ The 204302 reproduction confirms that this alone does not fix Zhuoyitong, and
 has now been removed. The description above records the experiment, not current
 application behavior.
 
-## Current fix: lifecycle-aware Surface frame-rate votes
+## Current behavior
 
-`SurfaceFrameRateVoteState` replaces Java-identity-only de-duplication in
-`DisplayRefreshRateController`:
-
-- Key each successful application by actual Java reference, host surface lifecycle
-  generation and requested rate. A new generation must receive a new request even
-  when the wrapper and FPS are identical. Only successful requests enter the cache.
-- `RenderSurfaceManager` passes `state.surfaceGeneration` through all sync paths.
-  When the state marks the surface destroyed (generation zero), pass null even if
-  the framework's retiring holder surface still reports valid. Null/invalid
-  surfaces clear the vote cache without submitting requests to a retiring layer.
-- Keep deduplication during steady rendering; no repeated rate toggling, forced
-  refresh heartbeat, synthetic touch or extra redraw loop is added.
-- Persist `surface_lifecycle` available/destroyed events. Surface vote logs include
-  `surfaceGeneration` and `surfaceIdentity`; one-second samples include the active
-  generation. This makes missing votes after recreation directly observable.
-
-The generation is the launcher's existing lifecycle counter, not a reflective call
-to Android's hidden `Surface.getGenerationId()`. The fix covers SurfaceView and
-TextureView without introducing an SDK/brand-specific surface workaround.
-
-At introduction, 75 focused unit tests passed, including five Surface vote regressions
-(same wrapper/new generation, explicit destruction reset, distinct equal-valued
-objects, pause/resume rates, and failed-request retry). Debug APK builds and
-`git diff --check` passed. The later 223248 device log confirms reapplication after
-recreation, but also confirms that this does not resolve the idle FPS symptom.
+The launcher no longer derives or applies an FPS cap from the display refresh rate.
+The FPS setting is a fixed launcher preference. The game runtime only receives the
+selected cap and, when software pacing needs it, a read-only snapshot of Android's
+currently reported refresh rate. No Window or Surface refresh-rate vote is submitted.
 
 ## Diagnostic persistence
 
-Refresh diagnostics are persisted off the main thread through the existing bounded
-`WindowDiagnosticsLogStore`, and `DiagnosticsArchiveBuilder` includes those
-rotating files in performance exports. The log now records explicit lifecycle,
-window and Surface synchronization events; it does not run a periodic frame-rate
-sampling loop.
+The former refresh-rate vote diagnostics are no longer emitted. Performance exports
+may still contain logs from older builds, but new builds do not create them.
 
 ## Device verification
 
@@ -355,22 +331,13 @@ sampling loop.
 3. Repeat on Xiaomi 12S Pro, and repeat after background/resume. Check that
    `windowModeId` stays at the requested mode while foregrounded and that there
    are no recurring mode-switch flashes or surface recreations.
-4. Export performance logs and inspect `sts/performance/window/window_diagnostics.log`
-   (and rotated files), searching for `DisplayRefreshRate:`. Do not rely on
-   `latest.log` for these Android-side records.
+4. If needed, inspect the normal runtime log for the fixed target FPS and the
+   read-only active refresh-rate snapshot. New builds do not emit refresh-vote logs.
 5. TextureView (001318) and the Huawei host's high-refresh setting have both been
    tested and fail. Collect native HarmonyOS/Zhuoyitong presentation-policy
    evidence instead of repeating either comparison or an app-only-log experiment.
-6. Check that every `surface_lifecycle event=available surfaceGeneration=N` while
-   foregrounded has a corresponding successful `surface ... requestHz=90 ...
-   surfaceGeneration=N`. In particular, the post-boot second generation needs its
-   own request. `surfaceIdentity` may remain the same across those generations.
-
-The lifecycle log includes `surfaceGeneration`, `surfaceIdentity`, target/requested
-rates and backend when those events occur. `platform_default` is the cleanup-build
-diagnostic label; it does not write the window balanced-policy attribute. Display
-values are those exposed by Android; a compatibility container may hide the host's
-real display state.
+6. Treat any old `surface ... requestHz=...` entries as evidence from a previous
+   build, not as current application behavior.
 
 - If the display changes after a lifecycle event while the latest window/Surface
   request remains high, the environment is overriding the application's preference.

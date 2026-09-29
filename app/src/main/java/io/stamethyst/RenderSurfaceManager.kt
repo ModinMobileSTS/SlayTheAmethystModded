@@ -13,10 +13,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.lifecycleScope
-import io.stamethyst.backend.diag.WindowDiagnosticsLogStore
 import io.stamethyst.backend.render.DisplayConfigSync
-import io.stamethyst.backend.render.DisplayRefreshRateController
+import io.stamethyst.backend.render.DisplayRefreshRatePolicy
 import io.stamethyst.backend.render.FullscreenCanvasSize
 import io.stamethyst.backend.render.FullscreenCanvasResolution
 import io.stamethyst.backend.render.ForegroundResyncScheduler
@@ -25,8 +23,6 @@ import io.stamethyst.backend.render.VirtualResolutionPolicy
 import io.stamethyst.backend.render.VirtualResolutionMode
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 internal data class RenderViewportInsets(
     val left: Int = 0,
@@ -78,9 +74,6 @@ class RenderSurfaceManager(
     } else {
         SurfaceViewHost(activity)
     }
-    private val refreshRateController = DisplayRefreshRateController(
-        activity, targetFpsLimit, ::logRefreshDiagnostic
-    )
     private var destroyed = false
     private var pendingSurfaceReadyCallback = false
     private var lastResyncReasonSummary = "init"
@@ -105,6 +98,7 @@ class RenderSurfaceManager(
     private var bootOverlayActive = true
     private var fullscreenVirtualResolution: io.stamethyst.backend.render.VirtualResolution? = null
     private var startupVirtualResolution: io.stamethyst.backend.render.VirtualResolution? = null
+    private var logicalWindowLockedForJvmStartup = false
 
     private val foregroundResyncRunnable = Runnable {
         applyQueuedResync()
@@ -167,10 +161,16 @@ class RenderSurfaceManager(
         renderHost.attach(root, object : RenderSurfaceHost.Callbacks {
             override fun onSurfaceAvailable(surfaceGeneration: Int, width: Int, height: Int) {
                 state.markSurfaceAvailable(surfaceGeneration, width, height)
-                logRefreshDiagnostic(
-                    "DisplayRefreshRate: surface_lifecycle event=available surfaceGeneration=$surfaceGeneration"
+                println("RenderSurfaceRefresh: surface_lifecycle event=available surfaceGeneration=$surfaceGeneration")
+                val requestedRefreshRateHz = DisplayRefreshRatePolicy.requestHighestRefreshRate(
+                    context = activity,
+                    surface = renderHost.currentSurface,
                 )
-                syncPreferredRefreshRate("surface_available")
+                println(
+                    "RenderSurfaceRefresh: highest_rate_request=" +
+                        if (requestedRefreshRateHz > 0f) "${requestedRefreshRateHz}Hz" else "unavailable"
+                )
+                publishActiveRefreshRateForPacing("surface_available")
                 connectBridgeSurfaceIfNeeded()
                 pendingSurfaceReadyCallback = true
                 requestForegroundResync("surface_available")
@@ -182,7 +182,7 @@ class RenderSurfaceManager(
                 } else if (::renderView.isInitialized) {
                     state.rememberPhysicalSize(renderView.width, renderView.height)
                 }
-                syncPreferredRefreshRate("surface_size_changed")
+                publishActiveRefreshRateForPacing("surface_size_changed")
                 pendingSurfaceReadyCallback = true
                 requestForegroundResync("surface_size_changed")
             }
@@ -191,10 +191,8 @@ class RenderSurfaceManager(
                 pendingSurfaceReadyCallback = false
                 disconnectBridgeSurfaceIfNeeded()
                 state.markSurfaceDestroyed()
-                logRefreshDiagnostic(
-                    "DisplayRefreshRate: surface_lifecycle event=destroyed surfaceGeneration=$surfaceGeneration"
-                )
-                syncPreferredRefreshRate("surface_destroyed")
+                println("RenderSurfaceRefresh: surface_lifecycle event=destroyed surfaceGeneration=$surfaceGeneration")
+                publishActiveRefreshRateForPacing("surface_destroyed")
             }
 
             override fun onTextureFrameUpdated(timestampNs: Long) {
@@ -251,13 +249,6 @@ class RenderSurfaceManager(
             renderView.removeCallbacks(windowModeSurfaceRefreshRunnable)
         }
         unregisterDisplayRotationListener()
-        refreshRateController.sync(
-            inForeground = false,
-            hasWindowFocus = false,
-            surface = renderHost.currentSurface.takeIf { state.surfaceGeneration > 0 },
-            surfaceGeneration = state.surfaceGeneration,
-            reason = "destroy"
-        )
         renderRoot?.let { ViewCompat.setOnApplyWindowInsetsListener(it, null) }
         renderRoot = null
         lastWindowInsets = null
@@ -269,7 +260,7 @@ class RenderSurfaceManager(
 
     fun onForegroundChanged(foreground: Boolean) {
         state.markForeground(foreground)
-        syncPreferredRefreshRate(if (foreground) "resume" else "pause")
+        publishActiveRefreshRateForPacing(if (foreground) "resume" else "pause")
         if (foreground) {
             requestForegroundResync("resume")
         }
@@ -277,7 +268,7 @@ class RenderSurfaceManager(
 
     fun onWindowFocusChanged(hasFocus: Boolean) {
         state.markWindowFocus(hasFocus)
-        syncPreferredRefreshRate(if (hasFocus) "focus_gain" else "focus_loss")
+        publishActiveRefreshRateForPacing(if (hasFocus) "focus_gain" else "focus_loss")
         if (hasFocus) {
             requestForegroundResync("focus")
         }
@@ -351,6 +342,46 @@ class RenderSurfaceManager(
             return
         }
         dispatchWindowSize(buildApplyPlan(renderView.width, renderView.height))
+    }
+
+    /**
+     * Freezes the logical game window immediately before the JVM is launched.
+     *
+     * Insets and freeform window geometry can settle after the first layout pass. The JVM/GDX
+     * side reads the logical dimensions only during startup, so allowing Android to publish a
+     * later cropped size would make rendering and touch mapping use different coordinate spaces.
+     */
+    fun lockWindowSizeForJvmStartup() {
+        if (!::renderView.isInitialized) {
+            return
+        }
+        if (startupVirtualResolution != null) {
+            logicalWindowLockedForJvmStartup = true
+            return
+        }
+        val root = renderRoot
+        val rootWidth = root?.width ?: renderView.width
+        val rootHeight = root?.height ?: renderView.height
+        if (rootWidth <= 0 || rootHeight <= 0) {
+            return
+        }
+        val insets = currentWindowInsets()
+        val windowCropHint = root?.let { resolveWindowConstrainedCropHint(it) }
+        val cropInsets = resolveViewportCropInsets(insets, windowCropHint)
+        val resolution = resolveVirtualResolutionForViewport(
+            rootWidth = rootWidth,
+            rootHeight = rootHeight,
+            cropInsets = cropInsets,
+            lockResolution = true
+        )
+        logicalWindowLockedForJvmStartup = startupVirtualResolution != null
+        println(
+            "RenderSurfaceLogicalWindow: locked " +
+                "window=${resolution.width}x${resolution.height}, " +
+                "root=${rootWidth}x${rootHeight}, " +
+                "insets=${insets != null}, " +
+                "crop=${cropInsets.left},${cropInsets.top},${cropInsets.right},${cropInsets.bottom}"
+        )
     }
 
     fun schedulePostBootSurfaceSoftRefresh(triggerReason: String) {
@@ -531,16 +562,9 @@ class RenderSurfaceManager(
         return true
     }
 
-    private fun syncPreferredRefreshRate(reason: String) {
+    private fun publishActiveRefreshRateForPacing(reason: String) {
         publishActiveRefreshRate()
-        refreshRateController.sync(
-            inForeground = state.isForeground,
-            hasWindowFocus = state.hasWindowFocus,
-            // SurfaceHolder.surface may still be valid inside surfaceDestroyed().
-            surface = renderHost.currentSurface.takeIf { state.surfaceGeneration > 0 },
-            surfaceGeneration = state.surfaceGeneration,
-            reason = reason
-        )
+        println("RenderSurfaceRefresh: reason=$reason activeRatePublished=true")
     }
 
     private fun publishActiveRefreshRate() {
@@ -555,14 +579,6 @@ class RenderSurfaceManager(
             // The game JVM consumes this snapshot only when the software pacer is active.
             // The Android-side request remains the user's preferred application rate.
             CallbackBridge.nativeSetActiveRefreshRateHz(refreshRateHz)
-        }
-    }
-
-    private fun logRefreshDiagnostic(message: String) {
-        println(message)
-        val context = activity.applicationContext
-        activity.lifecycleScope.launch(Dispatchers.IO) {
-            WindowDiagnosticsLogStore.append(context, message)
         }
     }
 
@@ -783,6 +799,19 @@ class RenderSurfaceManager(
         lockResolution: Boolean = true
     ): io.stamethyst.backend.render.VirtualResolution {
         startupVirtualResolution?.let { return it }
+        if (shouldDeferToDisplayDerivedCanvas(rootWidth, rootHeight)) {
+            // The game always runs landscape. A portrait root only means the window has not
+            // rotated yet (manifest sensorLandscape) or a portrait boot overlay such as the
+            // SlingBreak minigame is up. Deriving the canvas from it would lock the game into a
+            // portrait canvas and leave the real landscape window showing a small centered patch.
+            // Before JVM launch, the display-derived landscape size is still the only stable
+            // logical size available, so lock it when the caller explicitly finalizes startup.
+            val resolution = resolveFullscreenVirtualResolution()
+            if (lockResolution) {
+                startupVirtualResolution = resolution
+            }
+            return resolution
+        }
         if (!avoidDisplayCutout && !cropScreenBottom) {
             return resolveFullscreenVirtualResolution().also { startupVirtualResolution = it }
         }
@@ -848,6 +877,12 @@ class RenderSurfaceManager(
             return
         }
         bootOverlayActive = active
+        if (!active && !logicalWindowLockedForJvmStartup) {
+            // A portrait SlingBreak boot window can produce a transient startup resolution before
+            // the landscape layout settles. It is safe to discard that pre-launch value, but never
+            // discard the logical size once the JVM has been given its startup dimensions.
+            startupVirtualResolution = null
+        }
         applyImmersiveMode()
         applyViewportLayout()
     }
@@ -965,7 +1000,7 @@ class RenderSurfaceManager(
             return
         }
         // Refresh-rate-only changes do not rotate or resize the render surface.
-        syncPreferredRefreshRate("display_changed")
+        publishActiveRefreshRateForPacing("display_changed")
         renderView.post {
             if (!destroyed && ::renderView.isInitialized) {
                 publishActiveRefreshRate()
@@ -1052,6 +1087,7 @@ class RenderSurfaceManager(
         return resolveWindowConstrainedCropHint(
             rootLeft = location[0],
             rootWidth = root.width,
+            rootHeight = root.height,
             displayWidth = displayWidth
         )
     }
@@ -1195,6 +1231,17 @@ class RenderSurfaceManager(
                 requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
 
+        /**
+         * True when the current window is transient or degenerate. A portrait window means the
+         * initial rotation has not landed yet or a portrait boot overlay (SlingBreak minigame) is
+         * up; a 1-pixel dimension means Android has not completed the first layout pass. In both
+         * cases the game canvas must not be derived from the current view or cached as startup size.
+         */
+        internal fun shouldDeferToDisplayDerivedCanvas(rootWidth: Int, rootHeight: Int): Boolean {
+            return rootWidth > 0 && rootHeight > 0 &&
+                (rootWidth <= 1 || rootHeight <= 1 || rootWidth < rootHeight)
+        }
+
         internal fun resolveViewportLayout(
             rootWidth: Int,
             rootHeight: Int,
@@ -1325,13 +1372,23 @@ class RenderSurfaceManager(
         internal fun resolveWindowConstrainedCropHint(
             rootLeft: Int,
             rootWidth: Int,
+            rootHeight: Int,
             displayWidth: Int
         ): RenderViewportCropHint? {
-            if (rootWidth <= 0 || displayWidth <= 0 || rootWidth >= displayWidth) {
+            // The display canvas is normalized to landscape, but SlingBreak deliberately holds
+            // the window in portrait. Comparing their widths invents a huge one-sided cutout
+            // and can leave the render view permanently measured at 1x1 before JVM launch.
+            if (rootWidth <= 1 || rootHeight <= 1 || rootWidth < rootHeight ||
+                displayWidth <= 0 || rootWidth >= displayWidth
+            ) {
                 return null
             }
             val leftGap = rootLeft.coerceAtLeast(0)
             val rightGap = (displayWidth - leftGap - rootWidth).coerceAtLeast(0)
+            if (maxOf(leftGap, rightGap) >= rootWidth) {
+                // A gap as wide as the window is not a cutout; never crop away the entire view.
+                return null
+            }
             return when {
                 rightGap > leftGap + 2 -> RenderViewportCropHint(
                     side = HorizontalCropSide.LEFT,

@@ -35,7 +35,9 @@ import io.stamethyst.backend.update.LauncherUpdateVersioning
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
+import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
@@ -47,7 +49,6 @@ import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
-import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -75,7 +76,7 @@ internal object SettingsRepository {
         val renderScale: Float,
         val targetFps: Float,
         val nonRecommendedFpsEnabled: Boolean,
-        val swappyFramePacingEnabled: Boolean,
+        val framePacingMode: FramePacingMode,
         val virtualResolutionMode: VirtualResolutionMode,
         val renderSurfaceBackend: RenderSurfaceBackend,
         val rendererSelectionMode: RendererSelectionMode,
@@ -142,6 +143,7 @@ internal object SettingsRepository {
         val workshopDownloadThreads: Int,
         val workshopWattAccelerationEnabled: Boolean,
         val workshopSteamLanguage: SteamLanguagePreference,
+        val workshopDefaultSort: WorkshopBrowseSort,
         val workshopAutoImportEnabled: Boolean,
         val workshopAutoImportAtlasDownscaleEnabled: Boolean,
         val workshopAutoImportAtlasDownscaleMaxEdgePx: Int,
@@ -218,13 +220,9 @@ internal object SettingsRepository {
             playerName = LauncherPreferences.readPlayerName(context),
             rendering = RenderingSnapshot(
                 renderScale = RenderScaleService.readValue(context),
-                targetFps = if (LauncherPreferences.isTargetFpsAutomatic(context)) {
-                    DisplayRefreshRateController.resolveAutomaticTargetFps(context)
-                } else {
-                    LauncherPreferences.readTargetFpsValue(context)
-                },
+                targetFps = LauncherPreferences.readTargetFpsValue(context),
                 nonRecommendedFpsEnabled = LauncherPreferences.isNonRecommendedFpsEnabled(context),
-                swappyFramePacingEnabled = LauncherPreferences.isSwappyFramePacingEnabled(context),
+                framePacingMode = LauncherPreferences.readFramePacingMode(context),
                 virtualResolutionMode = LauncherPreferences.readVirtualResolutionMode(context),
                 renderSurfaceBackend = renderSurfaceBackend,
                 rendererSelectionMode = rendererSelectionMode,
@@ -298,6 +296,7 @@ internal object SettingsRepository {
                 workshopDownloadThreads = LauncherPreferences.readWorkshopDownloadThreads(context),
                 workshopWattAccelerationEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(context),
                 workshopSteamLanguage = LauncherPreferences.readWorkshopSteamLanguage(context),
+                workshopDefaultSort = LauncherPreferences.readWorkshopDefaultSort(context),
                 workshopAutoImportEnabled = LauncherPreferences.isWorkshopAutoImportEnabled(context),
                 workshopAutoImportAtlasDownscaleEnabled =
                     ImportPatchRegistry.isEnabled(context, AtlasOfflineDownscalePatchModule.id),
@@ -486,10 +485,12 @@ internal object SettingsRepository {
             LauncherPreferences.DEFAULT_GPU_RESOURCE_DIAG_ENABLED
         )
         LauncherPreferences.resetGpuResourceGuardianMode(context)
+        LauncherPreferences.resetAccelerationStrategy(context)
         LauncherPreferences.setGdxPadCursorDebugEnabled(
             context,
             LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG
         )
+        LauncherPreferences.setSlingBreakAudioDebugModeEnabled(context, false)
         LauncherPreferences.setGlBridgeSwapHeartbeatDebugEnabled(
             context,
             LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG

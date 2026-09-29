@@ -13,7 +13,7 @@ java {
 val appProjectRef = rootProject.project(":app")
 
 dependencies {
-    compileOnly(files(rootProject.file("build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar")))
+    compileOnly(files(rootProject.file("build-deps/desktop.jar")))
     // FrameRingBuffer lives in gdx-patch; depend on its jar for compilation.
     compileOnly(project(":patches:gdx-patch"))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/BaseMod.jar")))

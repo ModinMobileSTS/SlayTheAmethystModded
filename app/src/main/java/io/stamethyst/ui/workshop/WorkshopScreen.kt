@@ -125,6 +125,7 @@ import io.stamethyst.ui.SearchHistoryStore
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.icon.KeyboardArrowUp
 import io.stamethyst.ui.rememberLoadingSkeletonStyle
+import io.stamethyst.ui.preferences.LauncherPreferences
 import com.airbnb.lottie.LottieProperty
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
@@ -227,7 +228,9 @@ internal fun WorkshopScreen(
         derivedStateOf { downloadTaskStatuses.values.count { it.isActiveDownload() } }
     }
     var query by rememberSaveable { mutableStateOf("") }
-    var sort by rememberSaveable { mutableStateOf(WorkshopBrowseSort.MostPopular) }
+    var sort by rememberSaveable {
+        mutableStateOf(LauncherPreferences.readWorkshopDefaultSort(context.applicationContext))
+    }
     var timeFilter by rememberSaveable { mutableStateOf(WorkshopBrowseTimeFilter.OneWeek) }
     var category by rememberSaveable { mutableStateOf(WorkshopModCategory.All) }
     fun searchWithPopularAllTime(searchQuery: String = query) {
@@ -1604,7 +1607,7 @@ private val WorkshopModDownloadState.actionIconRes: Int
         WorkshopModDownloadState.Paused -> R.drawable.ic_workshop_paused
         WorkshopModDownloadState.Cancelling -> R.drawable.ic_workshop_cancelling
         WorkshopModDownloadState.DownloadFailed -> R.drawable.ic_workshop_retry
-        WorkshopModDownloadState.Unavailable -> R.drawable.ic_workshop_cancelling
+        WorkshopModDownloadState.Unavailable -> R.drawable.ic_workshop_installed
     }
 
 @Composable

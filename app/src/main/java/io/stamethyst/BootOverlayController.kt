@@ -1,8 +1,11 @@
 package io.stamethyst
 
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
+import android.view.ViewStub
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -64,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.ui.loading.BootLoadingAnimation
@@ -135,6 +139,7 @@ class BootOverlayController(
     private val manualDismissBootOverlay: Boolean,
     private val useTextureViewSurface: Boolean,
     private val onDismissed: () -> Unit,
+    private val onRuntimePauseRequested: () -> Unit,
     private val onRequestEarlyDismiss: () -> Unit,
     private val onSignalLaunchFailure: (String) -> Unit
 ) {
@@ -216,6 +221,11 @@ class BootOverlayController(
     }
 
     private var bootOverlay: ComposeView? = null
+    private var slingBreakBootOverlay: View? = null
+    private var slingBreakBootGame: android.webkit.WebView? = null
+    private var slingBreakLauncherPageReady = false
+    private var slingBreakPageReadyTimeoutScheduled = false
+    private var usesSlingBreakBootOverlay = false
     private var bootOverlayProgress = 0
     private var bootOverlayMessage = ""
     private var bootOverlayShownAtMs = -1L
@@ -261,6 +271,7 @@ class BootOverlayController(
             scheduleJvmLogPolling()
         }
     }
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     var earlyOverlayDismissOnNextFrame = false
@@ -272,47 +283,113 @@ class BootOverlayController(
 
     val isDismissed: Boolean get() = bootOverlayDismissed
 
+    val shouldPauseRuntimeUntilEntry: Boolean
+        get() = usesSlingBreakBootOverlay && manualEnterGameReady && !bootOverlayDismissed
+
+    private val requiresManualDismiss: Boolean
+        get() = usesSlingBreakBootOverlay || manualDismissBootOverlay
+
     fun init() {
         bootOverlay = activity.findViewById(R.id.bootOverlay)
-        if (bootOverlay == null) {
+        val wantsSlingBreakOverlay =
+            LauncherConfig.readBootOverlayStyle(activity) == BootOverlayStyle.SLING_BREAK
+        if (wantsSlingBreakOverlay) {
+            // The Sling Break overlay is the only WebView hosted by the :game process, so its
+            // stub is inflated on demand. Inflating it eagerly would create a WebView in :game
+            // on every launch (whatever the overlay style) and kill the process whenever the
+            // default process already owns the shared WebView data directory.
+            val stub = activity.findViewById<ViewStub>(R.id.slingBreakBootOverlayStub)
+            runCatching { stub?.inflate() }
+        }
+        slingBreakBootOverlay = activity.findViewById(R.id.slingBreakBootOverlay)
+        slingBreakBootGame = activity.findViewById(R.id.slingBreakBootGame)
+        usesSlingBreakBootOverlay = wantsSlingBreakOverlay &&
+            slingBreakBootOverlay != null && slingBreakBootGame != null
+        if (bootOverlay == null && !usesSlingBreakBootOverlay) {
             activity.setBootOverlayKeepScreenOn(false)
             return
         }
-        bootOverlay?.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-        val themeMode = LauncherConfig.readThemeMode(activity)
-        val themeColor = LauncherConfig.readThemeColor(activity)
-        val bootOverlayStyle = LauncherConfig.readBootOverlayStyle(activity)
-        val loadingAnimation = LauncherConfig.readBootOverlayAnimation(activity)
-        val bootOverlayImageConfig = LauncherConfig.readBootOverlayImageConfig(activity)
-        bootOverlay?.setContent {
-            LauncherTheme(
-                themeMode = themeMode,
-                themeColor = themeColor
-            ) {
-                BootOverlayPanel(
-                    uiState = overlayUiState,
-                    overlayStyle = bootOverlayStyle,
-                    loadingAnimation = loadingAnimation,
-                    imageConfig = bootOverlayImageConfig,
-                    manualDismissBootOverlay = manualDismissBootOverlay,
-                    onDismissClick = {
-                        if (!manualDismissBootOverlay || bootOverlayDismissed) {
-                            return@BootOverlayPanel
+        if (usesSlingBreakBootOverlay) {
+            bootOverlay?.visibility = View.GONE
+            slingBreakBootGame?.apply {
+                configureSlingBreakGame()
+                addJavascriptInterface(object {
+                    @android.webkit.JavascriptInterface
+                    fun onPageReady() {
+                        WebViewDiagnosticsLogStore.append(activity, "bridge_page_ready", "launcher=1")
+                        activity.runOnUiThread {
+                            slingBreakLauncherPageReady = true
+                            slingBreakPageReadyTimeoutScheduled = false
+                            pushSlingBreakProgress()
+                            if (manualEnterGameReady) {
+                                slingBreakBootGame?.evaluateJavascript(
+                                    "window.SlingBreakLauncher?.setReady?.()",
+                                    null
+                                )
+                            }
                         }
-                        updateProgress(
-                            bootOverlayProgress.coerceAtLeast(99),
-                            text(R.string.boot_overlay_status_manual_dismiss_requested)
-                        )
-                        dismiss()
                     }
-                )
-            }
-        }
 
-        bootOverlay?.visibility = View.VISIBLE
+                    @android.webkit.JavascriptInterface
+                    fun enterGame() {
+                        WebViewDiagnosticsLogStore.append(activity, "bridge_enter_game", "launcher=1")
+                        activity.runOnUiThread {
+                            if (manualEnterGameReady) {
+                                dismiss()
+                            }
+                        }
+                    }
+
+                    @android.webkit.JavascriptInterface
+                    fun scriptError(detail: String?) {
+                        WebViewDiagnosticsLogStore.append(
+                            activity,
+                            "bridge_script_error",
+                            "launcher=1 detail=${detail.orEmpty().take(MAX_STATUS_LINE_LENGTH)}"
+                        )
+                    }
+                }, "AndroidSlingBreakLauncher")
+                loadUrl(slingBreakGameUrl(activity, launcherMode = true))
+                scheduleSlingBreakPageReadyTimeout()
+            }
+            slingBreakBootOverlay?.visibility = View.VISIBLE
+        } else {
+            slingBreakBootOverlay?.visibility = View.GONE
+            bootOverlay?.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            val themeMode = LauncherConfig.readThemeMode(activity)
+            val themeColor = LauncherConfig.readThemeColor(activity)
+            val bootOverlayStyle = LauncherConfig.readBootOverlayStyle(activity)
+            val loadingAnimation = LauncherConfig.readBootOverlayAnimation(activity)
+            val bootOverlayImageConfig = LauncherConfig.readBootOverlayImageConfig(activity)
+            bootOverlay?.setContent {
+                LauncherTheme(
+                    themeMode = themeMode,
+                    themeColor = themeColor
+                ) {
+                    BootOverlayPanel(
+                        uiState = overlayUiState,
+                        overlayStyle = bootOverlayStyle,
+                        loadingAnimation = loadingAnimation,
+                        imageConfig = bootOverlayImageConfig,
+                        manualDismissBootOverlay = manualDismissBootOverlay,
+                        onDismissClick = {
+                            if (!manualDismissBootOverlay || bootOverlayDismissed) {
+                                return@BootOverlayPanel
+                            }
+                            updateProgress(
+                                bootOverlayProgress.coerceAtLeast(99),
+                                text(R.string.boot_overlay_status_manual_dismiss_requested)
+                            )
+                            dismiss()
+                        }
+                    )
+                }
+            }
+            bootOverlay?.visibility = View.VISIBLE
+        }
         activity.setBootOverlayKeepScreenOn(true)
 
-        if (!manualDismissBootOverlay) {
+        if (!requiresManualDismiss) {
             bootOverlay?.setOnTouchListener { _, _ -> true }
         } else {
             bootOverlay?.setOnTouchListener(null)
@@ -345,7 +422,7 @@ class BootOverlayController(
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
         scheduleJvmLogPolling(initial = true)
 
-        if (manualDismissBootOverlay) {
+        if (requiresManualDismiss) {
             updateProgress(1, text(R.string.boot_overlay_status_starting_pipeline_manual))
         } else {
             updateProgress(1, text(R.string.boot_overlay_status_starting_pipeline))
@@ -358,10 +435,36 @@ class BootOverlayController(
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
         bootOverlay?.disposeComposition()
         bootOverlay = null
+        slingBreakBootGame?.let {
+            io.stamethyst.backend.audio.SlingNativeAudioBridge.close(it)
+            it.destroy()
+        }
+        slingBreakBootGame = null
+        slingBreakLauncherPageReady = false
+        slingBreakPageReadyTimeoutScheduled = false
+        slingBreakBootOverlay = null
         earlyOverlayDismissOnNextFrame = false
         earlyOverlayDismissRequestFrameTimestampNs = 0L
         textureViewDismissGate.reset()
         activity.setBootOverlayKeepScreenOn(false)
+    }
+
+    fun onActivityResumed() {
+        if (usesSlingBreakBootOverlay && !bootOverlayDismissed) {
+            slingBreakBootGame?.let {
+                io.stamethyst.backend.audio.SlingNativeAudioBridge.setActive(it, true)
+                it.onResume()
+            }
+        }
+    }
+
+    fun onActivityPaused() {
+        if (usesSlingBreakBootOverlay && !bootOverlayDismissed) {
+            slingBreakBootGame?.let {
+                io.stamethyst.backend.audio.SlingNativeAudioBridge.setActive(it, false)
+                it.onPause()
+            }
+        }
     }
 
     fun updateProgress(percent: Int, message: String?) {
@@ -375,7 +478,11 @@ class BootOverlayController(
         bootOverlayMessage = normalizedMessage
 
         activity.runOnUiThread {
-            if (bootOverlayDismissed || bootOverlay == null) return@runOnUiThread
+            if (bootOverlayDismissed || (!usesSlingBreakBootOverlay && bootOverlay == null)) return@runOnUiThread
+            if (usesSlingBreakBootOverlay) {
+                pushSlingBreakProgress()
+                return@runOnUiThread
+            }
             val nextStatus = if (normalizedMessage.isNotEmpty()) {
                 normalizedMessage
             } else {
@@ -414,7 +521,7 @@ class BootOverlayController(
     }
 
     fun signalSplashPhase(_message: String?) {
-        if (bootOverlayDismissed || bootOverlay == null) return
+        if (bootOverlayDismissed || (!usesSlingBreakBootOverlay && bootOverlay == null)) return
 
         val phaseMessage = text(R.string.boot_overlay_stage_starting_game_entry)
         updateProgress(
@@ -422,7 +529,7 @@ class BootOverlayController(
             phaseMessage
         )
 
-        if (manualDismissBootOverlay) {
+        if (requiresManualDismiss) {
             if (useTextureViewSurface) {
                 onRequestEarlyDismiss()
             } else {
@@ -445,7 +552,7 @@ class BootOverlayController(
     }
 
     fun dismiss() {
-        if (bootOverlayDismissed || bootOverlay == null) return
+        if (bootOverlayDismissed || (!usesSlingBreakBootOverlay && bootOverlay == null)) return
 
         bootOverlayDismissed = true
         stopJvmLogPolling()
@@ -455,7 +562,23 @@ class BootOverlayController(
         earlyOverlayDismissRequestFrameTimestampNs = 0L
         textureViewDismissGate.reset()
 
-        bootOverlay?.visibility = View.GONE
+        if (usesSlingBreakBootOverlay) {
+            slingBreakBootGame?.apply {
+                io.stamethyst.backend.audio.SlingNativeAudioBridge.close(this)
+                stopLoading()
+                onPause()
+                loadUrl("about:blank")
+                destroy()
+            }
+            slingBreakBootGame = null
+            slingBreakLauncherPageReady = false
+            slingBreakPageReadyTimeoutScheduled = false
+            slingBreakBootOverlay?.visibility = View.GONE
+            slingBreakBootOverlay = null
+            activity.finishSlingBreakBoot()
+        } else {
+            bootOverlay?.visibility = View.GONE
+        }
         activity.setBootOverlayKeepScreenOn(false)
         Log.i(
             LOGCAT_TAG,
@@ -492,7 +615,7 @@ class BootOverlayController(
                 bootOverlayProgress.coerceAtLeast(99),
                 text(R.string.boot_overlay_status_game_frame_ready)
             )
-            if (manualDismissBootOverlay) {
+            if (requiresManualDismiss) {
                 markManualEnterGameReady()
             } else {
                 dismiss()
@@ -501,15 +624,58 @@ class BootOverlayController(
     }
 
     private fun markManualEnterGameReady() {
-        if (!manualDismissBootOverlay || manualEnterGameReady) {
+        if (!requiresManualDismiss || manualEnterGameReady) {
             return
         }
         manualEnterGameReady = true
+        if (usesSlingBreakBootOverlay) {
+            onRuntimePauseRequested()
+        }
         activity.runOnUiThread {
-            if (bootOverlayDismissed || bootOverlay == null) return@runOnUiThread
+            if (bootOverlayDismissed || (!usesSlingBreakBootOverlay && bootOverlay == null)) return@runOnUiThread
+            if (usesSlingBreakBootOverlay) {
+                if (slingBreakLauncherPageReady) {
+                    slingBreakBootGame?.evaluateJavascript(
+                        "window.SlingBreakLauncher?.setReady?.()",
+                        null
+                    )
+                }
+                return@runOnUiThread
+            }
             if (overlayUiState.enterGameReady) return@runOnUiThread
             overlayUiState = overlayUiState.copy(enterGameReady = true)
         }
+    }
+
+    private fun pushSlingBreakProgress() {
+        if (!usesSlingBreakBootOverlay || !slingBreakLauncherPageReady) return
+        val progress = bootOverlayProgress
+        val escapedMessage = org.json.JSONObject.quote(bootOverlayMessage)
+        slingBreakBootGame?.evaluateJavascript(
+            "(() => { const fn = window.SlingBreakLauncher?.setProgress; " +
+                "if (!fn) return 'missing'; fn($progress, $escapedMessage); return 'ok'; })()"
+        ) { result ->
+            WebViewDiagnosticsLogStore.append(
+                activity,
+                "progress_push",
+                "percent=$progress result=$result"
+            )
+        }
+    }
+
+    private fun scheduleSlingBreakPageReadyTimeout() {
+        if (slingBreakPageReadyTimeoutScheduled) return
+        slingBreakPageReadyTimeoutScheduled = true
+        Handler(Looper.getMainLooper()).postDelayed({
+            slingBreakPageReadyTimeoutScheduled = false
+            if (usesSlingBreakBootOverlay && !slingBreakLauncherPageReady && !bootOverlayDismissed) {
+                WebViewDiagnosticsLogStore.append(
+                    activity,
+                    "bridge_page_ready_timeout",
+                    "launcher=1 progress=$bootOverlayProgress"
+                )
+            }
+        }, 5_000L)
     }
 
     private fun isOutOfMemoryFailure(detail: String?): Boolean {
@@ -535,18 +701,17 @@ class BootOverlayController(
     }
 
     private fun scheduleJvmLogPolling(initial: Boolean = false) {
-        val overlay = bootOverlay ?: return
         if (bootOverlayDismissed) return
-        overlay.removeCallbacks(jvmLogPollRunnable)
+        mainHandler.removeCallbacks(jvmLogPollRunnable)
         if (initial) {
-            overlay.post(jvmLogPollRunnable)
+            mainHandler.post(jvmLogPollRunnable)
         } else {
-            overlay.postDelayed(jvmLogPollRunnable, JVM_LOG_POLL_INTERVAL_MS)
+            mainHandler.postDelayed(jvmLogPollRunnable, JVM_LOG_POLL_INTERVAL_MS)
         }
     }
 
     private fun stopJvmLogPolling() {
-        bootOverlay?.removeCallbacks(jvmLogPollRunnable)
+        mainHandler.removeCallbacks(jvmLogPollRunnable)
     }
 
     private fun pollJvmLogSnapshot() {
@@ -781,6 +946,13 @@ private fun BootOverlayPanel(
         BootOverlayStyle.MATERIAL_LOG -> MaterialLogBootOverlayPanel(
             uiState = uiState,
             animatedProgress = animatedProgress,
+            manualDismissBootOverlay = manualDismissBootOverlay,
+            onDismissClick = onDismissClick
+        )
+        BootOverlayStyle.SLING_BREAK -> ModernBootOverlayPanel(
+            uiState = uiState,
+            animatedProgress = animatedProgress,
+            imageConfig = imageConfig,
             manualDismissBootOverlay = manualDismissBootOverlay,
             onDismissClick = onDismissClick
         )

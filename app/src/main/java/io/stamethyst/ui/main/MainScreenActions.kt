@@ -6,6 +6,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import io.stamethyst.backend.easytier.EasyTierPermissionCoordinator
+import io.stamethyst.backend.render.RendererBackend
+import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.LauncherNavigationRequestBus
 
@@ -31,6 +33,8 @@ internal data class MainScreenActions(
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
     val onUpgradeWorkshopImportPatches: (ModItemUi) -> Unit = {},
     val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    val onOpenAiEditor: (ModItemUi) -> Unit = {},
+    val onSetAgentPatchEnabled: (ModItemUi, AgentPatchModUi, Boolean) -> Unit = { _, _, _ -> },
     val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onAssociateMods: (ModItemUi, ModItemUi) -> Unit = { _, _ -> },
@@ -69,7 +73,10 @@ internal data class MainScreenActions(
     val onShareCrashRecoveryReport: () -> Unit = {},
     val onReturnToMainMenu: () -> Unit = {},
     val onReinstallResourcePack: () -> Unit = {},
+    val onSetQuickRenderer: (RendererBackend) -> Unit = {},
+    val onRestoreQuickRendererAuto: () -> Unit = {},
     val onImportMods: () -> Unit = {},
+    val onRefreshMods: () -> Unit = {},
     val onOpenWorkshop: () -> Unit = {},
     val onLaunch: () -> LaunchRequestAction = { LaunchRequestAction.NONE },
     val onLaunchAfterSteamCloudError: () -> Unit = {},
@@ -95,6 +102,7 @@ internal data class MainScreenActions(
     val onUnlockEasyTierRoom: () -> Unit = {},
     val onCloseEasyTierRoom: () -> Unit = {},
     val onKickEasyTierRoomMember: (String, String) -> Unit = { _, _ -> },
+    val onJoinSharedEasyTierRoom: (String, String) -> Unit = { _, _ -> },
 )
 
 @Composable
@@ -105,6 +113,7 @@ internal fun rememberMainScreenActions(
     easyTierVpnPermissionLauncher: ActivityResultLauncher<Intent>,
     onOpenWorkshop: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    onOpenAiEditor: (ModItemUi) -> Unit = {},
 ): MainScreenActions {
     return remember(
         viewModel,
@@ -113,6 +122,7 @@ internal fun rememberMainScreenActions(
         easyTierVpnPermissionLauncher,
         onOpenWorkshop,
         onOpenWorkshopDetails,
+        onOpenAiEditor,
     ) {
         val activity = hostActivity
         if (activity == null) {
@@ -137,6 +147,10 @@ internal fun rememberMainScreenActions(
                     viewModel.onUpgradeWorkshopImportPatches(activity, mod)
                 },
                 onOpenWorkshopDetails = onOpenWorkshopDetails,
+                onOpenAiEditor = onOpenAiEditor,
+                onSetAgentPatchEnabled = { mod, patch, enabled ->
+                    viewModel.onSetAgentPatchEnabled(activity, mod, patch, enabled)
+                },
                 onSetImportPatchEnabled = { mod, moduleId, enabled ->
                     viewModel.onSetImportPatchEnabled(activity, mod, moduleId, enabled)
                 },
@@ -191,11 +205,14 @@ internal fun rememberMainScreenActions(
                 onShareCrashRecoveryReport = { viewModel.shareCrashRecoveryReport(activity) },
                 onReturnToMainMenu = { viewModel.dismissCrashRecovery() },
                 onReinstallResourcePack = LauncherNavigationRequestBus::requestResourcePack,
+                onSetQuickRenderer = { backend -> viewModel.setQuickRendererBackend(activity, backend) },
+                onRestoreQuickRendererAuto = { viewModel.restoreQuickRendererAuto(activity) },
                 onImportMods = {
                     importModsLauncher.launch(
                         arrayOf("application/java-archive", "application/octet-stream", "*/*")
                     )
                 },
+                onRefreshMods = { viewModel.refresh(activity) },
                 onOpenWorkshop = onOpenWorkshop,
                 onLaunch = { viewModel.onLaunchRequested(activity) },
                 onLaunchAfterSteamCloudError = { viewModel.onLaunchAfterSteamCloudError(activity) },
@@ -280,6 +297,16 @@ internal fun rememberMainScreenActions(
                 },
                 onKickEasyTierRoomMember = { playerId, message ->
                     viewModel.kickEasyTierRoomMember(activity, playerId, message)
+                },
+                onJoinSharedEasyTierRoom = { roomId, password ->
+                    val permissionIntent = EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
+                    if (permissionIntent != null) {
+                        viewModel.queueEasyTierSharedRoomJoin(roomId, password)
+                        viewModel.onEasyTierVpnPermissionRequired(activity)
+                        easyTierVpnPermissionLauncher.launch(permissionIntent)
+                    } else {
+                        viewModel.joinEasyTierSharedRoom(activity, roomId, password)
+                    }
                 },
             )
         }

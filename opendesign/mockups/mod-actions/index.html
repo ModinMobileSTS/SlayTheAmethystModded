@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模组操作弹窗原型</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #e8e9ed;
+      --device: #f8f9ff;
+      --surface: #f8f9ff;
+      --surface-low: #f1f2f8;
+      --surface-high: #e8eaf1;
+      --ink: #191c20;
+      --muted: #5c6068;
+      --line: #c5c8d0;
+      --accent: #36618e;
+      --accent-soft: #d1e4ff;
+      --danger: #ba1a1a;
+      --danger-soft: #ffdad6;
+      --shadow: 0 22px 70px #13182038, 0 3px 12px #13182012;
+      --font: "Noto Sans SC", "Noto Sans", "PingFang SC", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--page); color: var(--ink); font-family: var(--font); }
+    button { font: inherit; color: inherit; }
+    .workbench { max-width: 1240px; margin: auto; padding: 28px 32px 48px; }
+    .topline { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+    .title { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+    h1 { margin: 0; font-size: 19px; font-weight: 650; }
+    .subtle { color: var(--muted); font-size: 13px; }
+    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .segmented { display: flex; align-items: center; min-height: 40px; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+    .segmented button { min-height: 32px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; }
+    .segmented button[aria-pressed="true"] { color: var(--ink); background: var(--surface-high); font-weight: 600; }
+    .workspace { min-height: 690px; display: grid; grid-template-columns: minmax(0, 1fr) 260px; border: 1px solid #d0d2d9; border-radius: 8px; overflow: hidden; background: #dfe1e6; }
+    .stage { min-width: 0; display: grid; place-items: center; padding: 36px; background: #e4e6eb; transition: padding .2s; }
+    .device { width: min(100%, 700px); min-height: 580px; position: relative; overflow: hidden; border: 1px solid #c4c7cf; border-radius: 12px; background: var(--device); box-shadow: 0 8px 30px #1b202a14; transition: width .2s, min-height .2s; }
+    .device-top { height: 48px; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid var(--line); font-size: 14px; font-weight: 600; }
+    .device-content { padding: 18px; }
+    .folder-label { margin: 0 0 10px; color: var(--muted); font-size: 12px; font-weight: 600; }
+    .mod-card { padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+    .mod-title-row { display: flex; align-items: center; gap: 10px; }
+    .mod-avatar { width: 38px; height: 38px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+    .mod-name { min-width: 0; flex: 1; }
+    .mod-name strong, .mod-name span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mod-name strong { font-size: 14px; }
+    .mod-name span { margin-top: 2px; color: var(--muted); font-size: 11px; }
+    .more { width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 22px; line-height: 1; cursor: pointer; }
+    .enabled { width: 40px; height: 40px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; color: var(--accent); }
+    .mod-description { margin: 12px 0 0 48px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .underlay { position: absolute; inset: 48px 0 0; display: grid; place-items: center; padding: 20px; background: #10141c52; }
+    .dialog { width: min(100%, 440px); max-height: calc(100% - 24px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #d6d8df; border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); animation: arrive .16s ease-out; }
+    @keyframes arrive { from { opacity: .5; transform: translateY(5px) scale(.99); } to { opacity: 1; transform: none; } }
+    .dialog-head { padding: 18px 20px 14px; }
+    .dialog-head h2 { margin: 0; font-size: 17px; font-weight: 650; }
+    .dialog-head p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .dialog-body { padding: 0 12px; overflow-y: auto; }
+    .dialog-foot { display: flex; justify-content: flex-end; padding: 10px 16px 12px; border-top: 1px solid var(--surface-high); }
+    .cancel { min-height: 40px; padding: 0 14px; border: 0; border-radius: 5px; background: transparent; color: var(--accent); font-weight: 600; cursor: pointer; }
+    .action { width: 100%; min-height: 48px; display: flex; align-items: center; gap: 13px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; text-align: left; cursor: pointer; }
+    .action:hover { background: var(--surface-low); }
+    .action-hit { min-width: 0; min-height: 46px; flex: 1; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+    .action-wrap:has(.action-description) .action { min-height: 56px; }
+    .action-wrap:has(.action-description) .action-hit { min-height: 56px; }
+    .action-wrap .action-description { padding: 0 10px 8px 45px; }
+    .action:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .action-icon { width: 22px; flex: 0 0 22px; color: var(--muted); text-align: center; font-size: 17px; }
+    .action-label { min-width: 0; flex: 1; font-size: 13px; }
+    .action-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    .action-description { color: var(--muted); font-size: 10px; font-weight: 400; line-height: 1.35; }
+    .action-hint { color: var(--muted); font-size: 11px; }
+    .action-chevron { color: var(--muted); font-size: 18px; }
+    .info-button { width: 36px; height: 36px; flex: 0 0 36px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; }
+    .group-note { padding: 0 10px 8px 45px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .action.danger { color: var(--danger); }
+    .action.danger .action-icon { color: var(--danger); }
+    .divider { height: 1px; margin: 6px 8px; background: var(--surface-high); }
+    .section-label { padding: 10px 10px 5px; color: var(--muted); font-size: 11px; font-weight: 650; }
+    .split-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .split-row .action { min-height: 60px; padding: 7px 8px; }
+    .split-row .action-label { line-height: 1.3; }
+    .split-cell { min-width: 0; }
+    .fav-mark { width: 100%; min-height: 44px; margin: 1px 0 5px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); text-align: left; cursor: pointer; }
+    .fav-mark[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+    .fav-star { color: var(--accent); font-size: 18px; }
+    .fav-copy { flex: 1; font-size: 12px; }
+    .fav-state { color: var(--muted); font-size: 11px; }
+    .switcher { min-width: 0; padding: 18px 16px; border-left: 1px solid #d0d2d9; background: #f4f5f8; }
+    .switcher h2 { margin: 0 0 10px; font-size: 13px; }
+    .variant { width: 100%; display: block; padding: 11px 10px; margin: 0 0 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
+    .variant:hover { background: #e9ebf0; }
+    .variant[aria-pressed="true"] { border-color: #c1c5ce; background: var(--surface); }
+    .variant strong { display: block; font-size: 12px; }
+    .variant span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .switcher-rule { height: 1px; margin: 16px 0; background: #dfe1e6; }
+    .switcher-label { margin: 0 0 8px; color: var(--muted); font-size: 11px; font-weight: 600; }
+    .placement { width: 100%; display: block; padding: 9px 8px; margin-bottom: 5px; border: 1px solid transparent; border-radius: 5px; background: transparent; text-align: left; cursor: pointer; }
+    .placement[aria-pressed="true"] { border-color: #c1c5ce; background: var(--surface); }
+    .placement strong { display: block; font-size: 11px; }
+    .placement span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .status { min-height: 20px; margin-top: 14px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .toast { position: absolute; left: 50%; bottom: 16px; max-width: calc(100% - 32px); padding: 9px 13px; border-radius: 5px; background: #24282f; color: white; font-size: 12px; opacity: 0; pointer-events: none; transform: translate(-50%, 8px); transition: .18s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .toast.visible { opacity: 1; transform: translate(-50%, 0); }
+    .compact .stage { padding: 24px; }
+    .compact .device { width: min(100%, 430px); min-height: 640px; }
+    .compact .dialog { width: min(100%, 360px); }
+    .phone .stage { padding: 18px; }
+    .phone .device { width: min(100%, 390px); min-height: min(780px, calc(100vh - 120px)); }
+    .phone .underlay { padding: 10px; }
+    .phone .dialog { width: 100%; max-height: calc(100% - 8px); }
+    .phone .workspace { min-height: 700px; }
+    .phone .switcher { padding: 12px 9px; }
+    .phone .variant { padding: 9px 6px; }
+    .phone .variant span { font-size: 10px; }
+    .dark {
+      color-scheme: dark;
+      --page: #16191e; --device: #111418; --surface: #191c20; --surface-low: #24282e; --surface-high: #2c3037;
+      --ink: #e1e2e8; --muted: #b8bdc6; --line: #555a63; --accent: #a0cafd; --accent-soft: #194975;
+      --danger: #ffb4ab; --danger-soft: #93000a;
+    }
+    .dark .workspace { border-color: #343941; background: #20242a; }
+    .dark .stage { background: #20242a; }
+    .dark .device { border-color: #40454e; }
+    .dark .switcher { border-color: #343941; background: #1b1f24; }
+    .dark .variant:hover { background: #262b31; }
+    .dark .variant[aria-pressed="true"] { border-color: #505762; }
+    .dark .switcher-rule { background: #343941; }
+    .dark .dialog { border-color: #40454e; }
+    .dark .mod-avatar { color: var(--accent); }
+    .dark .toast { background: #e1e2e8; color: #191c20; }
+    @media (max-width: 720px) {
+      .workbench { padding: 16px 12px 28px; }
+      .topline { align-items: flex-start; flex-direction: column; }
+      .title { align-items: flex-start; flex-direction: column; gap: 2px; }
+      .workspace { grid-template-columns: minmax(0, 1fr) 124px; min-height: 670px; }
+      .stage { padding: 10px; }
+      .device { min-height: 620px; }
+      .device-content { padding: 12px; }
+      .underlay { padding: 8px; }
+      .dialog { width: 100%; }
+      .switcher { padding: 12px 8px; }
+      .variant { padding: 9px 6px; }
+      .variant span { font-size: 10px; }
+      .switcher .segmented { flex-direction: column; align-items: stretch; }
+      .switcher .segmented button { min-height: 36px; padding: 0 5px; }
+    }
+    @media (max-width: 380px) {
+      .workspace { grid-template-columns: minmax(0, 1fr) 108px; }
+      .switcher { padding-inline: 5px; }
+      .variant strong { font-size: 11px; }
+      .dialog-head { padding: 14px 15px 11px; }
+      .dialog-body { padding-inline: 8px; }
+      .action { gap: 9px; padding-inline: 7px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="workbench" id="workbench">
+    <header class="topline">
+      <div class="title"><h1>模组操作</h1><span class="subtle">弹窗布局原型</span></div>
+      <div class="toolbar">
+        <div class="segmented" aria-label="预览宽度">
+          <button type="button" data-size="wide" aria-pressed="true">宽屏</button>
+          <button type="button" data-size="compact" aria-pressed="false">紧凑</button>
+          <button type="button" data-size="phone" aria-pressed="false">手机</button>
+        </div>
+        <div class="segmented" aria-label="主题">
+          <button type="button" data-theme="light" aria-pressed="true">浅色</button>
+          <button type="button" data-theme="dark" aria-pressed="false">深色</button>
+        </div>
+      </div>
+    </header>
+    <section class="workspace" aria-label="弹窗预览">
+      <div class="stage">
+        <div class="device">
+          <div class="device-top">模组管理 <span style="margin-left:auto;color:var(--muted);font-size:12px;font-weight:400">已安装 42</span></div>
+          <div class="device-content">
+            <p class="folder-label">常用模组 · 8</p>
+            <article class="mod-card">
+              <div class="mod-title-row">
+                <div class="mod-avatar">S</div>
+                <div class="mod-name"><strong>StSLib</strong><span>modid: stslib · v2.4.1</span></div>
+                <button class="more" type="button" aria-label="模组操作">⋮</button>
+                <span class="enabled" aria-label="已启用">✓</span>
+              </div>
+              <p class="mod-description">提供其他模组使用的基础工具与公共接口。</p>
+            </article>
+          </div>
+          <div class="underlay">
+            <section class="dialog" id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+              <header class="dialog-head"><h2 id="dialog-title">模组操作</h2><p>StSLib</p></header>
+              <div class="dialog-body" id="actions"></div>
+              <footer class="dialog-foot"><button class="cancel" type="button" id="cancel">取消</button></footer>
+            </section>
+          </div>
+          <div class="toast" id="toast" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+      <aside class="switcher">
+        <h2>布局方案</h2>
+        <button class="variant" type="button" data-variant="classic" aria-pressed="true"><strong>01　紧凑列表</strong><span>保留当前纵向结构，优化行高、图标与危险操作分隔。</span></button>
+        <button class="variant" type="button" data-variant="groups" aria-pressed="false"><strong>02　按用途分组</strong><span>收藏置顶；管理、工具和文件操作分区呈现。</span></button>
+        <button class="variant" type="button" data-variant="quick" aria-pressed="false"><strong>03　快捷操作优先</strong><span>收藏作为状态行；常用管理操作并列，减少纵向滚动。</span></button>
+        <div class="switcher-rule"></div>
+        <p class="switcher-label">可用操作</p>
+        <p class="switcher-label">说明放置方式</p>
+        <button class="placement" type="button" data-placement="inline" aria-pressed="false"><strong>01　每项下方</strong><span>说明始终可见，列表更长</span></button>
+        <button class="placement" type="button" data-placement="group" aria-pressed="true"><strong>02　分组说明</strong><span>每组一段概括，默认方案</span></button>
+        <button class="placement" type="button" data-placement="info" aria-pressed="false"><strong>03　点按查看</strong><span>仅在需要时展开单项说明</span></button>
+        <div class="switcher-rule"></div>
+        <p class="switcher-label">市场页操作</p>
+        <div class="segmented" style="width:100%">
+          <button type="button" data-market="off" aria-pressed="false">无市场页</button>
+          <button type="button" data-market="on" aria-pressed="true">含市场页</button>
+        </div>
+        <p class="status" id="status">点选操作可查看即时反馈。右侧选项可切换布局与预览状态。</p>
+      </aside>
+    </section>
+  </main>
+  <script>
+    const labels = {
+      favoriteOn: "添加到特别喜欢", favoriteOff: "从特别喜欢中移除", priority: "调整加载优先级",
+      associate: "关联", market: "打开市场页", ai: "使用 AI 编辑", export: "导出", share: "分享",
+      rename: "重命名", delete: "删除", cancel: "取消"
+    };
+    const icons = { favorite: "☆", priority: "↕", associate: "⊙", market: "↗", ai: "✳", export: "⇩", share: "⌯", rename: "✎", delete: "⌫" };
+    const descriptions = {
+      priority: "数字越小，加载越早。", associate: "将模组加入关联组，一起管理。", market: "查看模组市场详情与更新。",
+      ai: "打开 AI 编辑器修改模组内容。", export: "导出模组文件到设备存储。", share: "通过其他应用发送模组文件。",
+      rename: "修改启动器中显示的名称。", delete: "从设备中移除已安装模组。"
+    };
+    const state = { variant: "groups", placement: "group", favorite: false, market: true, size: "wide", theme: "light", expanded: new Set() };
+    const actions = document.getElementById("actions");
+    const status = document.getElementById("status");
+    const toast = document.getElementById("toast");
+    let toastTimer;
+    const item = (key, extra = "") => {
+      const description = descriptions[key];
+      const copy = state.placement === "inline" && description
+        ? `<span class="action-copy"><span class="action-label">${labels[key]}</span><span class="action-description">${description}</span></span>`
+        : `<span class="action-label">${labels[key]}</span>`;
+      const info = state.placement === "info" && description
+        ? `<button class="info-button" type="button" data-info="${key}" aria-label="查看${labels[key]}说明" aria-expanded="${state.expanded.has(key)}">i</button>${state.expanded.has(key) ? `<span class="action-description">${description}</span>` : ""}`
+        : "";
+      return `<div class="action-wrap"><div class="action ${extra}"><span class="action-icon" aria-hidden="true">${icons[key]}</span><button class="action-hit" type="button" data-action="${key}">${copy}<span class="action-chevron" aria-hidden="true">›</span></button>${info}</div></div>`;
+    };
+    const section = (name, contents, note = "") => `<div class="section-label">${name}</div>${state.placement === "group" && note ? `<p class="group-note">${note}</p>` : ""}${contents}`;
+    const favorite = () => `<button class="fav-mark" type="button" data-action="favorite" aria-pressed="${state.favorite}"><span class="fav-star" aria-hidden="true">${state.favorite ? "★" : "☆"}</span><span class="fav-copy">${state.favorite ? labels.favoriteOff : labels.favoriteOn}</span><span class="fav-state">${state.favorite ? "已收藏" : "未收藏"}</span></button>`;
+    function render() {
+      const ordinary = [item("priority"), item("associate"), ...(state.market ? [item("market")] : []), item("ai"), item("export"), item("share"), item("rename"), item("delete", "danger")];
+      if (state.variant === "classic") {
+        actions.innerHTML = ordinary.join("");
+      } else if (state.variant === "groups") {
+        actions.innerHTML = `${favorite()}${section("模组管理", item("priority") + item("associate") + (state.market ? item("market") : ""), "调整加载顺序、关联依赖模组，或前往市场查看详情。")}<div class="divider"></div>${section("工具与文件", item("ai") + item("export") + item("share") + item("rename"), "编辑模组内容，或管理本地文件与显示名称。")}${state.placement === "group" ? `<div class="group-note">删除会从设备中移除此模组。</div>` : ""}<div class="divider"></div>${item("delete", "danger")}`;
+      } else {
+        const firstRow = `<div class="split-row"><div class="split-cell">${item("priority")}</div><div class="split-cell">${item("associate")}</div></div>`;
+        const secondRow = state.market
+          ? `<div class="split-row"><div class="split-cell">${item("market")}</div><div class="split-cell">${item("ai")}</div></div>`
+          : `<div class="split-row"><div class="split-cell">${item("ai")}</div><div class="split-cell">${item("export")}</div></div>`;
+        const common = `${firstRow}${secondRow}`;
+        const frequent = section("常用", common, "管理加载顺序与关联，或打开常用工具。");
+        const more = section("更多", item("export") + item("share") + item("rename"), "导出、分享文件或更改显示名称。");
+        actions.innerHTML = `${favorite()}${frequent}<div class="divider"></div>${more}<div class="divider"></div>${item("delete", "danger")}`;
+      }
+      actions.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => {
+        const key = button.dataset.action;
+        if (key === "favorite") { state.favorite = !state.favorite; render(); status.textContent = state.favorite ? "收藏状态：已加入特别喜欢。" : "收藏状态：已从特别喜欢中移除。"; return; }
+        const text = labels[key];
+        status.textContent = `已选择「${text}」；此原型只预览操作入口，不会修改模组。`;
+        toast.textContent = `已选择：${text}`;
+        toast.classList.add("visible");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove("visible"), 1700);
+      }));
+      actions.querySelectorAll("[data-info]").forEach(button => button.addEventListener("click", event => {
+        event.stopPropagation();
+        const key = button.dataset.info;
+        state.expanded.has(key) ? state.expanded.delete(key) : state.expanded.add(key);
+        render();
+      }));
+    }
+    document.querySelectorAll("[data-variant]").forEach(button => button.addEventListener("click", () => {
+      state.variant = button.dataset.variant;
+      document.querySelectorAll("[data-variant]").forEach(el => el.setAttribute("aria-pressed", String(el === button)));
+      render();
+    }));
+    document.querySelectorAll("[data-size]").forEach(button => button.addEventListener("click", () => {
+      state.size = button.dataset.size;
+      document.querySelectorAll("[data-size]").forEach(el => el.setAttribute("aria-pressed", String(el === button)));
+      document.getElementById("workbench").classList.remove("compact", "phone");
+      if (state.size !== "wide") document.getElementById("workbench").classList.add(state.size);
+    }));
+    document.querySelectorAll("[data-placement]").forEach(button => button.addEventListener("click", () => {
+      state.placement = button.dataset.placement;
+      state.expanded.clear();
+      document.querySelectorAll("[data-placement]").forEach(el => el.setAttribute("aria-pressed", String(el === button)));
+      render();
+      status.textContent = `说明布局：${button.querySelector("strong").textContent}。`;
+    }));
+    document.querySelectorAll("[data-theme]").forEach(button => button.addEventListener("click", () => {
+      state.theme = button.dataset.theme;
+      document.getElementById("workbench").classList.toggle("dark", state.theme === "dark");
+      document.querySelectorAll("[data-theme]").forEach(el => el.setAttribute("aria-pressed", String(el === button)));
+    }));
+    document.querySelectorAll("[data-market]").forEach(button => button.addEventListener("click", () => {
+      state.market = button.dataset.market === "on";
+      document.querySelectorAll("[data-market]").forEach(el => el.setAttribute("aria-pressed", String(el === button)));
+      render();
+    }));
+    document.getElementById("cancel").addEventListener("click", () => { status.textContent = "取消按钮已点选。"; });
+    document.querySelector(".more").addEventListener("click", () => { status.textContent = "模组操作弹窗已打开。"; });
+    render();
+  </script>
+</body>
+</html>

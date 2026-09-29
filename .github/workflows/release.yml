@@ -85,18 +85,30 @@ jobs:
             deps_root="$deps_root/build-deps"
           fi
 
-          if [ ! -f "$deps_root/steamapps/common/SlayTheSpire/desktop-1.0.jar" ]; then
-            echo "Missing desktop jar in dependency bundle: $deps_root/steamapps/common/SlayTheSpire/desktop-1.0.jar" >&2
-            exit 1
-          fi
+          # Accept both the canonical flat layout and the legacy nested one, then
+          # normalize into the single layout the build expects.
+          resolve_dep() {
+            local canonical="$1"
+            shift
+            local candidate
+            for candidate in "$@"; do
+              if [ -f "$deps_root/$candidate" ]; then
+                printf '%s\n' "$deps_root/$candidate"
+                return 0
+              fi
+            done
+            echo "Missing ${canonical} in dependency bundle (looked for: $*)" >&2
+            return 1
+          }
 
-          if [ ! -f "$deps_root/runtime-pack/jre8-pojav.zip" ]; then
-            echo "Missing runtime pack zip in dependency bundle: $deps_root/runtime-pack/jre8-pojav.zip" >&2
-            exit 1
-          fi
+          desktop_jar="$(resolve_dep 'build-deps/desktop.jar' \
+            'desktop.jar' 'steamapps/common/SlayTheSpire/desktop-1.0.jar')"
+          runtime_zip="$(resolve_dep 'build-deps/jre8-pojav.zip' \
+            'jre8-pojav.zip' 'runtime-pack/jre8-pojav.zip')"
 
           mkdir -p build-deps
-          cp -R "$deps_root/." build-deps/
+          cp "$desktop_jar" build-deps/desktop.jar
+          cp "$runtime_zip" build-deps/jre8-pojav.zip
 
       - name: Run Android lint
         run: ./gradlew :app:lintDebug --stacktrace
