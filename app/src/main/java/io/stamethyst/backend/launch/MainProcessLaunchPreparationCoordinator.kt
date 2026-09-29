@@ -19,7 +19,8 @@ object MainProcessLaunchPreparationCoordinator {
         context: Context,
         launchMode: String,
         progressCallback: StartupProgressCallback? = null,
-        launchSnapshotOverride: ModManager.LaunchModSnapshot? = null
+        launchSnapshotOverride: ModManager.LaunchModSnapshot? = null,
+        performanceDeepDiagnosticsOverride: Boolean? = null
     ) {
         val startedAtMs = SystemClock.elapsedRealtime()
         val appContext = context.applicationContext
@@ -43,7 +44,8 @@ object MainProcessLaunchPreparationCoordinator {
                             0,
                             COMMON_PREPARATION_END_PERCENT
                         ),
-                        launchSnapshotOverride = launchSnapshotOverride
+                        launchSnapshotOverride = launchSnapshotOverride,
+                        performanceDeepDiagnosticsOverride = performanceDeepDiagnosticsOverride
                     )
                 }
                 measureStep(appContext, "game_body_patch") {

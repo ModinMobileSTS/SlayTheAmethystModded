@@ -877,7 +877,7 @@ object StsLaunchSpec {
             // The smoke test therefore has to pass its own set. Using the user's selection instead
             // makes MTS fail with MissingModIDException for mods the run deliberately did not load.
             val launchMods: List<String> = mtsLaunchModIdsOverride ?: try {
-                ModManager.resolveLaunchModIds(context)
+                ModManager.resolveLaunchModIds(context, performanceDeepDiagnostics)
             } catch (_: Exception) {
                 Arrays.asList(ModManager.MOD_ID_BASEMOD, ModManager.MOD_ID_STSLIB)
             }

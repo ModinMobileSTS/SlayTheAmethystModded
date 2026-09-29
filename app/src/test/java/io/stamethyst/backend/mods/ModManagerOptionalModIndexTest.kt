@@ -280,6 +280,31 @@ class ModManagerOptionalModIndexTest {
         )
     }
 
+    @Test
+    fun frameProbe_matchesEffectiveDiagnosticsWithoutArthasPack() {
+        val context = TestRoots.create("mod-manager-frame-probe-override").context
+        installRequiredLaunchMods(context)
+        writeOptionalModJar(
+            file = RuntimePaths.importedAmethystFrameProbeJar(context),
+            modId = ModManager.MOD_ID_AMETHYST_FRAME_PROBE,
+            name = "Amethyst Frame Probe",
+            lastModified = 9_000L
+        )
+        LauncherConfig.setGpuResourceDiagEnabled(context, false)
+
+        val normal = ModManager.buildLaunchModSnapshot(context)
+        assertFalse(normal.launchModIds.contains(ModManager.MOD_ID_AMETHYST_FRAME_PROBE))
+
+        val diagnostic = ModManager.buildLaunchModSnapshot(context, true)
+        assertTrue(diagnostic.launchModIds.contains(ModManager.MOD_ID_AMETHYST_FRAME_PROBE))
+        assertTrue(diagnostic.launchModFiles.contains(RuntimePaths.importedAmethystFrameProbeJar(context)))
+        assertTrue(ModManager.resolveLaunchModIds(context, true).contains(ModManager.MOD_ID_AMETHYST_FRAME_PROBE))
+
+        LauncherConfig.setGpuResourceDiagEnabled(context, true)
+        assertTrue(ModManager.buildLaunchModSnapshot(context).launchModIds.contains(ModManager.MOD_ID_AMETHYST_FRAME_PROBE))
+        assertFalse(ModManager.buildLaunchModSnapshot(context, false).launchModIds.contains(ModManager.MOD_ID_AMETHYST_FRAME_PROBE))
+    }
+
     private fun installRequiredLaunchMods(context: Context) {
         LauncherConfig.setRamSaverEnabled(context, LauncherConfig.DEFAULT_RAM_SAVER_ENABLED)
         writeOptionalModJar(

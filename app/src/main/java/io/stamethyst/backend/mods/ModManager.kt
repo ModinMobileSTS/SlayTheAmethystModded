@@ -2,7 +2,6 @@ package io.stamethyst.backend.mods
 
 import android.content.Context
 import io.stamethyst.backend.resources.RuntimeResourceProvider
-import io.stamethyst.backend.resources.ArthasResourcePackService
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
@@ -609,8 +608,12 @@ object ModManager {
     }
 
     @JvmStatic
+    @JvmOverloads
     @Throws(IOException::class)
-    fun buildLaunchModSnapshot(context: Context): LaunchModSnapshot {
+    fun buildLaunchModSnapshot(
+        context: Context,
+        performanceDeepDiagnosticsOverride: Boolean? = null
+    ): LaunchModSnapshot {
         val requiredEntries = ArrayList<RequiredLaunchModEntry>()
         requiredEntries.add(
             resolveRequiredLaunchModEntry(
@@ -655,7 +658,7 @@ object ModManager {
         // Its SpireInitializer is inert without the frame ring, so keeping it out of the
         // launch list avoids loading the mod, installing its hooks, and subscribing to
         // render/update callbacks on every normal launch.
-        if (isFrameProbeEnabled(context)) {
+        if (isFrameProbeEnabled(context, performanceDeepDiagnosticsOverride)) {
             requiredEntries.add(
                 resolveRequiredLaunchModEntry(
                     RuntimePaths.importedAmethystFrameProbeJar(context),
@@ -756,15 +759,18 @@ object ModManager {
      * True when the Amethyst Frame Probe mod should be loaded into the MTS launch.
      *
      * This mirrors the exact condition in [io.stamethyst.backend.launch.StsLaunchSpec.buildArgs]
-     * that sets `-Damethyst.gdx.frame_ring=true`: deep performance diagnostics must be enabled
-     * and the arthas resource pack must be installed (the ring is only meaningful with it).
-     * When either is missing the mod is not enabled, so its SpireInitializer, @SpirePatch2 hooks,
-     * and render/update subscriptions never run.
+     * that sets `-Damethyst.gdx.frame_ring=true`: use the current launch's diagnostics
+     * override when present, otherwise the persisted preference. Frame capture does not
+     * require the optional Arthas resource pack (only Arthas analysis does).
+     * Without diagnostics the mod remains unloaded on normal launches.
      */
     @JvmStatic
-    fun isFrameProbeEnabled(context: Context): Boolean {
-        return LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context) &&
-            ArthasResourcePackService.isInstalled(context)
+    fun isFrameProbeEnabled(
+        context: Context,
+        performanceDeepDiagnosticsOverride: Boolean? = null
+    ): Boolean {
+        return performanceDeepDiagnosticsOverride
+            ?: LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
     }
 
     @JvmStatic
@@ -836,9 +842,13 @@ object ModManager {
     }
 
     @JvmStatic
+    @JvmOverloads
     @Throws(IOException::class)
-    fun resolveLaunchModIds(context: Context): List<String> {
-        return buildLaunchModSnapshot(context).launchModIds
+    fun resolveLaunchModIds(
+        context: Context,
+        performanceDeepDiagnosticsOverride: Boolean? = null
+    ): List<String> {
+        return buildLaunchModSnapshot(context, performanceDeepDiagnosticsOverride).launchModIds
     }
 
     private fun buildRequiredEntry(

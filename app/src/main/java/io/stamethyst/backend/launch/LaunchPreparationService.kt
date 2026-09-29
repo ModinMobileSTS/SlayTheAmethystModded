@@ -34,7 +34,8 @@ object LaunchPreparationService {
         context: Context,
         launchMode: String,
         progressCallback: StartupProgressCallback?,
-        launchSnapshotOverride: ModManager.LaunchModSnapshot? = null
+        launchSnapshotOverride: ModManager.LaunchModSnapshot? = null,
+        performanceDeepDiagnosticsOverride: Boolean? = null
     ): ModManager.LaunchModSnapshot? {
         MemoryDiagnosticsLogger.logEvent(
             context,
@@ -99,7 +100,10 @@ object LaunchPreparationService {
                 96,
                 context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
             )
-            val launchSnapshot = launchSnapshotOverride ?: ModManager.buildLaunchModSnapshot(context)
+            val launchSnapshot = launchSnapshotOverride ?: ModManager.buildLaunchModSnapshot(
+                context,
+                performanceDeepDiagnosticsOverride
+            )
             OptionalModStorageCoordinator.prepareMtsModFileList(context, launchSnapshot)
             MemoryDiagnosticsLogger.logModSnapshot(
                 context = context,

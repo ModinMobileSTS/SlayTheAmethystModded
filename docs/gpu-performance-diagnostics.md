@@ -23,7 +23,7 @@ SHA-256、manifest、精确文件列表、文件大小和各文件 SHA-256 全�
 目标是只改变 GPU 资源计数插桩，避免把诊断自身或战斗随机性算成开销。
 
 1. 固定设备、刷新率、FPS、模组、角色、怪物、手牌和战斗结果。
-2. 两组都使用 `-PperformanceDeepDiagnostics=true`，保持 frame ring、GC 诊断和采样路径一致。
+2. 两组都使用 `-PperformanceDeepDiagnostics=true`，保持 frame ring、GC 诊断和采样路径一致。该启动覆盖参数会同时把 `AmethystFrameProbe` 加入本轮 MTS 模组清单与 `--mods`；帧探针不依赖可选的 Arthas 资源包。验证 `latest.log` 出现 `[frame-probe] active` 且设备上产生 `frame-probe-incidents.jsonl`，不能仅凭 JVM 参数含 `amethyst.gdx.frame_ring=true` 就认为采样成功。
    确定性的 `single_room` 自动基准不会自动启动离线 Arthas；这样类重转换不会与菜单和进地牢帧重叠。需要 Arthas 调查时应单独运行诊断流程。
 3. OFF 关闭 GPU 资源诊断，ON 开启；按 `OFF/ON`、`ON/OFF` 交替执行至少 5 对。
 4. 仅接受动作数、回合数和结果一致的轮次；异常轮次直接重跑。

@@ -316,7 +316,8 @@ class LauncherActivity : AppCompatActivity() {
                 MainProcessLaunchPreparationCoordinator.prepareBeforeLaunch(
                     context = applicationContext,
                     launchMode = request.launchMode,
-                    progressCallback = null
+                    progressCallback = null,
+                    performanceDeepDiagnosticsOverride = request.performanceDeepDiagnostics
                 )
                 val backBehavior = LauncherPreferences.readBackBehavior(this)
                 val manualDismissBootOverlay =
