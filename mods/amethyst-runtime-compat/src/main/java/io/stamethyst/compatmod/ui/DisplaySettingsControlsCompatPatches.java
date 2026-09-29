@@ -225,7 +225,7 @@ public final class DisplaySettingsControlsCompatPatches {
     )
     public static class FixedDropdownUpdatePatch {
         public static SpireReturn<Void> Prefix(DropdownMenu __instance) {
-            if (!isFixedDropdown(__instance)) {
+            if (shouldRenderDropdown(__instance)) {
                 return SpireReturn.Continue();
             }
             __instance.isOpen = false;
@@ -243,7 +243,7 @@ public final class DisplaySettingsControlsCompatPatches {
     )
     public static class FixedDropdownRenderPatch {
         public static SpireReturn<Void> Prefix(DropdownMenu __instance) {
-            if (isFixedDropdown(__instance)) {
+            if (!shouldRenderDropdown(__instance)) {
                 return SpireReturn.Return(null);
             }
             return SpireReturn.Continue();
@@ -313,7 +313,7 @@ public final class DisplaySettingsControlsCompatPatches {
     )
     public static class DisabledToggleUpdatePatch {
         public static SpireReturn<Void> Prefix(ToggleButton __instance) {
-            if (!isDisabledToggle(__instance)) {
+            if (shouldRenderToggle(__instance)) {
                 return SpireReturn.Continue();
             }
             clearHitbox(__instance);
@@ -328,7 +328,7 @@ public final class DisplaySettingsControlsCompatPatches {
     )
     public static class DisabledToggleActionPatch {
         public static SpireReturn<Void> Prefix(ToggleButton __instance) {
-            if (isDisabledToggle(__instance)) {
+            if (!shouldRenderToggle(__instance)) {
                 return SpireReturn.Return(null);
             }
             return SpireReturn.Continue();
@@ -342,7 +342,7 @@ public final class DisplaySettingsControlsCompatPatches {
     )
     public static class DisabledToggleRenderPatch {
         public static SpireReturn<Void> Prefix(ToggleButton __instance) {
-            if (isDisabledToggle(__instance)) {
+            if (!shouldRenderToggle(__instance)) {
                 return SpireReturn.Return(null);
             }
             return SpireReturn.Continue();
