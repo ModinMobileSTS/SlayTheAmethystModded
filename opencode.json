@@ -1,18 +1,32 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "permissions": [
+    { "action": "sts_control_game_lifecycle", "resource": "*", "effect": "ask" },
+    { "action": "sts_run_gameplay_scenario", "resource": "*", "effect": "ask" },
+    { "action": "sts_manage_game_probe_agent", "resource": "*", "effect": "ask" },
+    { "action": "sts_execute_game_console_command", "resource": "*", "effect": "ask" },
+    { "action": "sts_inspect_or_reload_game_class", "resource": "*", "effect": "ask" },
+    { "action": "sts_manage_enabled_mods", "resource": "*", "effect": "ask" },
+    { "action": "sts_run_game_performance_tests", "resource": "*", "effect": "ask" },
+    { "action": "sts_test_steam_cloud_sync", "resource": "*", "effect": "ask" }
+  ],
   "mcp": {
-    "serena": {
-      "type": "local",
-      "command": [
-        "/home/apricityx/.local/bin/serena",
-        "start-mcp-server",
-        "--context=ide",
-        "--project-from-cwd",
-        "--open-web-dashboard=False"
-      ],
-      "cwd": ".",
-      "enabled": false,
-      "timeout": 30000
+    "servers": {
+      "serena": {
+        "type": "local",
+        "command": [
+          "/home/apricityx/.local/bin/serena",
+          "start-mcp-server",
+          "--context=ide",
+          "--project-from-cwd",
+          "--open-web-dashboard=False"
+        ],
+        "cwd": ".",
+        "disabled": true,
+        "timeout": {
+          "startup": 30000
+        }
+      }
     }
   }
 }

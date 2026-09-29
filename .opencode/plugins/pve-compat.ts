@@ -1,18 +1,16 @@
-import type { Plugin } from "@opencode-ai/plugin";
+import { Plugin } from "@opencode/plugin"
 
-const plugin: Plugin = async () => {
-  return {
-    "tool.definition": async (_input, output) => {
-      const extOutput = output as Record<string, unknown>;
-      const schema = extOutput.jsonSchema as Record<string, unknown> | undefined;
-
-      if (!schema || typeof schema !== "object") return;
-      if (schema.type !== "object") return;
-      if (schema.required !== undefined) return;
-
-      extOutput.jsonSchema = { ...schema, required: [] };
-    },
-  };
-};
-
-export default plugin;
+export default Plugin.define({
+  id: "pve-compat",
+  async setup(ctx) {
+    await ctx.tool.transform((editor) => {
+      for (const existing of editor.list()) {
+        const schema = existing.input as Record<string, unknown>
+        if (!schema || schema.type !== "object" || schema.required !== undefined) continue
+        editor.update(existing.id, (tool) => {
+          tool.input = { ...schema, required: [] }
+        })
+      }
+    })
+  },
+})

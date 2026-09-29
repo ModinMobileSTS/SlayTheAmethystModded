@@ -1,0 +1,15 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.0.18"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.2",
+    "typescript": "5.8.3"
+  }
+}
