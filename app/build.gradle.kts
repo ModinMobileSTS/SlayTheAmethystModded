@@ -148,9 +148,9 @@ val releaseKeyAlias = readReleaseSigningProperty("RELEASE_KEY_ALIAS", "release.k
 val releaseKeyPassword = readReleaseSigningProperty("RELEASE_KEY_PASSWORD", "release.keyPassword")
     .ifEmpty { releaseSignature?.keyPassword.orEmpty() }
 val defaultResourcePackDownloadUrl =
-    "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/v1.6/resources.zip"
+    "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/v1.7/resources.zip"
 val defaultResourcePackDownloadFallbackUrls = listOf(
-    "https://gitee.com/apricityx/SlayTheAmethystResource/releases/download/v1.6/resources.zip"
+    "https://gitee.com/apricityx/SlayTheAmethystResource/releases/download/v1.7/resources.zip"
 )
 val defaultCloudControlConfigUrl =
     "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/cloud-control.json"
@@ -169,7 +169,7 @@ val resourcePackDownloadUrl = resourcePackDownloadUrls.firstOrNull().orEmpty()
 // bumping it forces every player to re-download.
 val resourcePackVersion = readGradleProperty(
     "resourcePack.version",
-    readLocalProperty("resourcePack.version").ifEmpty { "resources-v1.6" }
+    readLocalProperty("resourcePack.version").ifEmpty { "resources-v1.7" }
 )
 val resourcePackSha256 = readGradleProperty(
     "resourcePack.sha256",
