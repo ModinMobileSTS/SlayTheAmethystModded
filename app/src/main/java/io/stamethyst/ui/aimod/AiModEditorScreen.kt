@@ -132,6 +132,24 @@ internal data class AiToolCall(
     val truncated: Boolean = false,
 )
 
+/**
+ * The order in which the model produced visible content.  The legacy fields on
+ * [AiEditorMessage] are retained for context building and backwards-compatible
+ * database reads, but the UI uses these parts when they are available.
+ */
+@Serializable
+internal data class AiMessagePart(
+    val kind: String,
+    val content: String = "",
+    val toolId: String? = null,
+)
+
+internal object AiMessagePartKind {
+    const val TEXT = "text"
+    const val THINKING = "thinking"
+    const val TOOL = "tool"
+}
+
 @Serializable
 internal data class AiEditorMessage(
     val id: Long,
@@ -147,6 +165,8 @@ internal data class AiEditorMessage(
     val modelName: String = "",
     val elapsedMs: Long? = null,
     val contextTokens: Int? = null,
+    val notice: Boolean = false,
+    val parts: List<AiMessagePart> = emptyList(),
 )
 
 @Serializable
@@ -1066,84 +1086,114 @@ private fun AiMessageCard(
                         }
                     }
                 }
+            } else if (message.notice) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = colors.errorContainer.copy(alpha = 0.72f),
+                    contentColor = colors.onErrorContainer,
+                ) {
+                    Text(
+                        text = message.text,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             } else {
-                message.tools.forEach { tool ->
-                    if (tool.precedingText.isNotBlank()) {
-                        MaterialTheme(typography = MaterialTheme.typography.copy(bodySmall = bodyStyle)) {
-                            SimpleMarkdownContent(tool.precedingText, textColor = colors.onSurface, textSelectable = true)
+                if (message.parts.isNotEmpty()) {
+                    message.coalescedParts().forEach { part ->
+                        when (part.kind) {
+                            AiMessagePartKind.TEXT -> AiAssistantText(part.content, bodyStyle, colors)
+                            AiMessagePartKind.THINKING -> AiThinkingBlock(
+                                text = part.content,
+                                expanded = thinkingExpanded,
+                                streaming = message.streaming,
+                                onToggle = { thinkingExpanded = !thinkingExpanded },
+                                colors = colors,
+                            )
+                            AiMessagePartKind.TOOL -> message.tools.firstOrNull { it.id == part.toolId }
+                                ?.let { AiToolCallRow(it, message.streaming) }
                         }
                     }
-                    AiToolCallRow(tool, message.streaming)
-                }
-                if (message.thinking.isNotBlank()) {
-                    val thinkingPreview = message.thinking.lineSequence()
-                        .firstOrNull { it.isNotBlank() }
-                        ?.trim()
-                        .orEmpty()
-                    Column(Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .clickable { thinkingExpanded = !thinkingExpanded }
-                                .padding(vertical = 14.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Icon(
-                                Icons.Pending,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = if (message.streaming && message.text.isBlank()) colors.primary else colors.onSurfaceVariant,
-                            )
-                            Text(
-                                stringResource(R.string.ai_mod_editor_thinking),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.onSurfaceVariant,
-                            )
-                            Text(
-                                thinkingPreview,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.onSurfaceVariant.copy(alpha = 0.75f),
-                            )
-                            Icon(
-                                Icons.KeyboardArrowUp,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp).rotate(if (thinkingExpanded) 0f else 180f),
-                                tint = colors.onSurfaceVariant,
-                            )
+                } else {
+                    message.tools.forEach { tool ->
+                        if (tool.precedingText.isNotBlank()) {
+                            MaterialTheme(typography = MaterialTheme.typography.copy(bodySmall = bodyStyle)) {
+                                SimpleMarkdownContent(tool.precedingText, textColor = colors.onSurface, textSelectable = true)
+                            }
                         }
-                        if (thinkingExpanded) {
+                        AiToolCallRow(tool, message.streaming)
+                    }
+                    if (message.thinking.isNotBlank()) {
+                        val thinkingPreview = message.thinking.lineSequence()
+                            .firstOrNull { it.isNotBlank() }
+                            ?.trim()
+                            .orEmpty()
+                        Column(Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { thinkingExpanded = !thinkingExpanded }
+                                    .padding(vertical = 14.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Pending,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (message.streaming && message.text.isBlank()) colors.primary else colors.onSurfaceVariant,
+                                )
+                                Text(
+                                    stringResource(R.string.ai_mod_editor_thinking),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = colors.onSurfaceVariant,
+                                )
+                                Text(
+                                    thinkingPreview,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = colors.onSurfaceVariant.copy(alpha = 0.75f),
+                                )
+                                Icon(
+                                    Icons.KeyboardArrowUp,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp).rotate(if (thinkingExpanded) 0f else 180f),
+                                    tint = colors.onSurfaceVariant,
+                                )
+                            }
+                            if (thinkingExpanded) {
+                                SimpleMarkdownContent(
+                                    message.thinking,
+                                    modifier = Modifier.padding(start = 4.dp, bottom = 16.dp),
+                                    textColor = colors.onSurfaceVariant,
+                                    textSelectable = true,
+                                )
+                            }
+                        }
+                    }
+                    if (message.text.isNotBlank()) {
+                        MaterialTheme(
+                            typography = MaterialTheme.typography.copy(
+                                bodySmall = bodyStyle,
+                                bodyMedium = bodyStyle,
+                                titleSmall = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    lineHeight = 26.sp,
+                                    letterSpacing = 0.sp,
+                                ),
+                            ),
+                        ) {
                             SimpleMarkdownContent(
-                                message.thinking,
-                                modifier = Modifier.padding(start = 4.dp, bottom = 16.dp),
-                                textColor = colors.onSurfaceVariant,
+                                message.text,
+                                modifier = Modifier.fillMaxWidth(),
+                                textColor = colors.onSurface,
+                                codeContainerColor = colors.surfaceContainerLow,
                                 textSelectable = true,
                             )
                         }
-                    }
-                }
-                if (message.text.isNotBlank()) {
-                    MaterialTheme(
-                        typography = MaterialTheme.typography.copy(
-                            bodySmall = bodyStyle,
-                            bodyMedium = bodyStyle,
-                            titleSmall = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                lineHeight = 26.sp,
-                                letterSpacing = 0.sp,
-                            ),
-                        ),
-                    ) {
-                        SimpleMarkdownContent(
-                            message.text,
-                            modifier = Modifier.fillMaxWidth(),
-                            textColor = colors.onSurface,
-                            codeContainerColor = colors.surfaceContainerLow,
-                            textSelectable = true,
-                        )
                     }
                 }
                 if (message.failed) {
@@ -1167,62 +1217,153 @@ private fun AiMessageCard(
                         }
                     }
                 }
-                if (message.streaming && message.retryMessage.isNotBlank()) {
-                    Text(
-                        message.retryMessage,
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        style = MaterialTheme.typography.bodySmall,
+                if (message.streaming && message.text.isBlank() && message.thinking.isBlank()) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(vertical = 12.dp).size(18.dp),
+                        strokeWidth = 2.dp,
                         color = colors.onSurfaceVariant,
                     )
-                } else if (message.streaming && message.text.isBlank() && message.thinking.isBlank()) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.padding(vertical = 12.dp).size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = colors.onSurfaceVariant,
-                        )
                 }
             }
-            Row(
-                modifier = if (message.fromUser) Modifier else Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (!message.fromUser) {
-                    Text(
-                        text = buildString {
-                            append(message.modelName.ifBlank { assistantLabel })
-                            message.elapsedMs?.let { append(" · "); append(String.format(java.util.Locale.getDefault(), "%.1fs", it / 1000.0)) }
-                        },
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = colors.onSurfaceVariant.copy(alpha = 0.7f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (!message.failed) {
-                    Box {
-                        IconButton(onClick = { showActions = true }, modifier = Modifier.semantics { contentDescription = actionsLabel }) {
-                            Text("···", color = colors.onSurfaceVariant, style = MaterialTheme.typography.titleLarge)
-                        }
-                        DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
-                            if (message.text.isNotBlank() || message.tools.any { it.precedingText.isNotBlank() }) {
+            if (!message.notice) {
+                Row(
+                    modifier = if (message.fromUser) Modifier else Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (!message.fromUser) {
+                        Text(
+                            text = buildString {
+                                append(message.modelName.ifBlank { assistantLabel })
+                                message.elapsedMs?.let { append(" · "); append(String.format(java.util.Locale.getDefault(), "%.1fs", it / 1000.0)) }
+                            },
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.onSurfaceVariant.copy(alpha = 0.7f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (!message.failed) {
+                        Box {
+                            IconButton(onClick = { showActions = true }, modifier = Modifier.semantics { contentDescription = actionsLabel }) {
+                                Text("···", color = colors.onSurfaceVariant, style = MaterialTheme.typography.titleLarge)
+                            }
+                            DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
+                                if (message.text.isNotBlank() || message.tools.any { it.precedingText.isNotBlank() }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.ai_mod_editor_copy)) },
+                                        onClick = { showActions = false; onCopy() },
+                                    )
+                                }
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.ai_mod_editor_copy)) },
-                                    onClick = { showActions = false; onCopy() },
+                                    text = { Text(stringResource(if (message.fromUser) R.string.ai_mod_editor_rollback else R.string.ai_mod_editor_regenerate)) },
+                                    enabled = enabled && !message.streaming,
+                                    onClick = {
+                                        showActions = false
+                                        if (message.fromUser) onRollback() else onRegenerate()
+                                    },
                                 )
                             }
-                            DropdownMenuItem(
-                                text = { Text(stringResource(if (message.fromUser) R.string.ai_mod_editor_rollback else R.string.ai_mod_editor_regenerate)) },
-                                enabled = enabled && !message.streaming,
-                                onClick = {
-                                    showActions = false
-                                    if (message.fromUser) onRollback() else onRegenerate()
-                                },
-                            )
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+private fun AiEditorMessage.coalescedParts(): List<AiMessagePart> = parts.fold(
+    mutableListOf(),
+) { result, part ->
+    val previous = result.lastOrNull()
+    if (previous != null && previous.kind == part.kind && part.kind != AiMessagePartKind.TOOL) {
+        result[result.lastIndex] = previous.copy(content = previous.content + part.content)
+    } else {
+        result += part
+    }
+    result
+}
+
+@Composable
+private fun AiAssistantText(
+    text: String,
+    bodyStyle: androidx.compose.ui.text.TextStyle,
+    colors: androidx.compose.material3.ColorScheme,
+) {
+    if (text.isBlank()) return
+    MaterialTheme(
+        typography = MaterialTheme.typography.copy(
+            bodySmall = bodyStyle,
+            bodyMedium = bodyStyle,
+            titleSmall = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 26.sp,
+                letterSpacing = 0.sp,
+            ),
+        ),
+    ) {
+        SimpleMarkdownContent(
+            text,
+            modifier = Modifier.fillMaxWidth(),
+            textColor = colors.onSurface,
+            codeContainerColor = colors.surfaceContainerLow,
+            textSelectable = true,
+        )
+    }
+}
+
+@Composable
+private fun AiThinkingBlock(
+    text: String,
+    expanded: Boolean,
+    streaming: Boolean,
+    onToggle: () -> Unit,
+    colors: androidx.compose.material3.ColorScheme,
+) {
+    if (text.isBlank()) return
+    val preview = text.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .clickable(onClick = onToggle)
+                .padding(vertical = 14.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                Icons.Pending,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = if (streaming) colors.primary else colors.onSurfaceVariant,
+            )
+            Text(
+                stringResource(R.string.ai_mod_editor_thinking),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurfaceVariant,
+            )
+            Text(
+                preview,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurfaceVariant.copy(alpha = 0.75f),
+            )
+            Icon(
+                Icons.KeyboardArrowUp,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp).rotate(if (expanded) 0f else 180f),
+                tint = colors.onSurfaceVariant,
+            )
+        }
+        if (expanded) {
+            SimpleMarkdownContent(
+                text,
+                modifier = Modifier.padding(start = 4.dp, bottom = 16.dp),
+                textColor = colors.onSurfaceVariant,
+                textSelectable = true,
+            )
         }
     }
 }

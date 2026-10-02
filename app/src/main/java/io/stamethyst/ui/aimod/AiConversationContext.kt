@@ -20,7 +20,10 @@ internal fun AiEditorSession.modelContext(excludingMessageId: Long): AgentContex
     val importedIds = old.messages.mapTo(HashSet()) { it.sourceMessageId }
     val additions = messages.filter { it.id != excludingMessageId && it.id !in importedIds }.flatMap { message ->
         buildList {
-            if (message.fromUser) {
+            if (message.notice) {
+                // Retry/failure notices are UI history, not instructions for the
+                // next model turn.
+            } else if (message.fromUser) {
                 add(AgentContextMessage(message.id, "user", buildString {
                     append(message.text)
                     message.attachments.forEach { append("\n\nAttachment: ${it.name}\n${it.content}") }

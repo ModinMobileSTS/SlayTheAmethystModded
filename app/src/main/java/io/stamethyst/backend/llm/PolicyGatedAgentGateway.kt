@@ -1817,7 +1817,7 @@ class PolicyGatedAgentGateway(
     private val agentWorkspaceRoot: File? = null,
     private val contextManager: AgentContextManager? = null,
     private val checkCancelled: () -> Unit = {},
-    private val onRetry: (retryNumber: Int, delaySeconds: Long) -> Unit = { _, _ -> },
+    private val onRetry: (retryNumber: Int, delaySeconds: Long, error: Throwable) -> Unit = { _, _, _ -> },
 ) {
     fun respond(systemPrompt: String, userPrompt: String): AgentReply {
         val messages = if (contextManager != null) mutableListOf() else mutableListOf<ChatMessage>(
@@ -1959,7 +1959,7 @@ class PolicyGatedAgentGateway(
                     return request(active)
                 }
                 val delaySeconds = INITIAL_RETRY_DELAY_SECONDS shl attempt
-                onRetry(attempt + 1, delaySeconds)
+                onRetry(attempt + 1, delaySeconds, error)
                 try {
                     Thread.sleep(delaySeconds * 1_000L)
                 } catch (interrupted: InterruptedException) {

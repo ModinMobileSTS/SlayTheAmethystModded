@@ -1253,6 +1253,7 @@
     <string name="ai_mod_editor_copy">复制</string>
     <string name="ai_mod_editor_retry">重试</string>
     <string name="ai_mod_editor_retrying">%2$d 秒后重试（第 %1$d/5 次）</string>
+    <string name="ai_mod_editor_retry_notice">第 %1$d/5 次重试，将在 %2$d 秒后继续。报错详情：%3$s</string>
     <string name="ai_mod_editor_regenerate">重新生成</string>
     <string name="ai_mod_editor_rollback">回退到这里</string>
     <string name="ai_mod_editor_rollback_confirm_title">回退到这条消息？</string>

@@ -30,6 +30,13 @@ internal fun applyToolExecutionEvent(
     json: Json = Json { ignoreUnknownKeys = true },
 ): AiEditorMessage {
     if (event.result == null) {
+        val orderedParts = buildList {
+            addAll(message.parts)
+            if (message.parts.isEmpty() && message.text.isNotBlank()) {
+                add(AiMessagePart(AiMessagePartKind.TEXT, content = message.text))
+            }
+            add(AiMessagePart(AiMessagePartKind.TOOL, toolId = event.id))
+        }
         return message.copy(
             text = "",
             tools = message.tools + AiToolCall(
@@ -38,6 +45,7 @@ internal fun applyToolExecutionEvent(
                 arguments = event.arguments,
                 precedingText = message.text,
             ),
+            parts = orderedParts,
         )
     }
 
@@ -228,16 +236,23 @@ class AiAgentExecutionService : Service() {
         val streamLock = Any()
         val textBuffer = StringBuilder()
         val thinkingBuffer = StringBuilder()
+        val pendingParts = ArrayList<AiMessagePart>()
+        var activeAssistantMessageId = job.assistantMessageId
         var lastFlush = 0L
         fun flush(force: Boolean = false) = synchronized(streamLock) {
             val now = android.os.SystemClock.elapsedRealtime()
             if (!force && now - lastFlush < 250L) return@synchronized
             if (textBuffer.isEmpty() && thinkingBuffer.isEmpty()) return@synchronized
-            updateAssistant(job, conversationStore) { message ->
-                message.copy(text = message.text + textBuffer, thinking = message.thinking + thinkingBuffer)
+            updateAssistant(job, conversationStore, activeAssistantMessageId) { message ->
+                message.copy(
+                    text = message.text + textBuffer,
+                    thinking = message.thinking + thinkingBuffer,
+                    parts = message.parts + pendingParts,
+                )
             }
             textBuffer.setLength(0)
             thinkingBuffer.setLength(0)
+            pendingParts.clear()
             lastFlush = now
         }
         fun checkActive() {
@@ -253,13 +268,14 @@ class AiAgentExecutionService : Service() {
             reasoningEffort = LlmSettingsRepository(applicationContext).get().reasoningEffort,
             onToolExecution = { event ->
                 checkActive()
-                flush(true)
-                handleToolEvent(job, conversationStore, event)
+                synchronized(streamLock) { flush(true) }
+                handleToolEvent(job, conversationStore, activeAssistantMessageId, event)
             },
             onText = { delta ->
                 synchronized(streamLock) {
                     if (accepting.get() && !cancellationRequested && !serviceDestroyed) {
                         textBuffer.append(delta)
+                        pendingParts += AiMessagePart(AiMessagePartKind.TEXT, content = delta)
                         flush()
                     }
                 }
@@ -268,18 +284,26 @@ class AiAgentExecutionService : Service() {
                 synchronized(streamLock) {
                     if (accepting.get() && !cancellationRequested && !serviceDestroyed) {
                         thinkingBuffer.append(delta)
+                        pendingParts += AiMessagePart(AiMessagePartKind.THINKING, content = delta)
                         flush()
                     }
                 }
             },
-            onRetry = { retryNumber, delaySeconds ->
-                updateAssistant(job, conversationStore) { message ->
-                    message.copy(
-                        retryMessage = getString(
-                            R.string.ai_mod_editor_retrying,
-                            retryNumber,
-                            delaySeconds,
-                        ),
+            onRetry = { retryNumber, delaySeconds, retryError ->
+                val notice = getString(
+                    R.string.ai_mod_editor_retry_notice,
+                    retryNumber,
+                    delaySeconds,
+                    describeError(retryError),
+                )
+                synchronized(streamLock) {
+                    flush(true)
+                    activeAssistantMessageId = rotateAssistantForRetry(
+                        job,
+                        jobStore,
+                        conversationStore,
+                        activeAssistantMessageId,
+                        notice,
                     )
                 }
             },
@@ -297,9 +321,9 @@ class AiAgentExecutionService : Service() {
             val interrupted = Thread.interrupted()
             flush(true)
             if (cancellationRequested || interrupted) {
-                markCancelled(job, jobStore)
+                markCancelled(job, jobStore, activeAssistantMessageId)
             } else {
-                updateAssistant(job, conversationStore) { message ->
+                updateAssistant(job, conversationStore, activeAssistantMessageId) { message ->
                     message.copy(
                         streaming = false,
                         failed = false,
@@ -326,10 +350,10 @@ class AiAgentExecutionService : Service() {
                 return
             }
             if (cancellationRequested || interrupted || error is InterruptedException || error is java.util.concurrent.CancellationException) {
-                markCancelled(job, jobStore)
+                markCancelled(job, jobStore, activeAssistantMessageId)
             } else {
                 val message = describeError(error)
-                markFailed(job, jobStore, message)
+                markFailed(job, jobStore, message, activeAssistantMessageId)
             }
         } finally {
             accepting.set(false)
@@ -340,9 +364,10 @@ class AiAgentExecutionService : Service() {
     private fun handleToolEvent(
         job: AiAgentJobRecord,
         conversationStore: AiConversationStore,
+        assistantMessageId: Long,
         event: AgentToolExecutionEvent,
     ) {
-        updateAssistant(job, conversationStore) { message ->
+        updateAssistant(job, conversationStore, assistantMessageId) { message ->
             applyToolExecutionEvent(message, event, json)
         }
     }
@@ -350,20 +375,60 @@ class AiAgentExecutionService : Service() {
     private fun updateAssistant(
         job: AiAgentJobRecord,
         conversationStore: AiConversationStore,
+        assistantMessageId: Long,
         transform: (AiEditorMessage) -> AiEditorMessage,
     ) {
-        conversationStore.updateMessage(job.conversationId, job.assistantMessageId, transform)
+        conversationStore.updateMessage(job.conversationId, assistantMessageId, transform)
     }
 
-    private fun markFailed(job: AiAgentJobRecord, jobStore: AiAgentJobStore, message: String) {
+    private fun markFailed(
+        job: AiAgentJobRecord,
+        jobStore: AiAgentJobStore,
+        message: String,
+        assistantMessageId: Long = job.assistantMessageId,
+    ) {
         val conversationStore = conversationStore(job.modId)
-        updateAssistant(job, conversationStore) {
+        updateAssistant(job, conversationStore, assistantMessageId) {
             it.copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
         }
         jobStore.update(job.jobId) {
             it.copy(status = AiAgentJobStatus.FAILED, errorMessage = message)
         }
         updateNotification("AI 任务失败")
+    }
+
+    /**
+     * Turn the transient retry state into durable conversation history.  The
+     * failed attempt is kept when it already produced content; an empty
+     * placeholder is replaced by a notice followed by a fresh assistant slot.
+     */
+    private fun rotateAssistantForRetry(
+        job: AiAgentJobRecord,
+        jobStore: AiAgentJobStore,
+        conversationStore: AiConversationStore,
+        currentAssistantId: Long,
+        noticeText: String,
+    ): Long {
+        var nextAssistantId = currentAssistantId + 1
+        conversationStore.mutate(job.conversationId) { session ->
+            val index = session.messages.indexOfFirst { it.id == currentAssistantId }
+            if (index < 0) return@mutate session
+            val current = session.messages[index]
+            val hasOutput = current.text.isNotBlank() || current.thinking.isNotBlank() || current.tools.isNotEmpty()
+            val nextId = (session.messages.maxOfOrNull { it.id } ?: currentAssistantId) + 1L
+            val assistantId = nextId + 1L
+            nextAssistantId = assistantId
+            val replacement = buildList {
+                if (hasOutput) add(current.copy(streaming = false, retryMessage = ""))
+                add(AiEditorMessage(id = nextId, fromUser = false, text = noticeText, notice = true))
+                add(AiEditorMessage(id = assistantId, fromUser = false, text = "", streaming = true, modelName = current.modelName))
+            }
+            session.copy(
+                messages = session.messages.take(index) + replacement + session.messages.drop(index + 1),
+            )
+        }
+        jobStore.update(job.jobId) { it.copy(assistantMessageId = nextAssistantId) }
+        return nextAssistantId
     }
 
     private fun describeError(error: Throwable): String {
@@ -378,10 +443,14 @@ class AiAgentExecutionService : Service() {
         return parts.joinToString("; caused by ")
     }
 
-    private fun markCancelled(job: AiAgentJobRecord, jobStore: AiAgentJobStore) {
+    private fun markCancelled(
+        job: AiAgentJobRecord,
+        jobStore: AiAgentJobStore,
+        assistantMessageId: Long = job.assistantMessageId,
+    ) {
         val message = getString(R.string.ai_mod_editor_error_stopped)
         val conversationStore = conversationStore(job.modId)
-        updateAssistant(job, conversationStore) {
+        updateAssistant(job, conversationStore, assistantMessageId) {
             it.copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
         }
         jobStore.update(job.jobId) {

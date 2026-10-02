@@ -1252,6 +1252,7 @@
     <string name="ai_mod_editor_copy">複製</string>
     <string name="ai_mod_editor_retry">重試</string>
     <string name="ai_mod_editor_retrying">%2$d 秒後重試（第 %1$d/5 次）</string>
+    <string name="ai_mod_editor_retry_notice">第 %1$d/5 次重試，將在 %2$d 秒後繼續。錯誤詳情：%3$s</string>
     <string name="ai_mod_editor_regenerate">重新產生</string>
     <string name="ai_mod_editor_rollback">回退到這裡</string>
     <string name="ai_mod_editor_rollback_confirm_title">回退到這則訊息？</string>

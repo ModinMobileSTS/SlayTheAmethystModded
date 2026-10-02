@@ -340,6 +340,10 @@ internal class AiConversationStore(root: File) {
         db.beginTransactionNonExclusive()
         try {
             createSchema(db)
+            if (db.version < 2) {
+                addColumnIfMissing(db, TABLE_MESSAGES, COLUMN_NOTICE, "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfMissing(db, TABLE_MESSAGES, COLUMN_PARTS_JSON, "TEXT NOT NULL DEFAULT ''")
+            }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -370,6 +374,8 @@ internal class AiConversationStore(root: File) {
                 failed INTEGER NOT NULL,
                 error_message TEXT NOT NULL,
                 retry_message TEXT NOT NULL,
+                notice INTEGER NOT NULL DEFAULT 0,
+                parts_json TEXT NOT NULL DEFAULT '',
                 model_name TEXT NOT NULL,
                 elapsed_ms INTEGER,
                 context_tokens INTEGER
@@ -422,6 +428,20 @@ internal class AiConversationStore(root: File) {
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_messages_id ON messages(id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_jobs_status ON agent_jobs(status)")
+    }
+
+    private fun addColumnIfMissing(
+        db: SQLiteDatabase,
+        table: String,
+        column: String,
+        definition: String,
+    ) {
+        val exists = db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndex("name")
+            generateSequence { if (cursor.moveToNext()) cursor.getString(nameIndex) else null }
+                .any { it == column }
+        }
+        if (!exists) db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
     }
 
     private fun readSession(db: SQLiteDatabase, expectedId: String?): AiEditorSession? {
@@ -570,6 +590,8 @@ internal class AiConversationStore(root: File) {
             put(COLUMN_FAILED, if (message.failed) 1 else 0)
             put(COLUMN_ERROR_MESSAGE, message.errorMessage)
             put(COLUMN_RETRY_MESSAGE, message.retryMessage)
+            put(COLUMN_NOTICE, if (message.notice) 1 else 0)
+            put(COLUMN_PARTS_JSON, json.encodeToString(message.parts))
             put(COLUMN_MODEL_NAME, message.modelName)
             message.elapsedMs?.let { put(COLUMN_ELAPSED_MS, it) } ?: putNull(COLUMN_ELAPSED_MS)
             message.contextTokens?.let { put(COLUMN_CONTEXT_TOKENS, it) } ?: putNull(COLUMN_CONTEXT_TOKENS)
@@ -668,6 +690,10 @@ internal class AiConversationStore(root: File) {
             failed = getInt(getColumnIndexOrThrow(COLUMN_FAILED)) != 0,
             errorMessage = getString(getColumnIndexOrThrow(COLUMN_ERROR_MESSAGE)),
             retryMessage = getString(getColumnIndexOrThrow(COLUMN_RETRY_MESSAGE)),
+            notice = getInt(getColumnIndexOrThrow(COLUMN_NOTICE)) != 0,
+            parts = getString(getColumnIndexOrThrow(COLUMN_PARTS_JSON)).let { encoded ->
+                runCatching { json.decodeFromString<List<AiMessagePart>>(encoded) }.getOrDefault(emptyList())
+            },
             tools = tools[id].orEmpty(),
             modelName = getString(getColumnIndexOrThrow(COLUMN_MODEL_NAME)),
             elapsedMs = getLongOrNull(COLUMN_ELAPSED_MS),
@@ -751,7 +777,7 @@ internal class AiConversationStore(root: File) {
     private companion object {
         const val LOG_TAG = "AiModStore"
         /** Bump when [createSchema] changes so existing files are migrated on next open. */
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
         const val DATABASE_EXTENSION = "db"
         const val LEGACY_CONVERSATIONS_FILE = "conversations.json"
         const val LEGACY_JOBS_FILE = "agent_jobs.json"
@@ -775,6 +801,8 @@ internal class AiConversationStore(root: File) {
         const val COLUMN_FAILED = "failed"
         const val COLUMN_ERROR_MESSAGE = "error_message"
         const val COLUMN_RETRY_MESSAGE = "retry_message"
+        const val COLUMN_NOTICE = "notice"
+        const val COLUMN_PARTS_JSON = "parts_json"
         const val COLUMN_MODEL_NAME = "model_name"
         const val COLUMN_ELAPSED_MS = "elapsed_ms"
         const val COLUMN_CONTEXT_TOKENS = "context_tokens"

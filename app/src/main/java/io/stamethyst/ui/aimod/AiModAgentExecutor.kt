@@ -59,7 +59,7 @@ internal class AiModAgentExecutor(
     private val onToolExecution: (AgentToolExecutionEvent) -> Unit = {},
     private val onText: (String) -> Unit = {},
     private val onThinking: (String) -> Unit = {},
-    private val onRetry: (retryNumber: Int, delaySeconds: Long) -> Unit = { _, _ -> },
+    private val onRetry: (retryNumber: Int, delaySeconds: Long, error: Throwable) -> Unit = { _, _, _ -> },
     private val onContext: (AgentContextState) -> Unit = {},
     private val checkCancelled: () -> Unit = {},
 ) {

@@ -52,6 +52,27 @@ class AiConversationContextTest {
         assertEquals("continue", restored.messages.last().text)
     }
 
+    @Test fun retryNoticeIsPersistableButNeverSentBackToTheModel() {
+        val session = AiEditorSession("one", messages = listOf(
+            AiEditorMessage(1, true, "goal"),
+            AiEditorMessage(2, false, "Request failed: timeout", notice = true),
+            AiEditorMessage(
+                3,
+                false,
+                "Recovered answer",
+                parts = listOf(
+                    AiMessagePart(AiMessagePartKind.THINKING, "check the request"),
+                    AiMessagePart(AiMessagePartKind.TEXT, "Recovered answer"),
+                ),
+            ),
+        ))
+
+        val context = session.modelContext(3)
+        assertEquals(listOf("user"), context.messages.map { it.role })
+        val restored = Json.decodeFromString<AiEditorSession>(Json.encodeToString(session))
+        assertEquals(session, restored)
+    }
+
     @Test fun delayedPollCannotRemoveNewUserMessageOrContextCheckpoint() {
         val old = AiEditorSession("one", revision = 1, messages = listOf(AiEditorMessage(1, true, "first")))
         val latest = old.copy(revision = 3, messages = old.messages + AiEditorMessage(2, true, "new"),

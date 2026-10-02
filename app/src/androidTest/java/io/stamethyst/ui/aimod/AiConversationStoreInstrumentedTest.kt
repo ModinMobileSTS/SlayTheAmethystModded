@@ -44,6 +44,8 @@ class AiConversationStoreInstrumentedTest {
                             id = 2,
                             fromUser = false,
                             text = "Done",
+                            notice = true,
+                            parts = listOf(AiMessagePart(AiMessagePartKind.TEXT, "Done")),
                             tools = listOf(AiToolCall("call-1", "read", "{}", result = "ok")),
                         ),
                     ),
@@ -58,6 +60,8 @@ class AiConversationStoreInstrumentedTest {
             assertEquals("Inspect mod", restored!!.title)
             assertEquals("details", restored.messages.first().attachments.single().content)
             assertEquals("ok", restored.messages.last().tools.single().result)
+            assertTrue(restored.messages.last().notice)
+            assertEquals("Done", restored.messages.last().parts.single().content)
             assertEquals("Inspect this mod", restored.context!!.messages.single().text)
             assertEquals(1, root.listFiles { file -> file.extension == "db" }!!.size)
         } finally {

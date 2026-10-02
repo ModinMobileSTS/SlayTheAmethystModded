@@ -1269,6 +1269,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="ai_mod_editor_error_interrupted">Generation was interrupted before a response was received.</string>
     <string name="ai_mod_editor_error_stopped">Generation was stopped by the user.</string>
     <string name="ai_mod_editor_retrying">Retry %1$d/5 in %2$d seconds</string>
+    <string name="ai_mod_editor_retry_notice">Retry %1$d/5 in %2$d seconds. Details: %3$s</string>
     <string name="ai_mod_editor_apply_patch">Apply JAR patch</string>
     <string name="ai_mod_editor_apply_title">Apply this JAR patch?</string>
     <string name="ai_mod_editor_apply_message">This can modify any JAR entry in the installed optional mod after verifying its SHA-256. A timestamped backup will be kept. Binary, code, native, and signature entries may be affected.</string>
