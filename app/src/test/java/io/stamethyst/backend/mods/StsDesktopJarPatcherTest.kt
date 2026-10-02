@@ -9,6 +9,23 @@ import org.junit.Test
 
 class StsDesktopJarPatcherTest {
     @Test
+    fun requiredPatchClasses_includeWindowIconCompat() {
+        assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_WINDOW_ICON_COMPAT_CLASS))
+    }
+
+    @Test
+    fun shouldPatchStsEntry_acceptsWindowIconCompat() {
+        // LwjglGraphics references a separate helper that does not match its prefix rule.
+        // It must be injected into the same game jar for MTSClassLoader to resolve it.
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry",
+            String::class.java
+        )
+        method.isAccessible = true
+        assertTrue(method.invoke(StsDesktopJarPatcher, STS_PATCH_WINDOW_ICON_COMPAT_CLASS) as Boolean)
+    }
+
+    @Test
     fun requiredPatchClasses_includeFrameBufferOwnerSummary() {
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS))
     }

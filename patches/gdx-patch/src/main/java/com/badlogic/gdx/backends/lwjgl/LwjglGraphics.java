@@ -195,7 +195,7 @@ public class LwjglGraphics implements Graphics {
 						+ config.fullscreen);
 				}
 			}
-			if (config.iconPaths.size > 0) {
+			if (WindowIconCompat.shouldLoadIcons(config.iconPaths.size, effectiveRendererBackendId())) {
 				ArrayList<ByteBuffer> icons = new ArrayList<ByteBuffer>(config.iconPaths.size);
 				for (int i = 0, n = config.iconPaths.size; i < n; i++) {
 					try {
