@@ -25,6 +25,7 @@ import java.util.concurrent.CompletableFuture
  */
 internal class AndroidCompatibleSseHttpClientBuilder(
     private val delegate: OkHttpClientBuilder,
+    private val connectTimeoutLimit: Duration? = null,
 ) : HttpClientBuilder {
     // langchain4j's builder getters are nullable: an unset timeout returns null and callers such as
     // DefaultOpenAiClient tolerate that. Declaring a non-null Duration here would make Kotlin insert
@@ -32,7 +33,9 @@ internal class AndroidCompatibleSseHttpClientBuilder(
     override fun connectTimeout(): Duration? = delegate.connectTimeout()
 
     override fun connectTimeout(timeout: Duration): HttpClientBuilder = apply {
-        delegate.connectTimeout(timeout)
+        // OpenAI's model.timeout sets both timeouts; keep connection attempts bounded without
+        // shortening the configured read timeout for a slow, non-streaming summary.
+        delegate.connectTimeout(connectTimeoutLimit?.let { minOf(timeout, it) } ?: timeout)
     }
 
     override fun readTimeout(): Duration? = delegate.readTimeout()

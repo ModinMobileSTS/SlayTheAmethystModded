@@ -422,6 +422,30 @@ tasks.matching {
 val marketNetworkAcceptanceTestClass =
     "io.stamethyst.backend.steamcloud.SteamCommunityMarketNetworkAcceptanceTest"
 
+val aiCompactionAcceptanceTestClass =
+    "io.stamethyst.backend.llm.AgentCompactionNetworkAcceptanceTest"
+val runAiCompactionAcceptance = gradle.startParameter.taskNames.any {
+    it == "aiCompactionAcceptanceTest" || it.endsWith(":aiCompactionAcceptanceTest")
+}
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (name == "testDebugUnitTest" && runAiCompactionAcceptance) {
+        filter { includeTestsMatching(aiCompactionAcceptanceTestClass) }
+        systemProperty("sts.runAiCompactionAcceptance", "true")
+        // Every explicit invocation must contact the provider again, not reuse an old result.
+        outputs.upToDateWhen { false }
+        testLogging.showStandardStreams = true
+    } else {
+        filter { excludeTestsMatching(aiCompactionAcceptanceTestClass) }
+    }
+}
+
+tasks.register("aiCompactionAcceptanceTest") {
+    group = "verification"
+    description = "Manually tests AI context compaction, slow responses and a live OpenAI-compatible API."
+    dependsOn("testDebugUnitTest")
+}
+
 tasks.matching { it.name == "testDebugUnitTest" }.configureEach {
     if (gradle.startParameter.taskNames.any { it.endsWith("marketNetworkAcceptanceTest") }) {
         (this as org.gradle.api.tasks.testing.Test).filter {

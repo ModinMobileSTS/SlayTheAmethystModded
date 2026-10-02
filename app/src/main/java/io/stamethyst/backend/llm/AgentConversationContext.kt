@@ -38,6 +38,7 @@ data class AgentContextMessage(
         // only when the assistant message has a concrete content field. Keep an empty string
         // instead of null for tool-call turns so the preceding tool_use is not dropped.
         "assistant" -> AiMessage.builder().text(if (calls.isEmpty()) text.ifBlank { null } else text)
+            .thinking(thinking)
             .toolExecutionRequests(calls.map {
                 ToolExecutionRequest.builder().id(it.id).name(it.name).arguments(it.arguments).build()
             }).build()

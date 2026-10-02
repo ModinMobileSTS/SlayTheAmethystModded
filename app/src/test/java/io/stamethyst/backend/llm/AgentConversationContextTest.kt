@@ -239,7 +239,7 @@ class AgentConversationContextTest {
 
         val prepared = manager.prepare()
 
-        assertEquals(listOf("system", "user", "assistant", "tool", "user"), prepared.map { it.type().name.lowercase() })
+        assertEquals(listOf("system", "user", "ai", "tool_execution_result", "user"), prepared.map { it.type().name.lowercase() })
         assertEquals("current", (prepared[2] as AiMessage).toolExecutionRequests().single().id())
         assertEquals("current", (prepared[3] as ToolExecutionResultMessage).id())
         assertTrue(checkpoints.any { it.summarizedCount == 0 && it.summary.isEmpty() })

@@ -95,25 +95,38 @@ enum class LlmEndpoint {
 object AgentChatModelFactory {
     private const val CONNECT_TIMEOUT_SECONDS = 30L
 
+    private fun requestTimeout(config: OpenAiCompatibleModelConfig): java.time.Duration =
+        java.time.Duration.ofSeconds(config.requestTimeoutSeconds
+            .coerceIn(MIN_LLM_REQUEST_TIMEOUT_SECONDS, MAX_LLM_REQUEST_TIMEOUT_SECONDS).toLong())
+
+    private fun chatCustomParameters(config: OpenAiCompatibleModelConfig): Map<String, Any> =
+        if (config.reasoningEffort == LlmReasoningEffort.OFF &&
+            config.modelName.substringAfterLast('/').startsWith("deepseek-", ignoreCase = true)
+        ) {
+            // DeepSeek defaults to thinking enabled. Omitting reasoning_effort does not turn it
+            // off, and reasoning may exhaust a compaction request's small visible-output budget.
+            mapOf("thinking" to mapOf("type" to "disabled"))
+        } else {
+            emptyMap()
+        }
+
     private fun httpClientBuilder(config: OpenAiCompatibleModelConfig): AndroidCompatibleSseHttpClientBuilder {
-        val timeoutSeconds = config.requestTimeoutSeconds
-            .coerceIn(MIN_LLM_REQUEST_TIMEOUT_SECONDS, MAX_LLM_REQUEST_TIMEOUT_SECONDS)
-            .toLong()
+        val readTimeout = requestTimeout(config)
+        val timeoutSeconds = readTimeout.seconds
         val connectTimeout = java.time.Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS)
-        val readTimeout = java.time.Duration.ofSeconds(timeoutSeconds)
         val okHttpClient = okhttp3.OkHttpClient.Builder()
             .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .callTimeout(timeoutSeconds, TimeUnit.SECONDS)
-        // Record the timeouts on langchain4j's own builder as well. Its client reads the builder's
-        // getters during construction; leaving them unset makes them null and lets the library fall
-        // back to its own defaults (15s/60s) instead of the values configured here.
+        // Responses uses these builder values directly. Chat Completions additionally requires
+        // model.timeout below: its model layer otherwise overwrites readTimeout with 60 seconds.
         return AndroidCompatibleSseHttpClientBuilder(
             dev.langchain4j.http.client.okhttp.OkHttpClientBuilder()
                 .okHttpClientBuilder(okHttpClient)
                 .connectTimeout(connectTimeout)
                 .readTimeout(readTimeout),
+            connectTimeoutLimit = connectTimeout,
         )
     }
 
@@ -124,6 +137,10 @@ object AgentChatModelFactory {
             .apiKey(config.apiKey)
             .modelName(config.modelName)
             .reasoningEffort(config.reasoningEffort.requestValue)
+            .customParameters(chatCustomParameters(config))
+            .returnThinking(true)
+            .sendThinking(true)
+            .timeout(requestTimeout(config))
             .maxRetries(1)
             .build()
         LlmEndpoint.RESPONSES -> OpenAiResponsesChatModel.builder()
@@ -145,7 +162,10 @@ object AgentChatModelFactory {
                 .apiKey(config.apiKey)
                 .modelName(config.modelName)
                 .reasoningEffort(config.reasoningEffort.requestValue)
-                .timeout(java.time.Duration.ofSeconds(config.requestTimeoutSeconds.toLong()))
+                .customParameters(chatCustomParameters(config))
+                .returnThinking(true)
+                .sendThinking(true)
+                .timeout(requestTimeout(config))
                 .build()
         }
 
