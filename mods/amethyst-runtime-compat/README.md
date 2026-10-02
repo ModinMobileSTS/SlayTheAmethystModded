@@ -47,6 +47,8 @@ Guards the in-game settings resolution dropdown on Android-compatible runtimes. 
 2a. `DisplaySettingsControlsCompatPatches`
 Removes the in-game resolution and maximum-frame-rate dropdown controls and renders their active values as fixed gold text directly after each localized label's colon, while blocking their update and selection paths. This addresses the symptom where Android-compatible runtimes expose desktop-only display controls that should be managed by the launcher. The fullscreen, borderless-fullscreen, and vertical-sync options are hidden completely, including their labels and checkbox controls. Dropdowns are matched by the `OptionsPanel` that owns them and toggles by their `ToggleBtnType`, so the controls stay hidden even when the panel refreshes and rebuilds them for the in-run pause settings screen, rather than depending on construction-time instance registration. Type: display-settings UI compatibility fix implemented by `DisplaySettingsControlsCompatPatches`.
 
+Frame-rate display sync: prevents the hidden desktop FPS dropdown's selection reset from changing `Settings.MAX_FPS` to 60 when the launcher selects an unsupported desktop preset (such as 90 FPS) or unlimited (0). This addresses the symptom where the launcher shows one cap but the in-game settings show 60 even though the Android frame pacer still uses the launcher value. The in-game read-only value now displays unlimited as `∞` instead of `0`. Type: display-settings state/UI fix implemented by `DisplaySettingsControlsCompatPatches.FixedFrameRateSelectionPatch` and `DisplayFrameRateLabel`.
+
 3. `DuelistCompatPatches`
 Short-circuits a few Duelist dynamic/base-value lookups so they reuse current card state instead of going through slower or less stable reflection-heavy paths.
 

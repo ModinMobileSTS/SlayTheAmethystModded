@@ -19,6 +19,8 @@ typedef struct {
     EGLint     format;
     EGLContext context;
     EGLSurface surface;
+    // eglSwapInterval is surface-specific; a replacement window needs the requested value again.
+    bool restoreSwapInterval;
 } gl_render_window_t;
 
 bool gl_init();

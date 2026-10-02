@@ -297,6 +297,20 @@ public final class DisplaySettingsControlsCompatPatches {
 
     @SpirePatch2(
         clz = OptionsPanel.class,
+        method = "resetFpsDropdownSelection",
+        paramtypez = {}
+    )
+    public static class FixedFrameRateSelectionPatch {
+        public static SpireReturn<Void> Prefix() {
+            // The hidden desktop dropdown only supports 24/30/60/120/240. Its reset method
+            // overwrites Settings.MAX_FPS with 60 for every other launcher-selected limit,
+            // including the unlimited (0) value, even though frame pacing keeps the real limit.
+            return SpireReturn.Return(null);
+        }
+    }
+
+    @SpirePatch2(
+        clz = OptionsPanel.class,
         method = "changeResolutionToIndex",
         paramtypez = {int.class}
     )
@@ -369,7 +383,7 @@ public final class DisplaySettingsControlsCompatPatches {
             );
             renderFixedValue(
                 sb,
-                Integer.toString(Settings.MAX_FPS),
+                DisplayFrameRateLabel.format(Settings.MAX_FPS),
                 labels[1],
                 centerY + 156.0f * Settings.scale
             );

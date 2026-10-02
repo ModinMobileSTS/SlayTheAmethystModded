@@ -32,6 +32,8 @@ static bool g_swap_profiler_initialized = false;
 static bool g_swap_profiler_enabled = false;
 static int64_t g_swap_profiler_slow_ns = 16000000LL;
 static int g_last_swap_interval = -1;
+// Unlike g_last_swap_interval (logging), this survives an unavailable surface or failed apply.
+static int g_requested_swap_interval = -1;
 
 
 #define GL_RESTORE_SURFACE_POLL_INTERVAL_SWAPS 30
@@ -518,6 +520,7 @@ void gl_swap_surface(gl_render_window_t* bundle) {
         }
     }
     bundle->surface = EGL_NO_SURFACE;
+    bundle->restoreSwapInterval = true;
     if(queuedSurface != NULL) {
         ;
         bundle->nativeSurface = queuedSurface;
@@ -609,6 +612,14 @@ static bool gl_make_current_with_recovery(gl_render_window_t* bundle, const char
 
         if (eglMakeCurrent_p(g_EglDisplay, bundle->surface, bundle->surface, bundle->context)) {
             currentBundle = bundle;
+            if (bundle->restoreSwapInterval && g_requested_swap_interval >= 0 && eglSwapInterval_p != NULL) {
+                // A new EGLSurface starts with its default interval (typically 1), even if the
+                // previous surface used 0. Restore the user's setting before the first swap.
+                if (eglSwapInterval_p(g_EglDisplay, g_requested_swap_interval) == EGL_TRUE) {
+                    bundle->restoreSwapInterval = false;
+                    printf("EGLBridge: restored swap interval=%d after surface switch\n", g_requested_swap_interval);
+                }
+            }
             return true;
         }
 
@@ -833,6 +844,7 @@ void gl_setup_window() {
 
 void gl_swap_interval(int swapInterval) {
     if(pojav_environ->force_vsync) swapInterval = 1;
+    g_requested_swap_interval = swapInterval;
     if (g_EglDisplay == EGL_NO_DISPLAY) {
         ;
         return;
@@ -842,6 +854,9 @@ void gl_swap_interval(int swapInterval) {
         return;
     }
     EGLBoolean applied = eglSwapInterval_p(g_EglDisplay, swapInterval);
+    if (applied == EGL_TRUE && currentBundle != NULL) {
+        currentBundle->restoreSwapInterval = false;
+    }
     if (g_last_swap_interval != swapInterval || applied != EGL_TRUE) {
         g_last_swap_interval = swapInterval;
         printf("EGLBridge: swap interval=%d applied=%d\n", swapInterval, applied == EGL_TRUE ? 1 : 0);
