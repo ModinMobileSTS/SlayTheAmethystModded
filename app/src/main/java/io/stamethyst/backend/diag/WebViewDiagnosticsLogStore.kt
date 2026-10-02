@@ -4,6 +4,9 @@ import android.content.Context
 import android.webkit.ConsoleMessage
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import com.tencent.smtt.export.external.interfaces.ConsoleMessage as X5ConsoleMessage
+import com.tencent.smtt.export.external.interfaces.WebResourceError as X5WebResourceError
+import com.tencent.smtt.export.external.interfaces.WebResourceRequest as X5WebResourceRequest
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.text.SimpleDateFormat
@@ -52,6 +55,14 @@ internal object WebViewDiagnosticsLogStore {
         )
     }
 
+    fun appendX5ConsoleMessage(context: Context, consoleMessage: X5ConsoleMessage) {
+        append(
+            context = context,
+            event = "x5.console.${consoleMessage.messageLevel().name.lowercase(Locale.US)}",
+            message = "${consoleMessage.message()} source=${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}"
+        )
+    }
+
     fun appendWebResourceError(
         context: Context,
         request: WebResourceRequest?,
@@ -60,6 +71,18 @@ internal object WebViewDiagnosticsLogStore {
         append(
             context = context,
             event = "web_resource_error",
+            message = "url=${request?.url} code=${error.errorCode} description=${error.description}"
+        )
+    }
+
+    fun appendX5WebResourceError(
+        context: Context,
+        request: X5WebResourceRequest?,
+        error: X5WebResourceError
+    ) {
+        append(
+            context = context,
+            event = "x5.web_resource_error",
             message = "url=${request?.url} code=${error.errorCode} description=${error.description}"
         )
     }

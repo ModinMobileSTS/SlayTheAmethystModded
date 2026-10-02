@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:background="#F5F6F3">
 
-    <WebView
+    <FrameLayout
         android:id="@+id/slingBreakBootGame"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

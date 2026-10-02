@@ -222,7 +222,7 @@ class BootOverlayController(
 
     private var bootOverlay: ComposeView? = null
     private var slingBreakBootOverlay: View? = null
-    private var slingBreakBootGame: android.webkit.WebView? = null
+    private var slingBreakBootGame: SlingBreakWebViewHost? = null
     private var slingBreakLauncherPageReady = false
     private var slingBreakPageReadyTimeoutScheduled = false
     private var usesSlingBreakBootOverlay = false
@@ -302,18 +302,24 @@ class BootOverlayController(
             runCatching { stub?.inflate() }
         }
         slingBreakBootOverlay = activity.findViewById(R.id.slingBreakBootOverlay)
-        slingBreakBootGame = activity.findViewById(R.id.slingBreakBootGame)
+        val slingBreakBootGameContainer = activity.findViewById<android.widget.FrameLayout>(R.id.slingBreakBootGame)
         usesSlingBreakBootOverlay = wantsSlingBreakOverlay &&
-            slingBreakBootOverlay != null && slingBreakBootGame != null
+            slingBreakBootOverlay != null && slingBreakBootGameContainer != null
         if (bootOverlay == null && !usesSlingBreakBootOverlay) {
             activity.setBootOverlayKeepScreenOn(false)
             return
         }
         if (usesSlingBreakBootOverlay) {
             bootOverlay?.visibility = View.GONE
-            slingBreakBootGame?.apply {
-                configureSlingBreakGame()
-                addJavascriptInterface(object {
+            slingBreakBootGame = SlingBreakWebViewHost.create(activity).also { host ->
+                slingBreakBootGameContainer?.addView(
+                    host.view,
+                    android.widget.FrameLayout.LayoutParams(
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                )
+                host.addJavascriptInterface(object {
                     @android.webkit.JavascriptInterface
                     fun onPageReady() {
                         WebViewDiagnosticsLogStore.append(activity, "bridge_page_ready", "launcher=1")
@@ -349,7 +355,7 @@ class BootOverlayController(
                         )
                     }
                 }, "AndroidSlingBreakLauncher")
-                loadUrl(slingBreakGameUrl(activity, launcherMode = true))
+                host.loadUrl(slingBreakGameUrl(activity, launcherMode = true))
                 scheduleSlingBreakPageReadyTimeout()
             }
             slingBreakBootOverlay?.visibility = View.VISIBLE
@@ -436,7 +442,7 @@ class BootOverlayController(
         bootOverlay?.disposeComposition()
         bootOverlay = null
         slingBreakBootGame?.let {
-            io.stamethyst.backend.audio.SlingNativeAudioBridge.close(it)
+            it.closeAudio()
             it.destroy()
         }
         slingBreakBootGame = null
@@ -452,7 +458,7 @@ class BootOverlayController(
     fun onActivityResumed() {
         if (usesSlingBreakBootOverlay && !bootOverlayDismissed) {
             slingBreakBootGame?.let {
-                io.stamethyst.backend.audio.SlingNativeAudioBridge.setActive(it, true)
+                it.setActive(true)
                 it.onResume()
             }
         }
@@ -461,7 +467,7 @@ class BootOverlayController(
     fun onActivityPaused() {
         if (usesSlingBreakBootOverlay && !bootOverlayDismissed) {
             slingBreakBootGame?.let {
-                io.stamethyst.backend.audio.SlingNativeAudioBridge.setActive(it, false)
+                it.setActive(false)
                 it.onPause()
             }
         }
@@ -564,10 +570,10 @@ class BootOverlayController(
 
         if (usesSlingBreakBootOverlay) {
             slingBreakBootGame?.apply {
-                io.stamethyst.backend.audio.SlingNativeAudioBridge.close(this)
                 stopLoading()
                 onPause()
                 loadUrl("about:blank")
+                closeAudio()
                 destroy()
             }
             slingBreakBootGame = null

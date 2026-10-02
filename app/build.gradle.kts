@@ -60,6 +60,7 @@ tasks.matching { it.name == "assembleDebug" }.configureEach {
 
 dependencies {
     implementation(libs.androidx.games.frame.pacing)
+    implementation(libs.tencent.tbs)
 }
 
 val packageName = readGradleProperty("application.id")

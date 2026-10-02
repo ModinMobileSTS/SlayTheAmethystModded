@@ -1,12 +1,19 @@
 package io.stamethyst
 
 import android.annotation.SuppressLint
+import android.animation.ObjectAnimator
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.os.Bundle
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.ViewGroup
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.webkit.CookieManager
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
@@ -16,7 +23,11 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.tencent.smtt.sdk.CookieManager as X5CookieManager
+import com.tencent.smtt.sdk.QbSdk
+import com.tencent.smtt.sdk.WebStorage as X5WebStorage
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -57,6 +68,13 @@ internal fun clearSlingBreakWebViewData(context: Context, onComplete: () -> Unit
             }
         }
         runCatching { WebStorage.getInstance().deleteAllData() }
+
+        runCatching {
+            X5WebStorage.getInstance().deleteAllData()
+            X5CookieManager.getInstance().removeAllCookies(null)
+            X5CookieManager.getInstance().flush()
+            QbSdk.clearAllWebViewCache(context.applicationContext, true)
+        }
 
         val cookieManager = CookieManager.getInstance()
         cookieManager.removeAllCookies {
@@ -140,18 +158,14 @@ class SlingBreakActivity : AppCompatActivity() {
         }
     }
 
-    private lateinit var webView: WebView
+    private var webView: SlingBreakWebViewHost? = null
+    private var x5InitializationDialog: AlertDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        webView = WebView(this).apply {
-            configureSlingBreakGame()
-            loadUrl(slingBreakGameUrl(this@SlingBreakActivity))
-        }
-        setContentView(webView)
-        hideSystemBars()
+        beginX5Initialization()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
         })
@@ -159,27 +173,119 @@ class SlingBreakActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        SlingNativeAudioBridge.setActive(webView, true)
-        webView.onResume()
-        hideSystemBars()
+        webView?.let {
+            it.setActive(true)
+            it.onResume()
+            hideSystemBars()
+        }
     }
 
     override fun onPause() {
-        SlingNativeAudioBridge.setActive(webView, false)
-        webView.onPause()
+        webView?.let {
+            it.setActive(false)
+            it.onPause()
+        }
         super.onPause()
     }
 
     override fun onDestroy() {
-        SlingNativeAudioBridge.close(webView)
-        webView.destroy()
+        x5InitializationDialog?.dismiss()
+        x5InitializationDialog = null
+        webView?.let {
+            it.closeAudio()
+            it.destroy()
+        }
+        webView = null
         super.onDestroy()
     }
 
     private fun hideSystemBars() {
-        WindowInsetsControllerCompat(window, webView).apply {
+        val content = webView?.view ?: return
+        WindowInsetsControllerCompat(window, content).apply {
             hide(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+    }
+
+    private fun beginX5Initialization() {
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(4), dp(24), dp(8))
+        }
+        val status = TextView(this).apply {
+            text = "正在准备 X5 网页内核…"
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val spinner = ProgressBar(this).apply { isIndeterminate = true }
+        val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 0
+            visibility = android.view.View.INVISIBLE
+        }
+        root.addView(
+            spinner,
+            LinearLayout.LayoutParams(dp(32), dp(32)).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        )
+        root.addView(status, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+        root.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(24)))
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("正在初始化小游戏")
+            .setView(root)
+            .create()
+        dialog.setCancelable(false)
+        dialog.setOnKeyListener { _, keyCode, _ -> keyCode == KeyEvent.KEYCODE_BACK }
+        dialog.show()
+        x5InitializationDialog = dialog
+
+        SlingBreakX5.initialize(this, object : SlingBreakX5.InitializationListener {
+            override fun onProgress(value: Int) {
+                if (isFinishing || isDestroyed) return
+                spinner.visibility = android.view.View.GONE
+                progress.visibility = android.view.View.VISIBLE
+                status.text = if (value >= 100) "正在校验 X5 内核…" else "正在下载 X5 内核… $value%"
+                val old = progress.progress
+                ObjectAnimator.ofInt(progress, "progress", old, value.coerceIn(old, 100)).apply {
+                    duration = 240L
+                    start()
+                }
+            }
+
+            override fun onReady() {
+                if (isFinishing || isDestroyed) return
+                x5InitializationDialog?.dismiss()
+                x5InitializationDialog = null
+                runCatching {
+                    webView = SlingBreakWebViewHost.create(
+                        this@SlingBreakActivity,
+                        allowSystemFallback = false
+                    )
+                    webView?.loadUrl(slingBreakGameUrl(this@SlingBreakActivity))
+                    setContentView(webView?.view)
+                    hideSystemBars()
+                }.onFailure { failure ->
+                    showX5Failure("X5 WebView 创建失败：${failure.message ?: failure.javaClass.simpleName}")
+                }
+            }
+
+            override fun onFailure(reason: String) {
+                if (isFinishing || isDestroyed) return
+                showX5Failure(reason)
+            }
+        })
+    }
+
+    private fun showX5Failure(reason: String) {
+        x5InitializationDialog?.dismiss()
+        x5InitializationDialog = null
+        WebViewDiagnosticsLogStore.append(this, "x5_switch_cancelled", "reason=$reason")
+        AlertDialog.Builder(this)
+            .setTitle("小游戏初始化失败")
+            .setMessage(reason)
+            .setPositiveButton("返回") { _, _ -> finish() }
+            .setOnDismissListener { finish() }
+            .show()
     }
 }

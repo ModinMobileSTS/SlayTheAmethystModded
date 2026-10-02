@@ -39,11 +39,18 @@
             android:name="com.android.app.gamemode.battery.enabled"
             android:value="true" />
 
+        <!-- X5 public-network SDK performs its first-core dex optimization here. -->
+        <service
+            android:name="com.tencent.smtt.export.external.DexClassLoaderProviderService"
+            android:exported="false"
+            android:process=":dexopt" />
+
         <activity
             android:name="io.stamethyst.StsGameActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"
             android:exported="false"
             android:enableOnBackInvokedCallback="true"
+            android:hardwareAccelerated="true"
             android:process=":game"
             android:resizeableActivity="true"
             android:screenOrientation="sensorLandscape"
@@ -62,6 +69,7 @@
             android:name="io.stamethyst.SlingBreakActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"
             android:exported="false"
+            android:hardwareAccelerated="true"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.SlayTheAmethyst" />
 

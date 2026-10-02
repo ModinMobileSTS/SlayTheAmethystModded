@@ -13,6 +13,15 @@
 -dontwarn javax.annotation.processing.**
 -dontwarn com.sun.tools.**
 
+# Tencent X5 resolves much of its bridge and core loader reflectively.
+-dontwarn com.tencent.smtt.**
+-dontwarn com.tencent.tbs.**
+-keep class com.tencent.smtt.** { *; }
+-keep class com.tencent.tbs.** { *; }
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
 # CFR is bundled for on-device class decompilation and drives its pipeline through the public
 # CfrDriver API, which R8 can follow; only its optional integrations need suppressing.
 -dontwarn org.benf.cfr.**

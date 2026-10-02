@@ -10,6 +10,7 @@ import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.annotation.Keep
+import com.tencent.smtt.sdk.WebView as X5WebView
 import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.ui.preferences.LauncherPreferences
 import org.json.JSONObject
@@ -72,7 +73,7 @@ internal class SlingNativeAudioBridge private constructor(context: Context) {
 
     companion object {
         private const val INTERFACE = "SlingNativeAudio"
-        private val instances = WeakHashMap<WebView, SlingNativeAudioBridge>()
+        private val instances = WeakHashMap<Any, SlingNativeAudioBridge>()
         private val libraryAvailable by lazy {
             runCatching { System.loadLibrary("sling_audio"); true }.getOrDefault(false)
         }
@@ -81,19 +82,48 @@ internal class SlingNativeAudioBridge private constructor(context: Context) {
 
         // Registry and WebView operations run on the UI thread. Bridge calls are synchronized
         // with activity lifecycle calls; JNI also serializes stream control operations.
-        fun attach(view: WebView) {
-            close(view)
+        private fun attachInternal(
+            key: Any,
+            context: Context,
+            addJavascriptInterface: (Any, String) -> Unit,
+            removeJavascriptInterface: (String) -> Unit
+        ) {
+            closeInternal(key, removeJavascriptInterface)
             if (!libraryAvailable) return
-            val bridge = SlingNativeAudioBridge(view.context)
-            instances[view] = bridge
-            view.addJavascriptInterface(bridge, INTERFACE)
+            val bridge = SlingNativeAudioBridge(context)
+            instances[key] = bridge
+            addJavascriptInterface(bridge, INTERFACE)
+        }
+
+        fun attach(view: WebView) = attachInternal(
+            key = view,
+            context = view.context,
+            addJavascriptInterface = view::addJavascriptInterface,
+            removeJavascriptInterface = view::removeJavascriptInterface
+        )
+
+        fun attach(view: X5WebView) = attachInternal(
+            key = view,
+            context = view.context,
+            addJavascriptInterface = view::addJavascriptInterface,
+            removeJavascriptInterface = view::removeJavascriptInterface
+        )
+
+        private fun closeInternal(key: Any, removeJavascriptInterface: (String) -> Unit) {
+            instances.remove(key)?.shutdown()
+            removeJavascriptInterface(INTERFACE)
         }
 
         fun pageStarted(view: WebView) { instances[view]?.reset() }
+        fun pageStarted(view: X5WebView) { instances[view]?.reset() }
         fun setActive(view: WebView, active: Boolean) { instances[view]?.activate(active) }
+        fun setActive(view: X5WebView, active: Boolean) { instances[view]?.activate(active) }
         fun close(view: WebView) {
-            instances.remove(view)?.shutdown()
-            view.removeJavascriptInterface(INTERFACE)
+            closeInternal(view, view::removeJavascriptInterface)
+        }
+
+        fun close(view: X5WebView) {
+            closeInternal(view, view::removeJavascriptInterface)
         }
     }
 
