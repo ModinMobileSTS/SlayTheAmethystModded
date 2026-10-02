@@ -38,6 +38,19 @@ data class SteamStsJarDownloadProgress(
     val totalBytes: Long? = null,
 )
 
+internal data class SteamStsDepotCandidate(
+    val appId: UInt,
+    val depotId: UInt,
+    val manifestId: ULong,
+    val branch: String,
+)
+
+internal const val STEAMWORKS_COMMON_REDISTRIBUTABLES_APP_ID: UInt = 228980u
+
+/** Steamworks shared runtime depots never contain the game desktop JAR. */
+internal fun isSteamworksCommonRedistributableCandidate(candidate: SteamStsDepotCandidate): Boolean =
+    candidate.appId == STEAMWORKS_COMMON_REDISTRIBUTABLES_APP_ID
+
 internal class SteamAnonymousDepotAccessException(
     message: String,
     cause: Throwable,
@@ -106,9 +119,10 @@ internal class SteamStsJarDownloadService(
                 appInfo = appInfo,
                 visitedAppIds = linkedSetOf(),
             )
+                .filterNot(::isSteamworksCommonRedistributableCandidate)
                 .filterNot { it.depotId in EXCLUDED_DEPOT_IDS }
                 .sortedWith(
-                    compareBy<DepotManifestCandidate> { preferredDepotRank(it.depotId) }
+                    compareBy<SteamStsDepotCandidate> { preferredDepotRank(it.depotId) }
                         .thenBy { it.depotId.toLong() }
                 )
             if (candidates.isEmpty()) {
@@ -178,7 +192,7 @@ internal class SteamStsJarDownloadService(
     }
 
     private fun buildCandidateFailure(
-        candidate: DepotManifestCandidate,
+        candidate: SteamStsDepotCandidate,
         depotKeyError: Throwable?,
         downloadError: Throwable,
     ): IOException {
@@ -267,12 +281,15 @@ internal class SteamStsJarDownloadService(
         appId: UInt,
         appInfo: KeyValue,
         visitedAppIds: LinkedHashSet<UInt>,
-    ): List<DepotManifestCandidate> {
+    ): List<SteamStsDepotCandidate> {
         if (!visitedAppIds.add(appId)) {
             return emptyList()
         }
+        if (appId == STEAMWORKS_COMMON_REDISTRIBUTABLES_APP_ID) {
+            return emptyList()
+        }
         val depots = appInfo.child("depots") ?: return emptyList()
-        val candidates = mutableListOf<DepotManifestCandidate>()
+        val candidates = mutableListOf<SteamStsDepotCandidate>()
         for (depot in depots.children) {
             val depotId = depot.name.trim().toUIntOrNull() ?: continue
             val manifestId = depot.child("manifests")
@@ -280,7 +297,7 @@ internal class SteamStsJarDownloadService(
                 ?.child("gid")
                 ?.asManifestId()
             if (manifestId != null) {
-                candidates += DepotManifestCandidate(
+                candidates += SteamStsDepotCandidate(
                     appId = appId,
                     depotId = depotId,
                     manifestId = manifestId,
@@ -292,6 +309,9 @@ internal class SteamStsJarDownloadService(
             val depotFromApp = depot.child("depotfromapp")?.asAppId()
                 ?.takeIf { it != appId }
                 ?: continue
+            if (depotFromApp == STEAMWORKS_COMMON_REDISTRIBUTABLES_APP_ID) {
+                continue
+            }
             val parentInfo = parseAppInfo(session.requestAppProductInfo(depotFromApp))
             candidates += resolveDepotCandidates(
                 session = session,
@@ -332,19 +352,12 @@ internal class SteamStsJarDownloadService(
 
     private fun cloudControlDepotKey(
         settings: CloudControlSettings,
-        candidate: DepotManifestCandidate,
+        candidate: SteamStsDepotCandidate,
     ): ByteArray? =
         settings.steamDepotKeyBytes(
             appId = candidate.appId,
             depotId = candidate.depotId,
         )
-
-    private data class DepotManifestCandidate(
-        val appId: UInt,
-        val depotId: UInt,
-        val manifestId: ULong,
-        val branch: String,
-    )
 
     companion object {
         private const val STS_DESKTOP_JAR_FILE_NAME = "desktop-1.0.jar"

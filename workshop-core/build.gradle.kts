@@ -18,4 +18,5 @@ dependencies {
     implementation(libs.tukaani.xz)
     compileOnly(libs.zstd)
     testImplementation(libs.junit4)
+    testImplementation(libs.mockwebserver3)
 }
