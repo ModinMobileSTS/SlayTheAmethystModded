@@ -17,12 +17,16 @@
     <string name="llm_tutorial_models_step">「管理模型」→「從上游取得」→選取模型→「完成」。取得失敗時，可用「新增自訂模型」填寫廠商提供的模型 ID。</string>
     <string name="llm_tutorial_test_title">4. 測試連線</string>
     <string name="llm_tutorial_test_step">點選「測試模型」，有回應即成功。失敗時檢查位址、金鑰、模型 ID、帳戶額度和網路。</string>
+    <string name="llm_tutorial_edit_title">5. 開始編輯</string>
+    <string name="llm_tutorial_edit_step">在模組卡片上點選編輯模組即可使用 AI 編輯模組</string>
     <string name="llm_tutorial_image_key_list">DeepSeek API keys 頁面，建立 API key 按鈕</string>
     <string name="llm_tutorial_image_key_create">建立 API key，名稱可自訂</string>
     <string name="llm_tutorial_image_key_copy">建立後複製並儲存 API key</string>
     <string name="llm_tutorial_image_credentials">設定頁的 Base URL、API Key 和管理模型入口</string>
     <string name="llm_tutorial_image_models">管理模型頁面，從上游取得並選取模型</string>
     <string name="llm_tutorial_image_test">測試模型後顯示模型回應</string>
+    <string name="llm_tutorial_image_edit_mod_card">顯示更多操作按鈕的模組卡片</string>
+    <string name="llm_tutorial_image_edit_mod_action">顯示「編輯模組」的模組操作選單</string>
     <string name="llm_connection">服務連線</string>
     <string name="llm_credentials">憑證</string>
     <string name="llm_key_hint">留空保留目前金鑰。</string>

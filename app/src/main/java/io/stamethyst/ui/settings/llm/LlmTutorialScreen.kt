@@ -102,6 +102,13 @@ fun LauncherLlmTutorialScreen(
                 TutorialImage(R.drawable.llm_tutorial_test, R.string.llm_tutorial_image_test, 459f / 403f)
             }
         }
+        item {
+            SettingsSectionCard(title = stringResource(R.string.llm_tutorial_edit_title)) {
+                TutorialText(R.string.llm_tutorial_edit_step)
+                TutorialImage(R.drawable.llm_tutorial_edit_mod_card, R.string.llm_tutorial_image_edit_mod_card, 390f / 251f)
+                TutorialImage(R.drawable.llm_tutorial_edit_mod_action, R.string.llm_tutorial_image_edit_mod_action, 427f / 184f)
+            }
+        }
     }
 }
 
