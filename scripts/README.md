@@ -160,6 +160,42 @@ Harness output is always written to `result.json`. The `mods` and `set-mods` com
 `startup-cache-profile` writes a top-level `startupCacheProfile` summary and a `startup-cache-profile-summary.json` artifact. Each phase also gets its own subdirectory with `result.json`, logs, logcat, cache state before/after, detected cache mode, and extracted timing evidence from `latest.log`.
 `steam-cloud-sync` writes a safe marker file under `sts/saves/` by default instead of touching real character saves, starts a harness-owned `adb logcat` capture, opens `LauncherActivity` without the debug launch extra so the normal Steam Cloud refresh/sync path runs before game launch, and periodically stores `steam-cloud/last-operation-summary.txt`, `steam-cloud/push-summary.txt`, `steam-cloud/pull-summary.txt`, `steam-cloud/manifest.json`, `steam-cloud/sync-baseline.json`, `sts/latest.log`, and `sts/boot_bridge_events.log` under `polls/<n>/snapshot.json`. Success requires a new `last-operation-summary.txt` with `Outcome: SUCCESS` and `Operation: manual_push` or `force_push`. Final log export tries `:app:stsPullLogs` first and falls back to direct adb collection under `logs-fallback/summary.json` if Gradle log export is unavailable.
 
+## Native Audio Recovery Tests
+
+Run the device-free behavioral tests from the repository root:
+
+```bash
+python3 -m unittest scripts.tools.tests.test_native_audio_recovery -v
+```
+
+Requirements: Linux, Python 3, and a C11 host compiler (`cc`, or set `CC`). No
+Android device, connector, Gradle build, OpenAL installation, or network is needed.
+
+`scripts/tools/lib/native_audio_recovery_probe.py` extracts the current recovery
+helpers and JNI request/poll functions unchanged from
+`app/src/main/jni/input_bridge_v3.c`, then compiles them with the fault-injection
+fixture at `scripts/tools/tests/fixtures/native_audio_recovery.c`.
+
+The tests cover healthy recovery, stage errors, a disconnected device, missing
+symbols, stale errors, retry after failure, delayed context availability,
+concurrent/pending-request coalescing, queue overflow, one-time result consumption,
+and old results being consumed while newer requests are pending. Each scenario
+runs in a fresh host process. Generated C, executables, compiler logs and scenario
+logs remain under `agent-tmp/native-audio-recovery-tests/run-*/` for inspection.
+
+The original resume-failure and stale-success tests failed before the fix. Native
+recovery now checks ALC errors after pause/reset/resume and verifies
+`ALC_CONNECTED` before reporting success; pre-existing sticky errors are cleared
+before the attempt. Missing recovery/verification symbols fail before pausing the
+device. Request, completion and poll are serialized so a result is consumed only
+when its completed generation matches the latest requested generation. Failures
+log `event=openal_device_recovery_failed` with the stage and ALC error code.
+
+The tests assert **correct** behavior. They exercise native control flow, **not**
+an actual phone/WeChat interruption or Android's audio policy; the stubs' running
+state is not proof of audible output. Audio focus policy and the retry schedule
+are unchanged.
+
 ## Architecture
 
 The tools directory is organized into modular components, each with single

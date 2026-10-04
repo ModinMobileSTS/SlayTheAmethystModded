@@ -45,6 +45,8 @@ do {                                                                       \
 } while(0)
 
 #define AL_GAIN 0x100A
+#define ALC_NO_ERROR 0
+#define ALC_CONNECTED 0x313
 #define MIN_VALID_SCREEN_SIZE 1
 #define MAX_VALID_SCREEN_SIZE 32768
 #define AUDIO_ROUTE_LOG_PREFIX "[amethyst-audio-route-native]"
@@ -61,6 +63,8 @@ static bool isValidScreenSize(int width, int height) {
 
 typedef void* (*POJAV_alcGetCurrentContext_fn)(void);
 typedef void* (*POJAV_alcGetContextsDevice_fn)(void* context);
+typedef int (*POJAV_alcGetError_fn)(void* device);
+typedef void (*POJAV_alcGetIntegerv_fn)(void* device, int param, int size, int* values);
 typedef char (*POJAV_alcResetDeviceSOFT_fn)(void* device, const int* attrlist);
 typedef void (*POJAV_alcDevicePauseSOFT_fn)(void* device);
 typedef void (*POJAV_alcDeviceResumeSOFT_fn)(void* device);
@@ -76,6 +80,8 @@ typedef struct {
 
 static POJAV_alcGetCurrentContext_fn pojav_alcGetCurrentContext = NULL;
 static POJAV_alcGetContextsDevice_fn pojav_alcGetContextsDevice = NULL;
+static POJAV_alcGetError_fn pojav_alcGetError = NULL;
+static POJAV_alcGetIntegerv_fn pojav_alcGetIntegerv = NULL;
 static POJAV_alcResetDeviceSOFT_fn pojav_alcResetDeviceSOFT = NULL;
 static POJAV_alcDevicePauseSOFT_fn pojav_alcDevicePauseSOFT = NULL;
 static POJAV_alcDeviceResumeSOFT_fn pojav_alcDeviceResumeSOFT = NULL;
@@ -86,7 +92,7 @@ static void* pojav_openal_handle = NULL;
 static bool pojav_openal_resolved = false;
 static bool pojav_openal_no_context_logged = false;
 static bool pojav_openal_symbols_unavailable_logged = false;
-static bool pojav_openal_reset_failed_logged = false;
+static bool pojav_openal_recovery_failed_logged = false;
 static bool pojav_audio_force_muted = false;
 static float pojav_saved_listener_gain = 1.0f;
 static bool pojav_saved_listener_gain_valid = false;
@@ -102,6 +108,8 @@ static atomic_int pojav_audio_recovery_requested_generation = 0;
 static atomic_int pojav_audio_recovery_completed_generation = 0;
 static atomic_int pojav_audio_recovery_reported_generation = 0;
 static atomic_bool pojav_audio_recovery_last_result = false;
+// Serialize request generations and their result as one coherent snapshot.
+static pthread_mutex_t pojav_audio_recovery_lock = PTHREAD_MUTEX_INITIALIZER;
 static void resolveOpenalSymbolsFromHandle(void* handle) {
     if (handle == NULL) {
         return;
@@ -111,6 +119,12 @@ static void resolveOpenalSymbolsFromHandle(void* handle) {
     }
     if (pojav_alcGetContextsDevice == NULL) {
         pojav_alcGetContextsDevice = (POJAV_alcGetContextsDevice_fn) dlsym(handle, "alcGetContextsDevice");
+    }
+    if (pojav_alcGetError == NULL) {
+        pojav_alcGetError = (POJAV_alcGetError_fn) dlsym(handle, "alcGetError");
+    }
+    if (pojav_alcGetIntegerv == NULL) {
+        pojav_alcGetIntegerv = (POJAV_alcGetIntegerv_fn) dlsym(handle, "alcGetIntegerv");
     }
     if (pojav_alcResetDeviceSOFT == NULL) {
         pojav_alcResetDeviceSOFT = (POJAV_alcResetDeviceSOFT_fn) dlsym(handle, "alcResetDeviceSOFT");
@@ -140,6 +154,8 @@ static bool resolveOpenalSymbols(void) {
 
     if (pojav_alcGetCurrentContext == NULL ||
         pojav_alcGetContextsDevice == NULL ||
+        pojav_alcGetError == NULL ||
+        pojav_alcGetIntegerv == NULL ||
         pojav_alcResetDeviceSOFT == NULL ||
         pojav_alcDevicePauseSOFT == NULL ||
         pojav_alcDeviceResumeSOFT == NULL ||
@@ -195,7 +211,8 @@ static bool dequeueAudioCommand(PojavAudioCommand* command) {
     return hasCommand;
 }
 
-static void completeAudioRecoveryCommand(int generation, bool result) {
+// Caller holds pojav_audio_recovery_lock.
+static void completeAudioRecoveryCommandLocked(int generation, bool result) {
     int completedGeneration = atomic_load_explicit(
             &pojav_audio_recovery_completed_generation,
             memory_order_acquire
@@ -210,7 +227,26 @@ static void completeAudioRecoveryCommand(int generation, bool result) {
     }
 }
 
+static void completeAudioRecoveryCommand(int generation, bool result) {
+    pthread_mutex_lock(&pojav_audio_recovery_lock);
+    completeAudioRecoveryCommandLocked(generation, result);
+    pthread_mutex_unlock(&pojav_audio_recovery_lock);
+}
+
 static bool queueAudioRecoveryCommand(void) {
+    pthread_mutex_lock(&pojav_audio_recovery_lock);
+    int requestedGeneration = atomic_load_explicit(
+            &pojav_audio_recovery_requested_generation,
+            memory_order_acquire
+    );
+    int completedGeneration = atomic_load_explicit(
+            &pojav_audio_recovery_completed_generation,
+            memory_order_acquire
+    );
+    if (requestedGeneration > completedGeneration) {
+        pthread_mutex_unlock(&pojav_audio_recovery_lock);
+        return true;
+    }
     int generation = atomic_fetch_add_explicit(
             &pojav_audio_recovery_requested_generation,
             1,
@@ -227,9 +263,11 @@ static bool queueAudioRecoveryCommand(void) {
             fflush(stdout);
             pojav_audio_command_queue_full_logged = true;
         }
-        completeAudioRecoveryCommand(generation, false);
+        completeAudioRecoveryCommandLocked(generation, false);
+        pthread_mutex_unlock(&pojav_audio_recovery_lock);
         return false;
     }
+    pthread_mutex_unlock(&pojav_audio_recovery_lock);
     return true;
 }
 
@@ -278,13 +316,27 @@ static void applyAudioMutedOnCurrentThread(bool muted) {
     pojav_audio_force_muted = false;
 }
 
+static bool failAudioOutputRecovery(const char* stage, int error) {
+    if (!pojav_openal_recovery_failed_logged) {
+        printf("%s event=openal_device_recovery_failed stage=%s alc_error=0x%x\n",
+               AUDIO_ROUTE_LOG_PREFIX, stage, error);
+        fflush(stdout);
+        pojav_openal_recovery_failed_logged = true;
+    }
+    return false;
+}
+
 static bool recoverAudioOutputOnCurrentThread(void) {
     if (!resolveOpenalSymbols()) {
         return false;
     }
 
-    if (pojav_alcGetCurrentContext == NULL || pojav_alcGetContextsDevice == NULL) {
-        return false;
+    // Never pause the device unless we can reset, resume and verify it.
+    if (pojav_alcGetCurrentContext == NULL || pojav_alcGetContextsDevice == NULL ||
+        pojav_alcResetDeviceSOFT == NULL || pojav_alcDevicePauseSOFT == NULL ||
+        pojav_alcDeviceResumeSOFT == NULL || pojav_alcGetError == NULL ||
+        pojav_alcGetIntegerv == NULL) {
+        return failAudioOutputRecovery("symbols", ALC_NO_ERROR);
     }
 
     void* currentContext = pojav_alcGetCurrentContext();
@@ -298,33 +350,46 @@ static bool recoverAudioOutputOnCurrentThread(void) {
         return false;
     }
 
-    if (pojav_alcDevicePauseSOFT != NULL) {
-        pojav_alcDevicePauseSOFT(device);
+    // ALC errors are sticky. Discard errors from before this recovery attempt.
+    pojav_alcGetError(device);
+    pojav_alcDevicePauseSOFT(device);
+    int error = pojav_alcGetError(device);
+    if (error != ALC_NO_ERROR) {
+        return failAudioOutputRecovery("pause", error);
     }
 
-    bool resetSucceeded = true;
-    if (pojav_alcResetDeviceSOFT != NULL) {
-        resetSucceeded = pojav_alcResetDeviceSOFT(device, NULL) != 0;
+    bool resetSucceeded = pojav_alcResetDeviceSOFT(device, NULL) != 0;
+    error = pojav_alcGetError(device);
+    if (!resetSucceeded || error != ALC_NO_ERROR) {
+        return failAudioOutputRecovery("reset", error);
     }
 
-    if (pojav_alcDeviceResumeSOFT != NULL) {
-        pojav_alcDeviceResumeSOFT(device);
+    // Resetting a paused device doesn't start its backend. Resume can still fail.
+    pojav_alcDeviceResumeSOFT(device);
+    error = pojav_alcGetError(device);
+    if (error != ALC_NO_ERROR) {
+        return failAudioOutputRecovery("resume", error);
     }
     if (pojav_alcProcessContext != NULL) {
         pojav_alcProcessContext(currentContext);
+        error = pojav_alcGetError(device);
+        if (error != ALC_NO_ERROR) {
+            return failAudioOutputRecovery("process_context", error);
+        }
     }
 
-    if (resetSucceeded) {
-        pojav_openal_no_context_logged = false;
-        pojav_openal_reset_failed_logged = false;
-        return true;
+    int connected = 0;
+    pojav_alcGetIntegerv(device, ALC_CONNECTED, 1, &connected);
+    error = pojav_alcGetError(device);
+    if (error != ALC_NO_ERROR) {
+        return failAudioOutputRecovery("connection_check", error);
     }
-    if (!pojav_openal_reset_failed_logged) {
-        printf("%s event=openal_device_reset_failed\n", AUDIO_ROUTE_LOG_PREFIX);
-        fflush(stdout);
-        pojav_openal_reset_failed_logged = true;
+    if (!connected) {
+        return failAudioOutputRecovery("disconnected", ALC_NO_ERROR);
     }
-    return false;
+    pojav_openal_no_context_logged = false;
+    pojav_openal_recovery_failed_logged = false;
+    return true;
 }
 
 static void processQueuedAudioCommandsOnCurrentThread(void) {
@@ -1087,6 +1152,11 @@ JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRecoverAudio
         __attribute__((unused)) JNIEnv* env,
         __attribute__((unused)) jclass clazz
 ) {
+    pthread_mutex_lock(&pojav_audio_recovery_lock);
+    int requestedGeneration = atomic_load_explicit(
+            &pojav_audio_recovery_requested_generation,
+            memory_order_acquire
+    );
     int completedGeneration = atomic_load_explicit(
             &pojav_audio_recovery_completed_generation,
             memory_order_acquire
@@ -1095,7 +1165,8 @@ JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRecoverAudio
             &pojav_audio_recovery_reported_generation,
             memory_order_acquire
     );
-    if (completedGeneration > reportedGeneration) {
+    // An unconsumed older success must not complete a newer pending request.
+    if (completedGeneration == requestedGeneration && completedGeneration > reportedGeneration) {
         bool result = atomic_load_explicit(
                 &pojav_audio_recovery_last_result,
                 memory_order_acquire
@@ -1105,9 +1176,11 @@ JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRecoverAudio
                 completedGeneration,
                 memory_order_release
         );
+        pthread_mutex_unlock(&pojav_audio_recovery_lock);
         return result ? JNI_TRUE : JNI_FALSE;
     }
 
+    pthread_mutex_unlock(&pojav_audio_recovery_lock);
     return JNI_FALSE;
 }
 
@@ -1115,17 +1188,6 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioReco
         __attribute__((unused)) JNIEnv* env,
         __attribute__((unused)) jclass clazz
 ) {
-    int requestedGeneration = atomic_load_explicit(
-            &pojav_audio_recovery_requested_generation,
-            memory_order_acquire
-    );
-    int completedGeneration = atomic_load_explicit(
-            &pojav_audio_recovery_completed_generation,
-            memory_order_acquire
-    );
-    if (requestedGeneration > completedGeneration) {
-        return;
-    }
     queueAudioRecoveryCommand();
 }
 const static JNINativeMethod critical_fcns[] = {
