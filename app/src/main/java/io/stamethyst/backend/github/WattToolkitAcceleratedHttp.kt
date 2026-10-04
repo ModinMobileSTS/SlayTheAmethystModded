@@ -50,6 +50,7 @@ import okhttp3.ResponseBody
 import okhttp3.internal.tls.OkHostnameVerifier
 import org.json.JSONArray
 import org.json.JSONObject
+import top.apricityx.workshop.workshop.SteamCdnRequestControl
 
 internal data class WattToolkitRouteProfile(
     val name: String,
@@ -441,6 +442,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
+        request.checkHttpRequestActive()
         ensureUrlAllowed(request.url)
         // A caller may explicitly allow a cleartext origin such as a public SteamPipe CDN.
         // Keep that request on the official path: forwarding it could replace the approved
@@ -467,6 +469,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
         } catch (error: ProtocolException) {
             throw error
         } catch (error: IOException) {
+            request.checkHttpRequestActive()
             if (officialRequestAttempted) {
                 routeResolvers
                     .firstOrNull { resolver -> resolver.supports(request.url.host) }
@@ -487,6 +490,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
         var credentialsAllowed = true
         val failedForwardTargets = LinkedHashSet<String>()
         while (true) {
+            logicalRequest.checkHttpRequestActive()
             ensureUrlAllowed(logicalRequest.url)
             val resolver = routeResolvers.firstOrNull { candidate -> candidate.supports(logicalRequest.url.host) }
             val route = resolver?.resolveRouteForHost(logicalRequest.url.host)
@@ -510,6 +514,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 usedOfficial = executed.usedOfficial
                 executed.response
             } catch (error: IOException) {
+                logicalRequest.checkHttpRequestActive()
                 val refreshedRoute = resolver?.refreshRouteForHost(
                     host = logicalRequest.url.host,
                     excludedForwardTargets = failedForwardTargets,
@@ -702,6 +707,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             }
             val logicalHost = logicalRequest.url.host
             try {
+                logicalRequest.checkHttpRequestActive()
                 if (candidateRoute == null || candidateRoute.isOfficial) {
                     AcceleratedRouteEvents.emit(AcceleratedRouteEvent.OfficialAttempt(logicalHost))
                     val officialResponse = officialRequestExecutor(logicalRequest)
@@ -715,9 +721,13 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 AcceleratedRouteEvents.emit(
                     AcceleratedRouteEvent.ForwardTargetAttempt(logicalHost, candidateTarget.orEmpty()),
                 )
-                val response = directCallFactory.newCall(
-                    buildNetworkRequest(forwardedRequest, candidateRoute),
-                ).execute()
+                val call = directCallFactory.newCall(buildNetworkRequest(forwardedRequest, candidateRoute))
+                // Manifest races cancel their losing requests. Forward calls must share
+                // that cancellation/deadline instead of keeping a worker busy for 60s.
+                forwardedRequest.tag(SteamCdnRequestControl::class.java)
+                    ?.register(call)
+                forwardedRequest.tag(HttpRequestControl::class.java)?.register(call)
+                val response = call.execute()
                 AcceleratedRouteEvents.emit(
                     AcceleratedRouteEvent.ForwardTargetSucceeded(logicalHost, candidateTarget.orEmpty()),
                 )
@@ -727,6 +737,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                     usedOfficial = false,
                 )
             } catch (error: IOException) {
+                logicalRequest.checkHttpRequestActive()
                 if (candidateTarget != null) {
                     failedForwardTargets += candidateTarget
                     AcceleratedRouteEvents.emit(
@@ -791,6 +802,11 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             .build()
     }
 
+}
+
+private fun Request.checkHttpRequestActive() {
+    tag(SteamCdnRequestControl::class.java)?.checkActive()
+    tag(HttpRequestControl::class.java)?.checkActive()
 }
 
 internal fun Request.Builder.removeSensitiveCredentialHeaders(): Request.Builder {

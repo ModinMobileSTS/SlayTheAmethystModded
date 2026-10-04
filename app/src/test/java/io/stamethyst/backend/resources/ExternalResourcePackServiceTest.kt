@@ -96,6 +96,47 @@ class ExternalResourcePackServiceTest {
         assertTrue(ordered.isEmpty())
     }
 
+    @Test
+    fun orderResourcePackDownloadCandidates_keepsUnfinishedTransportsBeforeKnownFailures() {
+        val url = "https://github.com/example/resources.zip"
+        val candidates = listOf(
+            configured(UpdateSource.GH_PROXY_COM),
+            configured(UpdateSource.ACCELERATED_DIRECT).copy(requestUrl = url),
+            configured(UpdateSource.OFFICIAL).copy(requestUrl = url),
+            configured(UpdateSource.GH_LLKK),
+        )
+        val ordered = ExternalResourcePackService.orderResourcePackDownloadCandidates(
+            probeResults = listOf(
+                probe(UpdateSource.GH_PROXY_COM, reachable = false, elapsedNanos = 100, index = 0),
+                probe(UpdateSource.GH_LLKK, reachable = true, elapsedNanos = 200, index = 3),
+            ),
+            fallbackCandidates = candidates,
+        )
+
+        assertEquals(listOf(3, 1, 2, 0), ordered.map { it.candidateIndex })
+        assertEquals(listOf(true, false), ordered.slice(1..2).map { it.usesGithubAcceleration })
+    }
+
+    @Test
+    fun orderResourcePackDownloadCandidates_keepsFallbacksWhenNoProbeSucceeded() {
+        val candidates = listOf(configured(UpdateSource.GH_PROXY_COM), configured(UpdateSource.OFFICIAL))
+        val ordered = ExternalResourcePackService.orderResourcePackDownloadCandidates(
+            probeResults = emptyList(),
+            fallbackCandidates = candidates,
+        )
+
+        assertEquals(listOf(0, 1), ordered.map { it.candidateIndex })
+        assertTrue(ordered.none { it.rangeSupportProbed })
+    }
+
+    private fun configured(source: UpdateSource) =
+        ExternalResourcePackService.ConfiguredResourcePackDownloadCandidate(
+            displayName = source.displayName,
+            requestUrl = "https://example.com/${source.id}",
+            usesGithubAcceleration = source.usesGithubAcceleration,
+            preferredMirrorSource = source.takeIf { it.userSelectable },
+        )
+
     private fun probe(
         source: UpdateSource,
         reachable: Boolean,
