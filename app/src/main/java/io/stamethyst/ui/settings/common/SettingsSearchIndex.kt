@@ -238,6 +238,12 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsMarketCloud,
     ),
     entry(
+        titleResId = R.string.settings_steam_cloud_sync_disabled_title,
+        subtitleResId = R.string.settings_steam_cloud_sync_disabled_desc,
+        categoryTitleResId = R.string.settings_category_market_cloud_title,
+        route = Route.SettingsMarketCloud,
+    ),
+    entry(
         titleResId = R.string.settings_steam_cloud_auto_launch_after_sync_title,
         subtitleResId = R.string.settings_steam_cloud_auto_launch_after_sync_desc,
         categoryTitleResId = R.string.settings_category_market_cloud_title,

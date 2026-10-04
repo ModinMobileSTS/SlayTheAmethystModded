@@ -132,6 +132,10 @@ class SteamCloudSyncProcessService : Service() {
             configure: Intent.() -> Unit = {},
         ): Boolean {
             val appContext = context.applicationContext
+            if (LauncherConfig.isSteamCloudSyncDisabled(appContext)) {
+                deliverResult(appContext, receiver, RESULT_CANCELLED)
+                return false
+            }
             val intent = Intent(appContext, SteamCloudSyncProcessService::class.java).apply {
                 this.action = action
                 putExtra(EXTRA_RESULT_RECEIVER, receiver)
@@ -198,6 +202,12 @@ class SteamCloudSyncProcessService : Service() {
             isRunning: Boolean,
             cancellationPending: Boolean,
         ): Boolean = isRunning && cancellationPending
+
+        internal fun shouldContinueSync(
+            syncDisabled: Boolean,
+            cancellationPending: Boolean,
+            interrupted: Boolean,
+        ): Boolean = !syncDisabled && !cancellationPending && !interrupted
 
         internal fun shouldDeferForLiveSaveLease(error: Throwable): Boolean =
             generateSequence(error) { current -> current.cause?.takeUnless { it === current } }
@@ -324,6 +334,7 @@ class SteamCloudSyncProcessService : Service() {
     ) {
         try {
             operationAuthMaterial = null
+            ensureNotCancelled()
             when (action) {
                 ACTION_CHECK_AND_SYNC -> runCheckAndSync(intent, receiver)
                 ACTION_USE_LOCAL -> runUseLocal(receiver)
@@ -331,7 +342,7 @@ class SteamCloudSyncProcessService : Service() {
             }
         } catch (error: Throwable) {
             val backgroundRequested = isBackgroundLaunchRequested()
-            val category = if (cancelRequested.get()) {
+            val category = if (cancelRequested.get() || LauncherConfig.isSteamCloudSyncDisabled(applicationContext)) {
                 SteamCloudFailureCategory.CANCELLED
             } else if (backgroundRequested &&
                 (error is SteamCloudBackgroundLaunchConflictException ||
@@ -609,7 +620,11 @@ class SteamCloudSyncProcessService : Service() {
     }
 
     private fun shouldContinue(): Boolean {
-        return !cancelRequested.get() && !Thread.currentThread().isInterrupted
+        return shouldContinueSync(
+            syncDisabled = LauncherConfig.isSteamCloudSyncDisabled(applicationContext),
+            cancellationPending = cancelRequested.get(),
+            interrupted = Thread.currentThread().isInterrupted,
+        )
     }
 
     private fun isBackgroundLaunchRequested(): Boolean =

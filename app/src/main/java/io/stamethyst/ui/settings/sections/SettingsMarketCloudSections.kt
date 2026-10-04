@@ -80,6 +80,7 @@ internal data class SteamCloudSettingsActions(
     val onOpenSteamCloudLogin: () -> Unit,
     val onSteamCloudWattAccelerationChanged: (Boolean) -> Unit,
     val onSteamCloudAutoLaunchAfterSyncChanged: (Boolean) -> Unit,
+    val onSteamCloudSyncDisabledChanged: (Boolean) -> Unit,
     val onSteamGamePresenceChanged: (Boolean) -> Unit,
     val onRichPresenceDisplayPreferencesChanged: (RichPresenceDisplayPreferences) -> Unit,
     val onSteamAchievementSyncChanged: (Boolean) -> Unit,
@@ -234,8 +235,19 @@ internal fun SettingsSteamCloudSection(
     Spacer(modifier = Modifier.size(8.dp))
     SettingsSwitchItem(
         SettingsSwitchSpec(
-            checked = uiState.steamCloudAutoLaunchAfterSyncEnabled,
+            checked = uiState.steamCloudSyncDisabled,
             enabled = !uiState.busy,
+            title = stringResource(R.string.settings_steam_cloud_sync_disabled_title),
+            description = stringResource(R.string.settings_steam_cloud_sync_disabled_desc),
+            onCheckedChange = actions.onSteamCloudSyncDisabledChanged,
+        )
+    )
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.steamCloudAutoLaunchAfterSyncEnabled,
+            enabled = !uiState.busy && !uiState.steamCloudSyncDisabled,
             title = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
             description = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_desc),
             onCheckedChange = actions.onSteamCloudAutoLaunchAfterSyncChanged,

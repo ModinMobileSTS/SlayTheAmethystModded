@@ -63,6 +63,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudPushCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudRootKind
 import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
 import io.stamethyst.backend.steamcloud.SteamCloudSyncBlacklist
+import io.stamethyst.backend.steamcloud.SteamCloudSyncProcessService
 import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.backend.steamcloud.SteamCloudSyncBaseline
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
@@ -491,6 +492,7 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED,
         val steamCloudAutoLaunchAfterSyncEnabled: Boolean =
             LauncherPreferences.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED,
+        val steamCloudSyncDisabled: Boolean = LauncherPreferences.DEFAULT_STEAM_CLOUD_SYNC_DISABLED,
         val steamGamePresenceEnabled: Boolean =
             LauncherPreferences.DEFAULT_STEAM_GAME_PRESENCE_ENABLED,
         val richPresenceDisplayPreferences: RichPresenceDisplayPreferences =
@@ -564,6 +566,7 @@ class SettingsScreenViewModel : ViewModel() {
         val steamCloudSyncBlacklistCandidates: List<String>,
         val steamCloudWattAccelerationEnabled: Boolean,
         val steamCloudAutoLaunchAfterSyncEnabled: Boolean,
+        val steamCloudSyncDisabled: Boolean,
         val steamGamePresenceEnabled: Boolean,
         val richPresenceDisplayPreferences: RichPresenceDisplayPreferences,
         val steamAchievementSyncEnabled: Boolean,
@@ -1538,6 +1541,7 @@ class SettingsScreenViewModel : ViewModel() {
                         LauncherPreferences.isSteamCloudWattAccelerationEnabled(host),
                     steamCloudAutoLaunchAfterSyncEnabled =
                         LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host),
+                    steamCloudSyncDisabled = LauncherPreferences.isSteamCloudSyncDisabled(host),
                     steamGamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(host),
                     richPresenceDisplayPreferences =
                         LauncherPreferences.readRichPresenceDisplayPreferences(host),
@@ -1578,6 +1582,7 @@ class SettingsScreenViewModel : ViewModel() {
                         steamCloudSyncBlacklistCandidates = result.steamCloudSyncBlacklistCandidates,
                         steamCloudWattAccelerationEnabled = result.steamCloudWattAccelerationEnabled,
                         steamCloudAutoLaunchAfterSyncEnabled = result.steamCloudAutoLaunchAfterSyncEnabled,
+                        steamCloudSyncDisabled = result.steamCloudSyncDisabled,
                         steamGamePresenceEnabled = result.steamGamePresenceEnabled,
                         richPresenceDisplayPreferences = result.richPresenceDisplayPreferences,
                         steamAchievementSyncEnabled = result.steamAchievementSyncEnabled,
@@ -2163,6 +2168,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
+        if (rejectDisabledSteamCloudSync(host)) return
         val plan = uiState.steamCloudUploadConfirmPlan ?: return
         val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
         if (authMaterial == null) {
@@ -2219,6 +2225,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
+        if (rejectDisabledSteamCloudSync(host)) return
         val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
         if (authMaterial == null) {
             showToast(host, UiText.StringResource(R.string.settings_steam_cloud_credentials_missing))
@@ -2272,6 +2279,21 @@ class SettingsScreenViewModel : ViewModel() {
             steamCloudWattAccelerationEnabled = effectiveEnabled,
             workshopWattAccelerationEnabled = effectiveEnabled,
         )
+        refreshStatus(host, clearBusy = false)
+    }
+
+    private fun rejectDisabledSteamCloudSync(host: Activity): Boolean {
+        if (!LauncherPreferences.isSteamCloudSyncDisabled(host)) return false
+        showToast(host, UiText.StringResource(R.string.settings_steam_cloud_sync_disabled_title))
+        return true
+    }
+
+    fun onSteamCloudSyncDisabledChanged(host: Activity, disabled: Boolean) {
+        LauncherPreferences.setSteamCloudSyncDisabled(host, disabled)
+        uiState = uiState.copy(steamCloudSyncDisabled = disabled)
+        if (disabled) {
+            SteamCloudSyncProcessService.cancel(host)
+        }
         refreshStatus(host, clearBusy = false)
     }
 
@@ -2645,6 +2667,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
+        if (rejectDisabledSteamCloudSync(host)) return
         if (LauncherPreferences.readSteamCloudSaveMode(host) != SteamCloudSaveMode.STEAM_CLOUD) {
             refreshStatus(host)
             return
@@ -4467,6 +4490,7 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun pullSteamCloudIntoEmptySlotAfterQuickStartImport(host: Activity): SteamCloudPullResult? {
+        if (LauncherPreferences.isSteamCloudSyncDisabled(host)) return null
         val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
             ?: return null
         host.runOnUiThread {

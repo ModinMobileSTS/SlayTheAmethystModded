@@ -495,6 +495,12 @@ private fun steamServicesSection(
                 zh,
             ),
             boolField(
+                "steamCloudSyncDisabled",
+                R.string.settings_steam_cloud_sync_disabled_title,
+                LauncherConfig.isSteamCloudSyncDisabled(context),
+                zh,
+            ),
+            boolField(
                 "steamCloudAutoLaunchAfterSyncEnabled",
                 R.string.settings_steam_cloud_auto_launch_after_sync_title,
                 LauncherConfig.isSteamCloudAutoLaunchAfterSyncEnabled(context),

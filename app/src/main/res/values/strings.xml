@@ -1512,6 +1512,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_steam_cloud_watt_acceleration_enabled_title">Steam accelerated connection</string>
     <string name="settings_steam_cloud_watt_acceleration_disabled_title">Steam accelerated connection off</string>
     <string name="settings_steam_cloud_watt_acceleration_desc">Access Steam through forwarding rules for better speed. If Steam cannot be accessed normally, turn this off and enable an accelerator.</string>
+    <string name="settings_steam_cloud_sync_disabled_title">Do not sync cloud saves</string>
+    <string name="settings_steam_cloud_sync_disabled_desc">Stop downloading and uploading cloud save changes. Keep your current saves and Steam login. Turn this off to resume synchronization.</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_title">Auto-launch game after sync</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_desc">When a launch is waiting on Steam Cloud, automatically enter the game after sync if the cloud is already up to date or the remaining upload can continue in the background.</string>
     <string name="settings_steam_game_presence_title">Steam game presence</string>

@@ -249,6 +249,9 @@ fun LauncherSettingsMarketCloudScreen(
         onSteamCloudAutoLaunchAfterSyncChanged = { enabled ->
             viewModel.onSteamCloudAutoLaunchAfterSyncChanged(activity, enabled)
         },
+        onSteamCloudSyncDisabledChanged = { disabled ->
+            viewModel.onSteamCloudSyncDisabledChanged(activity, disabled)
+        },
         onSteamGamePresenceChanged = { enabled ->
             viewModel.onSteamGamePresenceChanged(activity, enabled)
         },

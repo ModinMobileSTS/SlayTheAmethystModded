@@ -428,6 +428,7 @@ internal object SteamCloudPushCoordinator {
         sourceEntries: List<SteamCloudLocalFileSnapshotEntry>? = null,
         allowSnapshotDeletes: Boolean = false,
     ): SteamCloudPushResult {
+        SteamCloudSyncPolicy.requireSyncEnabled(host)
         require(plan.conflicts.isEmpty()) {
             "Steam Cloud push was requested with unresolved conflicts."
         }
@@ -778,6 +779,7 @@ internal object SteamCloudPushCoordinator {
         shouldContinue: () -> Boolean = { true },
         allowReconnectRetry: Boolean = true,
     ): SteamCloudPushResult {
+        SteamCloudSyncPolicy.requireSyncEnabled(host)
         val startedAtMs = System.currentTimeMillis()
         val client = SteamCloudClient(host)
         var uploadBatch: SteamCloudClient.UploadBatch? = null

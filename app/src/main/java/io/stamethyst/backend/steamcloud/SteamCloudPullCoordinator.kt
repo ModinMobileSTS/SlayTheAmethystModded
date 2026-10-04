@@ -149,6 +149,7 @@ internal object SteamCloudPullCoordinator {
         shouldContinue: () -> Boolean = { true },
     ): SteamCloudManifestSnapshot {
         val startedAtMs = System.currentTimeMillis()
+        SteamCloudSyncPolicy.requireSyncEnabled(host)
         ensureNotCancelled(shouldContinue)
         if (!outputRoot.isDirectory && !outputRoot.mkdirs()) {
             throw IOException("Failed to create Steam Cloud backup staging directory: ${outputRoot.absolutePath}")
@@ -283,6 +284,7 @@ internal object SteamCloudPullCoordinator {
         shouldContinue: () -> Boolean = { true },
         saveModeAfterPull: SteamCloudSaveMode? = null,
     ): SteamCloudPullResult {
+        SteamCloudSyncPolicy.requireSyncEnabled(host)
         val startedAtMs = System.currentTimeMillis()
         ensureNotCancelled(shouldContinue)
         val outputDir = SteamCloudManifestStore.outputDir(host)
@@ -630,6 +632,7 @@ internal object SteamCloudPullCoordinator {
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
         shouldContinue: () -> Boolean = { true },
     ): MergeRemoteChangesResult {
+        SteamCloudSyncPolicy.requireSyncEnabled(host)
         require(plan.conflicts.isEmpty()) {
             "Steam Cloud remote merge was requested with unresolved conflicts."
         }

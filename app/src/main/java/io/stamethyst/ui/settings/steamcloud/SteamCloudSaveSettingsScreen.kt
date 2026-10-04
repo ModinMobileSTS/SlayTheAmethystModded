@@ -136,7 +136,7 @@ internal fun SteamCloudSaveSettingsCards(
         }
     }
     val overwriteConfirmEnabled =
-        !uiState.busy && overwriteConfirmCountdownSeconds <= 0
+        !uiState.busy && !uiState.steamCloudSyncDisabled && overwriteConfirmCountdownSeconds <= 0
 
     SettingsSectionCard(title = stringResource(R.string.settings_steam_cloud_save_settings_title)) {
         SteamCloudSaveSettingsContent(
@@ -154,7 +154,7 @@ internal fun SteamCloudSaveSettingsCards(
             )
         ) {
             SteamCloudForceIndependentOverwritePanel(
-                busy = uiState.busy,
+                busy = uiState.busy || uiState.steamCloudSyncDisabled,
                 onClick = { showForceOverwriteConfirmDialog = true },
             )
         }
@@ -358,5 +358,3 @@ private fun SteamCloudForceIndependentOverwritePanel(
         }
     }
 }
-
-

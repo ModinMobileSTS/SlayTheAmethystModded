@@ -1504,6 +1504,8 @@
     <string name="settings_steam_cloud_watt_acceleration_enabled_title">Steam 加速連線</string>
     <string name="settings_steam_cloud_watt_acceleration_disabled_title">Steam 加速連線已關閉</string>
     <string name="settings_steam_cloud_watt_acceleration_desc">透過轉發規則訪問 Steam，速度會更快。如果出現無法正常訪問 Steam，請關閉此項並開啟加速器。</string>
+    <string name="settings_steam_cloud_sync_disabled_title">不同步雲端存檔</string>
+    <string name="settings_steam_cloud_sync_disabled_desc">啟用後，不再下載和上傳新的雲端存檔變更。保留目前存檔和 Steam 登入狀態，關閉後恢復同步。</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_title">同步後自動進入遊戲</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_desc">當一次啟動正在等待 Steam Cloud 結果時，如果雲端已是最新，或剩餘上傳可以轉到背景繼續執行，就自動進入遊戲。</string>
     <string name="settings_steam_game_presence_title">Steam 遊戲狀態</string>

@@ -31,6 +31,11 @@ class LauncherConfigGameplayDefaultsTest {
     }
 
     @Test
+    fun steamCloudSync_remainsEnabledByDefault() {
+        assertFalse(LauncherConfig.DEFAULT_STEAM_CLOUD_SYNC_DISABLED)
+    }
+
+    @Test
     fun achievementUnlockNotification_isEnabledByDefault() {
         assertTrue(LauncherConfig.DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED)
     }

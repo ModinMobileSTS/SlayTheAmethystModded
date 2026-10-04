@@ -210,6 +210,7 @@ object LauncherConfig {
         "steam_cloud_watt_acceleration_enabled"
     private const val PREF_KEY_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED =
         "steam_cloud_auto_launch_after_sync_enabled"
+    private const val PREF_KEY_STEAM_CLOUD_SYNC_DISABLED = "steam_cloud_sync_disabled"
     private const val PREF_KEY_STEAM_CLOUD_BACKGROUND_LAUNCH_REQUESTED =
         "steam_cloud_background_launch_requested"
     private const val PREF_KEY_STEAM_GAME_PRESENCE_ENABLED =
@@ -386,6 +387,7 @@ object LauncherConfig {
     const val DEFAULT_WATT_ACCELERATION_ENABLED = true
     const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = DEFAULT_WATT_ACCELERATION_ENABLED
     const val DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED = false
+    const val DEFAULT_STEAM_CLOUD_SYNC_DISABLED = false
     const val DEFAULT_STEAM_GAME_PRESENCE_ENABLED = false
     const val DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 1
     const val MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 1
@@ -2235,6 +2237,18 @@ object LauncherConfig {
             DEFAULT_WATT_ACCELERATION_ENABLED,
         )
         return legacySteamCloud && legacyWorkshop
+    }
+
+    fun isSteamCloudSyncDisabled(context: Context): Boolean =
+        prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_STEAM_CLOUD_SYNC_DISABLED,
+            DEFAULT_STEAM_CLOUD_SYNC_DISABLED,
+        )
+
+    fun setSteamCloudSyncDisabled(context: Context, disabled: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_STEAM_CLOUD_SYNC_DISABLED, disabled)
+        }
     }
 
     fun isSteamCloudAutoLaunchAfterSyncEnabled(context: Context): Boolean {

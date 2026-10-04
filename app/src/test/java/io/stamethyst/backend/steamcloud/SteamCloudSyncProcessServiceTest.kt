@@ -6,6 +6,22 @@ import org.junit.Test
 
 class SteamCloudSyncProcessServiceTest {
     @Test
+    fun synchronizationContinues_onlyWhenEnabledAndNotCancelledOrInterrupted() {
+        for (disabled in listOf(false, true)) {
+            for (cancelled in listOf(false, true)) {
+                for (interrupted in listOf(false, true)) {
+                    val actual = SteamCloudSyncProcessService.shouldContinueSync(
+                        syncDisabled = disabled,
+                        cancellationPending = cancelled,
+                        interrupted = interrupted,
+                    )
+                    org.junit.Assert.assertEquals(!disabled && !cancelled && !interrupted, actual)
+                }
+            }
+        }
+    }
+
+    @Test
     fun replacementStartIsRejected_whileCancelledWorkerIsUnwinding() {
         assertTrue(
             SteamCloudSyncProcessService.shouldRejectReplacementStart(

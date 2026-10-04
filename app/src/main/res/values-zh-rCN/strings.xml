@@ -1511,6 +1511,8 @@
     <string name="settings_steam_cloud_watt_acceleration_enabled_title">Steam 加速连接</string>
     <string name="settings_steam_cloud_watt_acceleration_disabled_title">Steam 加速连接已关闭</string>
     <string name="settings_steam_cloud_watt_acceleration_desc">通过转发规则访问 Steam，速度会更快。如果出现无法正常访问 Steam，请关闭此项并开启加速器。</string>
+    <string name="settings_steam_cloud_sync_disabled_title">不同步云存档</string>
+    <string name="settings_steam_cloud_sync_disabled_desc">启用后，不再下载和上传新的云存档变更。保留当前存档和 Steam 登录状态，关闭后恢复同步。</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_title">同步后自动进入游戏</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_desc">当一次启动正在等待 Steam Cloud 结果时，如果云端已是最新，或剩余上传可以转到后台继续执行，就自动进入游戏。</string>
     <string name="settings_steam_game_presence_title">Steam 游戏状态</string>

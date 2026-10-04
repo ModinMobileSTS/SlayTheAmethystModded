@@ -1630,6 +1630,8 @@ private fun SteamCloudOverviewCard(
                 SlidingTextSwap(
                     text = if (visibleIndicator) {
                         steamCloudActionBarTitle(indicator.state)
+                    } else if (indicator.syncDisabled) {
+                        stringResource(R.string.settings_steam_cloud_sync_disabled_title)
                     } else {
                         stringResource(R.string.main_steam_cloud_not_enabled_or_signed_in)
                     },
@@ -1637,6 +1639,8 @@ private fun SteamCloudOverviewCard(
                 )
                 val summaryText = if (visibleIndicator) {
                     steamCloudActionBarSummary(indicator)
+                } else if (indicator.syncDisabled) {
+                    stringResource(R.string.settings_steam_cloud_sync_disabled_desc)
                 } else {
                     stringResource(R.string.main_steam_cloud_disabled_summary)
                 }

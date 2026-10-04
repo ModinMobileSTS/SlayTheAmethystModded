@@ -233,6 +233,7 @@ class MainScreenViewModel : ViewModel() {
         val progressCurrentPath: String = "",
         val backgroundUploadReady: Boolean = false,
         val lastCheckedAtMs: Long? = null,
+        val syncDisabled: Boolean = false,
     ) {
         val operationInFlight: Boolean
             get() = state == SteamCloudIndicatorState.CHECKING || state == SteamCloudIndicatorState.SYNCING
@@ -822,7 +823,7 @@ class MainScreenViewModel : ViewModel() {
             return false
         }
         if (!isSteamCloudSaveModeEnabled(host)) {
-            clearSteamCloudIndicatorState()
+            clearSteamCloudIndicatorState(syncDisabled = LauncherPreferences.isSteamCloudSyncDisabled(host))
             return false
         }
         val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
@@ -1873,6 +1874,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     internal fun onLaunchRequested(host: Activity): LaunchRequestAction {
+        if (LauncherPreferences.isSteamCloudSyncDisabled(host)) {
+            clearSteamCloudIndicatorState(syncDisabled = true)
+        }
         if (uiState.initializing || uiState.busy || launchInFlight) {
             return LaunchRequestAction.NONE
         }
@@ -1910,7 +1914,7 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         if (!isSteamCloudSaveModeEnabled(host)) {
-            clearSteamCloudIndicatorState()
+            clearSteamCloudIndicatorState(syncDisabled = LauncherPreferences.isSteamCloudSyncDisabled(host))
             return
         }
         val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
@@ -1947,7 +1951,7 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         if (!isSteamCloudSaveModeEnabled(host)) {
-            clearSteamCloudIndicatorState()
+            clearSteamCloudIndicatorState(syncDisabled = LauncherPreferences.isSteamCloudSyncDisabled(host))
             return
         }
         val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
@@ -1999,7 +2003,7 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         if (!isSteamCloudSaveModeEnabled(host)) {
-            clearSteamCloudIndicatorState()
+            clearSteamCloudIndicatorState(syncDisabled = LauncherPreferences.isSteamCloudSyncDisabled(host))
             return
         }
         val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
@@ -4142,6 +4146,10 @@ class MainScreenViewModel : ViewModel() {
         var activeSyncSessionId: Long? = syncSessionId
         return object : ResultReceiver(Handler(Looper.getMainLooper())) {
             override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                if (LauncherPreferences.isSteamCloudSyncDisabled(appContext)) {
+                    clearSteamCloudIndicatorState(syncDisabled = true)
+                    return
+                }
                 val data = resultData ?: Bundle.EMPTY
                 when (resultCode) {
                     SteamCloudSyncProcessService.RESULT_CHECKING -> {
@@ -4575,6 +4583,10 @@ class MainScreenViewModel : ViewModel() {
         data: Bundle,
         hostActivity: Activity? = null,
     ) {
+        if (LauncherPreferences.isSteamCloudSyncDisabled(appContext)) {
+            clearSteamCloudIndicatorState(syncDisabled = true)
+            return
+        }
         when (resultCode) {
             SteamCloudSyncProcessService.RESULT_CHECKING -> {
                 if (!steamCloudCheckInFlight) {
@@ -5004,10 +5016,11 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun isSteamCloudSaveModeEnabled(host: Activity): Boolean {
-        return LauncherPreferences.readSteamCloudSaveMode(host) == SteamCloudSaveMode.STEAM_CLOUD
+        return LauncherPreferences.readSteamCloudSaveMode(host) == SteamCloudSaveMode.STEAM_CLOUD &&
+            !LauncherPreferences.isSteamCloudSyncDisabled(host)
     }
 
-    private fun clearSteamCloudIndicatorState() {
+    private fun clearSteamCloudIndicatorState(syncDisabled: Boolean = false) {
         steamCloudCheckInFlight = false
         steamCloudSyncInFlight = false
         steamCloudSyncCancelRequested = false
@@ -5015,9 +5028,10 @@ class MainScreenViewModel : ViewModel() {
         pendingSteamCloudManualBackgroundLaunch = false
         lastSteamCloudCheckAtMs = null
         if (uiState.steamCloudIndicator.visible ||
-            uiState.steamCloudIndicator.state != SteamCloudIndicatorState.HIDDEN
+            uiState.steamCloudIndicator.state != SteamCloudIndicatorState.HIDDEN ||
+            uiState.steamCloudIndicator.syncDisabled != syncDisabled
         ) {
-            uiState = uiState.copy(steamCloudIndicator = SteamCloudIndicatorUi())
+            uiState = uiState.copy(steamCloudIndicator = SteamCloudIndicatorUi(syncDisabled = syncDisabled))
         }
     }
 
@@ -5795,6 +5809,9 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun resolveSteamCloudIndicatorAvailability(host: Activity): SteamCloudIndicatorUi {
+        if (LauncherPreferences.isSteamCloudSyncDisabled(host)) {
+            return SteamCloudIndicatorUi(syncDisabled = true)
+        }
         val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
         if (!isSteamCloudSaveModeEnabled(host) || authMaterial == null) {
             return SteamCloudIndicatorUi()

@@ -201,6 +201,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED
     val DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED
+    val DEFAULT_STEAM_CLOUD_SYNC_DISABLED: Boolean
+        get() = LauncherConfig.DEFAULT_STEAM_CLOUD_SYNC_DISABLED
     val DEFAULT_STEAM_GAME_PRESENCE_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_STEAM_GAME_PRESENCE_ENABLED
     val DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED: Boolean
@@ -798,6 +800,13 @@ object LauncherPreferences {
 
     fun setSteamCloudWattAccelerationEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setSteamCloudWattAccelerationEnabled(context, enabled)
+    }
+
+    fun isSteamCloudSyncDisabled(context: Context): Boolean =
+        LauncherConfig.isSteamCloudSyncDisabled(context)
+
+    fun setSteamCloudSyncDisabled(context: Context, disabled: Boolean) {
+        LauncherConfig.setSteamCloudSyncDisabled(context, disabled)
     }
 
     fun isSteamCloudAutoLaunchAfterSyncEnabled(context: Context): Boolean {

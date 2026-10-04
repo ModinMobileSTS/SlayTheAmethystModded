@@ -128,6 +128,7 @@ public final class SteamCloudClient implements AutoCloseable {
     private static final String LAST_CM_ENDPOINT_FILE_NAME = "last-websocket-cm-endpoint.txt";
     private static final String CM_SERVER_LIST_FILE_NAME = "steam-cm-server-list.bin";
 
+    private final Context appContext;
     private final SteamClient steamClient;
     private final CallbackManager callbackManager;
     private final SteamUser steamUser;
@@ -212,6 +213,7 @@ public final class SteamCloudClient implements AutoCloseable {
      *     transport isolated from the shared connection.
      */
     public SteamCloudClient(Context context, DownloadLimits downloadLimits, boolean useSharedCmSession) {
+        appContext = context.getApplicationContext();
         applyProxySystemProperties();
         this.downloadLimits = Objects.requireNonNull(downloadLimits, "downloadLimits");
 
@@ -952,6 +954,7 @@ public final class SteamCloudClient implements AutoCloseable {
         long expectedRawSize,
         String expectedSha1
     ) throws Exception {
+        SteamCloudSyncPolicy.requireSyncEnabled(appContext);
         long startedAtNs = System.nanoTime();
         long rpcMs = 0L;
         long httpMs = 0L;
@@ -1001,6 +1004,7 @@ public final class SteamCloudClient implements AutoCloseable {
 
             long httpStartedAtNs = System.nanoTime();
             try {
+                SteamCloudSyncPolicy.requireSyncEnabled(appContext);
                 try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
                     if (!response.isSuccessful()) {
                         throw new HttpStatusIOException(response.code(), "downloading", remotePath);
@@ -1109,6 +1113,7 @@ public final class SteamCloudClient implements AutoCloseable {
         List<String> remotePathsToUpload,
         List<String> remotePathsToDelete
     ) throws Exception {
+        SteamCloudSyncPolicy.requireSyncEnabled(appContext);
         try {
             Log.i(
                 TAG,
@@ -1153,6 +1158,7 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     public UploadedFile uploadFile(int appId, String remotePath, File sourceFile, long uploadBatchId) throws Exception {
+        SteamCloudSyncPolicy.requireSyncEnabled(appContext);
         if (!sourceFile.isFile()) {
             throw new IOException("Steam Cloud upload source file is missing: " + sourceFile.getAbsolutePath());
         }
@@ -1229,6 +1235,7 @@ public final class SteamCloudClient implements AutoCloseable {
                 requestBuilder.addHeader(name, header.getValue());
             }
 
+            SteamCloudSyncPolicy.requireSyncEnabled(appContext);
             try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
                 if (!response.isSuccessful()) {
                     throw new IOException("HTTP " + response.code() + " when uploading " + remotePath);
@@ -1276,6 +1283,7 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     public void deleteFile(int appId, String remotePath, long uploadBatchId) throws Exception {
+        SteamCloudSyncPolicy.requireSyncEnabled(appContext);
         SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Request request =
             buildClientDeleteFileRequest(appId, remotePath, uploadBatchId);
         try {
