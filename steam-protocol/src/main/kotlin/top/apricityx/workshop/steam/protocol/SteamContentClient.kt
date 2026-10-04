@@ -7,6 +7,10 @@ import top.apricityx.workshop.steam.proto.CContentServerDirectory_GetManifestReq
 import top.apricityx.workshop.steam.proto.CContentServerDirectory_GetServersForSteamPipe_Request
 import top.apricityx.workshop.steam.proto.CContentServerDirectory_GetServersForSteamPipe_Response
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 class SteamContentClient(
     private val session: SteamCmSession,
@@ -43,7 +47,11 @@ class SteamContentClient(
                     priorityClass = it.priorityClass.toUInt(),
                 )
             }
-        }.getOrElse {
+        }.getOrElse { error ->
+            currentCoroutineContext().ensureActive()
+            if (error is InterruptedException || (error is CancellationException && error !is TimeoutCancellationException)) {
+                throw error
+            }
             directoryClient.loadContentServers(cellId, maxServers)
         }
     }

@@ -6,12 +6,14 @@ import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.workshop.SharedSteamCmSessions
 import io.stamethyst.backend.workshop.WorkshopSteamClientIdentity
 import io.stamethyst.config.CloudControlConfig
-import io.stamethyst.config.CloudControlSettings
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File
 import io.stamethyst.config.RuntimePaths
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import top.apricityx.workshop.steam.protocol.CmServer
 import top.apricityx.workshop.steam.protocol.SessionContext
@@ -112,7 +114,10 @@ internal class SteamStsJarDownloadService(
             waitIfPaused()
             onProgress(SteamStsJarDownloadProgress(phase = SteamStsJarDownloadPhase.RESOLVING, progressPercent = 0))
             val appInfo = parseAppInfo(session.requestAppProductInfo(STS_APP_ID))
-            val cloudControlSettings = CloudControlConfig.refreshBlocking(context)
+            val depotKeys = SteamStsDepotKeyResolver(
+                currentSettings = CloudControlConfig::current,
+                refreshSettings = { withContext(Dispatchers.IO) { CloudControlConfig.refreshBlocking(context) } },
+            )
             val candidates = resolveDepotCandidates(
                 session = session,
                 appId = STS_APP_ID,
@@ -145,31 +150,36 @@ internal class SteamStsJarDownloadService(
                 try {
                     waitIfPaused()
                     outputFile.delete()
-                    val depotKey = cloudControlDepotKey(cloudControlSettings, candidate)
-                        ?: runCatching {
-                            session.requestDepotDecryptionKey(
+                    return depotKeys.withCloudKey(candidate) { cloudKey ->
+                        val depotKey = cloudKey
+                            ?: runCatching {
+                                session.requestDepotDecryptionKey(
+                                    appId = candidate.appId,
+                                    depotId = candidate.depotId,
+                                )
+                            }.onFailure { error ->
+                                if (error is CancellationException || error is InterruptedException) throw error
+                                depotKeyError = error
+                            }.getOrNull()
+                        downloader.download(
+                            request = SteamDepotFileDownloadRequest(
                                 appId = candidate.appId,
                                 depotId = candidate.depotId,
-                            )
-                        }.onFailure { error ->
-                            depotKeyError = error
-                        }.getOrNull()
-                    return downloader.download(
-                        request = SteamDepotFileDownloadRequest(
-                            appId = candidate.appId,
-                            depotId = candidate.depotId,
-                            manifestId = candidate.manifestId,
-                            branch = candidate.branch,
-                            fileName = STS_DESKTOP_JAR_FILE_NAME,
-                            outputFile = outputFile,
-                            depotKey = depotKey,
-                        ),
-                        emitProgress = { progress ->
-                            onProgress(progress.toStsJarProgress())
-                        },
-                        waitIfPaused = waitIfPaused,
-                    )
+                                manifestId = candidate.manifestId,
+                                branch = candidate.branch,
+                                fileName = STS_DESKTOP_JAR_FILE_NAME,
+                                outputFile = outputFile,
+                                depotKey = depotKey,
+                            ),
+                            emitProgress = { progress ->
+                                onProgress(progress.toStsJarProgress())
+                            },
+                            waitIfPaused = waitIfPaused,
+                            cmServers = cmServers,
+                        )
+                    }
                 } catch (error: Throwable) {
+                    if (error is CancellationException || error is InterruptedException) throw error
                     val candidateFailure = buildCandidateFailure(candidate, depotKeyError, error)
                     lastError = candidateFailure
                     if (!authenticated && isAnonymousDepotAccessFailure(depotKeyError, error)) {
@@ -349,15 +359,6 @@ internal class SteamStsJarDownloadService(
         val index = PREFERRED_DEPOT_IDS.indexOf(depotId)
         return if (index >= 0) index else Int.MAX_VALUE
     }
-
-    private fun cloudControlDepotKey(
-        settings: CloudControlSettings,
-        candidate: SteamStsDepotCandidate,
-    ): ByteArray? =
-        settings.steamDepotKeyBytes(
-            appId = candidate.appId,
-            depotId = candidate.depotId,
-        )
 
     companion object {
         private const val STS_DESKTOP_JAR_FILE_NAME = "desktop-1.0.jar"

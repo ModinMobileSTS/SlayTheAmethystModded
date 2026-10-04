@@ -4,8 +4,13 @@ import top.apricityx.workshop.steam.protocol.CdnRequestEndpoint
 import top.apricityx.workshop.steam.protocol.CdnServer
 import top.apricityx.workshop.steam.protocol.SteamDeclaredCdnHosts
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -91,6 +96,7 @@ internal class SteamCdnTransport(
         query: String?,
         proxyServer: CdnServer?,
         resolveAuthToken: (suspend (String) -> String)? = null,
+        requestTimeoutMillis: Long? = null,
     ): ByteArray {
         var lastError: Throwable? = null
         for (endpoint in server.requestEndpoints()) {
@@ -103,6 +109,7 @@ internal class SteamCdnTransport(
                     query = query,
                     proxyServer = proxyServer,
                     resolveAuthToken = resolveAuthToken,
+                    requestTimeoutMillis = requestTimeoutMillis,
                 )
             } catch (error: Throwable) {
                 if (error is CancellationException || error is InterruptedException) throw error
@@ -174,6 +181,7 @@ internal class SteamCdnTransport(
         query: String?,
         proxyServer: CdnServer?,
         resolveAuthToken: (suspend (String) -> String)?,
+        requestTimeoutMillis: Long?,
     ): ByteArray {
         var currentQuery = query
         repeat(2) { attempt ->
@@ -181,17 +189,40 @@ internal class SteamCdnTransport(
             val request = Request.Builder()
                 .url(buildRequestUrl(server, endpoint, path, currentQuery, proxyServer))
                 .build()
-            client.newCall(request).execute().use { response ->
-                when {
-                    response.isSuccessful -> return response.body?.bytes() ?: ByteArray(0)
-                    response.code == 403 && attempt == 0 && resolveAuthToken != null -> {
-                        currentQuery = resolveAuthToken(server.host)
-                    }
-
-                    else -> throw WorkshopDownloadException("Steam CDN request failed: ${response.code}")
+            val response = executeRequest(request, requestTimeoutMillis)
+            when {
+                response.code in 200..299 -> return response.bytes
+                response.code == 403 && attempt == 0 && resolveAuthToken != null -> {
+                    currentQuery = resolveAuthToken(server.host)
                 }
+
+                else -> throw WorkshopDownloadException("Steam CDN request failed: ${response.code}")
             }
         }
         throw WorkshopDownloadException("Steam CDN request exhausted retries")
+    }
+
+    private data class Payload(val code: Int, val bytes: ByteArray)
+
+    private suspend fun executeRequest(request: Request, timeoutMillis: Long?): Payload = withContext(Dispatchers.IO) {
+        val control = SteamCdnRequestControl(timeoutMillis)
+        val call = client.newCall(request.newBuilder().tag(SteamCdnRequestControl::class.java, control).build())
+        control.register(call)
+        // Deliberately keep execute(): enqueue() would add OkHttp's five-per-host cap on
+        // top of the configurable chunk semaphore. The continuation still cancels sockets.
+        suspendCancellableCoroutine { continuation ->
+            continuation.invokeOnCancellation { control.cancel() }
+            try {
+                control.checkActive()
+                val payload = call.execute().use { response ->
+                    Payload(response.code, if (response.isSuccessful) response.body.bytes() else ByteArray(0))
+                }
+                continuation.resume(payload)
+            } catch (error: Exception) {
+                continuation.resumeWithException(error)
+            } finally {
+                control.cancel()
+            }
+        }
     }
 }

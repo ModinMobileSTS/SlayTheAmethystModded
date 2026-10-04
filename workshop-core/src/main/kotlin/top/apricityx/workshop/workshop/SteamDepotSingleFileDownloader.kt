@@ -4,11 +4,12 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -16,6 +17,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -69,31 +71,36 @@ class SteamDepotSingleFileDownloader(
         request: SteamDepotFileDownloadRequest,
         emitProgress: suspend (SteamDepotFileDownloadProgress) -> Unit,
         waitIfPaused: suspend () -> Unit = {},
+        cmServers: List<CmServer>? = null,
     ): File = withContext(Dispatchers.IO) {
         waitIfPaused()
-        val cmServers = directoryClient.loadServers()
+        val connectionServers = cmServers ?: directoryClient.loadServers()
         waitIfPaused()
         val cdnTransport = SteamCdnTransport(client)
 
         sessionFactory().use { session ->
             waitIfPaused()
-            sessionConnector(session, cmServers)
+            sessionConnector(session, connectionServers)
             val contentClient = SteamContentClient(session, directoryClient)
             waitIfPaused()
-            val manifestRequestCode = contentClient.getManifestRequestCode(
-                appId = request.appId,
-                depotId = request.depotId,
-                manifestId = request.manifestId,
-                branch = request.branch,
-            )
-            if (manifestRequestCode == 0uL) {
-                throw WorkshopDownloadException(
-                    "Steam returned no manifest request code for depot=${request.depotId} manifest=${request.manifestId}",
-                )
+            val (manifestRequestCode, contentServers) = coroutineScope {
+                val code = async {
+                    contentClient.getManifestRequestCode(
+                        appId = request.appId,
+                        depotId = request.depotId,
+                        manifestId = request.manifestId,
+                        branch = request.branch,
+                    ).also {
+                        if (it == 0uL) throw WorkshopDownloadException(
+                            "Steam returned no manifest request code for depot=${request.depotId} manifest=${request.manifestId}",
+                        )
+                    }
+                }
+                // SteamContentClient already owns the cell-aware HTTP fallback.
+                val servers = async { contentClient.getServersForSteamPipe() }
+                code.await() to servers.await()
             }
             waitIfPaused()
-            val contentServers = runCatching { contentClient.getServersForSteamPipe() }
-                .getOrElse { directoryClient.loadContentServers() }
             require(contentServers.isNotEmpty()) { "No CDN servers available for SteamPipe" }
             val serverPool = cdnTransport.buildServerPool(
                 appId = request.appId,
@@ -101,11 +108,12 @@ class SteamDepotSingleFileDownloader(
                 preferSteamChinaServers = preferSteamChinaCdn,
             )
             require(serverPool.downloadServers.isNotEmpty()) { "No CDN download servers available for app=${request.appId}" }
-            val cdnAuthTokenCache = ConcurrentHashMap<String, String>()
+            val cdnAuthTokenCache = SteamCdnAuthTokenCache()
+            val serverSelector = SteamCdnServerSelector(serverPool.downloadServers)
 
             val manifest = downloadManifest(
                 request = request,
-                contentServers = serverPool.downloadServers,
+                serverSelector = serverSelector,
                 proxyServer = serverPool.proxyServer,
                 manifestRequestCode = manifestRequestCode,
                 contentClient = contentClient,
@@ -131,7 +139,7 @@ class SteamDepotSingleFileDownloader(
             downloadFileChunks(
                 request = request,
                 manifestFile = targetEntry,
-                contentServers = serverPool.downloadServers,
+                serverSelector = serverSelector,
                 proxyServer = serverPool.proxyServer,
                 contentClient = contentClient,
                 cdnTransport = cdnTransport,
@@ -145,50 +153,77 @@ class SteamDepotSingleFileDownloader(
 
     private suspend fun downloadManifest(
         request: SteamDepotFileDownloadRequest,
-        contentServers: List<CdnServer>,
+        serverSelector: SteamCdnServerSelector,
         proxyServer: CdnServer?,
         manifestRequestCode: ULong,
         contentClient: SteamContentClient,
         cdnTransport: SteamCdnTransport,
-        cdnAuthTokenCache: ConcurrentHashMap<String, String>,
+        cdnAuthTokenCache: SteamCdnAuthTokenCache,
         waitIfPaused: suspend () -> Unit,
-    ): DepotManifest {
-        var lastError: Throwable? = null
-        for (server in contentServers) {
-            try {
-                waitIfPaused()
-                val bytes = requestBytes(
-                    server = server,
-                    proxyServer = proxyServer,
-                    path = "depot/${request.depotId}/manifest/${request.manifestId}/5/$manifestRequestCode",
-                    query = cdnAuthTokenCache[server.host],
-                    appId = request.appId,
-                    depotId = request.depotId,
-                    contentClient = contentClient,
-                    cdnTransport = cdnTransport,
-                    cdnAuthTokenCache = cdnAuthTokenCache,
-                )
-                return DepotManifestParser.parse(unzipSingleEntry(bytes))
-            } catch (error: Throwable) {
-                // Cancellation must abort the walk; without this an aborted
-                // download kept trying every remaining CDN host.
-                if (error is CancellationException || error is InterruptedException) {
-                    throw error
+    ): DepotManifest = coroutineScope {
+        val servers = serverSelector.servers
+        val nextServer = AtomicInteger(0)
+        val remaining = AtomicInteger(servers.size)
+        val lastError = AtomicReference<Throwable?>()
+        val winner = CompletableDeferred<DepotManifest>()
+        val workers = List(minOf(MAX_CONCURRENT_MANIFEST_REQUESTS, servers.size)) {
+            launch(Dispatchers.IO) {
+                while (true) {
+                    val index = nextServer.getAndIncrement()
+                    if (index >= servers.size) break
+                    val server = servers[index]
+                    try {
+                        waitIfPaused()
+                        val started = System.nanoTime()
+                        val bytes = requestBytes(
+                            server = server,
+                            proxyServer = proxyServer,
+                            path = "depot/${request.depotId}/manifest/${request.manifestId}/5/$manifestRequestCode",
+                            query = cdnAuthTokenCache[server.host],
+                            appId = request.appId,
+                            depotId = request.depotId,
+                            contentClient = contentClient,
+                            cdnTransport = cdnTransport,
+                            cdnAuthTokenCache = cdnAuthTokenCache,
+                            requestTimeoutMillis = MANIFEST_REQUEST_TIMEOUT_MILLIS,
+                        )
+                        val manifest = DepotManifestParser.parse(unzipSingleEntry(bytes))
+                        if (manifest.depotId != request.depotId || manifest.manifestId != request.manifestId) {
+                            throw WorkshopDownloadException("Steam CDN returned an unexpected depot manifest")
+                        }
+                        serverSelector.manifestSucceeded(server, (System.nanoTime() - started) / 1_000_000L)
+                        winner.complete(manifest)
+                        return@launch
+                    } catch (error: Throwable) {
+                        if (error is CancellationException || error is InterruptedException) {
+                            winner.completeExceptionally(error)
+                            throw error
+                        }
+                        serverSelector.manifestFailed(server)
+                        lastError.set(error)
+                    } finally {
+                        if (remaining.decrementAndGet() == 0 && !winner.isCompleted) {
+                            winner.completeExceptionally(WorkshopDownloadException("Unable to download Steam depot manifest", lastError.get()))
+                        }
+                    }
                 }
-                lastError = error
             }
         }
-        throw WorkshopDownloadException("Unable to download Steam depot manifest", lastError)
+        try {
+            winner.await()
+        } finally {
+            workers.forEach { it.cancel() }
+        }
     }
 
     private suspend fun downloadFileChunks(
         request: SteamDepotFileDownloadRequest,
         manifestFile: ManifestFile,
-        contentServers: List<CdnServer>,
+        serverSelector: SteamCdnServerSelector,
         proxyServer: CdnServer?,
         contentClient: SteamContentClient,
         cdnTransport: SteamCdnTransport,
-        cdnAuthTokenCache: ConcurrentHashMap<String, String>,
+        cdnAuthTokenCache: SteamCdnAuthTokenCache,
         emitProgress: suspend (SteamDepotFileDownloadProgress) -> Unit,
         waitIfPaused: suspend () -> Unit,
     ) {
@@ -218,7 +253,7 @@ class SteamDepotSingleFileDownloader(
                 manifestFile = manifestFile,
                 chunks = chunks,
                 stageDir = stageDir,
-                contentServers = contentServers,
+                serverSelector = serverSelector,
                 proxyServer = proxyServer,
                 contentClient = contentClient,
                 cdnTransport = cdnTransport,
@@ -252,11 +287,11 @@ class SteamDepotSingleFileDownloader(
         manifestFile: ManifestFile,
         chunks: List<ManifestChunk>,
         stageDir: File,
-        contentServers: List<CdnServer>,
+        serverSelector: SteamCdnServerSelector,
         proxyServer: CdnServer?,
         contentClient: SteamContentClient,
         cdnTransport: SteamCdnTransport,
-        cdnAuthTokenCache: ConcurrentHashMap<String, String>,
+        cdnAuthTokenCache: SteamCdnAuthTokenCache,
         emitProgress: suspend (SteamDepotFileDownloadProgress) -> Unit,
         waitIfPaused: suspend () -> Unit,
     ) = coroutineScope {
@@ -272,7 +307,7 @@ class SteamDepotSingleFileDownloader(
                     waitIfPaused()
                     val processed = downloadChunkWithRetries(
                         request = request,
-                        contentServers = contentServers,
+                        serverSelector = serverSelector,
                         proxyServer = proxyServer,
                         contentClient = contentClient,
                         cdnTransport = cdnTransport,
@@ -282,9 +317,9 @@ class SteamDepotSingleFileDownloader(
                         serverStartOffset = index,
                     )
                     writeAtomically(chunkStageFile(stageDir, index, chunk), processed)
-                    val downloaded = writtenBytes.addAndGet(processed.size.toLong())
-                    val completed = completedChunks.incrementAndGet()
                     emitMutex.withLock {
+                        val downloaded = writtenBytes.addAndGet(processed.size.toLong())
+                        val completed = completedChunks.incrementAndGet()
                         emitProgress(
                             SteamDepotFileDownloadProgress(
                                 writtenBytes = downloaded,
@@ -330,20 +365,29 @@ class SteamDepotSingleFileDownloader(
 
     private suspend fun downloadChunkWithRetries(
         request: SteamDepotFileDownloadRequest,
-        contentServers: List<CdnServer>,
+        serverSelector: SteamCdnServerSelector,
         proxyServer: CdnServer?,
         contentClient: SteamContentClient,
         cdnTransport: SteamCdnTransport,
-        cdnAuthTokenCache: ConcurrentHashMap<String, String>,
+        cdnAuthTokenCache: SteamCdnAuthTokenCache,
         chunk: ManifestChunk,
         waitIfPaused: suspend () -> Unit,
         serverStartOffset: Int = 0,
     ): ByteArray {
         var lastError: Throwable? = null
         for (attempt in 1..MAX_CHUNK_DOWNLOAD_ATTEMPTS) {
-            for (server in rotateServers(contentServers, serverStartOffset + attempt - 1)) {
+            val triedHosts = mutableSetOf<String>()
+            while (true) {
+                currentCoroutineContext().ensureActive()
+                waitIfPaused()
+                val lease = serverSelector.acquire(
+                    excludedHosts = triedHosts,
+                    expectedBytes = chunk.compressedLength,
+                    offset = serverStartOffset + attempt - 1,
+                ) ?: break
+                val server = lease.server
+                triedHosts += server.host
                 try {
-                    waitIfPaused()
                     val raw = requestBytes(
                         server = server,
                         proxyServer = proxyServer,
@@ -355,11 +399,15 @@ class SteamDepotSingleFileDownloader(
                         cdnTransport = cdnTransport,
                         cdnAuthTokenCache = cdnAuthTokenCache,
                     )
-                    return ChunkProcessor.process(raw, chunk, request.depotKey)
+                    val processed = ChunkProcessor.process(raw, chunk, request.depotKey)
+                    lease.succeeded(raw.size)
+                    return processed
                 } catch (error: Throwable) {
                     if (error is CancellationException || error is InterruptedException) {
+                        lease.cancelled()
                         throw error
                     }
+                    lease.failed()
                     lastError = error
                 }
             }
@@ -379,7 +427,8 @@ class SteamDepotSingleFileDownloader(
         depotId: UInt,
         contentClient: SteamContentClient,
         cdnTransport: SteamCdnTransport,
-        cdnAuthTokenCache: ConcurrentHashMap<String, String>,
+        cdnAuthTokenCache: SteamCdnAuthTokenCache,
+        requestTimeoutMillis: Long? = null,
     ): ByteArray {
         return cdnTransport.requestBytes(
             server = server,
@@ -387,10 +436,11 @@ class SteamDepotSingleFileDownloader(
             query = query,
             proxyServer = proxyServer,
             resolveAuthToken = { host ->
-                cdnAuthTokenCache[host] ?: contentClient.getCdnAuthToken(appId, depotId, host).token.also {
-                    cdnAuthTokenCache[host] = it
+                cdnAuthTokenCache.getOrLoad(host) {
+                    contentClient.getCdnAuthToken(appId, depotId, host).token
                 }
             },
+            requestTimeoutMillis = requestTimeoutMillis,
         )
     }
 
@@ -402,16 +452,6 @@ class SteamDepotSingleFileDownloader(
             zip.closeEntry()
             return output.toByteArray()
         }
-    }
-
-    private fun rotateServers(
-        servers: List<CdnServer>,
-        offset: Int,
-    ): List<CdnServer> {
-        if (servers.isEmpty()) {
-            return emptyList()
-        }
-        return List(servers.size) { index -> servers[(index + offset) % servers.size] }
     }
 
     private fun createChunkStageDir(parent: File, outputName: String): File {
@@ -446,6 +486,8 @@ class SteamDepotSingleFileDownloader(
 
     private companion object {
         private const val DEFAULT_MAX_CONCURRENT_CHUNKS = 4
+        private const val MAX_CONCURRENT_MANIFEST_REQUESTS = 3
+        private const val MANIFEST_REQUEST_TIMEOUT_MILLIS = 15_000L
         private const val MAX_CHUNK_DOWNLOAD_ATTEMPTS = 3
         private const val CHUNK_RETRY_DELAY_MILLIS = 750L
     }
