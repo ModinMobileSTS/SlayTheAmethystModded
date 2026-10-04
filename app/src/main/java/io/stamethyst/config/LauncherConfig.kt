@@ -92,6 +92,7 @@ object LauncherConfig {
     private const val PREF_KEY_CHROME_BACKGROUND_OPACITY = "chrome_background_opacity"
     private const val LEGACY_PREF_KEY_HOME_CHROME_TRANSPARENCY = "home_chrome_transparency"
     private const val PREF_KEY_BOOT_OVERLAY_STYLE = "boot_overlay_style"
+    private const val PREF_KEY_SLING_BREAK_ENGINE_MODE = "sling_break_engine_mode"
     private const val PREF_KEY_BOOT_OVERLAY_ANIMATION = "boot_overlay_animation"
     private const val PREF_KEY_BOOT_OVERLAY_IMAGE_MODE = "boot_overlay_image_mode"
     private const val PREF_KEY_BOOT_OVERLAY_START_IMAGE_PATH = "boot_overlay_start_image_path"
@@ -566,6 +567,17 @@ object LauncherConfig {
     fun saveBootOverlayStyle(context: Context, style: BootOverlayStyle) {
         prefs(context).edit {
             putString(PREF_KEY_BOOT_OVERLAY_STYLE, style.persistedValue)
+        }
+    }
+
+    fun readSlingBreakEngineMode(context: Context): SlingBreakEngineMode =
+        SlingBreakEngineMode.fromPersistedValue(
+            prefs(context).getString(PREF_KEY_SLING_BREAK_ENGINE_MODE, null)
+        )
+
+    fun saveSlingBreakEngineMode(context: Context, mode: SlingBreakEngineMode) {
+        prefs(context).edit {
+            putString(PREF_KEY_SLING_BREAK_ENGINE_MODE, mode.persistedValue)
         }
     }
 

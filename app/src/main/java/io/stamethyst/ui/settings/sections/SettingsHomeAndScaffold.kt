@@ -51,6 +51,7 @@ import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
@@ -324,6 +325,8 @@ internal fun LauncherSettingsLauncherScreenContent(
     onLauncherIconModeChanged: (LauncherIconMode) -> Unit = {},
     onChromeBackgroundOpacityChanged: (Float) -> Unit = {},
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit = {},
+    onSlingBreakEngineModeChanged: (SlingBreakEngineMode) -> Unit = {},
+    onDismissSlingBreakX5Failure: () -> Unit = {},
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit = {},
     onBootOverlayImageModeChanged: (BootOverlayImageMode) -> Unit = {},
     onPickBootOverlayImage: (BootOverlayImageSlot) -> Unit = {},
@@ -365,6 +368,8 @@ internal fun LauncherSettingsLauncherScreenContent(
                         onLauncherIconModeChanged = onLauncherIconModeChanged,
                         onChromeBackgroundOpacityChanged = onChromeBackgroundOpacityChanged,
                         onBootOverlayStyleChanged = onBootOverlayStyleChanged,
+                        onSlingBreakEngineModeChanged = onSlingBreakEngineModeChanged,
+                        onDismissSlingBreakX5Failure = onDismissSlingBreakX5Failure,
                         onBootOverlayAnimationChanged = onBootOverlayAnimationChanged,
                         onBootOverlayImageModeChanged = onBootOverlayImageModeChanged,
                         onPickBootOverlayImage = onPickBootOverlayImage,

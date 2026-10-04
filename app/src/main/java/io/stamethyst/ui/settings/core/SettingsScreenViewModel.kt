@@ -30,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.clearSlingBreakWebViewData
+import io.stamethyst.SlingBreakX5
+import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
 import io.stamethyst.backend.fs.LauncherJunkFileCleaner
@@ -380,6 +382,9 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_CHROME_BACKGROUND_OPACITY,
         val bootOverlayStyle: BootOverlayStyle =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE,
+        val slingBreakEngineMode: SlingBreakEngineMode = SlingBreakEngineMode.WEBVIEW,
+        val slingBreakX5Progress: Int? = null,
+        val slingBreakX5Failure: String? = null,
         val bootOverlayAnimation: BootOverlayAnimation =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION,
         val bootOverlayImageConfig: BootOverlayImageConfig = BootOverlayImageConfig(
@@ -724,6 +729,7 @@ class SettingsScreenViewModel : ViewModel() {
             launcherIconMode = SettingsRepository.loadLauncherIconMode(host),
             chromeBackgroundOpacity = SettingsRepository.loadChromeBackgroundOpacity(host),
             bootOverlayStyle = SettingsRepository.loadBootOverlayStyle(host),
+            slingBreakEngineMode = LauncherPreferences.readSlingBreakEngineMode(host),
             bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host),
             bootOverlayImageConfig = SettingsRepository.loadBootOverlayImageConfig(host)
         )
@@ -772,6 +778,45 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(bootOverlayStyle = style)
         saveBootOverlayStyleSelection(host, style)
         refreshStatus(host)
+    }
+
+    private var slingBreakX5Listener: SlingBreakX5.InitializationListener? = null
+
+    fun onSlingBreakEngineModeChanged(host: Activity, mode: SlingBreakEngineMode) {
+        if (uiState.busy || uiState.slingBreakX5Progress != null) return
+        val context = host.applicationContext
+        if (mode == SlingBreakEngineMode.WEBVIEW) {
+            LauncherPreferences.saveSlingBreakEngineMode(context, mode)
+            uiState = uiState.copy(slingBreakEngineMode = mode)
+            return
+        }
+        // Called only after the user confirms the dependency download. Keep the old mode on failure.
+        uiState = uiState.copy(slingBreakX5Progress = -1, slingBreakX5Failure = null)
+        val listener = object : SlingBreakX5.InitializationListener {
+            override fun onProgress(progress: Int) {
+                if (slingBreakX5Listener !== this) return
+                uiState = uiState.copy(slingBreakX5Progress = progress)
+            }
+
+            override fun onReady() {
+                if (slingBreakX5Listener !== this) return
+                slingBreakX5Listener = null
+                LauncherPreferences.saveSlingBreakEngineMode(context, mode)
+                uiState = uiState.copy(slingBreakEngineMode = mode, slingBreakX5Progress = null)
+            }
+
+            override fun onFailure(reason: String) {
+                if (slingBreakX5Listener !== this) return
+                slingBreakX5Listener = null
+                uiState = uiState.copy(slingBreakX5Progress = null, slingBreakX5Failure = reason)
+            }
+        }
+        slingBreakX5Listener = listener
+        SlingBreakX5.initialize(context, listener, allowDownload = true)
+    }
+
+    fun dismissSlingBreakX5Failure() {
+        uiState = uiState.copy(slingBreakX5Failure = null)
     }
 
     fun onBootOverlayImageModeChanged(host: Activity, mode: BootOverlayImageMode) {
@@ -4554,6 +4599,7 @@ class SettingsScreenViewModel : ViewModel() {
             launcherIconMode = snapshot.launcherIconMode,
             chromeBackgroundOpacity = snapshot.chromeBackgroundOpacity,
             bootOverlayStyle = snapshot.bootOverlayStyle,
+            slingBreakEngineMode = LauncherPreferences.readSlingBreakEngineMode(host),
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
             bootOverlayImageConfig = snapshot.bootOverlayImageConfig,
             playerName = snapshot.playerName,
@@ -6347,6 +6393,8 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        slingBreakX5Listener?.let(SlingBreakX5::removeListener)
+        slingBreakX5Listener = null
         cancelActiveSteamCloudLogin("Settings screen cleared.", clearBusy = false)
         statusRefreshGeneration.incrementAndGet()
         statusRefreshTask?.cancel(true)

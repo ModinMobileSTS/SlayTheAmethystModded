@@ -41,6 +41,7 @@ import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconMode
@@ -496,6 +497,7 @@ internal object SettingsRepository {
             LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG
         )
         LauncherPreferences.setSlingBreakAudioDebugModeEnabled(context, false)
+        LauncherPreferences.saveSlingBreakEngineMode(context, SlingBreakEngineMode.WEBVIEW)
         LauncherPreferences.setGlBridgeSwapHeartbeatDebugEnabled(
             context,
             LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG

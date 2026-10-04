@@ -19,6 +19,7 @@ import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.backend.network.AccelerationStrategy
@@ -116,6 +117,7 @@ private fun appearanceSection(
     val themeColor = LauncherConfig.readThemeColor(context)
     val iconMode = LauncherConfig.readLauncherIconMode(context)
     val overlayStyle = LauncherConfig.readBootOverlayStyle(context)
+    val slingBreakMode = LauncherConfig.readSlingBreakEngineMode(context)
     val animation = LauncherConfig.readBootOverlayAnimation(context)
     val imageConfig = LauncherConfig.readBootOverlayImageConfig(context)
     val opacity = LauncherConfig.readChromeBackgroundOpacity(context)
@@ -155,6 +157,16 @@ private fun appearanceSection(
                 zh.getString(R.string.settings_boot_overlay_style_title),
                 overlayStyle.persistedValue,
                 bootOverlayStyleZh(zh, overlayStyle),
+            ),
+            field(
+                "slingBreakEngineMode",
+                zh.getString(R.string.settings_sling_break_mode_title),
+                slingBreakMode.persistedValue,
+                zh.getString(
+                    if (slingBreakMode == SlingBreakEngineMode.COMPATIBILITY)
+                        R.string.settings_sling_break_mode_compatibility
+                    else R.string.settings_sling_break_mode_webview
+                ),
             ),
             field(
                 "bootOverlayAnimation",

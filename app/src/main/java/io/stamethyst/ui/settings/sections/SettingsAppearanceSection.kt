@@ -68,6 +68,7 @@ import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
@@ -85,6 +86,8 @@ internal data class AppearanceSettingsActions(
     val onLauncherIconModeChanged: (LauncherIconMode) -> Unit,
     val onChromeBackgroundOpacityChanged: (Float) -> Unit,
     val onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit,
+    val onSlingBreakEngineModeChanged: (SlingBreakEngineMode) -> Unit,
+    val onDismissSlingBreakX5Failure: () -> Unit,
     val onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit,
     val onBootOverlayImageModeChanged: (BootOverlayImageMode) -> Unit,
     val onPickBootOverlayImage: (BootOverlayImageSlot) -> Unit,
@@ -179,6 +182,14 @@ internal fun SettingsAppearanceSection(
             onClick = { showBootOverlayStyleDialog = true }
         )
 
+        if (uiState.bootOverlayStyle == BootOverlayStyle.SLING_BREAK) {
+            SettingsSlingBreakModeItem(
+                mode = uiState.slingBreakEngineMode,
+                enabled = !uiState.busy && uiState.slingBreakX5Progress == null,
+                onModeChanged = actions.onSlingBreakEngineModeChanged,
+            )
+        }
+
         if (uiState.bootOverlayStyle == BootOverlayStyle.MODERN) {
             SettingsActionListItem(
                 title = stringResource(R.string.settings_boot_overlay_custom_image_title),
@@ -197,6 +208,12 @@ internal fun SettingsAppearanceSection(
             )
         }
     }
+
+    SlingBreakX5Dialogs(
+        progress = uiState.slingBreakX5Progress,
+        failure = uiState.slingBreakX5Failure,
+        onDismissFailure = actions.onDismissSlingBreakX5Failure,
+    )
 
     if (showBootOverlayStyleDialog) {
         AlertDialog(
