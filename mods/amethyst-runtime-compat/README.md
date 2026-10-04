@@ -8,6 +8,7 @@ The root package only contains the ModTheSpire initializer. Runtime fixes should
 
 - `io.stamethyst.compatmod.core`: shared runtime configuration and state used by multiple fixes.
 - `io.stamethyst.compatmod.bridge`: launcher/JVM bridge helpers.
+- `io.stamethyst.compatmod.audio`: Java Sound SPI and LibGDX-backed PCM playback compatibility.
 - `io.stamethyst.compatmod.ui`: base-game UI, scaling, settings, and menu presentation compatibility.
 - `io.stamethyst.compatmod.touch`: native-touchscreen and touch-card-input behavior.
 - `io.stamethyst.compatmod.rescue`: save/room/render rescue fallbacks for corrupted or incomplete runtime state.
@@ -18,6 +19,25 @@ The root package only contains the ModTheSpire initializer. Runtime fixes should
 - `io.stamethyst.compatmod.autoplay`: harness-only autoplay and single-room automation.
 
 ## Included fixes
+
+0.1. `JavaSoundBootstrap`, `AndroidMixerProvider`, `AndroidMixer`, `AndroidClip`, and `PcmWavWriter`
+Provides the Java Sound `Clip` API expected by desktop-oriented mods, backed by the game's
+LibGDX audio device and registered through the standard `MixerProvider` SPI. This addresses the
+symptom where mods such as YuAiBloodMusic decode their WAV successfully but fail with
+`No line matching interface Clip` because Android has no Java Sound mixer. The original mod JAR
+is not modified; PCM data is staged as a temporary WAV and played through LibGDX. Type:
+runtime audio compatibility fix implemented by the above classes (not a Spire patch of the external mod).
+`JavaSoundBootstrap` exposes the MTS mod loader to Java Sound's SPI via the launch thread's context
+class loader, inherited by the game thread, and selects the provider for `Clip`. Each request gets
+an independent clip. Mono/stereo signed or unsigned 8/16-bit PCM is streamed to a 16-bit
+little-endian WAV without retaining a second full audio buffer. Whole-file continuous/finite
+looping, pause/resume, frame seeking, completion events and `MASTER_GAIN` volume are supported.
+Partial loop ranges, compressed input, recording and synchronized lines are explicitly unsupported;
+mods that reset their own thread's context class loader must keep the MTS loader visible for SPI.
+Temporary WAV files are removed on close or failed initialization. The OpenAL backend must be
+initialized before opening a clip, and playback uses its normal game-thread update loop.
+The bundled component version is bumped to `1.0.40` so existing `1.0.39` installations are
+replaced by the launcher's normal component validation instead of silently reusing the old JAR.
 
 0. `CardTrailRenderBatchPatches`
 Batches adjacent base-game `CardTrailEffect` instances in `AbstractDungeon.topLevelEffects` under one additive blend-state span while preserving their original order, color, position, lifetime, and draw calls. This addresses draw-card bursts where hundreds of live trails each switch to additive blending and immediately restore alpha blending, forcing two `SpriteBatch.flush()` calls per instance and producing 2,000-3,000 flush frames. The patch rewrites only the two `CardTrailEffect.render` blend calls, uses the active effect instance's MTS ClassLoader to prepare contiguous trail runs once per rendered frame, and restores normal alpha blending at every run boundary. Type: rendering performance fix implemented by `CardTrailRenderBatchPatches`.

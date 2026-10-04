@@ -5,6 +5,7 @@ import com.evacipated.cardcrawl.modthespire.lib.SpireInitializer;
 import io.stamethyst.compatmod.autoplay.AutoplayConfig;
 import io.stamethyst.compatmod.autoplay.AutoplayLog;
 import io.stamethyst.compatmod.achievement.AchievementBridge;
+import io.stamethyst.compatmod.audio.JavaSoundBootstrap;
 import io.stamethyst.compatmod.presence.RichPresenceBridge;
 import io.stamethyst.compatmod.core.CompatRuntimeState;
 import io.stamethyst.compatmod.diagnostics.RuntimeMemoryDiagnostics;
@@ -14,6 +15,7 @@ import io.stamethyst.compatmod.save.ShrineListSaveField;
 @SpireInitializer
 public class AmethystRuntimeCompat {
     public static void initialize() {
+        JavaSoundBootstrap.initialize();
         AchievementBridge.initialize();
         RichPresenceBridge.initialize();
         ShrineListSaveField.initialize();
