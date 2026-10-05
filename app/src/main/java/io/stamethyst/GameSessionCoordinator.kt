@@ -1,5 +1,6 @@
 package io.stamethyst
 
+import android.media.AudioManager
 import android.os.Handler
 import android.os.FileObserver
 import android.os.Looper
@@ -9,6 +10,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.lifecycle.ViewModelProvider
 import io.stamethyst.backend.audio.ForegroundAudioPolicy
+import io.stamethyst.backend.audio.ForegroundAudioHealthMonitor
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.backend.easytier.EasyTierInGameSessionState
@@ -139,6 +141,21 @@ internal class GameSessionCoordinator(
     private var pendingAudioDeviceRecovery = false
     private val foregroundAudioRestoreRunnables = mutableListOf<Runnable>()
     private val foregroundAudioPolicy = ForegroundAudioPolicy()
+    private val audioManager = activity.getSystemService(AudioManager::class.java)
+    private var audioHealthBridgeFailureLogged = false
+    private val foregroundAudioHealthMonitor = ForegroundAudioHealthMonitor(
+        postDelayed = { runnable, delayMs -> mainHandler.postDelayed(runnable, delayMs) },
+        removeCallbacks = { mainHandler.removeCallbacks(it) },
+        canCheckHealth = { shouldAllowForegroundAudio() },
+        readAudioMode = {
+            try {
+                audioManager?.mode
+            } catch (_: Throwable) {
+                null
+            }
+        },
+        requestHealthCheck = { reason -> requestRuntimeAudioHealthCheck(reason) }
+    )
     private val inGameEasyTierOverlayController by lazy {
         InGameEasyTierOverlayController(
             activity = activity,
@@ -199,6 +216,7 @@ internal class GameSessionCoordinator(
         },
         onRuntimePauseRequested = {
             cancelForegroundAudioRestoreRetries()
+            foregroundAudioHealthMonitor.stop()
             syncRuntimeForegroundState(false)
             setRuntimeAudioMuted(true)
         },
@@ -307,6 +325,7 @@ internal class GameSessionCoordinator(
         RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
         reportEasyTierInGameState(EasyTierInGameSessionState.Online)
         cancelForegroundAudioRestoreRetries()
+        foregroundAudioHealthMonitor.stop()
         activityResumed = false
         pendingAudioDeviceRecovery = false
         foregroundAudioPolicy.markActivityResumed(false)
@@ -384,6 +403,7 @@ internal class GameSessionCoordinator(
         stopRuntimeRequestPolling()
         foregroundAudioPolicy.markActivityResumed(false)
         cancelForegroundAudioRestoreRetries()
+        foregroundAudioHealthMonitor.stop()
         syncRuntimeForegroundState(false)
         setRuntimeAudioMuted(true)
         updateSystemGameState()
@@ -425,12 +445,14 @@ internal class GameSessionCoordinator(
     fun onAudioOutputRouteChanged() {
         pendingAudioDeviceRecovery = true
         requestForegroundAudioRecovery(forceMuteFirst = true)
+        foregroundAudioHealthMonitor.checkNow("output_route_changed")
     }
 
     fun onWindowFocusChanged(hasFocus: Boolean) {
         updatePerformanceOverlayVisibility()
         syncFocusStateToNative(hasFocus)
         if (hasFocus) {
+            foregroundAudioHealthMonitor.checkNow("window_focus_gained")
             scheduleForegroundAudioRestoreRetries()
         }
     }
@@ -787,6 +809,7 @@ internal class GameSessionCoordinator(
         backExitLauncherShown = false
         stopRuntimeRequestPolling()
         cancelForegroundAudioRestoreRetries()
+        foregroundAudioHealthMonitor.stop()
         syncRuntimeForegroundState(false)
         setRuntimeAudioMuted(true)
         updateSystemGameState()
@@ -1034,6 +1057,7 @@ internal class GameSessionCoordinator(
     private fun applyForegroundWindowState() {
         if (bootOverlayController.shouldPauseRuntimeUntilEntry) {
             cancelForegroundAudioRestoreRetries()
+            foregroundAudioHealthMonitor.stop()
             syncRuntimeForegroundState(false)
             setRuntimeAudioMuted(true)
             return
@@ -1052,13 +1076,16 @@ internal class GameSessionCoordinator(
         } catch (_: Throwable) {
         }
         if (shouldAllowForegroundAudio()) {
+            foregroundAudioHealthMonitor.start()
             scheduleForegroundAudioRestoreRetries()
         } else {
+            foregroundAudioHealthMonitor.stop()
             cancelForegroundAudioRestoreRetries()
         }
     }
 
     private fun applyBackgroundWindowState() {
+        foregroundAudioHealthMonitor.stop()
         syncRuntimeForegroundState(false)
         if (!jvmLaunchController.runtimeLifecycleReady) {
             return
@@ -1453,7 +1480,7 @@ internal class GameSessionCoordinator(
     private fun shouldAllowForegroundAudio(): Boolean {
         // markActivityResumed() is fed the resolved visibility, so a paused-but-visible small
         // window still counts as foreground audio here.
-        return foregroundAudioPolicy.shouldRestoreForegroundAudio(
+        return !destroyed && foregroundAudioPolicy.shouldRestoreForegroundAudio(
             runtimeLifecycleReady = jvmLaunchController.runtimeLifecycleReady,
             backExitRequested = backExitRequested,
             runtimeAudioSuppressed = bootOverlayController.shouldPauseRuntimeUntilEntry
@@ -1501,6 +1528,22 @@ internal class GameSessionCoordinator(
         try {
             CallbackBridge.nativeRequestAudioRecovery()
         } catch (_: Throwable) {
+        }
+    }
+
+    private fun requestRuntimeAudioHealthCheck(reason: String?) {
+        if (!shouldAllowForegroundAudio()) return
+        try {
+            CallbackBridge.nativeRequestAudioHealthCheck(reason != null)
+            if (reason != null) {
+                println("[amethyst-audio-route] event=health_check_requested trigger=$reason")
+            }
+            audioHealthBridgeFailureLogged = false
+        } catch (error: Throwable) {
+            if (!audioHealthBridgeFailureLogged) {
+                println("[amethyst-audio-route] event=health_bridge_failed error=$error")
+                audioHealthBridgeFailureLogged = true
+            }
         }
     }
 }

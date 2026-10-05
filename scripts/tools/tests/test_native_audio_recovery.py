@@ -184,6 +184,101 @@ class NativeAudioRecoveryTest(unittest.TestCase):
         self.assertEqual(0, completed["queued"])
         self.assertEqual(1, completed["reported_success"])
 
+    def test_focus_only_probe_recovers_without_an_activity_or_route_request(self):
+        pending, recovered = self.scenario("focus_only_disconnect", count=2)
+        self.assertEqual(0, pending["queued"])
+        self.assertEqual(0, pending["requested_generation"])
+        self.assertNotEqual(0, pending["health_pending"])
+        self.assertEqual(1, recovered["reset_calls"])
+        self.assertEqual(1, recovered["running"])
+        self.assertEqual(1, recovered["reported_success"])
+        self.assertEqual(0, recovered["muted"])
+        self.assertAlmostEqual(0.65, recovered["listener_gain"])
+
+    def test_healthy_popup_and_periodic_checks_do_not_rebuild_audio(self):
+        state, = self.scenario("healthy_focus")
+        self.assertEqual(101, state["connection_reads"])
+        self.assertEqual(0, state["reset_calls"])
+        self.assertEqual(0, state["requested_generation"])
+        self.assertEqual(1, state["running"])
+
+    def test_late_disconnect_is_detected_with_an_empty_command_ring(self):
+        healthy, idle, recovered = self.scenario("late_disconnect", count=3)
+        self.assertEqual(0, healthy["reset_calls"])
+        self.assertEqual(0, idle["queued"])
+        self.assertEqual(0, idle["running"])
+        self.assertEqual(1, recovered["reset_calls"])
+        self.assertEqual(1, recovered["requested_generation"])
+        self.assertEqual(1, recovered["running"])
+
+    def test_disconnect_after_a_success_starts_a_new_recovery_generation(self):
+        previous, idle, recovered = self.scenario("disconnect_after_recovery", count=3)
+        self.assertEqual(1, previous["reported_success"])
+        self.assertEqual(1, idle["reset_calls"])
+        self.assertEqual(2, recovered["reset_calls"])
+        self.assertEqual(2, recovered["requested_generation"])
+        self.assertEqual(2, recovered["completed_generation"])
+        self.assertEqual(1, recovered["reported_success"])
+        self.assertEqual(1, recovered["running"])
+
+    def test_periodic_checks_cannot_renew_exhausted_automatic_retries(self):
+        first, exhausted, periodic, renewed = self.scenario("health_retry_exhausted", count=4)
+        self.assertEqual(1, first["reset_calls"])
+        self.assertEqual(4, exhausted["reset_calls"])
+        self.assertEqual(0, exhausted["reported_success"])
+        self.assertEqual(4, periodic["reset_calls"])
+        self.assertEqual(0, periodic["running"])
+        self.assertEqual(5, renewed["reset_calls"])
+        self.assertEqual(1, renewed["reported_success"])
+        self.assertEqual(1, renewed["running"])
+        log = (self.out_dir / "health_retry_exhausted.log").read_text(encoding="utf-8")
+        self.assertEqual(1, log.count("event=audio_health_retry_exhausted"))
+
+    def test_automatic_retry_backoff_uses_monotonic_time(self):
+        states = self.scenario("health_backoff", count=7)
+        self.assertEqual([1, 1, 2, 2, 3, 3, 4], [s["reset_calls"] for s in states])
+
+    def test_health_probe_is_retained_until_the_context_is_available(self):
+        pending, recovered = self.scenario("health_context_delayed", count=2)
+        self.assertNotEqual(0, pending["health_pending"])
+        self.assertEqual(0, pending["reset_calls"])
+        self.assertEqual(0, recovered["health_pending"])
+        self.assertEqual(1, recovered["running"])
+
+    def test_background_drops_health_probes_and_stale_recovery_without_unmuting(self):
+        background, foreground = self.scenario("health_background", count=2)
+        self.assertEqual(0, background["reset_calls"])
+        self.assertEqual(0, background["health_pending"])
+        self.assertEqual(0, background["reported_success"])
+        self.assertEqual(1, background["muted"])
+        self.assertEqual(1, foreground["reset_calls"])
+        self.assertEqual(1, foreground["running"])
+        self.assertEqual(0, foreground["muted"])
+
+    def test_health_probes_coalesce_without_filling_the_command_ring(self):
+        pending, recovered = self.scenario("health_coalesced", count=2)
+        self.assertEqual(0, pending["queued"])
+        self.assertEqual(1, recovered["reset_calls"])
+        self.assertEqual(1, recovered["requested_generation"])
+
+    def test_connected_but_paused_failed_recovery_is_not_mistaken_for_health(self):
+        paused, recovered = self.scenario("health_connected_but_paused", count=2)
+        self.assertEqual(1, paused["connected"])
+        self.assertEqual(0, paused["running"])
+        self.assertEqual(2, recovered["reset_calls"])
+        self.assertEqual(1, recovered["running"])
+
+    def test_failed_health_query_does_not_pause_the_device(self):
+        state, = self.scenario("health_query_failed")
+        self.assertEqual(0, state["pause_calls"])
+        self.assertEqual(0, state["requested_generation"])
+
+    def test_simultaneous_health_and_explicit_request_do_not_reset_twice(self):
+        state, = self.scenario("health_explicit_coalesced")
+        self.assertEqual(1, state["requested_generation"])
+        self.assertEqual(1, state["reset_calls"])
+        self.assertEqual(1, state["reported_success"])
+
 
 if __name__ == "__main__":
     unittest.main()

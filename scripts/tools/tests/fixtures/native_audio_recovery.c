@@ -12,6 +12,14 @@ static bool connected, output_running;
 static int pause_calls, reset_calls, resume_calls, alc_error, injected_error;
 static int error_reads, connection_reads;
 static float listener_gain = 1.0f;
+static uint64_t fake_now_ms = 10000;
+
+static int fake_clock_gettime(clockid_t clock, struct timespec* now) {
+    (void)clock;
+    now->tv_sec = fake_now_ms / 1000;
+    now->tv_nsec = (fake_now_ms % 1000) * 1000000;
+    return 0;
+}
 
 static void* fake_context(void) { return context_available ? &context_token : NULL; }
 static void* fake_device(void* context) { (void)context; return &device_token; }
@@ -87,19 +95,39 @@ static int poll_recovery(void) {
     return Java_org_lwjgl_glfw_CallbackBridge_nativeRecoverAudioOutput(NULL, NULL);
 }
 
+static void request_health(bool renew) {
+    Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioHealthCheck(NULL, NULL, renew);
+}
+
+static void game_audio_tick(void) {
+    // The same native guard used by LwjglApplication's context-owning loop.
+    if (Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAudioCommands(NULL, NULL)) {
+        Java_org_lwjgl_glfw_CallbackBridge_nativeProcessQueuedAudioCommands(NULL, NULL);
+    }
+}
+
+static void periodic_health_tick(uint64_t advance_ms) {
+    fake_now_ms += advance_ms;
+    request_health(false);
+    game_audio_tick();
+}
+
 static void report(const char* phase, int result) {
     printf("{\"phase\":\"%s\",\"reported_success\":%d,\"connected\":%d,"
            "\"running\":%d,\"alc_error\":%d,\"injected_error\":%d,"
            "\"error_reads\":%d,\"connection_reads\":%d,\"pause_calls\":%d,"
            "\"reset_calls\":%d,\"resume_calls\":%d,"
            "\"queued\":%d,\"requested_generation\":%d,\"completed_generation\":%d,"
-           "\"reported_generation\":%d}\n",
+            "\"reported_generation\":%d,\"health_pending\":%d,\"health_attempts\":%d,"
+            "\"next_retry_ms\":%llu,\"muted\":%d,\"listener_gain\":%.2f}\n",
            phase, result, connected, output_running, alc_error, injected_error,
            error_reads, connection_reads, pause_calls, reset_calls,
            resume_calls, pojav_audio_command_count,
            atomic_load(&pojav_audio_recovery_requested_generation),
            atomic_load(&pojav_audio_recovery_completed_generation),
-           atomic_load(&pojav_audio_recovery_reported_generation));
+            atomic_load(&pojav_audio_recovery_reported_generation),
+            atomic_load(&pojav_audio_health_check_pending), pojav_audio_health_retry_attempts,
+            (unsigned long long)pojav_audio_health_next_retry_ms, pojav_audio_force_muted, listener_gain);
 }
 
 static void* concurrent_request(void* unused) {
@@ -199,6 +227,107 @@ int main(int argc, char** argv) {
         request_recovery();
         processQueuedAudioCommandsOnCurrentThread();
         report("retry_success", poll_recovery());
+    } else if (strcmp(scenario, "focus_only_disconnect") == 0) {
+        listener_gain = 0.65f;
+        applyAudioMutedOnCurrentThread(true);
+        request_health(true); /* Window focus regained; no Activity/route request exists. */
+        report("focus_gained_pending", poll_recovery());
+        game_audio_tick();
+        report("focus_recovered", poll_recovery());
+    } else if (strcmp(scenario, "healthy_focus") == 0) {
+        connected = output_running = true;
+        request_health(true);
+        game_audio_tick();
+        for (int i = 0; i < 100; ++i) periodic_health_tick(1000);
+        report("healthy_no_reset", poll_recovery());
+    } else if (strcmp(scenario, "late_disconnect") == 0 ||
+               strcmp(scenario, "disconnect_after_recovery") == 0) {
+        connected = output_running = true;
+        request_health(true);
+        game_audio_tick();
+        if (strcmp(scenario, "disconnect_after_recovery") == 0) {
+            connected = output_running = false;
+            periodic_health_tick(1000);
+        }
+        report("before_late_disconnect", poll_recovery());
+        connected = output_running = false;
+        for (int i = 0; i < 100; ++i) game_audio_tick();
+        report("idle_no_poll", poll_recovery());
+        periodic_health_tick(1000);
+        report("late_disconnect_recovered", poll_recovery());
+    } else if (strcmp(scenario, "health_retry_exhausted") == 0) {
+        resume_ok = false;
+        request_health(true);
+        game_audio_tick();
+        report("first_failed", poll_recovery());
+        for (int i = 0; i < 100; ++i) periodic_health_tick(1000);
+        report("exhausted", poll_recovery());
+        resume_ok = true;
+        for (int i = 0; i < 10; ++i) periodic_health_tick(1000);
+        report("periodic_does_not_renew", poll_recovery());
+        request_health(true); /* New window-focus/audio-mode/foreground event. */
+        game_audio_tick();
+        report("renewed_recovered", poll_recovery());
+    } else if (strcmp(scenario, "health_backoff") == 0) {
+        resume_ok = false;
+        request_health(true);
+        game_audio_tick();
+        report("first", poll_recovery());
+        periodic_health_tick(249);
+        report("before_250ms", poll_recovery());
+        periodic_health_tick(1);
+        report("second", poll_recovery());
+        periodic_health_tick(999);
+        report("before_1000ms", poll_recovery());
+        periodic_health_tick(1);
+        report("third", poll_recovery());
+        periodic_health_tick(1999);
+        report("before_2000ms", poll_recovery());
+        periodic_health_tick(1);
+        report("fourth", poll_recovery());
+    } else if (strcmp(scenario, "health_context_delayed") == 0) {
+        context_available = false;
+        request_health(true);
+        game_audio_tick();
+        report("no_context", poll_recovery());
+        context_available = true;
+        game_audio_tick();
+        report("context_returned", poll_recovery());
+    } else if (strcmp(scenario, "health_background") == 0) {
+        request_health(true);
+        request_recovery();
+        applyAudioMutedOnCurrentThread(true);
+        atomic_store(&host_environ.runtimeForeground, false);
+        game_audio_tick();
+        periodic_health_tick(1000);
+        report("background", poll_recovery());
+        atomic_store(&host_environ.runtimeForeground, true);
+        request_health(true);
+        game_audio_tick();
+        report("foreground", poll_recovery());
+    } else if (strcmp(scenario, "health_coalesced") == 0) {
+        for (int i = 0; i < 100; ++i) request_health(i == 0);
+        report("coalesced", poll_recovery());
+        game_audio_tick();
+        report("recovered", poll_recovery());
+    } else if (strcmp(scenario, "health_connected_but_paused") == 0) {
+        reset_error = true;
+        request_health(true);
+        game_audio_tick();
+        report("connected_paused", poll_recovery());
+        reset_error = false;
+        periodic_health_tick(1000);
+        report("retry_started", poll_recovery());
+    } else if (strcmp(scenario, "health_query_failed") == 0) {
+        query_ok = false;
+        request_health(true);
+        game_audio_tick();
+        report("query_failed", poll_recovery());
+    } else if (strcmp(scenario, "health_explicit_coalesced") == 0) {
+        request_health(true);
+        request_recovery();
+        game_audio_tick();
+        report("single_recovery", poll_recovery());
     } else {
         fprintf(stderr, "Unknown scenario: %s\n", scenario);
         return 2;

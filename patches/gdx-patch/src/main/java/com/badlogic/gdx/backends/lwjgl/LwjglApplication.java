@@ -1806,6 +1806,7 @@ public class LwjglApplication implements Application {
 	private static void processQueuedAudioCommands () {
 		if (audioCommandBridgeUnavailable) return;
 		try {
+			// The native pending flag includes coalesced health probes even with an empty command ring.
 			if (!CallbackBridge.nativeHasQueuedAudioCommands()) return;
 			// This loop owns OpenAL's context; releasing it breaks synchronous music playback.
 			CallbackBridge.nativeProcessQueuedAudioCommands();

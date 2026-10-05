@@ -25,6 +25,8 @@ HOST_HEADERS = """
 #include <stdatomic.h>
 #include <pthread.h>
 #include <dlfcn.h>
+#include <stdint.h>
+#include <time.h>
 #define JNIEXPORT
 #define JNICALL
 #define JNI_TRUE 1
@@ -32,11 +34,17 @@ HOST_HEADERS = """
 typedef void JNIEnv;
 typedef void* jclass;
 typedef unsigned char jboolean;
+typedef struct { atomic_bool runtimeForeground; } HostPojavEnvironment;
+static HostPojavEnvironment host_environ = {true};
+static HostPojavEnvironment* pojav_environ = &host_environ;
+static int fake_clock_gettime(clockid_t clock, struct timespec* now);
+#define clock_gettime fake_clock_gettime
 """
 
 
 def _extract_function(source: str, signature: str) -> str:
-    start = source.index(signature)
+    # Some bridge functions also have a forward declaration above the definition.
+    start = source.rindex(signature)
     # Count braces outside comments and literals, preserving the original body.
     tokens = re.finditer(
         r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[{}]',
@@ -57,7 +65,7 @@ def _extract_function(source: str, signature: str) -> str:
 def build_probe(out_dir: Path) -> Path:
     source = NATIVE_SOURCE.read_text(encoding="utf-8")
     defines = "\n".join(re.findall(
-        r"^#define (?:AL_GAIN|ALC_\w+|AUDIO_ROUTE_LOG_PREFIX|AUDIO_COMMAND_\w+)\b[^\n]*",
+        r"^#define (?:AL_GAIN|ALC_\w+|AUDIO_ROUTE_LOG_PREFIX|AUDIO_COMMAND_\w+|AUDIO_HEALTH_\w+)\b[^\n]*",
         source,
         re.MULTILINE,
     ))
@@ -73,10 +81,15 @@ def build_probe(out_dir: Path) -> Path:
         source,
         "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioRecovery(",
     )
+    health_bridge = "\n".join(_extract_function(source, signature) for signature in (
+        "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioHealthCheck(",
+        "JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAudioCommands(",
+        "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeProcessQueuedAudioCommands(",
+    ))
     out_dir.mkdir(parents=True, exist_ok=True)
     generated = out_dir / "native_audio_recovery_probe.c"
     generated.write_text(
-        "\n".join((HOST_HEADERS, defines, helpers, poll, request,
+        "\n".join((HOST_HEADERS, defines, helpers, poll, request, health_bridge,
                    FIXTURE.read_text(encoding="utf-8"))),
         encoding="utf-8",
     )

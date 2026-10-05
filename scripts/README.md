@@ -172,14 +172,18 @@ Requirements: Linux, Python 3, and a C11 host compiler (`cc`, or set `CC`). No
 Android device, connector, Gradle build, OpenAL installation, or network is needed.
 
 `scripts/tools/lib/native_audio_recovery_probe.py` extracts the current recovery
-helpers and JNI request/poll functions unchanged from
+helpers and JNI request/poll/health-bridge functions unchanged from
 `app/src/main/jni/input_bridge_v3.c`, then compiles them with the fault-injection
 fixture at `scripts/tools/tests/fixtures/native_audio_recovery.c`.
 
 The tests cover healthy recovery, stage errors, a disconnected device, missing
 symbols, stale errors, retry after failure, delayed context availability,
 concurrent/pending-request coalescing, queue overflow, one-time result consumption,
-and old results being consumed while newer requests are pending. Each scenario
+and old results being consumed while newer requests are pending. They also cover
+focus-only recovery without an Activity/route request, healthy probes without
+resets, late and repeated disconnects with an empty command ring, monotonic retry
+backoff and exhaustion/renewal, connected-but-paused recovery failures, coalesced
+health/explicit requests, and background cancellation without unmuting. Each scenario
 runs in a fresh host process. Generated C, executables, compiler logs and scenario
 logs remain under `agent-tmp/native-audio-recovery-tests/run-*/` for inspection.
 
@@ -193,8 +197,29 @@ log `event=openal_device_recovery_failed` with the stage and ALC error code.
 
 The tests assert **correct** behavior. They exercise native control flow, **not**
 an actual phone/WeChat interruption or Android's audio policy; the stubs' running
-state is not proof of audible output. Audio focus policy and the retry schedule
-are unchanged.
+state is not proof of audible output. The fixture supplies a deterministic clock
+and foreground flag; recovery and health-check logic are extracted from production.
+Audio focus coexistence policy is unchanged (no system focus is requested).
+
+Foreground/visible sessions now enqueue a coalesced game-thread health probe once
+per second and immediately on window focus gain. Foreground, route and observed
+`AudioManager.mode` transitions renew its retry budget; periodic probes do not.
+Only disconnected devices (or a previously failed recovery) trigger automatic
+reset/resume, with at most four automatic attempts and minimum 250/1000/2000 ms
+backoffs, sampled by the one-second monitor. Existing explicit route/Activity
+recovery requests and their finite foreground callbacks remain available.
+The native pending guard includes these probes even when the command ring is
+empty. Background/boot-overlay/exit stops polling; native execution rechecks the
+foreground flag, and automatic recovery only restores listener gain while visible.
+Recovery request/execution/completion logs include generation, trigger, mute state
+and result; failures include stage/error, and exhausted automatic retries log once.
+
+Kotlin scheduling and coordinator/native wiring regressions are in
+`ForegroundAudioHealthMonitorTest` and `NativeAudioRecoveryProtocolTest`:
+
+```bash
+./gradlew :app:testDebugUnitTest --tests 'io.stamethyst.backend.audio.*'
+```
 
 ## Architecture
 

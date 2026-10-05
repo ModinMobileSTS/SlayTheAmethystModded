@@ -224,6 +224,12 @@ object CallbackBridgeCodegen {
             androidVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeRequestAudioHealthCheck",
+            returnType = "void",
+            parameters = listOf(CallbackBridgeParameter("boolean", "renewRetryBudget")),
+            androidVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeHasQueuedAudioCommands",
             returnType = "boolean",
             parameters = emptyList(),

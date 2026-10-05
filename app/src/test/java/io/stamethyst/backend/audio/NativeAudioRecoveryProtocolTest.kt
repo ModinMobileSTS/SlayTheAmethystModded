@@ -25,4 +25,26 @@ class NativeAudioRecoveryProtocolTest {
         assertTrue(nativeSource.contains("resolveOpenalSymbolsFromHandle(RTLD_DEFAULT);"))
         assertTrue(nativeSource.contains("pojav_openal_handle = dlopen(\"libopenal.so\""))
     }
+
+    @Test
+    fun focusOnlyEntryIsWiredToHealthMonitorNotJustThePendingRecoveryFlag() {
+        val coordinator = File("src/main/java/io/stamethyst/GameSessionCoordinator.kt").readText()
+        val focusEntry = coordinator.substringAfter("fun onWindowFocusChanged(hasFocus: Boolean)")
+            .substringBefore("fun onSurfaceReady()")
+        assertTrue(focusEntry.contains("foregroundAudioHealthMonitor.checkNow(\"window_focus_gained\")"))
+        assertTrue(coordinator.contains("CallbackBridge.nativeRequestAudioHealthCheck(reason != null)"))
+    }
+
+    @Test
+    fun idleNativeGuardIncludesHealthProbesAndForegroundChecks() {
+        val nativeGuard = nativeSource.substringAfterLast(
+            "JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAudioCommands"
+        ).substringBefore("JNIEXPORT void JNICALL")
+        assertTrue(nativeGuard.contains("pojav_audio_health_check_pending"))
+        val nativeProcessor = nativeSource.substringAfter("static void processQueuedAudioCommandsOnCurrentThread(void)")
+            .substringBefore("static void registerFunctions")
+        assertTrue(nativeProcessor.contains("pojav_audio_health_check_pending"))
+        assertTrue(nativeProcessor.contains("audioHealthChecksAllowed()"))
+        assertTrue(nativeProcessor.contains("processAudioHealthCheckOnCurrentThread();"))
+    }
 }

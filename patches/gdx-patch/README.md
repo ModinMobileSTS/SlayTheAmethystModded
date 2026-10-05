@@ -21,3 +21,18 @@
   `StsDesktopJarPatcherTest` 校验该依赖的注入和必需类登记。
 
 此修复不处理 LWJGL Java/native 版本不兼容警告，也不保证解决其他原因导致的黑屏或闪退。
+
+## 通话中断后的音频断流检测
+
+- **症状：** 电话或微信语音结束后返回游戏，只有窗口重新获焦，没有 Activity
+  恢复或输出设备增删事件，游戏音频流断开后一直无声；恢复成功后迟发断流也会漏检。
+- **修复：** `LwjglApplication.processQueuedAudioCommands()` 在持有 OpenAL context
+  的游戏线程执行启动器请求。`nativeHasQueuedAudioCommands()` 同时检查命令队列和
+  合并后的健康检查标记，空队列不再阻止前台每秒检查及获焦后的即时检查。
+  `GameSessionCoordinator` / `ForegroundAudioHealthMonitor` 负责触发和生命周期约束，
+  `input_bridge_v3.c` 检查 `ALC_CONNECTED`，断流时建立新批次并有界退避重试。
+- **边界：** 正常获焦不重建设备，不强抢系统音频焦点；后台、启动遮罩暂停及退出时
+  不进行自动恢复。健康检查最多自动尝试 4 次，后续前台/路由/音频模式事件可续开预算。
+- **测试：** `scripts.tools.tests.test_native_audio_recovery` 验证空队列、迟发/重复断流、
+  健康输出不重建、重试耗尽及后台取消；`ForegroundAudioHealthMonitorTest` 验证调度。
+  宿主机 stub 通过不等于真实 Android 通话后的可听输出已验证。
