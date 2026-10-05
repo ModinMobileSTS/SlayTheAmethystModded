@@ -95,7 +95,7 @@ keyAlias=upload
 keyPassword=...
 ```
 
-`storeFile` 省略时默认 `keystore.jks`；`keyPassword` 省略时默认等于 `storePassword`。release 构建仍优先读取 `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD` 环境变量及 `release.*` Gradle 属性，全部为空时才回退到 `build-deps/release-signature/`。
+`storeFile` 省略时默认 `keystore.jks`；`keyPassword` 省略时默认等于 `storePassword`。release 构建优先读取 `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD` 环境变量及 `release.*` Gradle 属性，全部为空时才读取 `build-deps/release-signature/`。release APK 强制使用 release 密钥，并启用 APK Signature Scheme v1（JAR）和 v2；未配置 release 密钥时构建会失败，不会回退到 debug 签名。
 
 依赖下载来源：
 

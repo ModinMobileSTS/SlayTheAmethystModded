@@ -240,9 +240,6 @@ val hasReleaseSigning = listOf(
     releaseKeyAlias,
     releaseKeyPassword
 ).all(String::isNotEmpty)
-// Signing config used when no release keystore is configured: the shared repository debug
-// keystore when present, otherwise AGP's built-in debug config.
-val fallbackSigningConfigName = if (debugSignature != null) "sharedDebug" else "debug"
 val isReleaseTaskRequested = gradle.startParameter.taskNames.any { taskName ->
     taskName.contains("Release", ignoreCase = true)
 }
@@ -254,9 +251,9 @@ if (hasReleaseSigning && !File(releaseStoreFilePath).isFile) {
     )
 }
 if (isReleaseTaskRequested && !hasReleaseSigning) {
-    logger.warn(
-        "Release signing configuration missing; falling back to the debug signing config " +
-            "for local release tasks. Provide build-deps/release-signature/ or RELEASE_STORE_* env vars."
+    throw GradleException(
+        "Release signing configuration is required for release tasks. " +
+            "Provide build-deps/release-signature/ or set RELEASE_STORE_* env vars."
     )
 }
 
@@ -310,6 +307,8 @@ android {
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
             }
         }
         // A repository-local debug keystore so every checkout shares one debug signature.
@@ -328,10 +327,8 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = if (hasReleaseSigning) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName(fallbackSigningConfigName)
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

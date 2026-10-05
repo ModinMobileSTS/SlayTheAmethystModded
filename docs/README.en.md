@@ -93,7 +93,7 @@ keyAlias=upload
 keyPassword=...
 ```
 
-`storeFile` defaults to `keystore.jks`; `keyPassword` defaults to `storePassword`. Release builds still prefer `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD` environment variables and `release.*` Gradle properties, and only fall back to `build-deps/release-signature/` when all of them are empty.
+`storeFile` defaults to `keystore.jks`; `keyPassword` defaults to `storePassword`. Release builds prefer `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD` environment variables and `release.*` Gradle properties, and read `build-deps/release-signature/` only when all of them are empty. Release APKs always use the release key with APK Signature Scheme v1 (JAR) and v2 enabled; a release build fails when release signing is unavailable instead of falling back to the debug key.
 
 Dependency download sources:
 - Build dependency bundle (contains `desktop.jar` and `jre8-pojav.zip`): [ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases)
