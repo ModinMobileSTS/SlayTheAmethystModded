@@ -15,9 +15,13 @@
     <string name="settings_sling_break_x5_installing">Download complete. Installing and verifying X5…</string>
     <string name="settings_sling_break_x5_failed">X5 initialization failed</string>
     <string name="settings_sling_break_compatibility_failed">Compatibility mode failed to start</string>
+    <string name="settings_sling_break_x5_restart_required">This X5 SDK cannot reload its core in the current process. Fully close and reopen the launcher, then select compatibility mode again. Installed dependencies will be reused.</string>
     <string name="settings_sling_break_x5_timeout">X5 initialization timed out. Check your network and try selecting compatibility mode again.</string>
     <string name="settings_sling_break_x5_missing">X5 dependencies are unavailable. Please select compatibility mode again in launcher settings to download them.</string>
     <string name="settings_sling_break_x5_download_error">X5 dependency download failed (code %1$d). Check your network and try again.</string>
+    <string name="settings_sling_break_x5_redirect_empty">The X5 download response is missing a redirect address (code 124). The download source may be malfunctioning, or a proxy/network may be intercepting it. Try disabling your proxy or switching networks, then fully close and reopen the launcher before retrying. If it still fails, export a feedback bundle. You can use WebView mode in the meantime.</string>
+    <string name="settings_sling_break_x5_core_not_offered">The X5 configuration service did not provide a core download URL (code -124). Dependency downloading has not started. Core delivery in this free SDK is subject to server policies and bandwidth limits; restarting does not guarantee recovery. Use WebView mode for now. Reliable compatibility mode requires an available core distribution solution.</string>
+    <string name="settings_sling_break_x5_download_restart_required">X5 download has already been requested in this process. This SDK only allows one download start per process. Fully close and reopen the launcher, then select compatibility mode again.</string>
     <string name="settings_sling_break_x5_install_error">X5 dependency installation failed (code %1$d).</string>
     <string name="app_name">SlayTheAmethyst</string>
     <string name="basic_tutorial_notice_title">Basic tutorial released</string>
