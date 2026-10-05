@@ -4,7 +4,6 @@ import android.content.Context
 import android.system.ErrnoException
 import android.system.Os
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
-import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.config.RuntimePaths
 import java.io.File
@@ -86,7 +85,7 @@ internal object OptionalModStorageCoordinator {
             runtimeModFiles = launchModFiles
         )
         writeMtsModFileList(RuntimePaths.mtsModFileList(context), launchModFiles)
-        deleteLegacyRuntimeModsDir(runtimeModsDir)
+        deleteLegacyRuntimeModJars(runtimeModsDir)
         MemoryDiagnosticsLogger.logModSnapshot(
             context = context,
             event = "mts_mod_file_list_prepare_completed",
@@ -200,14 +199,17 @@ internal object OptionalModStorageCoordinator {
     }
 
     @Throws(IOException::class)
-    internal fun deleteLegacyRuntimeModsDir(runtimeModsDir: File) {
-        if (!runtimeModsDir.exists()) {
+    internal fun deleteLegacyRuntimeModJars(runtimeModsDir: File) {
+        if (!runtimeModsDir.isDirectory) {
             return
         }
-        if (!FileTreeCleaner.deleteRecursively(runtimeModsDir) || runtimeModsDir.exists()) {
-            val remaining = FileTreeCleaner.summarizeRemainingEntries(runtimeModsDir)
-            val suffix = remaining?.let { ": $it" }.orEmpty()
-            throw IOException("Failed to delete legacy runtime mods directory: ${runtimeModsDir.absolutePath}$suffix")
+        val files = runtimeModsDir.listFiles()
+            ?: throw IOException("Failed to list legacy runtime mods directory: ${runtimeModsDir.absolutePath}")
+        // Only top-level JARs are legacy launch artifacts; subdirectories and other files are mod data.
+        files.filter { it.isFile && it.name.lowercase(Locale.ROOT).endsWith(".jar") }.forEach { file ->
+            if (!file.delete()) {
+                throw IOException("Failed to delete legacy runtime mod file: ${file.absolutePath}")
+            }
         }
     }
 

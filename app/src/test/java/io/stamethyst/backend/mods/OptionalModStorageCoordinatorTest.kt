@@ -67,7 +67,7 @@ class OptionalModStorageCoordinatorTest {
     }
 
     @Test
-    fun cleanupLegacyRuntimeMods_salvagesUniqueOptionalJarsRewritesConfigsAndDeletesModsDir() {
+    fun cleanupLegacyRuntimeMods_salvagesUniqueOptionalJarsRewritesConfigsAndPreservesModData() {
         val tempDir = Files.createTempDirectory("optional-mod-storage-cleanup-test")
         val runtimeModsDir = Files.createDirectory(tempDir.resolve("mods")).toFile()
         val libraryDir = Files.createDirectory(tempDir.resolve("mods_library")).toFile()
@@ -81,6 +81,11 @@ class OptionalModStorageCoordinatorTest {
         val runtimeAlpha = Files.write(runtimeModsDir.toPath().resolve("Alpha.jar"), byteArrayOf(3, 4, 5)).toFile()
         val runtimeBeta = Files.write(runtimeModsDir.toPath().resolve("Beta.jar"), byteArrayOf(6, 7, 8)).toFile()
         val libraryBeta = Files.write(libraryDir.toPath().resolve("Beta.jar"), byteArrayOf(6, 7, 8)).toFile()
+        val wordSpireDir = File(runtimeModsDir, "WordSpire").apply { mkdirs() }
+        val dictionary = File(wordSpireDir, "JLPT10k.apkg").apply { writeText("dictionary data") }
+        val audioDir = File(wordSpireDir, "audio").apply { mkdirs() }
+        val audioFile = File(audioDir, "word.mp3").apply { writeText("audio data") }
+        val configFile = File(runtimeModsDir, "config.json").apply { writeText("{}") }
 
         enabledModsConfig.writeText(
             listOf(runtimeAlpha.absolutePath, runtimeBeta.absolutePath).joinToString("\n"),
@@ -95,10 +100,18 @@ class OptionalModStorageCoordinatorTest {
             priorityModsConfig = priorityModsConfig,
             normalizeSelectionPath = { it }
         )
-        OptionalModStorageCoordinator.deleteLegacyRuntimeModsDir(runtimeModsDir)
+        OptionalModStorageCoordinator.deleteLegacyRuntimeModJars(runtimeModsDir)
 
         val migratedAlpha = libraryDir.toPath().resolve("Alpha.jar").toFile()
-        assertFalse(runtimeModsDir.exists())
+        assertTrue(runtimeModsDir.isDirectory)
+        listOf("BaseMod.jar", "StSLib.jar", "AmethystRuntimeCompat.jar", "RamSaver.jar").forEach { name ->
+            assertFalse(File(runtimeModsDir, name).exists())
+        }
+        assertFalse(runtimeAlpha.exists())
+        assertFalse(runtimeBeta.exists())
+        assertEquals("dictionary data", dictionary.readText())
+        assertEquals("audio data", audioFile.readText())
+        assertEquals("{}", configFile.readText())
         assertTrue(migratedAlpha.isFile)
         assertTrue(libraryBeta.isFile)
         assertFalse(libraryDir.toPath().resolve("Beta (2).jar").toFile().exists())
@@ -107,6 +120,50 @@ class OptionalModStorageCoordinatorTest {
             enabledModsConfig.readLines(StandardCharsets.UTF_8)
         )
         assertEquals(libraryBeta.absolutePath, priorityModsConfig.readText(StandardCharsets.UTF_8).trim())
+    }
+
+    @Test
+    fun deleteLegacyRuntimeModJars_onlyDeletesTopLevelJarFilesAndPreservesDirectories() {
+        val tempDir = Files.createTempDirectory("optional-mod-storage-jar-cleanup-test")
+        val runtimeModsDir = Files.createDirectory(tempDir.resolve("mods")).toFile()
+        val jarFiles = listOf("BaseMod.jar", "Uppercase.JAR", "Mixed.JaR").map { name ->
+            File(runtimeModsDir, name).apply { writeText("legacy jar") }
+        }
+        val backupFile = File(runtimeModsDir, "WordSpire.jar.bak").apply { writeText("backup") }
+        val jarNamedDirectory = File(runtimeModsDir, "data.jar").apply { mkdirs() }
+        val nestedJar = File(jarNamedDirectory, "helper.jar").apply { writeText("mod data") }
+        val emptyDirectory = File(runtimeModsDir, "empty").apply { mkdirs() }
+
+        repeat(2) {
+            OptionalModStorageCoordinator.deleteLegacyRuntimeModJars(runtimeModsDir)
+
+            jarFiles.forEach { assertFalse(it.exists()) }
+            assertTrue(runtimeModsDir.isDirectory)
+            assertTrue(jarNamedDirectory.isDirectory)
+            assertTrue(emptyDirectory.isDirectory)
+            assertEquals("backup", backupFile.readText())
+            assertEquals("mod data", nestedJar.readText())
+        }
+    }
+
+    @Test
+    fun deleteLegacyRuntimeModJars_keepsEmptyRuntimeDirectory() {
+        val tempDir = Files.createTempDirectory("optional-mod-storage-empty-cleanup-test")
+        val runtimeModsDir = Files.createDirectory(tempDir.resolve("mods")).toFile()
+
+        OptionalModStorageCoordinator.deleteLegacyRuntimeModJars(runtimeModsDir)
+
+        assertTrue(runtimeModsDir.isDirectory)
+    }
+
+    @Test
+    fun deleteLegacyRuntimeModJars_doesNotCreateMissingRuntimeDirectory() {
+        val tempDir = Files.createTempDirectory("optional-mod-storage-missing-cleanup-test")
+        val runtimeModsDir = tempDir.resolve("mods").toFile()
+
+        OptionalModStorageCoordinator.deleteLegacyRuntimeModJars(runtimeModsDir)
+
+        assertFalse(runtimeModsDir.exists())
     }
 
     @Test
