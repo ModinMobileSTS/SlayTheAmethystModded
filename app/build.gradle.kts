@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Properties
 import java.util.zip.ZipFile
 import org.gradle.api.tasks.PathSensitivity
+import com.android.build.api.artifact.SingleArtifact
 
 plugins {
     alias(libs.plugins.android.application)
@@ -61,6 +62,59 @@ tasks.matching { it.name == "assembleDebug" }.configureEach {
 dependencies {
     implementation(libs.androidx.games.frame.pacing)
     implementation(libs.tencent.tbs)
+}
+
+// Applies to every variant, not just slim builds. Fail rather than silently rebundling Gecko.
+configurations.configureEach {
+    incoming.afterResolve {
+        check(resolutionResult.allComponents.none { it.moduleVersion?.group == "org.mozilla.geckoview" }) {
+            "GeckoView must only be built by :web-runtime, never linked into a launcher APK."
+        }
+    }
+}
+
+// Inspect real packaged output too, so accidental asset/native copies cannot evade the guard.
+androidComponents.onVariants { variant ->
+    val capitalized = variant.name.replaceFirstChar { it.uppercaseChar() }
+    val verify = tasks.register("verify${capitalized}NoBundledGecko") {
+        val apks = variant.artifacts.get(SingleArtifact.APK)
+        inputs.dir(apks)
+        doLast {
+            apks.get().asFile.walkTopDown().filter { it.extension == "apk" }.forEach { apk ->
+                ZipFile(apk).use { archive ->
+                    val entries = archive.entries().asSequence().toList()
+                    val forbidden = entries.filter {
+                        it.name.endsWith("/libxul.so") || it.name.endsWith("/libmozglue.so") ||
+                            it.name.endsWith("/libgeckoview.so") || it.name.endsWith("/omni.ja") ||
+                            it.name.endsWith("/runtime.apk") || it.name.contains("assets/web-runtime/")
+                    }
+                    check(forbidden.isEmpty()) { "Bundled Gecko files in $apk: ${forbidden.map { it.name }}" }
+                    entries.filter { it.name.matches(Regex("classes[0-9]*\\.dex")) }.forEach { entry ->
+                        val bytes = archive.getInputStream(entry).use { it.readBytes() }
+                        val dex = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+                        val strings = dex.getInt(0x3c)
+                        val types = dex.getInt(0x44)
+                        val count = dex.getInt(0x60)
+                        val definitions = dex.getInt(0x64)
+                        for (index in 0 until count) {
+                            val type = dex.getInt(definitions + index * 32)
+                            val string = dex.getInt(types + type * 4)
+                            var offset = dex.getInt(strings + string * 4)
+                            while (bytes[offset++].toInt() and 0x80 != 0) Unit
+                            val start = offset
+                            while (bytes[offset] != 0.toByte()) offset++
+                            val name = String(bytes, start, offset - start, Charsets.UTF_8)
+                            check(!name.startsWith("Lorg/mozilla/") && !name.startsWith("Lio/stamethyst/webruntime/")) {
+                                "Bundled Gecko class in $apk: $name"
+                            }
+                        }
+                    }
+                }
+                logger.lifecycle("Verified no bundled GeckoView: ${apk.name}")
+            }
+        }
+    }
+    tasks.matching { it.name == "assemble$capitalized" }.configureEach { dependsOn(verify) }
 }
 
 val packageName = readGradleProperty("application.id")
@@ -229,6 +283,12 @@ android {
         buildConfigField("String", "RESOURCE_PACK_SHA256", resourcePackSha256.toBuildConfigStringLiteral())
         buildConfigField("String", "CLOUD_CONTROL_CONFIG_URL", cloudControlConfigUrl.toBuildConfigStringLiteral())
         buildConfigField("boolean", "SWAPPY_FRAME_PACING_ENABLED", swappyFramePacingEnabled.toString())
+        val webRuntimeSpec = Properties().apply {
+            rootProject.file("web-runtime/runtime.properties").inputStream().use(::load)
+        }
+        buildConfigField("String", "WEB_RUNTIME_VERSION", webRuntimeSpec.getProperty("version").toBuildConfigStringLiteral())
+        buildConfigField("String", "WEB_RUNTIME_SHA256", webRuntimeSpec.getProperty("sha256").toBuildConfigStringLiteral())
+        buildConfigField("String", "WEB_RUNTIME_URL", readGradleProperty("webRuntime.url", "").toBuildConfigStringLiteral())
 
         ndk {
             //noinspection ChromeOsAbiSupport

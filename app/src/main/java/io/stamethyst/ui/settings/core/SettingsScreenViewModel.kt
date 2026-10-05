@@ -30,7 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.clearSlingBreakWebViewData
-import io.stamethyst.SlingBreakX5
+import io.stamethyst.web.GeckoDependencyLoader
 import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
@@ -780,8 +780,6 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    private var slingBreakX5Listener: SlingBreakX5.InitializationListener? = null
-
     fun onSlingBreakEngineModeChanged(host: Activity, mode: SlingBreakEngineMode) {
         if (uiState.busy || uiState.slingBreakX5Progress != null) return
         val context = host.applicationContext
@@ -790,29 +788,17 @@ class SettingsScreenViewModel : ViewModel() {
             uiState = uiState.copy(slingBreakEngineMode = mode)
             return
         }
-        // Called only after the user confirms the dependency download. Keep the old mode on failure.
         uiState = uiState.copy(slingBreakX5Progress = -1, slingBreakX5Failure = null)
-        val listener = object : SlingBreakX5.InitializationListener {
-            override fun onProgress(progress: Int) {
-                if (slingBreakX5Listener !== this) return
-                uiState = uiState.copy(slingBreakX5Progress = progress)
-            }
-
-            override fun onReady() {
-                if (slingBreakX5Listener !== this) return
-                slingBreakX5Listener = null
-                LauncherPreferences.saveSlingBreakEngineMode(context, mode)
-                uiState = uiState.copy(slingBreakEngineMode = mode, slingBreakX5Progress = null)
-            }
-
-            override fun onFailure(reason: String) {
-                if (slingBreakX5Listener !== this) return
-                slingBreakX5Listener = null
-                uiState = uiState.copy(slingBreakX5Progress = null, slingBreakX5Failure = reason)
-            }
-        }
-        slingBreakX5Listener = listener
-        SlingBreakX5.initialize(context, listener, allowDownload = true)
+        GeckoDependencyLoader.ensureAsync(context, { progress ->
+            uiState = uiState.copy(slingBreakX5Progress = progress)
+        }, { failure ->
+            if (failure == null) LauncherPreferences.saveSlingBreakEngineMode(context, mode)
+            uiState = uiState.copy(
+                slingBreakX5Progress = null,
+                slingBreakX5Failure = failure,
+                slingBreakEngineMode = if (failure == null) mode else uiState.slingBreakEngineMode,
+            )
+        })
     }
 
     fun dismissSlingBreakX5Failure() {
@@ -6393,8 +6379,6 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
-        slingBreakX5Listener?.let(SlingBreakX5::removeListener)
-        slingBreakX5Listener = null
         cancelActiveSteamCloudLogin("Settings screen cleared.", clearBusy = false)
         statusRefreshGeneration.incrementAndGet()
         statusRefreshTask?.cancel(true)

@@ -311,7 +311,8 @@ class BootOverlayController(
         }
         if (usesSlingBreakBootOverlay) {
             bootOverlay?.visibility = View.GONE
-            slingBreakBootGame = SlingBreakWebViewHost.create(activity).also { host ->
+            slingBreakBootGame =
+                SlingBreakWebViewHost.create(activity).also { host ->
                 slingBreakBootGameContainer?.addView(
                     host.view,
                     android.widget.FrameLayout.LayoutParams(

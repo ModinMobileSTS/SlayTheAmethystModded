@@ -1,19 +1,12 @@
 package io.stamethyst
 
 import android.annotation.SuppressLint
-import android.animation.ObjectAnimator
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.os.Bundle
-import android.view.Gravity
-import android.view.KeyEvent
-import android.view.ViewGroup
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.TextView
 import android.webkit.CookieManager
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
@@ -35,7 +28,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.backend.diag.WebViewAudioEnvironment
 import io.stamethyst.backend.audio.SlingNativeAudioBridge
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.ui.preferences.LauncherPreferences
 
 internal const val SLING_BREAK_GAME_URL = "file:///android_asset/slingbreak/index.html"
@@ -161,18 +153,13 @@ class SlingBreakActivity : AppCompatActivity() {
     }
 
     private var webView: SlingBreakWebViewHost? = null
-    private var x5InitializationDialog: AlertDialog? = null
-    private var x5InitializationListener: SlingBreakX5.InitializationListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        if (LauncherPreferences.readSlingBreakEngineMode(this) == SlingBreakEngineMode.COMPATIBILITY) {
-            beginX5Initialization()
-        } else {
-            showGame()
-        }
+        // Compatibility dependencies are downloaded and verified when the mode is selected.
+        showGame()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = finish()
         })
@@ -196,10 +183,6 @@ class SlingBreakActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        x5InitializationListener?.let(SlingBreakX5::removeListener)
-        x5InitializationListener = null
-        x5InitializationDialog?.dismiss()
-        x5InitializationDialog = null
         webView?.let {
             it.closeAudio()
             it.destroy()
@@ -216,73 +199,6 @@ class SlingBreakActivity : AppCompatActivity() {
         }
     }
 
-    private fun beginX5Initialization() {
-        val density = resources.displayMetrics.density
-        fun dp(value: Int) = (value * density).toInt()
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(4), dp(24), dp(8))
-        }
-        val status = TextView(this).apply {
-            text = getString(R.string.settings_sling_break_x5_preparing)
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val spinner = ProgressBar(this).apply { isIndeterminate = true }
-        val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 100
-            progress = 0
-            visibility = android.view.View.INVISIBLE
-        }
-        root.addView(
-            spinner,
-            LinearLayout.LayoutParams(dp(32), dp(32)).apply { gravity = Gravity.CENTER_HORIZONTAL }
-        )
-        root.addView(status, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
-        root.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(24)))
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.settings_sling_break_x5_initializing)
-            .setView(root)
-            .create()
-        dialog.setCancelable(false)
-        dialog.setOnKeyListener { _, keyCode, _ -> keyCode == KeyEvent.KEYCODE_BACK }
-        dialog.show()
-        x5InitializationDialog = dialog
-
-        val listener = object : SlingBreakX5.InitializationListener {
-            override fun onProgress(value: Int) {
-                if (isFinishing || isDestroyed) return
-                if (value < 0) return
-                spinner.visibility = android.view.View.GONE
-                progress.visibility = android.view.View.VISIBLE
-                status.text = if (value >= 100) getString(R.string.settings_sling_break_x5_installing)
-                else getString(R.string.settings_sling_break_x5_downloading, value)
-                val old = progress.progress
-                ObjectAnimator.ofInt(progress, "progress", old, value.coerceIn(old, 100)).apply {
-                    duration = 240L
-                    start()
-                }
-            }
-
-            override fun onReady() {
-                if (isFinishing || isDestroyed) return
-                x5InitializationListener = null
-                x5InitializationDialog?.dismiss()
-                x5InitializationDialog = null
-                showGame()
-            }
-
-            override fun onFailure(reason: String) {
-                if (isFinishing || isDestroyed) return
-                x5InitializationListener = null
-                showX5Failure(reason)
-            }
-        }
-        x5InitializationListener = listener
-        // Runtime entry only loads an installed core; new downloads require the settings prompt.
-        SlingBreakX5.initialize(this, listener)
-    }
-
     private fun showGame() {
         runCatching {
             val host = SlingBreakWebViewHost.create(this, allowSystemFallback = false)
@@ -291,16 +207,14 @@ class SlingBreakActivity : AppCompatActivity() {
             setContentView(host.view)
             hideSystemBars()
         }.onFailure { failure ->
-            showX5Failure(failure.message ?: failure.javaClass.simpleName)
+            showEngineFailure(failure.message ?: failure.javaClass.simpleName)
         }
     }
 
-    private fun showX5Failure(reason: String) {
-        x5InitializationDialog?.dismiss()
-        x5InitializationDialog = null
-        WebViewDiagnosticsLogStore.append(this, "x5_switch_cancelled", "reason=$reason")
+    private fun showEngineFailure(reason: String) {
+        WebViewDiagnosticsLogStore.append(this, "sling_break_engine_failure", "reason=$reason")
         AlertDialog.Builder(this)
-            .setTitle(R.string.settings_sling_break_x5_failed)
+            .setTitle(R.string.settings_sling_break_compatibility_failed)
             .setMessage(reason)
             .setPositiveButton(R.string.common_action_close) { _, _ -> finish() }
             .setOnDismissListener { finish() }

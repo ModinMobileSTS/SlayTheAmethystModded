@@ -1,4 +1,8 @@
 <resources>
+    <string name="settings_sling_break_web_preparing_title">正在準備 Web 依賴</string>
+    <string name="settings_sling_break_web_preparing">正在準備 GeckoView 依賴…</string>
+    <string name="settings_sling_break_web_downloading">正在下載 Web 依賴… %1$d%%</string>
+    <string name="settings_sling_break_web_unpacking">下載完成，正在驗證並解壓 GeckoView…</string>
     <string name="settings_sling_break_mode_title">小遊戲模式</string>
     <string name="settings_sling_break_mode_webview">WebView 模式</string>
     <string name="settings_sling_break_mode_compatibility">相容模式</string>
@@ -10,6 +14,7 @@
     <string name="settings_sling_break_x5_downloading">正在下載 X5 依賴… %1$d%%</string>
     <string name="settings_sling_break_x5_installing">下載完成，正在安裝並驗證 X5…</string>
     <string name="settings_sling_break_x5_failed">X5 初始化失敗</string>
+    <string name="settings_sling_break_compatibility_failed">相容模式啟動失敗</string>
     <string name="settings_sling_break_x5_timeout">X5 初始化逾時，請檢查網路後重新選擇相容模式。</string>
     <string name="settings_sling_break_x5_missing">X5 依賴無法使用，請在啟動器設定中重新選擇相容模式下載依賴。</string>
     <string name="settings_sling_break_x5_download_error">X5 依賴下載失敗（錯誤碼 %1$d），請檢查網路後重試。</string>

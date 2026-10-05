@@ -1,0 +1,14 @@
+GeckoView download-only runtime
+
+Mozilla GeckoView 148.0.20260309125808 is distributed unmodified under the
+Mozilla Public License 2.0 and its upstream third-party notices.
+License: https://www.mozilla.org/MPL/2.0/
+Upstream source: https://hg.mozilla.org/releases/mozilla-release/
+Release source archives: https://archive.mozilla.org/pub/mobile/releases/148.0/source/
+Maven artifact: https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview/148.0.20260309125808/
+
+Launcher-specific adapter sources are in web-runtime/src/main/java in:
+https://github.com/ModinMobileSTS/SlayTheAmethystModded
+
+runtime.apk is an Android resource/code container inside the dependency ZIP.
+It is loaded from application-private storage and is NOT installed as an application.

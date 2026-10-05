@@ -59,3 +59,8 @@
 # obfuscating or removing the fields changes the wire names or leaves Jackson
 # with no properties (notably StreamOptions.includeUsage).
 -keep class dev.langchain4j.model.openai.internal.** { *; }
+-keep class io.stamethyst.web.GeckoDependencyLoader { public *; }
+-keep class io.stamethyst.web.GeckoComponentFactory { *; }
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

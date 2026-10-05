@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -14,6 +16,8 @@
     </queries>
 
     <application
+        android:appComponentFactory="io.stamethyst.web.GeckoComponentFactory"
+        tools:replace="android:appComponentFactory"
         android:name="io.stamethyst.StsApplication"
         android:allowBackup="true"
         android:appCategory="game"
@@ -249,6 +253,55 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Names only: classes/resources/native code live in the verified CDN dependency. -->
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab0" android:exported="false" android:process=":tab0" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab1" android:exported="false" android:process=":tab1" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab2" android:exported="false" android:process=":tab2" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab3" android:exported="false" android:process=":tab3" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab4" android:exported="false" android:process=":tab4" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab5" android:exported="false" android:process=":tab5" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab6" android:exported="false" android:process=":tab6" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab7" android:exported="false" android:process=":tab7" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab8" android:exported="false" android:process=":tab8" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab9" android:exported="false" android:process=":tab9" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab10" android:exported="false" android:process=":tab10" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab11" android:exported="false" android:process=":tab11" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab12" android:exported="false" android:process=":tab12" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab13" android:exported="false" android:process=":tab13" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab14" android:exported="false" android:process=":tab14" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab15" android:exported="false" android:process=":tab15" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab16" android:exported="false" android:process=":tab16" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab17" android:exported="false" android:process=":tab17" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab18" android:exported="false" android:process=":tab18" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab19" android:exported="false" android:process=":tab19" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab20" android:exported="false" android:process=":tab20" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab21" android:exported="false" android:process=":tab21" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab22" android:exported="false" android:process=":tab22" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab23" android:exported="false" android:process=":tab23" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab24" android:exported="false" android:process=":tab24" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab25" android:exported="false" android:process=":tab25" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab26" android:exported="false" android:process=":tab26" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab27" android:exported="false" android:process=":tab27" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab28" android:exported="false" android:process=":tab28" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab29" android:exported="false" android:process=":tab29" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab30" android:exported="false" android:process=":tab30" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab31" android:exported="false" android:process=":tab31" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab32" android:exported="false" android:process=":tab32" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab33" android:exported="false" android:process=":tab33" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab34" android:exported="false" android:process=":tab34" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab35" android:exported="false" android:process=":tab35" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab36" android:exported="false" android:process=":tab36" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab37" android:exported="false" android:process=":tab37" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab38" android:exported="false" android:process=":tab38" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$tab39" android:exported="false" android:process=":tab39" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$gmplugin" android:exported="false" android:process=":gmplugin" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$socket" android:exported="false" android:process=":socket" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$gpu" android:exported="false" android:process=":gpu" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$rdd" android:exported="false" android:process=":rdd" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$utility" android:exported="false" android:process=":utility" />
+        <service android:name="org.mozilla.gecko.process.GeckoChildProcessServices$ipdlunittest" android:exported="false" android:process=":ipdlunittest" />
+        <service android:name="org.mozilla.gecko.media.MediaManager" android:exported="false" android:process=":media" />
+        <service android:name="org.mozilla.gecko.crashhelper.CrashHelper" android:exported="false" android:process=":crashhelper" android:stopWithTask="true" />
     </application>
 
 </manifest>

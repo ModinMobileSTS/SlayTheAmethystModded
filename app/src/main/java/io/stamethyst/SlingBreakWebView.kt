@@ -17,12 +17,15 @@ import io.stamethyst.backend.audio.SlingNativeAudioBridge
 import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.web.GeckoDependencyLoader
+import io.stamethyst.web.SlingAssetServer
+import io.stamethyst.web.SlingLauncherChannel
 
-private const val LOGCAT_TAG = "STS-X5"
+private const val LOGCAT_TAG = "STS-Compatible"
 
 /**
- * Shared lifecycle adapter. WebView mode never creates an X5 view; compatibility mode uses the
- * installed X5 core, with a system fallback for the boot overlay if the core becomes unavailable.
+ * Shared lifecycle adapter over the compatibility engine. WebView mode uses the platform WebView;
+ * compatibility mode uses downloaded GeckoView and a loopback launcher bridge for the overlay.
  */
 internal class SlingBreakWebViewHost private constructor(
     val view: View,
@@ -53,46 +56,79 @@ internal class SlingBreakWebViewHost private constructor(
     fun destroy() = destroyImpl()
 
     companion object {
-        fun create(context: Context, allowSystemFallback: Boolean = true): SlingBreakWebViewHost {
-            if (LauncherPreferences.readSlingBreakEngineMode(context) == SlingBreakEngineMode.WEBVIEW) {
-                return createSystem(context)
-            }
-            return runCatching {
-                X5WebView(context).apply { configureSlingBreakX5Game() }.let { webView ->
-                    if (!webView.getIsX5Core() && !allowSystemFallback) {
-                        SlingNativeAudioBridge.close(webView)
-                        webView.destroy()
-                        error(context.getString(R.string.settings_sling_break_x5_missing))
-                    }
-                    SlingBreakWebViewHost(
-                        view = webView,
-                        loadUrlImpl = webView::loadUrl,
-                        evaluateJavascriptImpl = { script, callback ->
-                            webView.evaluateJavascript(script) { result -> callback?.invoke(result) }
-                        },
-                        addJavascriptInterfaceImpl = webView::addJavascriptInterface,
-                        onResumeImpl = webView::onResume,
-                        onPauseImpl = webView::onPause,
-                        setActiveImpl = { active -> SlingNativeAudioBridge.setActive(webView, active) },
-                        stopLoadingImpl = webView::stopLoading,
-                        closeAudioImpl = { SlingNativeAudioBridge.close(webView) },
-                        destroyImpl = webView::destroy,
-                        engine = if (webView.getIsX5Core()) "x5" else "system-fallback"
+        /**
+         * Builds the host for the requested engine.
+         *
+         * @param useCompatibilityEngine selects the external GeckoView compatibility engine
+         *   for either entry point. The overlay uses the scoped loopback launcher bridge.
+         */
+        fun create(
+            context: Context,
+            allowSystemFallback: Boolean = true,
+            useCompatibilityEngine: Boolean =
+                LauncherPreferences.readSlingBreakEngineMode(context) == SlingBreakEngineMode.COMPATIBILITY,
+        ): SlingBreakWebViewHost {
+            if (!useCompatibilityEngine) return createSystem(context)
+            return runCatching { createCompatibility(context) }
+                .onSuccess { host ->
+                    WebViewDiagnosticsLogStore.append(
+                        context, "compatibility_view_created", "engine=${host.engine}"
                     )
                 }
-            }.onSuccess { host ->
-                WebViewDiagnosticsLogStore.append(context, "x5_view_created", "engine=${host.engine}")
-            }.onFailure { failure ->
-                WebViewDiagnosticsLogStore.append(
-                    context,
-                    "x5_view_error",
-                    "${failure.javaClass.simpleName}: ${failure.message}"
-                )
-                Log.w(LOGCAT_TAG, "Unable to create X5 WebView; using system WebView", failure)
-            }.getOrElse {
-                if (!allowSystemFallback) throw it
-                createSystem(context)
-            }
+                .onFailure { failure ->
+                    WebViewDiagnosticsLogStore.append(
+                        context,
+                        "compatibility_view_error",
+                        "${failure.javaClass.simpleName}: ${failure.message}"
+                    )
+                    Log.w(LOGCAT_TAG, "Unable to create the compatibility engine; using system WebView", failure)
+                }
+                .getOrElse {
+                    if (!allowSystemFallback) throw it
+                    createSystem(context)
+                }
+        }
+
+        /**
+         * External GeckoView with a narrowly scoped launcher bridge and Web Audio fallback.
+         */
+        private fun createCompatibility(context: Context): SlingBreakWebViewHost {
+            val host = GeckoDependencyLoader.createHost(context)
+            val type = host.javaClass
+            val load = type.getMethod("loadUrl", String::class.java)
+            val active = type.getMethod("setActive", Boolean::class.javaPrimitiveType)
+            val stop = type.getMethod("stop")
+            val close = type.getMethod("close")
+            var channel: SlingLauncherChannel? = null
+            return SlingBreakWebViewHost(
+                view = type.getMethod("getView").invoke(host) as View,
+                loadUrlImpl = {
+                    val url = SlingAssetServer.url(context, it)
+                    load.invoke(host, url + (channel?.let { bridge ->
+                        (if (url.contains('?')) "&" else "?") + "geckoLauncher=" + bridge.token
+                    } ?: ""))
+                },
+                evaluateJavascriptImpl = { script, callback ->
+                    channel?.evaluate(script)
+                    callback?.invoke(null)
+                },
+                addJavascriptInterfaceImpl = { instance, name ->
+                    require(name == "AndroidSlingBreakLauncher") { "Unsupported Gecko JS interface: $name" }
+                    channel?.let(SlingAssetServer::unregister)
+                    channel = SlingLauncherChannel(instance).also { SlingAssetServer.register(context, it) }
+                },
+                onResumeImpl = { },
+                onPauseImpl = { },
+                setActiveImpl = { active.invoke(host, it); Unit },
+                stopLoadingImpl = { stop.invoke(host); Unit },
+                closeAudioImpl = { },
+                destroyImpl = {
+                    channel?.let(SlingAssetServer::unregister)
+                    channel = null
+                    runCatching { close.invoke(host) }
+                },
+                engine = "gecko"
+            )
         }
 
         private fun createSystem(context: Context): SlingBreakWebViewHost =

@@ -79,14 +79,14 @@ internal fun SlingBreakX5Dialogs(progress: Int?, failure: String?, onDismissFail
         AlertDialog(
             onDismissRequest = {},
             properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-            title = { Text(stringResource(R.string.settings_sling_break_x5_initializing)) },
+            title = { Text(stringResource(R.string.settings_sling_break_web_preparing_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
                         text = stringResource(when {
-                            progress < 0 -> R.string.settings_sling_break_x5_preparing
-                            progress >= 100 -> R.string.settings_sling_break_x5_installing
-                            else -> R.string.settings_sling_break_x5_downloading
+                            progress < 0 -> R.string.settings_sling_break_web_preparing
+                            progress >= 100 -> R.string.settings_sling_break_web_unpacking
+                            else -> R.string.settings_sling_break_web_downloading
                         }, progress),
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
@@ -106,7 +106,7 @@ internal fun SlingBreakX5Dialogs(progress: Int?, failure: String?, onDismissFail
     if (failure != null) {
         AlertDialog(
             onDismissRequest = onDismissFailure,
-            title = { Text(stringResource(R.string.settings_sling_break_x5_failed)) },
+            title = { Text(stringResource(R.string.settings_sling_break_compatibility_failed)) },
             text = { Text(failure) },
             confirmButton = {
                 HapticTextButton(onClick = onDismissFailure) {

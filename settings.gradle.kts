@@ -18,11 +18,14 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://maven.mozilla.org/maven2")
     }
 }
 
 rootProject.name = "SlayTheAmethyst"
 include(":app")
+// Built independently for CDN; never an app dependency (including full variants).
+include(":web-runtime")
 include(":macrobenchmark")
 include(":boot-bridge")
 include(":game-probe")
