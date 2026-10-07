@@ -7,6 +7,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LauncherContentSteamCloudRefreshTest {
+    @Test
+    fun disableToggleRefreshesCardWithoutStartingNetworkWork() {
+        val initial = SteamCloudMainRefreshTrackerState(true, SteamCloudSaveMode.STEAM_CLOUD)
+        val pending = planSteamCloudMainRefresh(Route.Settings, initial, true, SteamCloudSaveMode.STEAM_CLOUD, syncDisabled = true)
+        assertTrue(pending.nextState.pendingRefreshOnMain)
+        val main = planSteamCloudMainRefresh(Route.Main, pending.nextState, true, SteamCloudSaveMode.STEAM_CLOUD, syncDisabled = true)
+        assertTrue(main.shouldRefreshMain)
+        assertFalse(main.shouldForceSyncIndicator)
+        val enabled = planSteamCloudMainRefresh(Route.Main, main.nextState, true, SteamCloudSaveMode.STEAM_CLOUD, syncDisabled = false)
+        assertTrue(enabled.shouldForceSyncIndicator)
+    }
+
+    @Test
+    fun accountSwitchRefreshesEvenWhenBothAccountsHaveCredentials() {
+        val initial = SteamCloudMainRefreshTrackerState(true, SteamCloudSaveMode.STEAM_CLOUD, observedAccountName = "one")
+        val main = planSteamCloudMainRefresh(Route.Main, initial, true, SteamCloudSaveMode.STEAM_CLOUD, accountName = "two")
+        assertTrue(main.shouldRefreshMain)
+        assertTrue(main.shouldForceSyncIndicator)
+    }
 
     @Test
     fun planSteamCloudMainRefresh_defersLoginRefreshUntilMainRoute() {

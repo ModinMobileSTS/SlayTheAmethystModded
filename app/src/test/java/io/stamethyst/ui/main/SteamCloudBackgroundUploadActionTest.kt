@@ -1,11 +1,15 @@
 package io.stamethyst.ui.main
 
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
+import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SteamCloudBackgroundUploadActionTest {
+    private val uploadPlan = SteamCloudUploadPlan(1, baselineConfigured = true,
+        uploadCandidates = emptyList(), conflicts = emptyList(), remoteOnlyChanges = emptyList(),
+        remoteDeleteCandidates = emptyList(), warnings = emptyList())
 
     @Test
     fun shouldShowSteamCloudBackgroundUploadAction_onlyShowsForUploadSyncing() {
@@ -16,6 +20,7 @@ class SteamCloudBackgroundUploadActionTest {
                     state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
                     syncDirection = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
                     backgroundUploadReady = true,
+                    plan = uploadPlan,
                 )
             )
         )
@@ -70,6 +75,7 @@ class SteamCloudBackgroundUploadActionTest {
                     state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
                     syncDirection = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
                     backgroundUploadReady = true,
+                    plan = uploadPlan,
                 )
             )
         )
@@ -112,6 +118,7 @@ class SteamCloudBackgroundUploadActionTest {
             state = MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
             syncDirection = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
             backgroundUploadReady = true,
+            plan = uploadPlan,
         )
         val notReady = ready.copy(backgroundUploadReady = false)
 
@@ -122,13 +129,14 @@ class SteamCloudBackgroundUploadActionTest {
     }
 
     @Test
-    fun backgroundLaunchDuringCheck_requiresFrozenSnapshot() {
+    fun backgroundLaunchDuringCheck_waitsForPlanEvenWithFrozenSnapshot() {
         val checking = MainScreenViewModel.SteamCloudIndicatorUi(
             visible = true,
             state = MainScreenViewModel.SteamCloudIndicatorState.CHECKING,
         )
 
-        assertFalse(shouldShowSteamCloudBackgroundLaunchDuringCheck(checking))
-        assertTrue(shouldShowSteamCloudBackgroundLaunchDuringCheck(checking.copy(backgroundUploadReady = true)))
+        assertFalse(shouldAutoLaunchAfterSteamCloudUpdate(checking))
+        assertFalse(shouldAutoLaunchAfterSteamCloudUpdate(checking.copy(backgroundUploadReady = true)))
+        assertFalse(shouldShowSteamCloudBackgroundUploadAction(checking.copy(backgroundUploadReady = true)))
     }
 }

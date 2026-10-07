@@ -172,6 +172,8 @@ internal data class SteamCloudMainRefreshTrackerState(
     val observedRefreshTokenConfigured: Boolean,
     val observedSaveMode: SteamCloudSaveMode,
     val pendingRefreshOnMain: Boolean = false,
+    val observedSyncDisabled: Boolean = false,
+    val observedAccountName: String = "",
 )
 
 internal data class SteamCloudMainRefreshPlan(
@@ -185,20 +187,25 @@ internal fun planSteamCloudMainRefresh(
     state: SteamCloudMainRefreshTrackerState,
     refreshTokenConfigured: Boolean,
     saveMode: SteamCloudSaveMode,
+    syncDisabled: Boolean = false,
+    accountName: String = "",
 ): SteamCloudMainRefreshPlan {
     val stateChanged =
         state.observedRefreshTokenConfigured != refreshTokenConfigured ||
-            state.observedSaveMode != saveMode
+            state.observedSaveMode != saveMode ||
+            state.observedSyncDisabled != syncDisabled || state.observedAccountName != accountName
     val pendingRefreshOnMain = state.pendingRefreshOnMain || stateChanged
     val shouldRefreshMain = pendingRefreshOnMain && route == Route.Main
     val shouldForceSyncIndicator =
         shouldRefreshMain &&
             refreshTokenConfigured &&
-            saveMode == SteamCloudSaveMode.STEAM_CLOUD
+            saveMode == SteamCloudSaveMode.STEAM_CLOUD && !syncDisabled
     return SteamCloudMainRefreshPlan(
         nextState = SteamCloudMainRefreshTrackerState(
             observedRefreshTokenConfigured = refreshTokenConfigured,
             observedSaveMode = saveMode,
+            observedSyncDisabled = syncDisabled,
+            observedAccountName = accountName,
             pendingRefreshOnMain = if (shouldRefreshMain) false else pendingRefreshOnMain,
         ),
         shouldRefreshMain = shouldRefreshMain,
@@ -246,6 +253,8 @@ fun LauncherContent(
             SteamCloudMainRefreshTrackerState(
                 observedRefreshTokenConfigured = settingsUiState.steamCloudRefreshTokenConfigured,
                 observedSaveMode = settingsUiState.steamCloudSaveMode,
+                observedSyncDisabled = settingsUiState.steamCloudSyncDisabled,
+                observedAccountName = settingsUiState.steamCloudAccountName,
             )
         )
     }
@@ -440,6 +449,8 @@ fun LauncherContent(
         currentRoute,
         settingsUiState.steamCloudRefreshTokenConfigured,
         settingsUiState.steamCloudSaveMode,
+        settingsUiState.steamCloudSyncDisabled,
+        settingsUiState.steamCloudAccountName,
         activity,
     ) {
         val refreshPlan = planSteamCloudMainRefresh(
@@ -447,6 +458,8 @@ fun LauncherContent(
             state = steamCloudMainRefreshTrackerState,
             refreshTokenConfigured = settingsUiState.steamCloudRefreshTokenConfigured,
             saveMode = settingsUiState.steamCloudSaveMode,
+            syncDisabled = settingsUiState.steamCloudSyncDisabled,
+            accountName = settingsUiState.steamCloudAccountName,
         )
         if (steamCloudMainRefreshTrackerState != refreshPlan.nextState) {
             steamCloudMainRefreshTrackerState = refreshPlan.nextState

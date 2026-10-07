@@ -6,6 +6,13 @@
       "label": "Mockups",
       "groups": [
         {
+          "slug": "cloud-save",
+          "files": [
+            { "label": "云存档 B 方案交互原型", "path": "mockups/cloud-save/index.html" },
+            { "label": "README.md", "path": "mockups/cloud-save/README.md" }
+          ]
+        },
+        {
           "slug": "game-icons",
           "files": [
             { "label": "index.html", "path": "mockups/game-icons/index.html" }

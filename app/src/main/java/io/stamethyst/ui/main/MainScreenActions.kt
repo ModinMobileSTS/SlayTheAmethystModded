@@ -83,10 +83,10 @@ internal data class MainScreenActions(
     val onRefreshSteamCloudStatus: () -> Unit = {},
     val onCancelSteamCloudCheck: () -> Unit = {},
     val onCancelSteamCloudSync: () -> Unit = {},
-    val onUseLocalSteamCloudProgress: () -> Unit = {},
+    val onUseLocalSteamCloudProgress: (io.stamethyst.backend.steamcloud.SteamCloudUploadPlan?) -> Unit = {},
     val onBackgroundUseLocalSteamCloudProgressAndLaunch: () -> Unit = {},
-    val onBackgroundSteamCloudSyncAndLaunch: () -> Unit = {},
-    val onUseCloudSteamCloudProgress: () -> Unit = {},
+    val onBackgroundSteamCloudSyncAndLaunch: () -> Boolean = { false },
+    val onUseCloudSteamCloudProgress: (io.stamethyst.backend.steamcloud.SteamCloudUploadPlan?) -> Unit = {},
     val shouldPromptSteamCloudDirectMode: () -> Boolean = { false },
     val onSwitchSteamCloudDirectMode: () -> Unit = {},
     val onRefreshSteamAchievements: () -> Unit = {},
@@ -225,8 +225,8 @@ internal fun rememberMainScreenActions(
                 onCancelSteamCloudSync = {
                     viewModel.cancelSteamCloudSync(activity)
                 },
-                onUseLocalSteamCloudProgress = {
-                    viewModel.onUseLocalSteamCloudProgress(activity)
+                onUseLocalSteamCloudProgress = { plan ->
+                    viewModel.onUseLocalSteamCloudProgress(activity, plan)
                 },
                 onBackgroundUseLocalSteamCloudProgressAndLaunch = {
                     viewModel.onBackgroundUseLocalSteamCloudProgressAndLaunch(activity)
@@ -234,8 +234,8 @@ internal fun rememberMainScreenActions(
                 onBackgroundSteamCloudSyncAndLaunch = {
                     viewModel.onBackgroundSteamCloudSyncAndLaunch(activity)
                 },
-                onUseCloudSteamCloudProgress = {
-                    viewModel.onUseCloudSteamCloudProgress(activity)
+                onUseCloudSteamCloudProgress = { plan ->
+                    viewModel.onUseCloudSteamCloudProgress(activity, plan)
                 },
                 shouldPromptSteamCloudDirectMode = {
                     viewModel.shouldPromptSteamCloudDirectMode(activity)
