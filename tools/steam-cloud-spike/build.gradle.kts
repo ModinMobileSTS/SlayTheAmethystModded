@@ -18,6 +18,11 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.named<JavaExec>("run") {
     standardInput = System.`in`
+    workingDir = rootProject.projectDir
+}
+
+tasks.named<Test>("test") {
+    workingDir = rootProject.projectDir
 }
 
 tasks.register<JavaExec>("depotKey") {
@@ -25,16 +30,6 @@ tasks.register<JavaExec>("depotKey") {
     description = "Login to Steam and write a depot decryption key file."
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("io.stamethyst.tools.steamcloud.StsDepotKeyToolKt")
-    standardInput = System.`in`
-    workingDir = rootProject.projectDir
-}
-
-tasks.register<JavaExec>("refreshToken") {
-    group = "steam"
-    description = "Login to Steam and write a refresh-token env file."
-    classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("io.stamethyst.tools.steamcloud.StsDepotKeyToolKt")
-    prependToolCommand("refreshToken")
     standardInput = System.`in`
     workingDir = rootProject.projectDir
 }
@@ -95,4 +90,5 @@ dependencies {
     implementation("org.bouncycastle:bcprov-jdk18on:1.83")
     implementation("com.squareup.okhttp3:okhttp:5.3.2")
     implementation("com.google.protobuf:protobuf-java:4.31.1")
+    testImplementation(libs.junit4)
 }

@@ -9,6 +9,42 @@ import org.junit.Test
 
 class SteamCloudLocalSnapshotCollectorTest {
     @Test
+    fun collectFile_matchesFullSnapshotWithoutEnumeratingSiblingFiles() {
+        val tempRoot = Files.createTempDirectory("steam-cloud-single-snapshot-test").toFile()
+        try {
+            writeFile(tempRoot, "saves/nested/WATCHER.autosave", "autosave")
+            val expected = SteamCloudLocalSnapshotCollector.collect(tempRoot).single()
+            // A full traversal would reject this unrelated sibling. Single-file verification
+            // neither traverses nor hashes files downloaded in previous iterations.
+            Files.createSymbolicLink(File(tempRoot, "saves/unrelated").toPath(), tempRoot.toPath())
+            assertEquals(expected, SteamCloudLocalSnapshotCollector.collectFile(tempRoot, expected.localRelativePath))
+        } finally {
+            Files.deleteIfExists(File(tempRoot, "saves/unrelated").toPath())
+            tempRoot.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun collectFile_rejectsUnsafePathsMissingFilesAndSymlinkParents() {
+        val tempRoot = Files.createTempDirectory("steam-cloud-single-path-test").toFile()
+        try {
+            writeFile(tempRoot, "preferences/STSPlayer", "pref")
+            listOf("../preferences/STSPlayer", "saves/../preferences/STSPlayer", "runs/ignored", "saves/missing").forEach { path ->
+                assertThrows(java.io.IOException::class.java) { SteamCloudLocalSnapshotCollector.collectFile(tempRoot, path) }
+            }
+            File(tempRoot, "saves").mkdirs()
+            Files.createSymbolicLink(File(tempRoot, "saves/link").toPath(), File(tempRoot, "preferences").toPath())
+            assertThrows(java.io.IOException::class.java) { SteamCloudLocalSnapshotCollector.collectFile(tempRoot, "saves/link/STSPlayer") }
+            Files.createSymbolicLink(File(tempRoot, "saves/file").toPath(), File(tempRoot, "preferences/STSPlayer").toPath())
+            assertThrows(java.io.IOException::class.java) { SteamCloudLocalSnapshotCollector.collectFile(tempRoot, "saves/file") }
+        } finally {
+            Files.deleteIfExists(File(tempRoot, "saves/link").toPath())
+            Files.deleteIfExists(File(tempRoot, "saves/file").toPath())
+            tempRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun collect_onlyIncludesPreferencesAndSavesWithExactRelativeNames() {
         val tempRoot = Files.createTempDirectory("steam-cloud-local-snapshot-test").toFile()
         try {

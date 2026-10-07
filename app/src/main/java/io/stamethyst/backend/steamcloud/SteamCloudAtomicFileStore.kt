@@ -8,6 +8,8 @@ import java.nio.charset.Charset
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+import java.nio.channels.FileChannel
 
 internal object SteamCloudAtomicFileStore {
     fun backupFile(file: File): File = File(file.parentFile, file.name + ".bak")
@@ -102,14 +104,10 @@ internal object SteamCloudAtomicFileStore {
         }
     }
 
-    private fun syncDirectory(directory: File?) {
+    fun syncDirectory(directory: File?) {
         if (directory == null) {
             return
         }
-        runCatching {
-            FileInputStream(directory).use { input ->
-                input.fd.sync()
-            }
-        }
+        FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) }
     }
 }

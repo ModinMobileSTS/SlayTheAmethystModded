@@ -140,6 +140,8 @@ enum class SteamCloudSyncPhase {
     BACKING_UP_LOCAL,
     APPLYING_TO_LOCAL,
     FINALIZING,
+    DELETING_REMOTE,
+    VERIFYING_REMOTE,
 }
 
 data class SteamCloudSyncProgress(

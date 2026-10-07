@@ -32,14 +32,14 @@ class SteamCloudSyncDisabledInstrumentedTest {
         try {
             LauncherConfig.setSteamCloudSyncDisabled(context, true)
             assertTrue(LauncherConfig.isSteamCloudSyncDisabled(context))
-            assertCancelled { SteamCloudPullCoordinator.pullAll(context, auth) }
+            assertCancelled { SteamCloudSyncRepository.pullAll(context, auth) }
             assertCancelled {
-                SteamCloudPullCoordinator.downloadAllToDirectory(context, auth, unusedRoot)
+                SteamCloudSyncRepository.downloadAllToDirectory(context, auth, unusedRoot)
             }
-            assertCancelled { SteamCloudPullCoordinator.mergeRemoteOnlyChanges(context, auth, plan) }
-            assertCancelled { SteamCloudPushCoordinator.pushLocalChanges(context, auth, plan) }
+            assertCancelled { SteamCloudSyncRepository.synchronize(context, auth) }
+            assertCancelled { SteamCloudSyncRepository.pushLocalChanges(context, auth, plan) }
             assertCancelled {
-                SteamCloudPushCoordinator.overwriteRemoteWithLocal(context, auth, unusedRoot)
+                SteamCloudSyncRepository.overwriteRemoteWithLocal(context, auth, unusedRoot)
             }
             SteamCloudClient(context, SteamCloudClient.DownloadLimits.defaults(), false).use { client ->
                 assertCancelled { client.downloadFile(STEAM_CLOUD_APP_ID, "preferences/STSPlayer", unusedRoot) }

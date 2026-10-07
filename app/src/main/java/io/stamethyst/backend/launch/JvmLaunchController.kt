@@ -226,6 +226,7 @@ class JvmLaunchController(
                 }
                 throwIfCancelled()
                 liveSaveLease = SteamCloudLiveSaveLease.acquireForGame(context)
+                io.stamethyst.backend.steamcloud.SteamCloudSyncRepository.recoverLocal(context)
                 throwIfCancelled()
                 val runtimeRoot = RuntimePaths.runtimeRoot(context)
                 val resolvedJavaHome = measureStartupStep("resolve_java_home") {

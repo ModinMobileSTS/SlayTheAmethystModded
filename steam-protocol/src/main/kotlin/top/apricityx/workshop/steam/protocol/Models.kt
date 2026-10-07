@@ -137,6 +137,15 @@ data class SteamPacket(
 
 open class SteamProtocolException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+/** CM routing failure, not a rejection of the user's credentials. */
+class SteamServerUnavailableException(
+    val emsgSent: Int,
+    val jobIdSent: Long,
+    val serverTypeUnavailable: Int,
+) : SteamProtocolException(
+    "Steam server unavailable for request EMsg=$emsgSent job=$jobIdSent serverType=$serverTypeUnavailable",
+)
+
 class SteamServiceMethodException(
     val methodName: String,
     val resultCode: Int,

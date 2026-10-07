@@ -2,6 +2,7 @@ package io.stamethyst.tools.steamcloud;
 
 import in.dragonbra.javasteam.enums.EResult;
 import in.dragonbra.javasteam.networking.steam3.ProtocolTypes;
+import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient;
 import in.dragonbra.javasteam.steam.authentication.AuthPollResult;
 import in.dragonbra.javasteam.steam.authentication.AuthSession;
 import in.dragonbra.javasteam.steam.authentication.AuthSessionDetails;
@@ -9,9 +10,13 @@ import in.dragonbra.javasteam.steam.authentication.IAuthenticator;
 import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesAuthSteamclient.EAuthSessionGuardType;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.AppFileChangeList;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.AppFileInfo;
+import in.dragonbra.javasteam.steam.handlers.steamcloud.AppUploadBatchResponse;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.FileDownloadInfo;
+import in.dragonbra.javasteam.steam.handlers.steamcloud.FileUploadBlockDetails;
+import in.dragonbra.javasteam.steam.handlers.steamcloud.FileUploadInfo;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.HttpHeaders;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.SteamCloud;
+import in.dragonbra.javasteam.rpc.service.Cloud;
 import in.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails;
 import in.dragonbra.javasteam.steam.handlers.steamuser.SteamUser;
 import in.dragonbra.javasteam.steam.handlers.steamuser.callback.LoggedOffCallback;
@@ -21,8 +26,12 @@ import in.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration
 import in.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackManager;
 import in.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback;
 import in.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback;
+import kotlinx.coroutines.CoroutineScope;
+import kotlinx.coroutines.CoroutineScopeKt;
+import kotlinx.coroutines.Dispatchers;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 
 import java.io.BufferedReader;
@@ -31,6 +40,8 @@ import java.io.Console;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.RandomAccessFile;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
@@ -42,6 +53,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Date;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -58,6 +70,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.security.MessageDigest;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -70,6 +83,7 @@ import java.util.zip.ZipInputStream;
  */
 public final class StsSteamCloudReadOnlySpike {
     private static final int DEFAULT_APP_ID = 646570;
+    private static final Path DEFAULT_SESSION_FILE = Paths.get("agent-tmp/steam-desktop-session.env");
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration AUTH_START_TIMEOUT = Duration.ofSeconds(60);
     private static final Duration AUTH_POLL_TIMEOUT = Duration.ofMinutes(4);
@@ -81,6 +95,15 @@ public final class StsSteamCloudReadOnlySpike {
         .withZone(ZoneId.systemDefault());
 
     private StsSteamCloudReadOnlySpike() {}
+
+    /** Steamworks EHTTPMethod values: HEAD=2, POST=3, PUT=4. */
+    static String uploadHttpMethod(int value) throws IOException {
+        return switch (value) {
+            case 3 -> "POST";
+            case 4 -> "PUT";
+            default -> throw new IOException("Unsupported Steam upload HTTP method: " + value);
+        };
+    }
 
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
@@ -110,6 +133,28 @@ public final class StsSteamCloudReadOnlySpike {
             List<RemoteFileEntry> entries = runner.listFiles(options.appId);
             writeListing(options.outputDir.resolve("cloud-list.tsv"), entries, options.appId);
             printListing(entries, options.listLimit, options.appId);
+
+            if (options.hasMutation()) {
+                if (options.uploadPath != null) {
+                    System.out.println("Uploading " + options.uploadSource + " as " + options.uploadPath + " (confirmed).");
+                }
+                if (options.deletePath != null) {
+                    System.out.println("Deleting " + options.deletePath + " (confirmed).");
+                }
+                runner.mutateCloud(
+                    options.appId,
+                    options.uploadPath,
+                    options.uploadSource,
+                    options.deletePath
+                );
+                List<RemoteFileEntry> verifiedEntries = runner.listFiles(options.appId);
+                boolean uploadPresent = options.uploadPath == null || containsPath(verifiedEntries, options.uploadPath);
+                boolean deleteAbsent = options.deletePath == null || !containsPath(verifiedEntries, options.deletePath);
+                if (!uploadPresent || !deleteAbsent) {
+                    throw new IllegalStateException("Steam Cloud mutation completed but manifest verification failed.");
+                }
+                System.out.println("Cloud mutation verified against a fresh manifest.");
+            }
 
             List<RemoteFileEntry> selectedEntries = selectDownloads(entries, options);
             if (selectedEntries.isEmpty()) {
@@ -166,6 +211,11 @@ public final class StsSteamCloudReadOnlySpike {
             + "  --download-index <n>               Download one listed row by index. Repeatable.\n"
             + "  --download-path <remote-path>      Download one exact remote path. Repeatable.\n"
             + "  --download-match <substring>       Download files whose remote path contains this text. Repeatable.\n"
+            + "  --upload-path <remote-path>        Upload one local file to this remote path. Requires --upload-source and --confirm-cloud-write.\n"
+            + "  --upload-source <path>              Local upload source. Mutations are never enabled by default.\n"
+            + "  --confirm-cloud-write               Explicitly authorize the requested upload.\n"
+            + "  --delete-path <remote-path>         Explicitly delete one remote path. Requires --confirm-cloud-delete.\n"
+            + "  --confirm-cloud-delete              Explicitly authorize the requested deletion.\n"
             + "\n"
             + "Credential sources:\n"
             + "  Refresh token mode:\n"
@@ -260,8 +310,7 @@ public final class StsSteamCloudReadOnlySpike {
         if (authMaterial.guardData != null && !authMaterial.guardData.isBlank()) {
             lines.add("STEAM_GUARD_DATA=" + authMaterial.guardData);
         }
-        Files.createDirectories(target.toAbsolutePath().normalize().getParent());
-        Files.write(target, lines, StandardCharsets.UTF_8);
+        SteamSessionFileStore.write(target, String.join("\n", lines) + "\n");
         System.out.println("Wrote auth material to " + target + " (contains secrets).");
     }
 
@@ -317,6 +366,10 @@ public final class StsSteamCloudReadOnlySpike {
         }
 
         return new ArrayList<>(selected);
+    }
+
+    private static boolean containsPath(List<RemoteFileEntry> entries, String path) {
+        return entries.stream().anyMatch(entry -> entry.displayPath.equals(path) || entry.remotePath.equals(path));
     }
 
     private static String sanitizeCell(String value) {
@@ -397,6 +450,7 @@ public final class StsSteamCloudReadOnlySpike {
         private final SteamUser steamUser;
         private final SteamCloud steamCloud;
         private final OkHttpClient httpClient;
+        private final CoroutineScope uploadScope = CoroutineScopeKt.CoroutineScope(Dispatchers.getIO());
         private final AtomicBoolean running = new AtomicBoolean(false);
         private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
         private final CompletableFuture<Void> connectedFuture = new CompletableFuture<>();
@@ -628,10 +682,162 @@ public final class StsSteamCloudReadOnlySpike {
             return new DownloadResult(entry, outputPath, compressedBytes.length, rawBytes.length, info.getEncrypted());
         }
 
+        void mutateCloud(int appId, String uploadPath, Path uploadSource, String deletePath) throws Exception {
+            List<String> uploads = uploadPath == null ? Collections.emptyList() : List.of(uploadPath);
+            List<String> deletes = deletePath == null ? Collections.emptyList() : List.of(deletePath);
+            AppUploadBatchResponse batch = waitForStage(
+                steamCloud.beginAppUploadBatch(appId, "sts-steam-cloud-spike", uploads, deletes, 0L, 0L),
+                RPC_TIMEOUT,
+                "BeginAppUploadBatch"
+            );
+            long batchId = batch.getBatchID();
+            if (batchId <= 0L) {
+                throw new IllegalStateException("Steam returned an invalid upload batch ID.");
+            }
+
+            boolean completed = false;
+            try {
+                if (uploadPath != null) {
+                    uploadFile(appId, uploadPath, uploadSource, batchId);
+                }
+                if (deletePath != null) {
+                    deleteFile(appId, deletePath, batchId);
+                }
+                waitForStage(
+                    steamCloud.completeAppUploadBatch(appId, batchId, EResult.OK),
+                    RPC_TIMEOUT,
+                    "CompleteAppUploadBatch"
+                );
+                completed = true;
+            } finally {
+                if (!completed) {
+                    try {
+                        waitForStage(
+                            steamCloud.completeAppUploadBatch(appId, batchId, EResult.Fail),
+                            RPC_TIMEOUT,
+                            "CompleteAppUploadBatch failure"
+                        );
+                    } catch (Exception ignored) {
+                        System.out.println("Warning: failed to report the cloud mutation batch failure to Steam.");
+                    }
+                }
+            }
+        }
+
+        private void uploadFile(int appId, String remotePath, Path source, long batchId) throws Exception {
+            if (source == null || !Files.isRegularFile(source)) {
+                throw new IOException("Upload source is not a regular file: " + source);
+            }
+            long length = Files.size(source);
+            if (length > Integer.MAX_VALUE) {
+                throw new IOException("Steam Cloud spike does not support files larger than 2 GiB.");
+            }
+            byte[] sha1 = sha1(source);
+            FileUploadInfo uploadInfo = waitForStage(
+                steamCloud.beginFileUpload(
+                    appId,
+                    (int) length,
+                    (int) length,
+                    sha1,
+                    new Date(),
+                    remotePath,
+                    0,
+                    0,
+                    false,
+                    false,
+                    null,
+                    batchId,
+                    uploadScope
+                ),
+                RPC_TIMEOUT,
+                "BeginFileUpload"
+            );
+
+            try (RandomAccessFile input = new RandomAccessFile(source.toFile(), "r")) {
+                for (FileUploadBlockDetails block : uploadInfo.getBlockRequests()) {
+                    byte[] body = block.getExplicitBodyData();
+                    if (body == null || body.length == 0) {
+                        if (block.getBlockLength() < 0 || block.getBlockOffset() < 0
+                            || block.getBlockOffset() + block.getBlockLength() > length) {
+                            throw new IOException("Steam returned an invalid upload block for " + remotePath);
+                        }
+                        body = new byte[block.getBlockLength()];
+                        input.seek(block.getBlockOffset());
+                        input.readFully(body);
+                    }
+                    String url = (block.getUseHttps() ? "https://" : "http://")
+                        + block.getUrlHost() + block.getUrlPath();
+                    Request.Builder request = new Request.Builder().url(url);
+                    for (HttpHeaders header : block.getRequestHeaders()) {
+                        if (!"host".equalsIgnoreCase(header.getName())
+                            && !"content-length".equalsIgnoreCase(header.getName())) {
+                            request.addHeader(header.getName(), header.getValue());
+                        }
+                    }
+                    String method = uploadHttpMethod(block.getHttpMethod());
+                    request.method(method, RequestBody.create(body, null));
+                    try (Response response = httpClient.newCall(request.build()).execute()) {
+                        if (!response.isSuccessful()) {
+                            throw new IOException("HTTP " + response.code() + " when uploading " + remotePath);
+                        }
+                    }
+                }
+            } catch (Exception error) {
+                waitForStage(
+                    steamCloud.commitFileUpload(false, appId, sha1, remotePath),
+                    RPC_TIMEOUT,
+                    "CommitFileUpload failure"
+                );
+                throw error;
+            }
+
+            Boolean committed = waitForStage(
+                steamCloud.commitFileUpload(true, appId, sha1, remotePath),
+                RPC_TIMEOUT,
+                "CommitFileUpload"
+            );
+            if (!Boolean.TRUE.equals(committed)) {
+                throw new IllegalStateException("Steam did not commit uploaded file: " + remotePath);
+            }
+        }
+
+        private void deleteFile(int appId, String remotePath, long batchId) throws Exception {
+            SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Request request =
+                SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Request.newBuilder()
+                    .setAppid(appId)
+                    .setFilename(remotePath)
+                    .setIsExplicitDelete(true)
+                    .setUploadBatchId(batchId)
+                    .build();
+            Cloud cloud = cloudService();
+            waitForStage(cloud.clientDeleteFile(request).toFuture(), RPC_TIMEOUT, "ClientDeleteFile");
+        }
+
+        private Cloud cloudService() throws Exception {
+            Method getter = SteamCloud.class.getDeclaredMethod("getCloudService");
+            getter.setAccessible(true);
+            return (Cloud) getter.invoke(steamCloud);
+        }
+
+        private static byte[] sha1(Path source) throws Exception {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            try (InputStream input = Files.newInputStream(source)) {
+                byte[] buffer = new byte[64 * 1024];
+                int count;
+                while ((count = input.read(buffer)) >= 0) {
+                    if (count > 0) {
+                        digest.update(buffer, 0, count);
+                    }
+                }
+            }
+            return digest.digest();
+        }
+
         @Override
         public void close() throws Exception {
             shuttingDown.set(true);
             running.set(false);
+            CoroutineScopeKt.cancel(uploadScope, null);
             try {
                 steamUser.logOff();
             } catch (Throwable ignored) {
@@ -965,6 +1171,41 @@ public final class StsSteamCloudReadOnlySpike {
         private final List<String> downloadPaths = new ArrayList<>();
         private final List<String> downloadMatches = new ArrayList<>();
         private boolean downloadAll;
+        private String uploadPath;
+        private Path uploadSource;
+        private String deletePath;
+        private boolean confirmCloudWrite;
+        private boolean confirmCloudDelete;
+
+        private Options() {
+            Map<String, String> session = readDefaultSession();
+            if (accountName == null) {
+                accountName = session.get("STEAM_ACCOUNT_NAME");
+            }
+            if (refreshToken == null) {
+                refreshToken = session.get("STEAM_REFRESH_TOKEN");
+            }
+            if (guardData == null) {
+                guardData = session.get("STEAM_GUARD_DATA");
+            }
+        }
+
+        private static Map<String, String> readDefaultSession() {
+            if (!Files.isRegularFile(DEFAULT_SESSION_FILE)) {
+                return Collections.emptyMap();
+            }
+            try {
+                return SteamSessionFileStore.read(DEFAULT_SESSION_FILE);
+            } catch (RuntimeException ignored) {
+                // A malformed optional session file must not expose its contents or prevent
+                // explicit environment/argument credentials from being used.
+                return Collections.emptyMap();
+            }
+        }
+
+        private boolean hasMutation() {
+            return uploadPath != null || deletePath != null;
+        }
 
         static Options parse(String[] args) {
             Options options = new Options();
@@ -1040,6 +1281,21 @@ public final class StsSteamCloudReadOnlySpike {
                     case "download-match":
                         options.downloadMatches.add(requireValue(key, inlineValue, args, ++i));
                         break;
+                    case "upload-path":
+                        options.uploadPath = requireValue(key, inlineValue, args, ++i);
+                        break;
+                    case "upload-source":
+                        options.uploadSource = Paths.get(requireValue(key, inlineValue, args, ++i));
+                        break;
+                    case "confirm-cloud-write":
+                        options.confirmCloudWrite = true;
+                        break;
+                    case "delete-path":
+                        options.deletePath = requireValue(key, inlineValue, args, ++i);
+                        break;
+                    case "confirm-cloud-delete":
+                        options.confirmCloudDelete = true;
+                        break;
                     default:
                         throw new IllegalArgumentException("Unknown flag: --" + key);
                 }
@@ -1053,6 +1309,24 @@ public final class StsSteamCloudReadOnlySpike {
             }
             if (listLimit <= 0) {
                 throw new IllegalArgumentException("--list-limit must be > 0.");
+            }
+            if (uploadPath != null && uploadSource == null) {
+                throw new IllegalArgumentException("--upload-path requires --upload-source.");
+            }
+            if (uploadSource != null && uploadPath == null) {
+                throw new IllegalArgumentException("--upload-source requires --upload-path.");
+            }
+            if (uploadPath != null && !confirmCloudWrite) {
+                throw new IllegalArgumentException("Upload requires explicit --confirm-cloud-write.");
+            }
+            if (deletePath != null && !confirmCloudDelete) {
+                throw new IllegalArgumentException("Delete requires explicit --confirm-cloud-delete.");
+            }
+            if (uploadPath != null && uploadPath.isBlank()) {
+                throw new IllegalArgumentException("--upload-path must not be blank.");
+            }
+            if (deletePath != null && deletePath.isBlank()) {
+                throw new IllegalArgumentException("--delete-path must not be blank.");
             }
 
             connectionMode = ConnectionMode.parse(protocolName);

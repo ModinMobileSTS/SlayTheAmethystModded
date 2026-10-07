@@ -444,42 +444,6 @@ public final class SteamCloudClientTest {
     }
 
     @Test
-    public void pushReconnectRetryCandidate_acceptsBeginAppUploadBatchUnexpectedDisconnect() throws Exception {
-        SteamCloudClient.DiagnosticsSnapshot diagnostics = newDiagnosticsSnapshot(
-            "BeginAppUploadBatch",
-            "unexpected",
-            Collections.emptyList()
-        );
-
-        Assert.assertTrue(invokeIsReconnectRetryCandidate(
-            new IllegalStateException("Steam disconnected (unexpected) during BeginAppUploadBatch."),
-            diagnostics
-        ));
-    }
-
-    @Test
-    public void pushReconnectRetryCandidate_acceptsHttpPutSocketAbortAfterUploadSlot() throws Exception {
-        SteamCloudClient.DiagnosticsSnapshot diagnostics = newDiagnosticsSnapshot(
-            "CompleteAppUploadBatch",
-            "unexpected",
-            Collections.singletonList(
-                "upload_file failed remotePath=%GameInstall%preferences/STSSeenCards.backUp "
-                    + "batchId=7134522280144150877 startedUpload=true "
-                    + "error=java.net.SocketException: Software caused connection abort"
-            )
-        );
-
-        Assert.assertTrue(invokeIsReconnectRetryCandidate(
-            new IllegalStateException(
-                "Steam Cloud upload failed for %GameInstall%preferences/STSSeenCards.backUp: "
-                    + "SocketException: Software caused connection abort",
-                new SocketException("Software caused connection abort")
-            ),
-            diagnostics
-        ));
-    }
-
-    @Test
     public void resolveSteamId64FromAuthSession_readsCredentialsAuthSessionField() {
         String steamId64 = "76561198883607238";
 
@@ -707,23 +671,6 @@ public final class SteamCloudClientTest {
             false,
             0
         );
-    }
-
-    private static boolean invokeIsReconnectRetryCandidate(
-        Throwable error,
-        SteamCloudClient.DiagnosticsSnapshot diagnostics
-    ) throws Exception {
-        Class<?> coordinatorType = Class.forName("io.stamethyst.backend.steamcloud.SteamCloudPushCoordinator");
-        Field instanceField = coordinatorType.getDeclaredField("INSTANCE");
-        instanceField.setAccessible(true);
-        Object coordinator = instanceField.get(null);
-        Method method = coordinatorType.getDeclaredMethod(
-            "isReconnectRetryCandidate",
-            Throwable.class,
-            SteamCloudClient.DiagnosticsSnapshot.class
-        );
-        method.setAccessible(true);
-        return (boolean) method.invoke(coordinator, error, diagnostics);
     }
 
     private static final class FakeCredentialsAuthSession {

@@ -31,8 +31,11 @@ import io.stamethyst.backend.mods.ImportedModPatchInfo
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.steamcloud.SteamCloudLiveSaveLease
 import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
-import io.stamethyst.backend.steamcloud.SteamCloudStagedPathReplacement
-import io.stamethyst.backend.steamcloud.SteamCloudStagedPathStore
+import io.stamethyst.backend.steamcloud.SteamCloudAtomicFileStore
+import io.stamethyst.backend.steamcloud.SteamCloudPathReplacement
+import io.stamethyst.backend.steamcloud.SteamCloudFileTransaction
+import io.stamethyst.backend.steamcloud.SteamCloudSyncRepository
+import io.stamethyst.backend.steamcloud.SteamCloudLocalStateMutex
 import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SteamCloudSaveMode
@@ -524,12 +527,10 @@ internal object SettingsFileService {
         )
         val archiveFile = File(transactionRoot, "source.zip")
         val stagingRoot = File(transactionRoot, "staging")
-        val rollbackRoot = File(transactionRoot, "rollback")
         if (!transactionRoot.mkdirs()) {
             throw IOException("Failed to create save import transaction directory: ${transactionRoot.absolutePath}")
         }
 
-        var preserveRecoveryData = false
         try {
             copyUriToFile(host, uri, archiveFile)
             val scanResult = scanSaveArchive(archiveFile)
@@ -550,16 +551,25 @@ internal object SettingsFileService {
             }
 
             val applyImport = {
+                SteamCloudSyncRepository.recoverLocal(host)
                 val backupLabel = backupExistingSavesToDownloads(host, targetRoot)
-                SteamCloudStagedPathStore.apply(
-                    replacements = scanResult.targetTopLevelDirs.map { directoryName ->
-                        SteamCloudStagedPathReplacement(
-                            stagedPath = File(stagingRoot, directoryName),
-                            targetPath = File(targetRoot, directoryName),
-                        )
+                SteamCloudLocalStateMutex.runExclusive(host) { SteamCloudFileTransaction.execute(
+                    parent = File(RuntimePaths.storageRoot(host), "steam-cloud/transactions-v2"),
+                    allowedRoot = RuntimePaths.storageRoot(host),
+                    replacements = buildList {
+                        addAll(scanResult.targetTopLevelDirs.map { directoryName ->
+                            SteamCloudPathReplacement(
+                                stagedPath = File(stagingRoot, directoryName),
+                                targetPath = File(targetRoot, directoryName),
+                            )
+                        })
+                        if (targetRoot.canonicalFile != RuntimePaths.stsRoot(host).canonicalFile) {
+                            val marker = File(stagingRoot, ".initialized")
+                            SteamCloudAtomicFileStore.writeTextWithoutBackup(marker, "import-v2\n")
+                            add(SteamCloudPathReplacement(marker, File(targetRoot, ".initialized")))
+                        }
                     },
-                    rollbackRoot = rollbackRoot,
-                )
+                ) }
                 SaveImportResult(importedFiles = extracted.importableFiles, backupLabel = backupLabel)
             }
 
@@ -568,16 +578,8 @@ internal object SettingsFileService {
             } else {
                 applyImport()
             }
-        } catch (error: Throwable) {
-            preserveRecoveryData = error is io.stamethyst.backend.steamcloud.SteamCloudReconciliationException &&
-                error.recoveryDataPreserved
-            throw error
         } finally {
-            stagingRoot.deleteRecursively()
-            if (!preserveRecoveryData) {
-                rollbackRoot.deleteRecursively()
-                transactionRoot.deleteRecursively()
-            }
+            transactionRoot.deleteRecursively()
         }
     }
 

@@ -4,9 +4,25 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.security.MessageDigest
+import java.nio.file.Files
 import java.util.Locale
 
 internal object SteamCloudLocalSnapshotCollector {
+    /** Verify only the newly downloaded file, not every preceding download. */
+    @Throws(IOException::class)
+    fun collectFile(stsRoot: File, localRelativePath: String): SteamCloudLocalFileSnapshotEntry {
+        val mapped = SteamCloudPathMapper.mapLocalRelativePath(localRelativePath)
+            ?: throw IOException("Unsafe managed save path: $localRelativePath")
+        var file = stsRoot
+        if (Files.isSymbolicLink(file.toPath())) throw IOException("Save symlinks are not supported: $file")
+        localRelativePath.split('/').forEach { segment ->
+            file = File(file, segment)
+            if (Files.isSymbolicLink(file.toPath())) throw IOException("Save symlinks are not supported: $file")
+        }
+        if (!file.isFile) throw IOException("Missing or unsupported save file: $file")
+        return snapshot(file, mapped.rootKind, mapped.localRelativePath)
+    }
+
     @Throws(IOException::class)
     fun collect(stsRoot: File): List<SteamCloudLocalFileSnapshotEntry> {
         val entries = mutableListOf<SteamCloudLocalFileSnapshotEntry>()
@@ -30,6 +46,7 @@ internal object SteamCloudLocalSnapshotCollector {
         rootDir: File,
         sink: MutableList<SteamCloudLocalFileSnapshotEntry>,
     ) {
+        if (Files.isSymbolicLink(rootDir.toPath())) throw IOException("Save symlinks are not supported: $rootDir")
         if (!rootDir.exists()) {
             return
         }
@@ -45,15 +62,7 @@ internal object SteamCloudLocalSnapshotCollector {
             if (relativeSuffix.isBlank()) {
                 return@forEach
             }
-            val fileDigests = digestFile(file)
-            sink += SteamCloudLocalFileSnapshotEntry(
-                localRelativePath = rootKind.directoryName + "/" + relativeSuffix,
-                rootKind = rootKind,
-                fileSize = file.length(),
-                lastModifiedMs = file.lastModified().coerceAtLeast(0L),
-                sha256 = fileDigests.sha256,
-                sha1 = fileDigests.sha1,
-            )
+            sink += snapshot(file, rootKind, rootKind.directoryName + "/" + relativeSuffix)
         }
     }
 
@@ -61,6 +70,7 @@ internal object SteamCloudLocalSnapshotCollector {
         val children = directory.listFiles()
             ?: throw IOException("Failed to enumerate Steam Cloud local directory: ${directory.absolutePath}")
         children.forEach { child ->
+            if (Files.isSymbolicLink(child.toPath())) throw IOException("Save symlinks are not supported: $child")
             when {
                 child.isDirectory -> collectFiles(child, sink)
                 child.isFile -> sink += child
@@ -69,6 +79,12 @@ internal object SteamCloudLocalSnapshotCollector {
                 )
             }
         }
+    }
+
+    private fun snapshot(file: File, rootKind: SteamCloudRootKind, localRelativePath: String): SteamCloudLocalFileSnapshotEntry {
+        val digests = digestFile(file)
+        return SteamCloudLocalFileSnapshotEntry(localRelativePath, rootKind, file.length(),
+            file.lastModified().coerceAtLeast(0L), digests.sha256, digests.sha1)
     }
 
     private fun digestFile(file: File): FileDigests {

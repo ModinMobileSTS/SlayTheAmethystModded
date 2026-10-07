@@ -7,6 +7,7 @@ import java.net.UnknownHostException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import top.apricityx.workshop.steam.protocol.SteamServerUnavailableException
 
 enum class SteamCloudFailureCategory {
     TRANSIENT_NETWORK,
@@ -28,6 +29,8 @@ internal object SteamCloudFailureClassifier {
         }
 
         return when {
+            causes.any { it is SteamCloudPushReconciliationException || it is SteamCloudStalePlanException || it is SteamCloudRecoveryException } ->
+                SteamCloudFailureCategory.CLOUD_CONFLICT
             causes.any { it is CancellationException || it is InterruptedException } ->
                 SteamCloudFailureCategory.CANCELLED
 
@@ -50,6 +53,10 @@ internal object SteamCloudFailureClassifier {
 
             causes.any { it is SteamCloudCredentialsMissingException } ->
                 SteamCloudFailureCategory.MISSING_AUTH
+
+            causes.any { it is SteamServerUnavailableException } ||
+                containsAny(description, "Steam server unavailable for request", "ClientServerUnavailable") ||
+                hasEResult(description, 20) -> SteamCloudFailureCategory.TRANSIENT_NETWORK
 
             hasEResult(description, 108) || containsAny(
                 description,

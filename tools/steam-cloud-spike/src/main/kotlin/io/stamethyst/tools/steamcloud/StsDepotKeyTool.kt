@@ -23,7 +23,6 @@ import java.net.Proxy
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermission
 import java.util.Base64
 import kotlin.io.path.exists
 import kotlin.io.path.readLines
@@ -46,7 +45,6 @@ fun main(args: Array<String>) {
         runBlocking {
             when (parsed.command) {
                 ToolCommand.DepotKey -> StsDepotKeyTool(parsed).run()
-                ToolCommand.RefreshToken -> SteamRefreshTokenTool(parsed).run()
                 ToolCommand.AchievementProbe -> SteamAchievementProbeTool(parsed).run()
                 ToolCommand.AchievementBitProbe -> SteamAchievementBitProbeTool(parsed).run()
                 ToolCommand.AchievementUnlock -> SteamAchievementMutationTool(parsed, AchievementMutation.Unlock).run()
@@ -66,7 +64,6 @@ private enum class ToolCommand(
     val failureDescription: String,
 ) {
     DepotKey("fetch Steam depot key"),
-    RefreshToken("retrieve Steam refresh token"),
     AchievementProbe("inspect Steam achievement CM protocol"),
     AchievementBitProbe("run an explicitly confirmed raw Steam achievement-bit experiment"),
     AchievementUnlock("run the restricted Steam achievement test"),
@@ -120,35 +117,6 @@ private class StsDepotKeyTool(
             println("depotKeyBase64=$base64Key")
         } else {
             println("Depot key fetched. Re-run with --print-key if you need to print the secret to the terminal.")
-        }
-    }
-}
-
-private class SteamRefreshTokenTool(
-    private val args: ParsedArgs,
-) {
-    suspend fun run() {
-        val envFileValues = readCredentialEnvFiles(args)
-        val merged = MergedConfig(args, envFileValues)
-        val debugLogger: ((String) -> Unit)? = if (args.debug) {
-            { line -> System.err.println(line) }
-        } else {
-            null
-        }
-        val client = buildHttpClient(merged.proxyUrl())
-        val account = merged.accountSession(SteamDirectoryClient(client), client, debugLogger)
-        val result = RefreshTokenResult(account, merged.guardData)
-        val output = merged.refreshTokenOutputPath(account.steamId)
-
-        if (output != null) {
-            writeSensitiveEnvFile(output, result.toEnvFile())
-            println("Refresh token written to: $output")
-        }
-        println("account=${account.accountName} steamId64=${account.steamId}")
-        if (args.printToken) {
-            println("refreshToken=${account.refreshToken}")
-        } else {
-            println("Refresh token acquired. Re-run with --print-token only when terminal output is required.")
         }
     }
 }
@@ -620,16 +588,6 @@ private class MergedConfig(
         return Path.of(raw)
     }
 
-    fun refreshTokenOutputPath(steamId: Long): Path? {
-        if (args.noOutput) {
-            return null
-        }
-        val raw = args.options["output"]
-            ?: envFileValues["STS_REFRESH_TOKEN_OUTPUT"]
-            ?: DEFAULT_DESKTOP_SESSION_FILE
-        return Path.of(raw)
-    }
-
     fun proxyUrl(): String? =
         args.options["proxy-url"]
             ?: System.getenv("STEAM_PROXY_URL")
@@ -702,28 +660,12 @@ private data class DepotKeyResult(
     }
 }
 
-private data class RefreshTokenResult(
-    val account: SteamAccountSession,
-    val guardData: String?,
-) {
-    fun toEnvFile(): String = buildString {
-        appendLine("# Sensitive Steam credentials. Do not commit or share this file.")
-        appendEnv("STEAM_ACCOUNT_NAME", account.accountName)
-        appendEnv("STEAM_STEAM_ID64", account.steamId.toString())
-        appendEnv("STEAM_REFRESH_TOKEN", account.refreshToken)
-        if (!guardData.isNullOrBlank()) {
-            appendEnv("STEAM_GUARD_DATA", guardData)
-        }
-    }
-}
-
 private data class ParsedArgs(
     val command: ToolCommand,
     val options: Map<String, String>,
     val help: Boolean,
     val debug: Boolean,
     val printKey: Boolean,
-    val printToken: Boolean,
     val confirmShrugItOff: Boolean,
     val confirmLockShrugItOff: Boolean,
     val inspectAchievementSchema: Boolean,
@@ -744,7 +686,9 @@ private data class ParsedArgs(
             } else {
                 command = when (args[0]) {
                     "depotKey" -> ToolCommand.DepotKey
-                    "refreshToken" -> ToolCommand.RefreshToken
+                    "refreshToken", "login" -> throw IllegalArgumentException(
+                        "Steam login has moved to: python3 tools/steam-cloud-spike/login.py",
+                    )
                     "achievementProbe" -> ToolCommand.AchievementProbe
                     "achievementBitProbe" -> ToolCommand.AchievementBitProbe
                     "achievementUnlock" -> ToolCommand.AchievementUnlock
@@ -785,7 +729,6 @@ private data class ParsedArgs(
                 help = "help" in flags || "h" in flags,
                 debug = "debug" in flags,
                 printKey = "print-key" in flags,
-                printToken = "print-token" in flags,
                 confirmShrugItOff = "confirm-shrug-it-off" in flags,
                 confirmLockShrugItOff = "confirm-lock-shrug-it-off" in flags,
                 inspectAchievementSchema = "inspect-achievement-schema" in flags,
@@ -804,7 +747,6 @@ private data class ParsedArgs(
             "h",
             "debug",
             "print-key",
-            "print-token",
             "confirm-shrug-it-off",
             "confirm-lock-shrug-it-off",
             "inspect-achievement-schema",
@@ -837,22 +779,7 @@ private suspend fun <T> SteamCredentialAuthSession.useSuspending(block: suspend 
     }
 
 private fun readEnvFile(path: Path): Map<String, String> {
-    if (!path.exists()) {
-        throw IllegalArgumentException("Env file does not exist: $path")
-    }
-    return path.readLines(Charsets.UTF_8)
-        .asSequence()
-        .map(String::trim)
-        .filter { it.isNotEmpty() && !it.startsWith("#") }
-        .mapNotNull { line ->
-            val separator = line.indexOf('=')
-            if (separator <= 0) {
-                null
-            } else {
-                line.substring(0, separator) to line.substring(separator + 1)
-            }
-        }
-        .toMap()
+    return SteamSessionFileStore.read(path)
 }
 
 private fun readCredentialEnvFiles(args: ParsedArgs): Map<String, String> {
@@ -934,17 +861,6 @@ private fun StringBuilder.appendEnv(key: String, value: String) {
     append(key)
     append('=')
     appendLine(value)
-}
-
-private fun writeSensitiveEnvFile(path: Path, contents: String) {
-    path.parent?.let(Files::createDirectories)
-    Files.writeString(path, contents, Charsets.UTF_8)
-    runCatching {
-        Files.setPosixFilePermissions(
-            path,
-            setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
-        )
-    }
 }
 
 private fun parseAchievementStats(
@@ -1055,7 +971,7 @@ private fun printUsage() {
         """
         Usage:
           .\gradlew.bat :tools:steam-cloud-spike:depotKey --args="--app-id 646570 --depot-id 877621"
-          .\gradlew.bat :tools:steam-cloud-spike:refreshToken
+          python tools/steam-cloud-spike/login.py
           .\gradlew.bat :tools:steam-cloud-spike:achievementProbe --args="--achievement-api-name minimalist"
           .\gradlew.bat :tools:steam-cloud-spike:achievementBitProbe --args="--stat-id 1 --bit-index 26 --confirm-unsafe-stat-bit"
           .\gradlew.bat :tools:steam-cloud-spike:achievementUnlock --args="--confirm-shrug-it-off"
@@ -1065,7 +981,6 @@ private fun printUsage() {
           --app-id 646570
           --depot-id 877621
           --output agent-tmp/steam-depot-key-<app>-<depot>.env
-          refreshToken output: agent-tmp/steam-desktop-session.env
 
         Login inputs:
           --username <name>              or STEAM_USERNAME
@@ -1085,7 +1000,6 @@ private fun printUsage() {
           --proxy-url <url>              or STEAM_PROXY_URL / HTTPS_PROXY / HTTP_PROXY
           --no-proxy                     force direct connections and ignore proxy environment variables
           --print-key                    also print depot key to terminal
-          --print-token                  also print refresh token to terminal
            --reauthenticate               ignore the saved desktop session and sign in again
            --confirm-shrug-it-off         required for the one experimental achievement mutation
           --confirm-lock-shrug-it-off    required to clear the one experimental achievement bit

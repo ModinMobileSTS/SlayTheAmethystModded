@@ -7,6 +7,7 @@ import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.ui.settings.files.SettingsSaveBackupService
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -27,20 +28,19 @@ internal object SteamCloudSaveProfileManager {
         SteamCloudOperationMutex.runExclusive(context) {
             SteamCloudLiveSaveLease.runMutation(context) {
                 migrateLegacyProfilesExclusive(context)
+                if (LauncherConfig.readSteamCloudSaveMode(context) != fromMode) {
+                    throw SteamCloudStalePlanException("Save mode changed before the profile switch; refresh and try again.")
+                }
                 if (fromMode == toMode) {
                     return@runMutation
                 }
 
                 val cloudProfileId = resolveCloudProfileId(context)
                 saveActiveProfileExclusive(context, fromMode, cloudProfileId)
-                restoreProfileExclusive(context, toMode, cloudProfileId)
-                try {
-                    LauncherConfig.saveSteamCloudSaveMode(context, toMode)
-                } catch (error: Throwable) {
-                    runCatching { restoreProfileExclusive(context, fromMode, cloudProfileId) }
-                        .onFailure(error::addSuppressed)
-                    throw error
-                }
+                SteamCloudLocalStateMutex.runExclusive(context) { SteamCloudControlStore.locked(context) {
+                    restoreProfileExclusive(context, toMode, cloudProfileId,
+                        SteamCloudControlStore.read(context).copy(mode = toMode.persistedValue))
+                } }
             }
         }
     }
@@ -84,26 +84,48 @@ internal object SteamCloudSaveProfileManager {
                 }
 
                 saveActiveProfileExclusive(context, fromMode, pendingCloudProfileId)
-                restoreProfileExclusive(
-                    context,
-                    SteamCloudSaveMode.INDEPENDENT,
-                    pendingCloudProfileId,
-                )
-                try {
-                    LauncherConfig.completeSteamCloudIndependentSwitch(context)
-                } catch (error: Throwable) {
-                    runCatching {
-                        restoreProfileExclusive(context, fromMode, pendingCloudProfileId)
-                    }
-                        .onFailure(error::addSuppressed)
-                    throw error
-                }
+                SteamCloudLocalStateMutex.runExclusive(context) { SteamCloudControlStore.locked(context) {
+                    restoreProfileExclusive(context, SteamCloudSaveMode.INDEPENDENT, pendingCloudProfileId,
+                        SteamCloudControlStore.read(context).copy(mode = SteamCloudSaveMode.INDEPENDENT.persistedValue,
+                            independentSwitchPending = false, pendingSteamId = ""))
+                } }
             }
         }
     }
 
     fun profileRoot(context: Context, mode: SteamCloudSaveMode): File =
         profileDir(context, mode, resolveCloudProfileId(context))
+
+    /** Profile content and its initialization marker commit with pulled saves and mode metadata. */
+    fun stageCloudProfile(context: Context, work: File, preparedRoot: File): List<SteamCloudPathReplacement> {
+        val staged = File(work, "cloud-profile")
+        val target = profileRoot(context, SteamCloudSaveMode.STEAM_CLOUD)
+        val blacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(context)
+        val replacements = SteamCloudRootKind.entries.map { kind ->
+            val source = File(preparedRoot, kind.directoryName)
+            val destination = File(staged, kind.directoryName)
+            if (source.exists()) copyPathExcluding(source, destination,
+                SteamCloudSyncBlacklist.relativeSuffixesForRoot(kind, blacklist))
+            SteamCloudPathReplacement(destination.takeIf { it.exists() }, File(target, kind.directoryName))
+        }
+        val marker = File(staged, PROFILE_INITIALIZED_FILE_NAME)
+        SteamCloudAtomicFileStore.writeTextWithoutBackup(marker, "v2\n")
+        return replacements + SteamCloudPathReplacement(marker, File(target, PROFILE_INITIALIZED_FILE_NAME))
+    }
+
+    fun stageLiveRoot(context: Context, work: File, preparedRoot: File): List<SteamCloudPathReplacement> {
+        val staging = File(work, "live-install")
+        val live = RuntimePaths.stsRoot(context)
+        val blacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(context)
+        return SteamCloudRootKind.entries.map { kind ->
+            val destination = File(staging, kind.directoryName)
+            val source = File(preparedRoot, kind.directoryName)
+            val excluded = SteamCloudSyncBlacklist.relativeSuffixesForRoot(kind, blacklist)
+            if (source.exists()) copyPathExcluding(source, destination, excluded)
+            copySelectedPaths(File(live, kind.directoryName), destination, excluded)
+            SteamCloudPathReplacement(destination.takeIf { it.exists() }, File(live, kind.directoryName))
+        }
+    }
 
     fun profileIsInitialized(context: Context, mode: SteamCloudSaveMode): Boolean {
         return isProfileInitialized(profileRoot(context, mode))
@@ -119,22 +141,6 @@ internal object SteamCloudSaveProfileManager {
                     rootKind = rootKind,
                     configuredBlacklist = syncBlacklist,
                 ),
-            )
-        }
-    }
-
-    /**
-     * Marks a profile as available after an archive has populated it directly.
-     *
-     * Imports can target the profile that is not currently active, so the normal
-     * active-profile save path is not involved in that case.
-     */
-    fun markProfileInitialized(context: Context, mode: SteamCloudSaveMode) {
-        SteamCloudOperationMutex.runExclusive(context) {
-            migrateLegacyProfilesExclusive(context)
-            SteamCloudAtomicFileStore.writeTextWithoutBackup(
-                File(profileRoot(context, mode), PROFILE_INITIALIZED_FILE_NAME),
-                "import-v1\n",
             )
         }
     }
@@ -168,6 +174,7 @@ internal object SteamCloudSaveProfileManager {
         context: Context,
         mode: SteamCloudSaveMode,
         cloudProfileId: String,
+        controlState: SteamCloudControlStore.State? = null,
     ) {
         val syncBlacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(context)
         val liveRoot = RuntimePaths.stsRoot(context)
@@ -185,6 +192,7 @@ internal object SteamCloudSaveProfileManager {
             context = context,
             targetRoot = liveRoot,
             markInitialized = false,
+            controlState = controlState,
         ) { stagingRoot, rootKind ->
             val stagedRoot = File(stagingRoot, rootKind.directoryName)
             val source = File(sourceProfile, rootKind.directoryName)
@@ -209,10 +217,11 @@ internal object SteamCloudSaveProfileManager {
         }
     }
 
-    private inline fun applyProfileTransaction(
+    private fun applyProfileTransaction(
         context: Context,
         targetRoot: File,
         markInitialized: Boolean,
+        controlState: SteamCloudControlStore.State? = null,
         buildStagingRoot: (File, SteamCloudRootKind) -> Unit,
     ) {
         val transactionRoot = File(
@@ -220,12 +229,10 @@ internal object SteamCloudSaveProfileManager {
             ".steam-cloud-profile-${System.currentTimeMillis()}-${System.nanoTime()}",
         )
         val stagingRoot = File(transactionRoot, "staging")
-        val rollbackRoot = File(transactionRoot, "rollback")
         if (!stagingRoot.mkdirs()) {
             throw IOException("Failed to create profile staging directory: ${stagingRoot.absolutePath}")
         }
 
-        var preserveRecoveryData = false
         try {
             SteamCloudRootKind.entries.forEach { rootKind ->
                 buildStagingRoot(stagingRoot, rootKind)
@@ -235,45 +242,35 @@ internal object SteamCloudSaveProfileManager {
                 SteamCloudAtomicFileStore.writeTextWithoutBackup(markerStagingPath, "v1\n")
             }
             val replacements = buildList {
-                if (markInitialized) {
-                    add(
-                        SteamCloudStagedPathReplacement(
-                            stagedPath = File(stagingRoot, ".initialized.removed"),
-                            targetPath = File(targetRoot, PROFILE_INITIALIZED_FILE_NAME),
-                        )
-                    )
-                }
                 addAll(
                     SteamCloudRootKind.entries.map { rootKind ->
-                        SteamCloudStagedPathReplacement(
-                            stagedPath = File(stagingRoot, rootKind.directoryName),
+                        SteamCloudPathReplacement(
+                            stagedPath = File(stagingRoot, rootKind.directoryName).takeIf { it.exists() },
                             targetPath = File(targetRoot, rootKind.directoryName),
                         )
                     }
                 )
                 if (markInitialized) {
                     add(
-                        SteamCloudStagedPathReplacement(
+                        SteamCloudPathReplacement(
                             stagedPath = markerStagingPath,
                             targetPath = File(targetRoot, PROFILE_INITIALIZED_FILE_NAME),
                         )
                     )
                 }
+                controlState?.let { state ->
+                    val staged = File(stagingRoot, "control.json")
+                    SteamCloudControlStore.write(staged, state)
+                    add(SteamCloudControlStore.modeReplacement(context, staged))
+                }
             }
-            SteamCloudStagedPathStore.apply(
+            SteamCloudLocalStateMutex.runExclusive(context) { SteamCloudFileTransaction.execute(
+                parent = File(SteamCloudManifestStore.outputDir(context), "transactions-v2"),
+                allowedRoot = RuntimePaths.storageRoot(context),
                 replacements = replacements,
-                rollbackRoot = rollbackRoot,
-            )
-        } catch (error: Throwable) {
-            preserveRecoveryData = error is SteamCloudReconciliationException &&
-                error.recoveryDataPreserved
-            throw error
+            ) }
         } finally {
-            stagingRoot.deleteRecursively()
-            if (!preserveRecoveryData) {
-                rollbackRoot.deleteRecursively()
-                transactionRoot.deleteRecursively()
-            }
+            transactionRoot.deleteRecursively()
         }
     }
 
@@ -303,6 +300,7 @@ internal object SteamCloudSaveProfileManager {
         File(profileRoot, PROFILE_INITIALIZED_FILE_NAME).isFile
 
     private fun migrateLegacyProfilesExclusive(context: Context) {
+        SteamCloudSyncRepository.recoverLocal(context)
         val root = File(RuntimePaths.storageRoot(context), PROFILE_ROOT_DIR_NAME)
         val migrationMarker = File(root, PROFILE_LAYOUT_MIGRATED_FILE_NAME)
         if (migrationMarker.isFile) {
@@ -332,7 +330,7 @@ internal object SteamCloudSaveProfileManager {
                     ) { stagingRoot, rootKind ->
                         val source = File(legacyCloudProfile, rootKind.directoryName)
                         if (source.exists()) {
-                            SteamCloudStagedPathStore.copyPath(
+                            SteamCloudFileTransaction.copyPath(
                                 source,
                                 File(stagingRoot, rootKind.directoryName),
                             )
@@ -365,6 +363,7 @@ internal object SteamCloudSaveProfileManager {
         excludedRelativeSuffixes: Set<String>,
         relativeSuffix: String = "",
     ): Boolean {
+        if (Files.isSymbolicLink(file.toPath())) throw IOException("Save symlinks are not supported: $file")
         if (!file.exists()) {
             return false
         }
@@ -393,6 +392,7 @@ internal object SteamCloudSaveProfileManager {
         excludedRelativeSuffixes: Set<String>,
         relativeSuffix: String = "",
     ): Boolean {
+        if (Files.isSymbolicLink(source.toPath())) throw IOException("Save symlinks are not supported: $source")
         val normalizedRelativeSuffix = relativeSuffix.replace('\\', '/')
         if (normalizedRelativeSuffix.isNotBlank() &&
             normalizedRelativeSuffix in excludedRelativeSuffixes
@@ -418,7 +418,7 @@ internal object SteamCloudSaveProfileManager {
             }
             return copiedAny
         }
-        SteamCloudStagedPathStore.copyPath(source, target)
+        SteamCloudFileTransaction.copyPath(source, target)
         return true
     }
 
@@ -437,7 +437,7 @@ internal object SteamCloudSaveProfileManager {
             if (target.exists() && !target.deleteRecursively()) {
                 throw IOException("Failed to replace preserved profile path: ${target.absolutePath}")
             }
-            SteamCloudStagedPathStore.copyPath(source, target)
+            SteamCloudFileTransaction.copyPath(source, target)
         }
     }
 }

@@ -100,8 +100,8 @@ class SteamCloudPathMapperTest {
             snapshot.tombstoneEntries.map { it.localRelativePath },
         )
         assertEquals(2, snapshot.entriesForPlanning.size)
-        assertEquals(1, SteamCloudPullPlanner.buildPlan(snapshot).entries.size)
-        assertTrue(SteamCloudPullPlanner.buildPlan(snapshot).entries.all { it.isLive })
+        assertEquals(1, snapshot.entries.size)
+        assertTrue(snapshot.entries.all { it.isLive })
     }
 
     @Test

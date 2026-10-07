@@ -7,8 +7,23 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import top.apricityx.workshop.steam.protocol.SteamServerUnavailableException
+import top.apricityx.workshop.steam.protocol.SteamProtocolException
 
 class SteamCloudFailurePolicyTest {
+    @Test
+    fun unavailableLogonServerIsTransientAndDoesNotInvalidateCredentials() {
+        val unavailable = SteamServerUnavailableException(5514, -1, 3)
+        listOf(unavailable, SteamProtocolException("CM attempts exhausted", unavailable),
+            IllegalStateException("Steam server unavailable for request EMsg=5514 job=-1 serverType=3"),
+            IllegalStateException("Steam 会话登录失败 EResult=20")).forEach { error ->
+            val category = SteamCloudFailureClassifier.classify(error)
+            assertEquals(SteamCloudFailureCategory.TRANSIENT_NETWORK, category)
+            assertFalse(SteamAuthenticationCircuitBreaker.trip(category))
+        }
+        assertFalse(SteamAuthenticationCircuitBreaker.isOpen())
+    }
+
     @After
     fun tearDown() {
         SteamAuthenticationCircuitBreaker.reset()

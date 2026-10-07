@@ -1,17 +1,17 @@
 # Steam CM Protocol Spike
 
-这个模块是一个独立的 JVM 命令行 spike，用来验证 `Slay the Spire` 的 Steam 云存档链路是否能走通。
+这个模块包含独立的 Python 交互登录 CLI 和 JVM 云协议工具，用来验证 `Slay the Spire` 的 Steam 云存档链路是否能走通。
 
 当前目标包括：
 
 - Steam 登录
 - 枚举 `646570` 的云文件列表
 - 按需下载选中的云文件
+- 在显式确认后上传和删除云文件
 - 受显式确认保护的单一成就协议实验
 
 当前明确不做：
 
-- 上传/删除
 - 主 launcher 接入
 - Android app 运行时集成
 
@@ -28,9 +28,39 @@
 联网、反作弊或服务器权威游戏可能拒绝写入或出现进度不一致。Android app 不会调用这个
 实验写入路径。
 
-## 在电脑上获取 Refresh Token
+## Python 交互登录（全新实现）
 
-`refreshToken` 任务会在电脑上完成 Steam 凭据登录和 Steam Guard 验证，取得持久 refresh token，方便调试 CM 协议而不依赖 Android 设备上的登录状态。该任务不会请求 depot key。
+直接在终端运行 `login.py`，不经过 Gradle、JavaSteam 或旧 JVM 登录工具。脚本使用
+Steam Authentication HTTPS API，申请 **SteamClient** 平台的持久 refresh token，供后续
+CM 云工具使用。不会读取旧 token 跳过登录，也不会请求 depot key、写云存档或修改成就。
+
+Python 3.10+；首次安装依赖后登录：
+
+```sh
+python3 -m pip install -r tools/steam-cloud-spike/login/requirements.txt
+python3 tools/steam-cloud-spike/login.py
+```
+
+Windows 使用 `python` 替代 `python3`。推荐在自己的虚拟环境中安装依赖。
+按提示输入账号和隐藏的密码；有多种 Steam Guard 方式时可选择手机确认、手机令牌码或邮箱验证。
+验证码错误/过期可重输（最多三次），限流不会自动重试；手机确认等待默认最多五分钟。
+`Ctrl+C` 可以取消。失败、超时或取消不会替换已有会话；重新登录成功后替换已有文件需要交互确认，
+或者事先明确传入 `--overwrite`。
+
+```sh
+python3 tools/steam-cloud-spike/login.py --username your_account --overwrite
+python3 tools/steam-cloud-spike/login.py --proxy-url http://127.0.0.1:7897
+python3 tools/steam-cloud-spike/login.py --no-proxy --timeout 600
+python3 tools/steam-cloud-spike/login.py --output agent-tmp/another-session.env
+```
+
+代理默认使用 `STEAM_PROXY_URL`，否则使用 Requests 的标准 HTTP(S) 代理环境变量。
+`--no-proxy` 强制直连。代理地址（可能含凭据）不输出到日志。
+密码和验证码只允许隐藏交互输入，不接受密码/token 命令行参数、环境变量或管道，
+也没有 `--print-token` 开关。`--help` 不需要安装依赖。
+
+旧 Gradle `login` / `refreshToken` 任务及 JVM refresh-token 登录实现已移除，
+请使用上面的 Python 命令；depot/成就/云工具自身的现有协议行为保持不变。
 
 默认会将敏感信息写到稳定的本机会话文件：
 
@@ -38,7 +68,19 @@
 agent-tmp/steam-desktop-session.env
 ```
 
-文件包含 `STEAM_ACCOUNT_NAME`、`STEAM_STEAM_ID64`、`STEAM_REFRESH_TOKEN` 和可用时的 `STEAM_GUARD_DATA`。不要提交、分享或上传该文件；Linux/macOS 上工具会尝试将文件权限限制为当前用户读写。
+文件包含 `STEAM_ACCOUNT_NAME`、`STEAM_STEAM_ID64`、`STEAM_REFRESH_TOKEN` 和可用时的 `STEAM_GUARD_DATA`，兼容现有 JVM 会话读取器。
+默认路径锚定到仓库根目录，不受调用目录影响。密码及 access token 不落盘；token 不回显。
+文件通过同目录随机临时文件原子替换，POSIX 系统从创建临时文件开始即为 `0600`。
+Windows 请确认存放目录的 ACL 仅允许当前用户访问。不要提交、分享或上传该文件；默认目录已被 Git 忽略。
+
+离线测试（不需要账号、不访问 Steam）：
+
+```sh
+python3 -m unittest discover -s tools/steam-cloud-spike/login -p 'test_*.py'
+```
+
+测试覆盖 RSA 加密、Steam Guard 选择/重试、轮询标识变化、超时/取消、错误脱敏、代理和原子私密存储。
+真实账号登录需要用户在自己的终端完成，不会在自动测试中发起。
 
 后续 `depotKey` 和 `achievementUnlock` 命令会自动读取这个会话文件，不需要重复登录：
 
@@ -47,6 +89,42 @@ agent-tmp/steam-desktop-session.env
 .\gradlew.bat :tools:steam-cloud-spike:achievementUnlock --args="--confirm-shrug-it-off --no-output"
 .\gradlew.bat :tools:steam-cloud-spike:achievementLock --args="--confirm-lock-shrug-it-off --no-output"
 ```
+
+## Steam Cloud 读写验收
+
+默认的 `run` 只读列出云文件；下载也不会修改云端。上传和删除必须分别带确认参数，命令完成后会重新读取 manifest 验证结果：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:run --args="--upload-path sts-manual/test.save --upload-source .tmp/test.save --confirm-cloud-write"
+.\gradlew.bat :tools:steam-cloud-spike:run --args="--delete-path sts-manual/test.save --confirm-cloud-delete"
+.\gradlew.bat :tools:steam-cloud-spike:run --args="--download-path sts-manual/test.save"
+```
+
+真实云端验收测试默认跳过。先用 `python3 tools/steam-cloud-spike/login.py` 获取登录态，
+再设置 `STS_STEAM_CLOUD_LIVE=true` 运行只读/下载测试。写入/删除测试还需要额外明确设置
+`STS_STEAM_CLOUD_ACCEPT_MUTATIONS=true`：
+
+```powershell
+$env:STS_STEAM_CLOUD_LIVE="true"
+# 只读/下载：无需开启云端写入
+.\gradlew.bat :tools:steam-cloud-spike:test --tests "*authenticatedCloudReadAndDownload"
+
+# 仅在明确允许创建/删除验收文件后启用：
+$env:STS_STEAM_CLOUD_ACCEPT_MUTATIONS="true"
+.\gradlew.bat :tools:steam-cloud-spike:test --tests "*SteamCloudLiveAcceptanceTest"
+```
+
+没有认证会话时测试会输出明确的 WARNING 并跳过，不会尝试登录或修改云端。
+
+写入验收只使用 `sts-acceptance/<随机 UUID>.save`：先确认目标不存在，上传后下载并逐字节
+比较，再删除并重新读取完整清单，确认清单恢复到测试前状态。删除或清理失败会使测试失败，
+不会被忽略。临时文件放在 `agent-tmp/steam-cloud-live/`；失败时保留诊断目录和
+`remote-path.txt`，便于定位并清理该次验收文件。
+
+上传工具为 JavaSteam `beginFileUpload` 显式提供非空、随 Runner 关闭而取消的 coroutine
+scope；该 API 没有可供 Java 省略 scope 的重载，传 `null` 会在发送上传请求前抛异常。
+上传块的 HTTP 方法按 Steamworks `EHTTPMethod` 映射为 `POST=3`、`PUT=4`，不能误用
+`HEAD=2` 作为 POST；离线回归测试覆盖这两种上传方法及其他方法的拒绝行为。
 
 ## 只读成就协议探测
 
@@ -78,39 +156,8 @@ agent-tmp/steam-desktop-session.env
 `--no-proxy` 会覆盖 `STEAM_PROXY_URL`、`HTTPS_PROXY` 和 `HTTP_PROXY`；命令启动时会输出
 `steamTransport=direct` 或所选代理地址，方便确认实际连接路径。
 
-如果需要重新授权或更换账号，使用 `--reauthenticate`。它会忽略现有 refresh token，重新请求账号密码和 Steam Guard/授权确认，然后覆盖本机会话文件：
-
-```powershell
-.\gradlew.bat :tools:steam-cloud-spike:refreshToken --args="--reauthenticate"
-```
-
-也可以通过 `--env-file` 指定其他会话文件；命令行参数和环境变量会覆盖文件中的同名值。
-
-交互式登录：
-
-```powershell
-.\gradlew.bat :tools:steam-cloud-spike:refreshToken
-```
-
-也可提前提供账号和密码，Steam Guard 仍会按需提示：
-
-```powershell
-$env:STEAM_USERNAME="your_steam_account"
-$env:STEAM_PASSWORD="your_password"
-.\gradlew.bat :tools:steam-cloud-spike:refreshToken
-```
-
-需要本地代理时：
-
-```powershell
-.\gradlew.bat :tools:steam-cloud-spike:refreshToken --args="--proxy-url http://127.0.0.1:7897"
-```
-
-token 默认不会回显到终端。仅在确实需要复制到临时调试环境时才使用：
-
-```powershell
-.\gradlew.bat :tools:steam-cloud-spike:refreshToken --args="--print-token --no-output"
-```
+如果需要重新授权或更换账号，再次运行 Python 登录 CLI。其他 JVM 工具可用
+`--env-file` 指定会话文件；这些工具的命令行参数和环境变量会覆盖文件中的同名值。
 
 ## 获取 Depot Key
 
@@ -163,21 +210,14 @@ $env:STEAM_2FA_CODE="12345"
 .\gradlew :tools:steam-cloud-spike:run --args="--help"
 ```
 
-### 方式 1：账号密码登录
+### 方式 1：自动读取 Python 登录会话（推荐）
 
 ```powershell
-$env:STEAM_USERNAME="your_steam_account"
-$env:STEAM_PASSWORD="your_password"
-.\gradlew :tools:steam-cloud-spike:run --args="--write-auth-file .tmp/sts-steam-cloud-spike/auth.env"
+python tools/steam-cloud-spike/login.py
+.\gradlew :tools:steam-cloud-spike:run
 ```
 
-如果账号需要 Steam Guard：
-
-- 可以等手机确认，默认开启 `accept-device-confirmation`
-- 或者提前设置 `STEAM_2FA_CODE`
-- 邮箱验证码可设置 `STEAM_EMAIL_CODE`
-- 如果你是通过 `gradlew ... :run` 启动，当前版本已经显式透传 `stdin`；如果仍然拿不到交互输入，优先改用 `STEAM_2FA_CODE` / `STEAM_EMAIL_CODE`
-- 注意：JavaSteam 1.6.0 的 websocket 传输层有一个大约 30 秒的无响应 watchdog。`protocol=auto` 会优先尝试 websocket，所以如果你需要手动输入 2FA，最好提前把 `STEAM_2FA_CODE` / `STEAM_EMAIL_CODE` 设好；如果本机直连 TCP 可用，也可以改成 `--protocol tcp`
+云工具自动读取仓库根目录的 `agent-tmp/steam-desktop-session.env`，不需要把密码或 token 放进环境变量。
 
 ### 方式 2：refresh token 登录
 
@@ -241,6 +281,17 @@ $env:HTTPS_PROXY="http://127.0.0.1:7897"
 .\gradlew :tools:steam-cloud-spike:run --args="--download-path %WinAppDataRoaming%/SlayTheSpire/preferences/STSPlayer"
 .\gradlew :tools:steam-cloud-spike:run --args="--download-match preferences"
 ```
+
+## 云写入验收
+
+云读取和下载默认是只读的。上传和删除必须分别提供确认标记；命令会先完成批次，再重新读取清单验证结果。
+
+```powershell
+.\gradlew :tools:steam-cloud-spike:run --args="--upload-path preferences/STSPlayer --upload-source .tmp/STSPlayer --confirm-cloud-write"
+.\gradlew :tools:steam-cloud-spike:run --args="--delete-path preferences/STSPlayer --confirm-cloud-delete"
+```
+
+不要把生产存档作为验收目标；Steam RPC 没有远端版本前置条件，两个设备同时写入时仍可能发生最后写入者覆盖。
 
 ## 输出
 

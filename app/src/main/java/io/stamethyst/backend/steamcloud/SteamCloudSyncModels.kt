@@ -26,6 +26,7 @@ enum class SteamCloudUploadCandidateKind {
     MODIFIED_FILE,
 }
 
+@Serializable
 data class SteamCloudUploadCandidate(
     val remotePath: String,
     val localRelativePath: String,
@@ -42,6 +43,7 @@ enum class SteamCloudConflictKind {
     BOTH_CHANGED,
 }
 
+@Serializable
 data class SteamCloudConflict(
     val localRelativePath: String,
     val rootKind: SteamCloudRootKind,
@@ -58,6 +60,7 @@ enum class SteamCloudRemoteOnlyChangeKind {
     REMOTE_FILE_DELETED,
 }
 
+@Serializable
 data class SteamCloudRemoteOnlyChange(
     val localRelativePath: String,
     val rootKind: SteamCloudRootKind,
@@ -66,12 +69,14 @@ data class SteamCloudRemoteOnlyChange(
     val baselineRemote: SteamCloudManifestEntry?,
 ) : JavaSerializable
 
+@Serializable
 data class SteamCloudRemoteDeleteCandidate(
     val remotePath: String,
     val localRelativePath: String,
     val rootKind: SteamCloudRootKind,
 ) : JavaSerializable
 
+@Serializable
 data class SteamCloudUploadPlan(
     val plannedAtMs: Long,
     val remoteManifestFetchedAtMs: Long = 0L,
@@ -82,6 +87,7 @@ data class SteamCloudUploadPlan(
     val remoteDeleteCandidates: List<SteamCloudRemoteDeleteCandidate>,
     val warnings: List<String>,
     val plannedRemoteManifestIdentity: String = "",
+    val plannedLocalIdentity: String = "",
 ) : JavaSerializable {
     val uploadBytes: Long
         get() = uploadCandidates.sumOf { it.fileSize }
