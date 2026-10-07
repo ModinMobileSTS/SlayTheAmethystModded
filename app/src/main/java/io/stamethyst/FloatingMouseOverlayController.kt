@@ -225,7 +225,7 @@ internal class FloatingMouseOverlayController(
         private const val CUSTOM_KEY_PREFS_NAME = "floating_mouse_custom_keys"
         private const val CUSTOM_KEY_LAYOUT_KEY = "custom_key_layout"
         private const val CUSTOM_KEY_TUTORIAL_SHOWN_KEY = "custom_key_tutorial_shown"
-        private const val CUSTOM_KEY_DRAG_LONG_PRESS_MS = 1000L
+        private const val CUSTOM_KEY_DRAG_LONG_PRESS_MS = 300L
         private const val CUSTOM_KEY_BUTTON_SIZE_DP = 52
         private const val CUSTOM_KEY_BUTTON_TEXT_SIZE_SP = 13f
         private const val CUSTOM_KEY_BUTTON_INITIAL_OFFSET_DP = 24
@@ -995,8 +995,8 @@ internal class FloatingMouseOverlayController(
         }
         confirmButton.setOnClickListener {
             selectedSpec?.let { spec ->
-                addCustomSoftKeyButton(spec)
                 dialog.dismiss()
+                addCustomSoftKeyButton(spec)
             }
         }
         dialog.setOnDismissListener {
@@ -2274,9 +2274,6 @@ internal class FloatingMouseOverlayController(
         if (customSoftKeyPrefs.getBoolean(CUSTOM_KEY_TUTORIAL_SHOWN_KEY, false)) {
             return
         }
-        customSoftKeyPrefs.edit()
-            .putBoolean(CUSTOM_KEY_TUTORIAL_SHOWN_KEY, true)
-            .apply()
         if (activity.isFinishing || activity.isDestroyed) {
             return
         }
@@ -2285,6 +2282,9 @@ internal class FloatingMouseOverlayController(
             .setMessage(R.string.touch_mouse_custom_key_tutorial_message)
             .setPositiveButton(android.R.string.ok, null)
             .show()
+        customSoftKeyPrefs.edit()
+            .putBoolean(CUSTOM_KEY_TUTORIAL_SHOWN_KEY, true)
+            .apply()
     }
 
     private fun toggleSpecialKey(androidKeyCode: Int): Boolean {
