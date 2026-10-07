@@ -104,6 +104,15 @@ class WorkshopBrowseParserTest {
 
     @Test
     fun parsesSsrRenderContext() {
+        assertSsrPage(useJsonScript = false)
+    }
+
+    @Test
+    fun parsesValveSsrDataJsonScript() {
+        assertSsrPage(useJsonScript = true)
+    }
+
+    private fun assertSsrPage(useJsonScript: Boolean) {
         val queryData = """
             {
               "mutations": [],
@@ -169,9 +178,14 @@ class WorkshopBrowseParserTest {
             }
         """.trimIndent()
         val renderContext = """{"queryData":${Json.encodeToString(queryData)}}"""
+        val script = if (useJsonScript) {
+            """<script type="application/json" id="valve-ssr-data" nonce="test">{"renderContext":$renderContext}</script>"""
+        } else {
+            """<script>window.SSR.renderContext=JSON.parse(${Json.encodeToString(renderContext)});</script>"""
+        }
         val html = """
             <html>
-              <head><script>window.SSR.renderContext=JSON.parse(${Json.encodeToString(renderContext)});</script></head>
+              <head>$script</head>
               <body></body>
             </html>
         """.trimIndent()
@@ -235,14 +249,31 @@ class WorkshopBrowseParserTest {
             }
             """.trimIndent()
         val renderContext = """{"queryData":${Json.encodeToString(queryData)}}"""
-        val html = """
-            <script>window.SSR.renderContext=JSON.parse(${Json.encodeToString(renderContext)});</script>
-        """.trimIndent()
+        val scripts = listOf(
+            """<script>window.SSR.renderContext=JSON.parse(${Json.encodeToString(renderContext)});</script>""",
+            """<script nonce='test' id = 'valve-ssr-data' type='application/json'>{"renderContext":$renderContext}</script>""",
+        )
+        scripts.forEach { html ->
+            val page = WorkshopBrowseParser.parsePage(html, page = 1)
 
-        val page = WorkshopBrowseParser.parsePage(html, page = 1)
+            assertEquals(1, page.items.size)
+            assertEquals(3769585454uL, page.items.single().publishedFileId)
+            assertEquals("Sts Video Core", page.items.single().title)
+            assertEquals("VideoApi.playFullscreen(\"examplemod/videos/intro.webm\")", page.items.single().description)
+            assertFalse(page.hasNextPage)
+        }
+    }
 
-        assertEquals(1, page.items.size)
-        assertEquals(3769585454uL, page.items.single().publishedFileId)
-        assertEquals("Sts Video Core", page.items.single().title)
+    @Test
+    fun malformedValveSsrDataReturnsEmptyPageWithoutThrowing() {
+        listOf("not json", "[]", "{}", """{"renderContext":null}""").forEach { data ->
+            val page = WorkshopBrowseParser.parsePage(
+                """<script id="valve-ssr-data" type="application/json">$data</script>""",
+                page = 3,
+            )
+            assertTrue(page.items.isEmpty())
+            assertEquals(3, page.page)
+            assertFalse(page.hasNextPage)
+        }
     }
 }

@@ -46,6 +46,10 @@ internal object WorkshopBrowseParser {
     private val ssrRenderContextPrefixRegex = Regex(
         """window\.SSR\.renderContext\s*=\s*JSON\.parse\(\s*""",
     )
+    private val ssrDataScriptRegex = Regex(
+        """<script\b(?=[^>]*\sid\s*=\s*["']valve-ssr-data["'])[^>]*>(.*?)</script\s*>""",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+    )
     private val pageButtonRegex = Regex("""class=['"][^'"]*\bpagebtn\b""", RegexOption.IGNORE_CASE)
 
     fun parse(html: String): List<WorkshopItemSummary> = parsePage(html, page = 1).items
@@ -137,11 +141,7 @@ internal object WorkshopBrowseParser {
         html: String,
         fallbackPage: WorkshopBrowseParseResult,
     ): WorkshopBrowseParseResult {
-        val encodedRenderContext = extractSsrRenderContextJsonString(html) ?: return fallbackPage
-        val renderContext = decodeJsonStringLiteral(encodedRenderContext) ?: return fallbackPage
-        val renderContextObject = runCatching {
-            json.parseToJsonElement(renderContext) as? JsonObject
-        }.getOrNull() ?: return fallbackPage
+        val renderContextObject = extractSsrRenderContext(html) ?: return fallbackPage
         val queryData = runCatching {
             renderContextObject.stringValueOrNull("queryData")
         }.getOrNull() ?: return fallbackPage
@@ -234,6 +234,19 @@ internal object WorkshopBrowseParser {
                 .jsonPrimitive
                 .contentOrNull
         }.getOrNull()
+
+    private fun extractSsrRenderContext(html: String): JsonObject? {
+        // Current Steam pages hydrate from a JSON script instead of a JSON.parse assignment.
+        val scriptContext = ssrDataScriptRegex.find(html)?.groupValues?.get(1)?.let { data ->
+            runCatching {
+                (json.parseToJsonElement(data) as? JsonObject)?.objectValue("renderContext")
+            }.getOrNull()
+        }
+        if (scriptContext != null) return scriptContext
+        val encodedContext = extractSsrRenderContextJsonString(html) ?: return null
+        val context = decodeJsonStringLiteral(encodedContext) ?: return null
+        return runCatching { json.parseToJsonElement(context) as? JsonObject }.getOrNull()
+    }
 
     private fun extractSsrRenderContextJsonString(html: String): String? {
         val openingQuoteIndex = ssrRenderContextPrefixRegex.find(html)?.range?.last?.plus(1) ?: return null
