@@ -572,6 +572,42 @@ class HarnessLogcatCrashDetectionTest(unittest.TestCase):
 
 
 class ConsoleRoutingTest(unittest.TestCase):
+    def _console_harness(self):
+        options = HarnessOptions(
+            command="console", launch_mode="mts_basemod", device_serial=TEST_DEVICE_SERIAL,
+            out_dir="", timeout_seconds=120, poll_interval_seconds=2,
+            force_jvm_crash=False, force_runtime_crash=False,
+            autoplay=False, skip_install=False, no_stop_after_smoke=False,
+            mods=[], mod_list_file="", enable_all_mods=False, disable_all_mods=False,
+            console_command="gold 999",
+        )
+        harness = Harness(options)
+        harness.result = {"artifacts": {}}
+        return harness
+
+    def test_console_exit_code_follows_agent_execution_result(self):
+        for executed, expected_code in ((False, 1), (True, 0)):
+            with self.subTest(executed=executed):
+                harness = self._console_harness()
+                client = MagicMock()
+                client.console_exec.return_value = {"executed": executed, "error": "rejected"}
+                with patch("scripts.tools.harness.console._connect_agent", return_value=client):
+                    self.assertEqual(harness.run_command(Path("/unused")), expected_code)
+                self.assertIs(harness.result["success"], executed)
+                client.close.assert_called_once()
+
+    def test_console_agent_error_returns_nonzero(self):
+        from scripts.tools.lib.agent_client import AgentError
+
+        harness = self._console_harness()
+        client = MagicMock()
+        client.console_exec.side_effect = AgentError("agent rejected command")
+        with patch("scripts.tools.harness.console._connect_agent", return_value=client):
+            self.assertEqual(harness.run_command(Path("/unused")), 1)
+        self.assertIs(harness.result["success"], False)
+        self.assertIn("agent rejected command", harness.result["message"])
+        client.close.assert_called_once()
+
     def test_console_command_is_registered(self):
         self.assertIn("console", COMMANDS)
 
