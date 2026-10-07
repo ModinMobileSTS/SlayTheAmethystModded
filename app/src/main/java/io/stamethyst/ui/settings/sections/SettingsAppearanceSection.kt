@@ -87,7 +87,8 @@ internal data class AppearanceSettingsActions(
     val onChromeBackgroundOpacityChanged: (Float) -> Unit,
     val onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit,
     val onSlingBreakEngineModeChanged: (SlingBreakEngineMode) -> Unit,
-    val onDismissSlingBreakX5Failure: () -> Unit,
+    val onDismissSlingBreakDependencyFailure: () -> Unit,
+    val onSwitchSlingBreakDownloadMirror: () -> Unit,
     val onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit,
     val onBootOverlayImageModeChanged: (BootOverlayImageMode) -> Unit,
     val onPickBootOverlayImage: (BootOverlayImageSlot) -> Unit,
@@ -185,7 +186,7 @@ internal fun SettingsAppearanceSection(
         if (uiState.bootOverlayStyle == BootOverlayStyle.SLING_BREAK) {
             SettingsSlingBreakModeItem(
                 mode = uiState.slingBreakEngineMode,
-                enabled = !uiState.busy && uiState.slingBreakX5Progress == null,
+                enabled = !uiState.busy && uiState.slingBreakDependencyProgress == null,
                 onModeChanged = actions.onSlingBreakEngineModeChanged,
             )
         }
@@ -209,10 +210,14 @@ internal fun SettingsAppearanceSection(
         }
     }
 
-    SlingBreakX5Dialogs(
-        progress = uiState.slingBreakX5Progress,
-        failure = uiState.slingBreakX5Failure,
-        onDismissFailure = actions.onDismissSlingBreakX5Failure,
+    SlingBreakDependencyDialogs(
+        progress = uiState.slingBreakDependencyProgress,
+        message = uiState.slingBreakDownloadMessage,
+        failure = uiState.slingBreakDependencyFailure,
+        slowDownloadSwitch = uiState.slingBreakSlowDownloadSwitch,
+        onRetry = { actions.onSlingBreakEngineModeChanged(SlingBreakEngineMode.COMPATIBILITY) },
+        onSwitchMirror = actions.onSwitchSlingBreakDownloadMirror,
+        onDismissFailure = actions.onDismissSlingBreakDependencyFailure,
     )
 
     if (showBootOverlayStyleDialog) {

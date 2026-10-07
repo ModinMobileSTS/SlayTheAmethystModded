@@ -570,12 +570,22 @@ class BootOverlayController(
         textureViewDismissGate.reset()
 
         if (usesSlingBreakBootOverlay) {
-            slingBreakBootGame?.apply {
-                stopLoading()
-                onPause()
-                loadUrl("about:blank")
-                closeAudio()
-                destroy()
+            slingBreakBootGame?.let { host ->
+                cleanupSlingBreakHost(
+                    stopLoading = host::stopLoading,
+                    pause = host::onPause,
+                    clearPage = { host.loadUrl("about:blank") },
+                    closeAudio = host::closeAudio,
+                    destroy = host::destroy,
+                    onFailure = { step, error ->
+                        WebViewDiagnosticsLogStore.append(
+                            activity,
+                            "overlay_cleanup_error",
+                            "engine=${host.engine} step=$step ${error.javaClass.simpleName}: ${error.message}",
+                        )
+                        Log.w(LOGCAT_TAG, "Sling Break overlay cleanup failed: $step", error)
+                    },
+                )
             }
             slingBreakBootGame = null
             slingBreakLauncherPageReady = false

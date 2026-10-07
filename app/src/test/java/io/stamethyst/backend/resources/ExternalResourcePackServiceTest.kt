@@ -1,6 +1,7 @@
 package io.stamethyst.backend.resources
 
 import io.stamethyst.backend.update.UpdateSource
+import io.stamethyst.BuildConfig
 import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -8,6 +9,51 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExternalResourcePackServiceTest {
+    @Test
+    fun webRuntimeCandidates_reuseGithubMirrorsAndPreserveSeparateGiteeRelease() {
+        val urls = BuildConfig.WEB_RUNTIME_DOWNLOAD_URLS.toList()
+        val github = "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/geckoview-148.0.20260309125808-v1-arm64-v8a.zip"
+        val gitee = "https://gitee.com/apricityx/SlayTheAmethystResource/releases/download/v1.1/geckoview-148.0.20260309125808-v1-arm64-v8a.zip"
+        assertTrue(urls.contains(gitee))
+        val candidates = ExternalResourcePackService.buildResourcePackDownloadCandidates(
+            listOf(github, gitee), UpdateSource.GH_PROXY_VIP, bypassAcceleratedLinks = false,
+        )
+        assertEquals("ghproxy.vip", candidates.first().displayName)
+        assertTrue(candidates.first().requestUrl.endsWith(github))
+        assertEquals(gitee, candidates.last().requestUrl)
+        assertEquals("Gitee", candidates.last().displayName)
+        assertTrue(candidates.any { it.usesGithubAcceleration && it.requestUrl == github })
+    }
+
+    @Test
+    fun webRuntimeCandidates_respectAccelerationBypass() {
+        val github = "https://github.com/example/releases/download/Resource/geckoview.zip"
+        val gitee = "https://gitee.com/example/releases/download/v1.1/geckoview.zip"
+        val candidates = ExternalResourcePackService.buildResourcePackDownloadCandidates(
+            listOf(github, gitee), UpdateSource.GH_PROXY_VIP, bypassAcceleratedLinks = true,
+        )
+        assertEquals(listOf(github, gitee), candidates.map { it.requestUrl })
+        assertTrue(candidates.none { it.usesGithubAcceleration })
+    }
+
+    @Test
+    fun downloadSize_usesWebDependencyLimitInsteadOfResourcePackLimit() {
+        val maxBytes = 200L * 1024L * 1024L
+        ExternalResourcePackService.requireDownloadSize(94_765_265L, maxBytes)
+        ExternalResourcePackService.requireDownloadSize(maxBytes, maxBytes)
+    }
+
+    @Test(expected = IOException::class)
+    fun downloadSize_rejectsEmptyArchive() {
+        ExternalResourcePackService.requireDownloadSize(0L, 200L * 1024L * 1024L)
+    }
+
+    @Test(expected = IOException::class)
+    fun downloadSize_rejectsOversizedWebDependency() {
+        val maxBytes = 200L * 1024L * 1024L
+        ExternalResourcePackService.requireDownloadSize(maxBytes + 1L, maxBytes)
+    }
+
     @Test
     fun mirrorSwitchController_notifiesPromptAndRecordsSwitchRequest() {
         val controller = ResourcePackDownloadMirrorSwitchController()

@@ -1,18 +1,8 @@
 package io.stamethyst
 
-import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Color
 import android.util.Log
 import android.view.View
-import com.tencent.smtt.export.external.interfaces.ConsoleMessage as X5ConsoleMessage
-import com.tencent.smtt.export.external.interfaces.WebResourceError as X5WebResourceError
-import com.tencent.smtt.export.external.interfaces.WebResourceRequest as X5WebResourceRequest
-import com.tencent.smtt.sdk.WebChromeClient as X5WebChromeClient
-import com.tencent.smtt.sdk.WebSettings as X5WebSettings
-import com.tencent.smtt.sdk.WebView as X5WebView
-import com.tencent.smtt.sdk.WebViewClient as X5WebViewClient
 import io.stamethyst.backend.audio.SlingNativeAudioBridge
 import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.config.SlingBreakEngineMode
@@ -102,11 +92,11 @@ internal class SlingBreakWebViewHost private constructor(
             var channel: SlingLauncherChannel? = null
             return SlingBreakWebViewHost(
                 view = type.getMethod("getView").invoke(host) as View,
-                loadUrlImpl = {
-                    val url = SlingAssetServer.url(context, it)
-                    load.invoke(host, url + (channel?.let { bridge ->
-                        (if (url.contains('?')) "&" else "?") + "geckoLauncher=" + bridge.token
-                    } ?: ""))
+                loadUrlImpl = { requestedUrl ->
+                    val url = resolveSlingBreakGeckoUrl(requestedUrl, channel?.token) {
+                        SlingAssetServer.url(context, it)
+                    }
+                    load.invoke(host, url)
                 },
                 evaluateJavascriptImpl = { script, callback ->
                     channel?.evaluate(script)
@@ -149,59 +139,5 @@ internal class SlingBreakWebViewHost private constructor(
                     engine = "system"
                 )
             }
-    }
-}
-
-@SuppressLint("SetJavaScriptEnabled", "DEPRECATION")
-internal fun X5WebView.configureSlingBreakX5Game() {
-    val diagnosticContext = context.applicationContext
-    SlingNativeAudioBridge.attach(this)
-    setBackgroundColor(Color.rgb(245, 246, 243))
-    overScrollMode = View.OVER_SCROLL_NEVER
-    isVerticalScrollBarEnabled = false
-    isHorizontalScrollBarEnabled = false
-    settings.apply {
-        javaScriptEnabled = true
-        domStorageEnabled = true
-        mediaPlaybackRequiresUserGesture = false
-        cacheMode = X5WebSettings.LOAD_NO_CACHE
-        setSupportZoom(false)
-        builtInZoomControls = false
-        displayZoomControls = false
-        allowContentAccess = false
-        allowFileAccess = true
-        blockNetworkLoads = true
-    }
-    webChromeClient = object : X5WebChromeClient() {
-        override fun onConsoleMessage(consoleMessage: X5ConsoleMessage): Boolean {
-            WebViewDiagnosticsLogStore.appendX5ConsoleMessage(diagnosticContext, consoleMessage)
-            return true
-        }
-    }
-    webViewClient = object : X5WebViewClient() {
-        override fun onPageStarted(view: X5WebView?, url: String?, favicon: Bitmap?) {
-            view?.let { SlingNativeAudioBridge.pageStarted(it) }
-            WebViewDiagnosticsLogStore.append(diagnosticContext, "page_started", "engine=x5 url=$url")
-            if (LauncherPreferences.isSlingBreakAudioDebugModeEnabled(diagnosticContext)) {
-                WebViewDiagnosticsLogStore.append(diagnosticContext, "x5_audio_environment", "page_started=true")
-            }
-            super.onPageStarted(view, url, favicon)
-        }
-
-        override fun onPageFinished(view: X5WebView?, url: String?) {
-            WebViewDiagnosticsLogStore.append(diagnosticContext, "page_finished", "engine=x5 url=$url")
-            super.onPageFinished(view, url)
-        }
-
-        override fun onReceivedError(
-            view: X5WebView?,
-            request: X5WebResourceRequest?,
-            error: X5WebResourceError?
-        ) {
-            if (error != null) {
-                WebViewDiagnosticsLogStore.appendX5WebResourceError(diagnosticContext, request, error)
-            }
-            super.onReceivedError(view, request, error)
-        }
     }
 }

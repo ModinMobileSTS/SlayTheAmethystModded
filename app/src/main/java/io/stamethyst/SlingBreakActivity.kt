@@ -16,9 +16,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import com.tencent.smtt.sdk.CookieManager as X5CookieManager
-import com.tencent.smtt.sdk.QbSdk
-import com.tencent.smtt.sdk.WebStorage as X5WebStorage
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -62,13 +59,6 @@ internal fun clearSlingBreakWebViewData(context: Context, onComplete: () -> Unit
             }
         }
         runCatching { WebStorage.getInstance().deleteAllData() }
-
-        runCatching {
-            X5WebStorage.getInstance().deleteAllData()
-            X5CookieManager.getInstance().removeAllCookies(null)
-            X5CookieManager.getInstance().flush()
-            QbSdk.clearAllWebViewCache(context.applicationContext, true)
-        }
 
         val cookieManager = CookieManager.getInstance()
         cookieManager.removeAllCookies {

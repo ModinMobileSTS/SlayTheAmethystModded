@@ -1,18 +1,20 @@
 package io.stamethyst.web;
 
+import android.annotation.SuppressLint;
 import android.app.Application;
 import android.app.Service;
 import android.content.Intent;
 import androidx.core.app.CoreComponentFactory;
 
 /** Only Gecko service components use the external loader; all host components keep AndroidX. */
+@SuppressLint({"NewApi", "RestrictedApi"})
 public final class GeckoComponentFactory extends CoreComponentFactory {
     private static final String PREFIX = "org.mozilla.gecko.process.GeckoChildProcessServices$";
     private static Application application;
 
     @Override public Application instantiateApplication(ClassLoader loader, String name)
             throws InstantiationException, IllegalAccessException, ClassNotFoundException {
-        String process = Application.getProcessName();
+        String process = android.os.Build.VERSION.SDK_INT >= 28 ? Application.getProcessName() : null;
         boolean geckoChild = process != null && process.matches(".*:(tab[0-9]+|gpu|socket|rdd|utility|gmplugin|ipdlunittest|media|crashhelper)");
         application = geckoChild ? new Application() : super.instantiateApplication(loader, name);
         return application;

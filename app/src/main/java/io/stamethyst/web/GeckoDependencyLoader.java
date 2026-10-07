@@ -6,14 +6,16 @@ import android.os.Handler;
 import android.os.Looper;
 import dalvik.system.DexClassLoader;
 import io.stamethyst.BuildConfig;
+import io.stamethyst.R;
+import io.stamethyst.backend.launch.StartupProgressCallback;
+import io.stamethyst.backend.resources.ExternalResourcePackService;
+import io.stamethyst.backend.resources.ResourcePackDownloadMirrorSwitchController;
+import io.stamethyst.backend.update.GithubMirrorFallback;
 import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.channels.FileLock;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
-import java.util.function.IntConsumer;
 
 /** Download-only code container. No package installation and no Gecko classes in the launcher. */
 public final class GeckoDependencyLoader {
@@ -29,13 +31,16 @@ public final class GeckoDependencyLoader {
         return new File(dir, "bundle.zip").isFile() && new File(dir, "runtime.apk").isFile()
             && new File(dir, "lib/libxul.so").isFile();
     }
-    public static void ensureAsync(Context context, IntConsumer progress, Consumer<String> completed) {
+    public static void ensureAsync(Context context, StartupProgressCallback progress,
+                                   ResourcePackDownloadMirrorSwitchController mirrorSwitchController,
+                                   Consumer<String> completed) {
         Context app = context.getApplicationContext();
         Handler main = new Handler(Looper.getMainLooper());
         downloads.execute(() -> {
             String error = null;
-            try { install(app, value -> main.post(() -> progress.accept(value))); }
-            catch (Exception e) { error = e.getMessage() == null ? e.toString() : e.getMessage(); }
+            try { install(app, (value, message) -> main.post(() -> progress.onProgress(value, message)), mirrorSwitchController); }
+            catch (Exception e) { error = GithubMirrorFallback.INSTANCE.summarize(e); }
+            finally { mirrorSwitchController.clearSlowDownloadPrompt(); }
             String result = error;
             main.post(() -> completed.accept(result));
         });
@@ -46,7 +51,8 @@ public final class GeckoDependencyLoader {
             throw new IllegalStateException("This GeckoView dependency requires an arm64 launcher process.");
         if (BuildConfig.WEB_RUNTIME_SHA256.length() != 64) throw new IllegalStateException("Web runtime checksum is not configured.");
     }
-    private static void install(Context context, IntConsumer progress) throws Exception {
+    private static void install(Context context, StartupProgressCallback progress,
+                                ResourcePackDownloadMirrorSwitchController mirrorSwitchController) throws Exception {
         requireSupported();
         File root = directory(context).getParentFile();
         if (!root.isDirectory() && !root.mkdirs()) throw new IOException("Cannot create web runtime directory");
@@ -59,59 +65,27 @@ public final class GeckoDependencyLoader {
                     // Preserve the invalid directory until a replacement has been fully verified.
                 }
             }
-            if (BuildConfig.WEB_RUNTIME_URL.isEmpty()) throw new IOException("Web dependency CDN URL has not been configured yet.");
             File stage = new File(root, BuildConfig.WEB_RUNTIME_VERSION + ".staging");
             deleteOwnedDirectory(stage);
             if (!stage.mkdirs()) throw new IOException("Cannot create dependency staging directory");
             try {
                 File bundle = new File(stage, "bundle.zip");
-                download(BuildConfig.WEB_RUNTIME_URL, bundle, progress);
-                progress.accept(100);
-                // Android 14+ requires dynamically loaded code to be read-only before loading.
-                GeckoDependencyArchive.unpack(stage, BuildConfig.WEB_RUNTIME_SHA256);
+                ExternalResourcePackService.downloadValidatedArchive(
+                    context, java.util.Arrays.asList(BuildConfig.WEB_RUNTIME_DOWNLOAD_URLS), bundle,
+                    progress, mirrorSwitchController, MAX_DOWNLOAD, (archive, source) -> {
+                        progress.onProgress(95, context.getString(R.string.settings_sling_break_web_unpacking));
+                        // Clear only this attempt's extracted files before trying a different mirror.
+                        deleteOwnedDirectory(new File(stage, "runtime.apk"));
+                        deleteOwnedDirectory(new File(stage, "lib"));
+                        // Android 14+ requires dynamically loaded code to be read-only before loading.
+                        GeckoDependencyArchive.unpack(stage, BuildConfig.WEB_RUNTIME_SHA256);
+                    });
                 File target = directory(context);
                 deleteOwnedDirectory(target); // Only the incomplete, pinned dependency directory.
                 if (!stage.renameTo(target)) throw new IOException("Cannot publish web dependency");
+                progress.onProgress(100, context.getString(R.string.startup_progress_external_resources_ready));
             } finally { deleteOwnedDirectory(stage); }
         }
-    }
-    private static void download(String address, File destination, IntConsumer progress) throws Exception {
-        URL url = new URL(address);
-        for (int redirect = 0; redirect < 6; redirect++) {
-            if (!"https".equals(url.getProtocol())) throw new IOException("Web dependencies require HTTPS");
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(20000);
-            connection.setReadTimeout(30000);
-            connection.setInstanceFollowRedirects(false);
-            connection.setRequestProperty("Accept-Encoding", "identity");
-            try {
-                int status = connection.getResponseCode();
-                if (status >= 300 && status < 400) {
-                    String location = connection.getHeaderField("Location");
-                    if (location == null) throw new IOException("CDN redirect has no Location");
-                    url = new URL(url, location);
-                    continue;
-                }
-                if (status != 200) throw new IOException("Web dependency HTTP " + status);
-                long total = connection.getContentLengthLong();
-                if (total > MAX_DOWNLOAD) throw new IOException("Web dependency exceeds download limit");
-                try (InputStream in = connection.getInputStream(); OutputStream out = new FileOutputStream(destination)) {
-                    byte[] buffer = new byte[128 * 1024];
-                    long received = 0;
-                    int lastProgress = -2;
-                    for (int n; (n = in.read(buffer)) >= 0;) {
-                        received += n;
-                        if (received > MAX_DOWNLOAD) throw new IOException("Web dependency exceeds download limit");
-                        out.write(buffer, 0, n);
-                        int value = total > 0 ? (int) Math.min(99, received * 100 / total) : -1;
-                        if (value != lastProgress) { progress.accept(value); lastProgress = value; }
-                    }
-                    if (total >= 0 && received != total) throw new IOException("Incomplete web dependency download");
-                }
-                return;
-            } finally { connection.disconnect(); }
-        }
-        throw new IOException("Too many CDN redirects");
     }
     private static void deleteOwnedDirectory(File file) throws IOException {
         if (!file.exists()) return;

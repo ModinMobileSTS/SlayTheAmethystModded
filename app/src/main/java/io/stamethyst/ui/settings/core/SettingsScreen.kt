@@ -90,7 +90,8 @@ fun LauncherSettingsLauncherScreen(
         onSlingBreakEngineModeChanged = { mode ->
             viewModel.onSlingBreakEngineModeChanged(activity, mode)
         },
-        onDismissSlingBreakX5Failure = viewModel::dismissSlingBreakX5Failure,
+        onDismissSlingBreakDependencyFailure = viewModel::dismissSlingBreakDependencyFailure,
+        onSwitchSlingBreakDownloadMirror = viewModel::switchSlingBreakDownloadMirror,
         onBootOverlayAnimationChanged = { animation ->
             viewModel.onBootOverlayAnimationChanged(activity, animation)
         },

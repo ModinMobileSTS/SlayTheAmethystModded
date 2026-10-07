@@ -31,6 +31,9 @@ import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.clearSlingBreakWebViewData
 import io.stamethyst.web.GeckoDependencyLoader
+import io.stamethyst.backend.launch.StartupProgressCallback
+import io.stamethyst.backend.resources.ResourcePackDownloadMirrorSwitchController
+import io.stamethyst.backend.resources.ResourcePackSlowDownloadMirrorSwitch
 import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
@@ -59,9 +62,8 @@ import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
 import io.stamethyst.backend.steamcloud.SteamCloudNetworkEnvironment
 import io.stamethyst.backend.steamcloud.SteamCloudOperationMutex
 import io.stamethyst.backend.steamcloud.SteamCloudProfileService
-import io.stamethyst.backend.steamcloud.SteamCloudPullCoordinator
+import io.stamethyst.backend.steamcloud.SteamCloudSyncRepository
 import io.stamethyst.backend.steamcloud.SteamCloudPullResult
-import io.stamethyst.backend.steamcloud.SteamCloudPushCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudRootKind
 import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
 import io.stamethyst.backend.steamcloud.SteamCloudSyncBlacklist
@@ -383,8 +385,10 @@ class SettingsScreenViewModel : ViewModel() {
         val bootOverlayStyle: BootOverlayStyle =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE,
         val slingBreakEngineMode: SlingBreakEngineMode = SlingBreakEngineMode.WEBVIEW,
-        val slingBreakX5Progress: Int? = null,
-        val slingBreakX5Failure: String? = null,
+        val slingBreakDependencyProgress: Int? = null,
+        val slingBreakDependencyFailure: String? = null,
+        val slingBreakDownloadMessage: String = "",
+        val slingBreakSlowDownloadSwitch: ResourcePackSlowDownloadMirrorSwitch? = null,
         val bootOverlayAnimation: BootOverlayAnimation =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION,
         val bootOverlayImageConfig: BootOverlayImageConfig = BootOverlayImageConfig(
@@ -780,29 +784,53 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    private val slingBreakMirrorSwitchController = ResourcePackDownloadMirrorSwitchController()
+
+    fun switchSlingBreakDownloadMirror() {
+        if (uiState.slingBreakDependencyProgress != null) {
+            slingBreakMirrorSwitchController.requestSwitchToNextMirror()
+        }
+    }
+
     fun onSlingBreakEngineModeChanged(host: Activity, mode: SlingBreakEngineMode) {
-        if (uiState.busy || uiState.slingBreakX5Progress != null) return
+        if (uiState.busy || uiState.slingBreakDependencyProgress != null) return
         val context = host.applicationContext
         if (mode == SlingBreakEngineMode.WEBVIEW) {
             LauncherPreferences.saveSlingBreakEngineMode(context, mode)
             uiState = uiState.copy(slingBreakEngineMode = mode)
             return
         }
-        uiState = uiState.copy(slingBreakX5Progress = -1, slingBreakX5Failure = null)
-        GeckoDependencyLoader.ensureAsync(context, { progress ->
-            uiState = uiState.copy(slingBreakX5Progress = progress)
-        }, { failure ->
+        uiState = uiState.copy(
+            slingBreakDependencyProgress = -1,
+            slingBreakDependencyFailure = null,
+            slingBreakDownloadMessage = context.getString(R.string.settings_sling_break_web_preparing),
+            slingBreakSlowDownloadSwitch = null,
+        )
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        val listener: (ResourcePackSlowDownloadMirrorSwitch?) -> Unit = { prompt ->
+            main.post {
+                if (uiState.slingBreakDependencyProgress != null) {
+                    uiState = uiState.copy(slingBreakSlowDownloadSwitch = prompt)
+                }
+            }
+        }
+        slingBreakMirrorSwitchController.addSlowDownloadListener(listener)
+        GeckoDependencyLoader.ensureAsync(context, StartupProgressCallback { progress, message ->
+            uiState = uiState.copy(slingBreakDependencyProgress = progress, slingBreakDownloadMessage = message)
+        }, slingBreakMirrorSwitchController, { failure ->
+            slingBreakMirrorSwitchController.removeSlowDownloadListener(listener)
             if (failure == null) LauncherPreferences.saveSlingBreakEngineMode(context, mode)
             uiState = uiState.copy(
-                slingBreakX5Progress = null,
-                slingBreakX5Failure = failure,
+                slingBreakDependencyProgress = null,
+                slingBreakDependencyFailure = failure,
+                slingBreakSlowDownloadSwitch = null,
                 slingBreakEngineMode = if (failure == null) mode else uiState.slingBreakEngineMode,
             )
         })
     }
 
-    fun dismissSlingBreakX5Failure() {
-        uiState = uiState.copy(slingBreakX5Failure = null)
+    fun dismissSlingBreakDependencyFailure() {
+        uiState = uiState.copy(slingBreakDependencyFailure = null)
     }
 
     fun onBootOverlayImageModeChanged(host: Activity, mode: BootOverlayImageMode) {
@@ -2026,7 +2054,7 @@ class SettingsScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val snapshot = SteamCloudOperationMutex.runExclusive(host) {
-                    SteamCloudPullCoordinator.refreshManifest(
+                    SteamCloudSyncRepository.refreshManifest(
                         host,
                         requireCurrentSteamCloudAuthMaterial(host, authMaterial),
                     )
@@ -2098,7 +2126,7 @@ class SettingsScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val plan = SteamCloudOperationMutex.runExclusive(host) {
-                    SteamCloudPushCoordinator.buildUploadPlan(
+                    SteamCloudSyncRepository.buildUploadPlan(
                         host,
                         requireCurrentSteamCloudAuthMaterial(host, authMaterial),
                     )
@@ -2144,7 +2172,7 @@ class SettingsScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val plan = SteamCloudOperationMutex.runExclusive(host) {
-                    SteamCloudPushCoordinator.buildUploadPlan(
+                    SteamCloudSyncRepository.buildUploadPlan(
                         host,
                         requireCurrentSteamCloudAuthMaterial(host, authMaterial),
                     )
@@ -2210,7 +2238,7 @@ class SettingsScreenViewModel : ViewModel() {
         executor.execute {
             try {
                 val result = SteamCloudOperationMutex.runExclusive(host) {
-                    SteamCloudPushCoordinator.pushLocalChanges(
+                    SteamCloudSyncRepository.pushLocalChanges(
                         host,
                         requireCurrentSteamCloudAuthMaterial(host, authMaterial),
                         plan,
@@ -2270,7 +2298,7 @@ class SettingsScreenViewModel : ViewModel() {
                     if (currentMode != SteamCloudSaveMode.STEAM_CLOUD) {
                         SteamCloudSaveProfileManager.saveActiveProfile(host, currentMode)
                     }
-                    SteamCloudPullCoordinator.pullAll(
+                    SteamCloudSyncRepository.pullAll(
                         host = host,
                         authMaterial = requireCurrentSteamCloudAuthMaterial(host, authMaterial),
                         saveModeAfterPull = SteamCloudSaveMode.STEAM_CLOUD,
@@ -2743,33 +2771,12 @@ class SettingsScreenViewModel : ViewModel() {
                         relativeSubdirectory = STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR,
                     )
 
-                    try {
-                        val result = SteamCloudPushCoordinator.overwriteRemoteWithLocal(
-                            host = host,
-                            authMaterial = currentAuthMaterial,
-                            sourceRoot = SteamCloudSaveProfileManager.profileRoot(
-                                host,
-                                SteamCloudSaveMode.INDEPENDENT
-                            ),
-                        )
-                        try {
-                            completeIndependentSaveOverwriteTransition(host)
-                        } catch (transitionError: Throwable) {
-                            throw io.stamethyst.backend.steamcloud.SteamCloudPushReconciliationException(
-                                "Steam Cloud was overwritten, but the local save profile transition failed.",
-                                transitionError,
-                            )
-                        }
-                        remoteBackupLabel to result
-                    } catch (error: Throwable) {
-                        val recovery = if (error is io.stamethyst.backend.steamcloud.SteamCloudPushReconciliationException) {
-                            runCatching { completeIndependentSaveOverwriteTransition(host) }
-                        } else {
-                            Result.success(Unit)
-                        }
-                        recovery.exceptionOrNull()?.let(error::addSuppressed)
-                        throw error
-                    }
+                    val result = SteamCloudSyncRepository.overwriteRemoteWithLocal(
+                        host = host,
+                        authMaterial = currentAuthMaterial,
+                        sourceRoot = SteamCloudSaveProfileManager.profileRoot(host, SteamCloudSaveMode.INDEPENDENT),
+                    )
+                    remoteBackupLabel to result
                 }
 
                 host.runOnUiThread {
@@ -2802,14 +2809,6 @@ class SettingsScreenViewModel : ViewModel() {
                     refreshStatus(host)
                 }
             }
-        }
-    }
-
-    private fun completeIndependentSaveOverwriteTransition(host: Activity) {
-        SteamCloudLiveSaveLease.runMutation(host) {
-            SteamCloudSaveProfileManager.restoreProfile(host, SteamCloudSaveMode.INDEPENDENT)
-            SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
-            LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.STEAM_CLOUD)
         }
     }
 
@@ -4538,7 +4537,7 @@ class SettingsScreenViewModel : ViewModel() {
             if (currentMode != SteamCloudSaveMode.STEAM_CLOUD) {
                 SteamCloudSaveProfileManager.saveActiveProfile(host, currentMode)
             }
-            SteamCloudPullCoordinator.pullAll(
+            SteamCloudSyncRepository.pullAll(
                 host = host,
                 authMaterial = currentAuthMaterial,
                 saveModeAfterPull = SteamCloudSaveMode.STEAM_CLOUD,
@@ -4856,11 +4855,7 @@ class SettingsScreenViewModel : ViewModel() {
                     } else {
                         SteamCloudSaveProfileManager.profileRoot(host, targetMode)
                     }
-                    val result = SettingsFileService.importSaveArchive(host, uri, targetRoot)
-                    if (targetRoot.canonicalFile != RuntimePaths.stsRoot(host).canonicalFile) {
-                        SteamCloudSaveProfileManager.markProfileInitialized(host, targetMode)
-                    }
-                    result
+                    SettingsFileService.importSaveArchive(host, uri, targetRoot)
                 }
                 host.runOnUiThread {
                     val message = if (result.backupLabel.isNullOrEmpty()) {
@@ -6338,7 +6333,7 @@ class SettingsScreenViewModel : ViewModel() {
             "remote-backup-staging-$timestamp-${System.nanoTime()}"
         )
         return try {
-            SteamCloudPullCoordinator.downloadAllToDirectory(
+            SteamCloudSyncRepository.downloadAllToDirectory(
                 host = host,
                 authMaterial = authMaterial,
                 outputRoot = stagingRoot,

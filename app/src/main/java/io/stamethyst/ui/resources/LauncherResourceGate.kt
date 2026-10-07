@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -54,6 +55,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -261,7 +265,6 @@ private fun ResourcePreparationScreen(
     resolvingFullRelease: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    var showMirrorDialog by remember { mutableStateOf(false) }
     val preparing = state as? ResourceGateState.Preparing
     val failed = state as? ResourceGateState.Failed
 
@@ -287,75 +290,19 @@ private fun ResourcePreparationScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Text(
-                        text = stringResource(R.string.resource_gate_title),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    if (preparing != null) {
-                        val progress = preparing.percent.coerceIn(0, 100)
-                        val animatedProgress by animateFloatAsState(
-                            targetValue = progress / 100f,
-                            animationSpec = tween(
-                                durationMillis = 450,
-                                easing = FastOutSlowInEasing
-                            ),
-                            label = "resource-gate-progress"
-                        )
-                        LinearProgressIndicator(
-                            progress = { animatedProgress },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            text = stringResource(R.string.resource_gate_progress_percent, progress),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = preparing.message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    if (preparing != null && slowDownloadSwitch != null) {
-                        Text(
-                            text = stringResource(R.string.resource_gate_slow_download_switch_mirror),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            textDecoration = TextDecoration.Underline,
-                            modifier = Modifier
-                                .clickable(onClick = onSlowDownloadMirrorSwitch)
-                                .padding(vertical = 4.dp)
-                        )
-                    }
-
-                    MirrorSelectionRow(
+                    ResourcePreparationContent(
+                        title = stringResource(R.string.resource_gate_title),
+                        progress = preparing?.percent,
+                        message = preparing?.message.orEmpty(),
+                        failure = failed?.summary,
                         selectedMirror = selectedMirror,
-                        enabled = preparing == null,
-                        onClick = { showMirrorDialog = true }
+                        availableMirrors = availableMirrors,
+                        slowDownloadSwitch = slowDownloadSwitch,
+                        onMirrorSelected = onMirrorSelected,
+                        onSlowDownloadMirrorSwitch = onSlowDownloadMirrorSwitch,
+                        onRetry = onRetry,
                     )
-
                     if (failed != null) {
-                        Button(
-                            onClick = onRetry,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(stringResource(R.string.resource_gate_retry))
-                        }
-                        Text(
-                            text = stringResource(R.string.resource_gate_failure_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        SelectionContainer {
-                            Text(
-                                text = failed.summary,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                         Text(
                             text = stringResource(R.string.resource_gate_full_release_fallback),
                             style = MaterialTheme.typography.bodyMedium,
@@ -377,37 +324,6 @@ private fun ResourcePreparationScreen(
         }
     }
 
-    if (showMirrorDialog) {
-        AlertDialog(
-            onDismissRequest = { showMirrorDialog = false },
-//            title = { Text(stringResource(R.string.resource_gate_mirror_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    availableMirrors.forEach { source ->
-                        MirrorOptionRow(
-                            selected = selectedMirror == source,
-                            text = source.displayName,
-                            onClick = {
-                                showMirrorDialog = false
-                                onMirrorSelected(source)
-                            }
-                        )
-                    }
-//                    Text(
-//                        text = stringResource(R.string.resource_gate_mirror_description),
-//                        style = MaterialTheme.typography.bodySmall,
-//                        color = MaterialTheme.colorScheme.onSurfaceVariant
-//                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showMirrorDialog = false }) {
-                    Text(stringResource(R.string.main_folder_dialog_confirm))
-                }
-            }
-        )
-    }
-
     if (resolvingFullRelease) {
         AlertDialog(
             onDismissRequest = {},
@@ -423,6 +339,98 @@ private fun ResourcePreparationScreen(
                 }
             },
             confirmButton = {}
+        )
+    }
+}
+
+/** Shared resource.zip / Web dependency preparation UI; callers own download state and events. */
+@Composable
+internal fun ResourcePreparationContent(
+    title: String,
+    progress: Int?,
+    message: String,
+    failure: String?,
+    selectedMirror: UpdateSource,
+    availableMirrors: List<UpdateSource>,
+    slowDownloadSwitch: ResourcePackSlowDownloadMirrorSwitch?,
+    onMirrorSelected: (UpdateSource) -> Unit,
+    onSlowDownloadMirrorSwitch: () -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showMirrorDialog by remember { mutableStateOf(false) }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        if (progress != null) {
+            if (progress < 0) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            } else {
+                val percent = progress.coerceIn(0, 100)
+                val animatedProgress by animateFloatAsState(
+                    targetValue = percent / 100f,
+                    animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                    label = "resource-gate-progress",
+                )
+                LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth())
+                Text(
+                    stringResource(R.string.resource_gate_progress_percent, percent),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+        if (progress != null && slowDownloadSwitch != null) {
+            TextButton(onClick = onSlowDownloadMirrorSwitch) {
+                Text(stringResource(R.string.resource_gate_slow_download_switch_mirror))
+            }
+        }
+        MirrorSelectionRow(
+            selectedMirror = selectedMirror,
+            enabled = progress == null,
+            onClick = { showMirrorDialog = true },
+        )
+        if (failure != null) {
+            Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.resource_gate_retry))
+            }
+            Text(
+                stringResource(R.string.resource_gate_failure_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            SelectionContainer {
+                Text(failure, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+    if (showMirrorDialog) {
+        AlertDialog(
+            onDismissRequest = { showMirrorDialog = false },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    availableMirrors.forEach { source ->
+                        MirrorOptionRow(
+                            selected = selectedMirror == source,
+                            text = source.displayName,
+                            onClick = {
+                                showMirrorDialog = false
+                                onMirrorSelected(source)
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMirrorDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            }
         )
     }
 }
@@ -466,6 +474,7 @@ private fun MirrorOptionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clickable(onClick = onClick)
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically

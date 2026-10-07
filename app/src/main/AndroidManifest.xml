@@ -18,6 +18,7 @@
     <application
         android:appComponentFactory="io.stamethyst.web.GeckoComponentFactory"
         tools:replace="android:appComponentFactory"
+        tools:ignore="MissingClass"
         android:name="io.stamethyst.StsApplication"
         android:allowBackup="true"
         android:appCategory="game"
@@ -42,12 +43,6 @@
         <meta-data
             android:name="com.android.app.gamemode.battery.enabled"
             android:value="true" />
-
-        <!-- X5 public-network SDK performs its first-core dex optimization here. -->
-        <service
-            android:name="com.tencent.smtt.export.external.DexClassLoaderProviderService"
-            android:exported="false"
-            android:process=":dexopt" />
 
         <activity
             android:name="io.stamethyst.StsGameActivity"

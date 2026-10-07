@@ -13,11 +13,7 @@
 -dontwarn javax.annotation.processing.**
 -dontwarn com.sun.tools.**
 
-# Tencent X5 resolves much of its bridge and core loader reflectively.
--dontwarn com.tencent.smtt.**
--dontwarn com.tencent.tbs.**
--keep class com.tencent.smtt.** { *; }
--keep class com.tencent.tbs.** { *; }
+# System WebView launcher and native-audio callbacks are invoked by JavaScript.
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }

@@ -94,6 +94,12 @@ class ResourcePackDownloadMirrorSwitchController {
     }
 }
 
+/** Validation is part of a candidate attempt, so a corrupt mirror also triggers fallback. */
+fun interface DownloadedResourceArchiveValidator {
+    @Throws(Exception::class)
+    fun validate(archive: File, source: String)
+}
+
 object ExternalResourcePackService {
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 30_000
@@ -582,6 +588,29 @@ object ExternalResourcePackService {
         progressCallback: StartupProgressCallback?,
         mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?
     ) {
+        downloadValidatedArchive(
+            context, resourcePackUrls, targetFile, progressCallback, mirrorSwitchController,
+            ResourcePackContract.MAX_ARCHIVE_BYTES,
+        ) { archive, source ->
+            ResourcePackStore.installArchive(context, archive, progressCallback, "download:$source")
+            installNativeLibraries(context)
+        }
+    }
+
+    /** Shared resource.zip transport: probes, acceleration, ranges, slow-link switching and fallback. */
+    @JvmStatic
+    @Throws(IOException::class)
+    fun downloadValidatedArchive(
+        context: Context,
+        resourcePackUrls: List<String>,
+        targetFile: File,
+        progressCallback: StartupProgressCallback?,
+        mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?,
+        maxArchiveBytes: Long,
+        validator: DownloadedResourceArchiveValidator,
+    ) {
+        require(resourcePackUrls.isNotEmpty()) { "No resource download URLs configured" }
+        require(maxArchiveBytes > 0L)
         val downloadClients = WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
@@ -636,6 +665,7 @@ object ExternalResourcePackService {
                     progressCallback = progressCallback,
                     context = context,
                     probeCandidate = candidate,
+                    maxArchiveBytes = maxArchiveBytes,
                     mirrorSwitchContext = mirrorSwitchController?.let { controller ->
                         ResourcePackDownloadMirrorSwitchContext(
                             controller = controller,
@@ -646,16 +676,11 @@ object ExternalResourcePackService {
                         )
                     }
                 )
-                ResourcePackStore.installArchive(
-                    context = context,
-                    archiveFile = targetFile,
-                    progressCallback = progressCallback,
-                    source = "download:${candidate.displayName}"
-                )
-                installNativeLibraries(context)
+                validator.validate(targetFile, candidate.displayName)
                 mirrorSwitchController?.publishSlowDownloadPrompt(null)
                 return
             } catch (error: Throwable) {
+                throwIfInterrupted()
                 if (error is ResourcePackMirrorSwitchRequestedException) {
                     continue
                 }
@@ -750,11 +775,12 @@ object ExternalResourcePackService {
         progressCallback: StartupProgressCallback?,
         context: Context,
         probeCandidate: ResourcePackDownloadCandidate,
+        maxArchiveBytes: Long,
         mirrorSwitchContext: ResourcePackDownloadMirrorSwitchContext?
     ) {
         val contentLength = fetchRangeSupportedContentLength(client, requestUrl, probeCandidate)
         if (contentLength != null) {
-            ResourcePackContract.requireArchiveBytes(contentLength)
+            requireDownloadSize(contentLength, maxArchiveBytes)
         }
         if (contentLength != null && contentLength >= MIN_CHUNKED_DOWNLOAD_THRESHOLD_BYTES) {
             downloadFileChunked(
@@ -762,6 +788,7 @@ object ExternalResourcePackService {
                 requestUrl = requestUrl,
                 targetFile = targetFile,
                 contentLength = contentLength,
+                maxArchiveBytes = maxArchiveBytes,
                 progressCallback = progressCallback,
                 context = context,
                 mirrorSwitchContext = mirrorSwitchContext
@@ -774,8 +801,18 @@ object ExternalResourcePackService {
             targetFile = targetFile,
             progressCallback = progressCallback,
             context = context,
+            maxArchiveBytes = maxArchiveBytes,
             mirrorSwitchContext = mirrorSwitchContext
         )
+    }
+
+    internal fun requireDownloadSize(bytes: Long, maxArchiveBytes: Long) {
+        if (bytes <= 0L) {
+            throw IOException("Resource pack archive is missing or empty")
+        }
+        if (bytes > maxArchiveBytes) {
+            throw IOException("Resource pack download exceeded the archive size limit ($maxArchiveBytes bytes)")
+        }
     }
 
     /**
@@ -834,6 +871,7 @@ object ExternalResourcePackService {
         requestUrl: String,
         targetFile: File,
         contentLength: Long,
+        maxArchiveBytes: Long,
         progressCallback: StartupProgressCallback?,
         context: Context,
         mirrorSwitchContext: ResourcePackDownloadMirrorSwitchContext?
@@ -848,7 +886,7 @@ object ExternalResourcePackService {
         if (!parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create directory: ${parent.absolutePath}")
         }
-        ResourcePackContract.requireArchiveBytes(contentLength)
+        requireDownloadSize(contentLength, maxArchiveBytes)
         val tempFile = File(parent, "${targetFile.name}.part")
         // Pre-allocate the full file so random-access writes from each chunk are safe.
         java.io.RandomAccessFile(tempFile, "rw").use { raf -> raf.setLength(contentLength) }
@@ -1034,6 +1072,7 @@ object ExternalResourcePackService {
         targetFile: File,
         progressCallback: StartupProgressCallback?,
         context: Context,
+        maxArchiveBytes: Long,
         mirrorSwitchContext: ResourcePackDownloadMirrorSwitchContext?
     ) {
         throwIfInterrupted()
@@ -1061,7 +1100,7 @@ object ExternalResourcePackService {
                 val tempFile = File(parent, "${targetFile.name}.part")
                 val totalBytes = response.body.contentLength().takeIf { it > 0L }
                 if (totalBytes != null) {
-                    ResourcePackContract.requireArchiveBytes(totalBytes)
+                    requireDownloadSize(totalBytes, maxArchiveBytes)
                 }
                 var downloadedBytes = 0L
                 response.body.byteStream().use { input ->
@@ -1082,7 +1121,7 @@ object ExternalResourcePackService {
                             if (downloadStartNanos < 0L) {
                                 downloadStartNanos = System.nanoTime()
                             }
-                            if (downloadedBytes + read > ResourcePackContract.MAX_ARCHIVE_BYTES) {
+                            if (downloadedBytes + read > maxArchiveBytes) {
                                 throw IOException("Resource pack download exceeded the archive size limit")
                             }
                             output.write(buffer, 0, read)
