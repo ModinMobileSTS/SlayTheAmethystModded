@@ -90,8 +90,18 @@ Thumbs.db
 
 # Generated mod build outputs
 /mods/*/bin/
+/arthas-bridge/bin/
+/game-probe/bin/
+/steam-protocol/bin/
+/tools/steam-cloud-spike/bin/
+/workshop-core/bin/
 
 # Built profiler .so and JDK companion files (auto-downloaded or built)
 # includes libjvm.debuginfo and JFR *.jfc templates
 scripts/tools/arthas/resource/*.so
 scripts/tools/arthas/resource/jdk-companion/
+
+# Local diagnostics and design previews
+/app/sts-jvm-logs-export-*.zip
+/.openchamber/screenshots/
+/test.md
