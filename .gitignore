@@ -104,4 +104,5 @@ scripts/tools/arthas/resource/jdk-companion/
 # Local diagnostics and design previews
 /app/sts-jvm-logs-export-*.zip
 /.openchamber/screenshots/
+/opendesign/
 /test.md
