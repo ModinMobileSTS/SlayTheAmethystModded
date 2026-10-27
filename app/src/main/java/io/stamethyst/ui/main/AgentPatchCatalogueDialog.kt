@@ -62,6 +62,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -118,6 +119,8 @@ internal fun AgentPatchCatalogueDialog(
     onRename: (AgentPatchModUi, String, String) -> Unit,
 ) {
     val context = LocalContext.current
+    // Configuration changes do not invalidate LocalContext reads, so strings come from Resources.
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val prefs = remember(context) { context.getSharedPreferences("ai_patch_catalogue_upload", 0) }
     val parentModId = mod.manifestModId.ifBlank { mod.modId }
@@ -207,7 +210,7 @@ internal fun AgentPatchCatalogueDialog(
                             progress = AgentPatchInstallProgress(AgentPatchInstallStage.DONE, 1f),
                             done = true,
                         )
-                    notice = context.getString(R.string.main_mod_agent_patch_install_success, patch.name)
+                    notice = resources.getString(R.string.main_mod_agent_patch_install_success, patch.name)
                     onInstalled()
                 }.onFailure {
                     if (it is CancellationException) throw it
@@ -245,7 +248,7 @@ internal fun AgentPatchCatalogueDialog(
                         .firstOrNull { it.patchId == patch.patchId }
                 }
                 if (info == null) {
-                    uploadError = context.getString(R.string.main_mod_agent_patch_upload_failed, "Patch file is missing.")
+                    uploadError = resources.getString(R.string.main_mod_agent_patch_upload_failed, "Patch file is missing.")
                     uploadPhase = AgentPatchUploadPhase.ERROR
                     workingPatchModId = null
                     return@launch
@@ -281,7 +284,7 @@ internal fun AgentPatchCatalogueDialog(
                     workingPatchModId = null
                 }.onFailure {
                     if (it is CancellationException) throw it
-                    uploadError = context.getString(R.string.main_mod_agent_patch_upload_failed, it.message.orEmpty())
+                    uploadError = resources.getString(R.string.main_mod_agent_patch_upload_failed, it.message.orEmpty())
                     uploadPhase = AgentPatchUploadPhase.ERROR
                     workingPatchModId = null
                 }
@@ -657,14 +660,14 @@ internal fun AgentPatchCatalogueDialog(
                                 }
                             }.onSuccess {
                                 localDetails = null
-                                notice = context.getString(
+                                notice = resources.getString(
                                     R.string.main_mod_agent_patch_delete_success,
-                                    patch.name.ifBlank { context.getString(R.string.main_mod_agent_patch_unnamed) },
+                                    patch.name.ifBlank { resources.getString(R.string.main_mod_agent_patch_unnamed) },
                                 )
                                 onInstalled()
                             }.onFailure {
                                 if (it is CancellationException) throw it
-                                notice = context.getString(R.string.main_mod_agent_patch_delete_failed, it.message.orEmpty())
+                                notice = resources.getString(R.string.main_mod_agent_patch_delete_failed, it.message.orEmpty())
                             }
                             workingPatchModId = null
                         }

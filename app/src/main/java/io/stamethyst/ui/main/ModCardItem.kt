@@ -55,6 +55,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -154,6 +155,8 @@ internal fun ModCard(
     callbacks: ModCardCallbacks
 ) {
     val context = LocalContext.current
+    // Configuration changes do not invalidate LocalContext reads, so strings come from Resources.
+    val resources = LocalResources.current
     val density = LocalDensity.current
     val actionsContentDescription = stringResource(R.string.main_mod_actions)
     val showAiEditorNewBadge = AiEditorNewBadgeStore.shouldShow(context)
@@ -535,7 +538,7 @@ internal fun ModCard(
                         ) {
                             Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(patch.name.ifBlank { context.getString(R.string.main_mod_agent_patch_unnamed) }, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                    Text(patch.name.ifBlank { resources.getString(R.string.main_mod_agent_patch_unnamed) }, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                                     Text(patch.version, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                                 }
                                 androidx.compose.material3.Checkbox(
