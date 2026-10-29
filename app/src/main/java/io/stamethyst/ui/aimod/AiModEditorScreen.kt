@@ -252,7 +252,10 @@ internal class AiModEditorViewModel(
         private set
     var reasoningEffort by mutableStateOf(LlmReasoningEffort.HIGH)
         private set
-    val inbox: List<AiInboxItem> get() = sessions.firstOrNull { it.id == currentSessionId }?.inbox.orEmpty()
+    private val pendingInbox = AiPendingInbox()
+    val inbox: List<AiInboxItem> get() = pendingInbox.itemsFor(
+        currentSessionId, sessions.firstOrNull { it.id == currentSessionId }?.inbox.orEmpty(),
+    )
 
     fun updateInbox(id: String, text: String? = null, delivery: AiInboxDelivery? = null, remove: Boolean = false) {
         val sessionId = currentSessionId
@@ -551,9 +554,23 @@ internal class AiModEditorViewModel(
             val sessionId = currentSessionId
             val item = AiInboxItem(UUID.randomUUID().toString(), trimmed, attachments,
                 modelName = llmSettings.modelName, reasoningEffort = reasoningEffort)
+            // Publish before dispatching disk work. Polls must not hide an uncommitted admission,
+            // and the optimistic item must not advance the persisted session revision.
+            pendingInbox.add(sessionId, item)
             launchStorage {
-                val updated = conversationStore.mutate(sessionId) { it.copy(inbox = it.inbox + item) }
-                withContext(Dispatchers.Main.immediate) { updated?.let(::installSession) }
+                try {
+                    val updated = checkNotNull(conversationStore.mutate(sessionId) { it.copy(inbox = it.inbox + item) }) {
+                        "Conversation no longer exists: $sessionId"
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        // A poll may already have seen a newer revision (including delivery).
+                        if (sessionId == currentSessionId) applyExternalState(listOf(updated))
+                        pendingInbox.complete(sessionId, item.id)
+                    }
+                } catch (failure: Throwable) {
+                    withContext(Dispatchers.Main.immediate) { pendingInbox.complete(sessionId, item.id) }
+                    throw failure
+                }
                 pollWakeUp.tryEmit(Unit)
             }
             return

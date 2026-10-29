@@ -27,6 +27,38 @@ class AiAgentInboxTest {
     private val queued = AiInboxItem("q", "next task")
     private val steer = AiInboxItem("s", "change direction", delivery = AiInboxDelivery.STEER)
 
+    @Test fun admissionIsVisibleBeforeStorageAndSurvivesUnchangedPolls() {
+        val pending = AiPendingInbox()
+        val session = AiEditorSession("test", revision = 7)
+        pending.add(session.id, queued)
+        assertEquals(listOf(queued), pending.itemsFor(session.id, session.inbox))
+        assertEquals(listOf(queued), pending.itemsFor(session.id, session.copy().inbox))
+        assertEquals(7L, session.revision)
+        assertTrue(pending.itemsFor("other", emptyList()).isEmpty())
+    }
+
+    @Test fun committedPollDoesNotDuplicateAdmissionOrOverwriteItsEdits() {
+        val pending = AiPendingInbox()
+        pending.add("test", queued)
+        val edited = queued.copy(text = "edited", delivery = AiInboxDelivery.STEER)
+        assertEquals(listOf(edited), pending.itemsFor("test", listOf(edited)))
+        pending.complete("test", queued.id)
+        assertEquals(listOf(edited), pending.itemsFor("test", listOf(edited)))
+        // A newer poll may have already delivered the item when the write callback arrives.
+        assertTrue(pending.itemsFor("test", emptyList()).isEmpty())
+    }
+
+    @Test fun completingOneAdmissionKeepsOtherMessagesAndConversations() {
+        val pending = AiPendingInbox()
+        pending.add("test", queued)
+        pending.add("test", steer)
+        pending.add("other", queued)
+        assertEquals(listOf(queued, steer), pending.itemsFor("test", emptyList()))
+        pending.complete("test", queued.id)
+        assertEquals(listOf(steer), pending.itemsFor("test", emptyList()))
+        assertEquals(listOf(queued), pending.itemsFor("other", emptyList()))
+    }
+
     @Test fun queueWaitsUntilIdleAndSteerOvertakesQueue() {
         val session = AiEditorSession("test", inbox = listOf(queued, steer))
         assertEquals(steer, session.nextInboxItem(false))

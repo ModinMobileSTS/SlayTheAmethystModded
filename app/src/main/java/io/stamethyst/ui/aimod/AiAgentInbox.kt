@@ -2,6 +2,26 @@ package io.stamethyst.ui.aimod
 
 import kotlinx.serialization.Serializable
 import io.stamethyst.backend.llm.LlmReasoningEffort
+import androidx.compose.runtime.mutableStateListOf
+
+/** UI-only admissions: visible before storage runs, without inventing a database revision. */
+internal class AiPendingInbox {
+    private data class Admission(val sessionId: String, val item: AiInboxItem)
+    private val admissions = mutableStateListOf<Admission>()
+
+    fun add(sessionId: String, item: AiInboxItem) {
+        admissions += Admission(sessionId, item)
+    }
+
+    fun complete(sessionId: String, itemId: String) {
+        admissions.removeAll { it.sessionId == sessionId && it.item.id == itemId }
+    }
+
+    fun itemsFor(sessionId: String, stored: List<AiInboxItem>): List<AiInboxItem> {
+        val storedIds = stored.mapTo(HashSet()) { it.id }
+        return stored + admissions.filter { it.sessionId == sessionId && it.item.id !in storedIds }.map { it.item }
+    }
+}
 
 @Serializable
 internal enum class AiInboxDelivery { QUEUE, STEER }
