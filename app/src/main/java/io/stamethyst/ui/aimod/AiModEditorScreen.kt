@@ -81,6 +81,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -107,7 +108,7 @@ import io.stamethyst.ui.SimpleMarkdownContent
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.icon.AttachFile
-import io.stamethyst.ui.icon.Description
+import io.stamethyst.ui.icon.CheckCircle
 import io.stamethyst.ui.icon.KeyboardArrowUp
 import io.stamethyst.ui.icon.Pending
 import io.stamethyst.ui.icon.Refresh
@@ -980,10 +981,18 @@ fun LauncherAiModEditorScreen(
                                 )
                             } else {
                                 conversationHistory.asReversed().forEach { session ->
+                                    val isSelected = session.id == viewModel.currentSessionId
                                     DropdownMenuItem(
+                                        modifier = Modifier.semantics { selected = isSelected },
                                         text = { Text(session.displayTitle(), maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                                        leadingIcon = if (session.id == viewModel.currentSessionId) {
-                                            { Icon(Icons.Description, contentDescription = null) }
+                                        leadingIcon = if (isSelected) {
+                                            {
+                                                Icon(
+                                                    Icons.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
                                         } else null,
                                         onClick = {
                                             showHistory = false
