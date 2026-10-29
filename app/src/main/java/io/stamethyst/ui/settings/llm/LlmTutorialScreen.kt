@@ -48,6 +48,8 @@ private const val SILICONFLOW_INVITE_URL = "https://cloud.siliconflow.cn/i/gd8h1
 private const val SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1/"
 private const val AGENTROUTER_INVITE_URL = "https://agentrouter.org/register?aff=q5Yp"
 private const val AGENTROUTER_BASE_URL = "https://agentrouter.org/v1"
+private const val AIHUB_INVITE_URL = "https://api.aihub8.top/register?aff=geYU"
+private const val AIHUB_BASE_URL = "https://api.aihub8.top/v1"
 
 /** Provider picker shown before the setup guide: each provider keeps its own key flow. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -97,9 +99,19 @@ fun LauncherLlmTutorialScreen(
                 title = stringResource(R.string.llm_tutorial_provider_agentrouter),
                 tags = listOf(
                     R.string.llm_tutorial_tag_free_quota,
+                    R.string.llm_tutorial_tag_requires_vpn,
                 ),
                 description = stringResource(R.string.llm_tutorial_provider_agentrouter_desc),
                 onClick = { navigator.push(Route.SettingsLlmTutorialAgentRouter) },
+            )
+        }
+        item {
+            ProviderCard(
+                iconResId = R.drawable.ic_provider_aihub,
+                title = stringResource(R.string.llm_tutorial_provider_aihub),
+                tags = listOf(R.string.llm_tutorial_tag_pay_as_you_go),
+                description = stringResource(R.string.llm_tutorial_provider_aihub_desc),
+                onClick = { navigator.push(Route.SettingsLlmTutorialAiHub) },
             )
         }
     }
@@ -264,8 +276,79 @@ fun LauncherLlmTutorialAgentRouterScreen(
             )
         }
         item { TutorialModelsCard(stepNumber = 4) }
-        item { TutorialTestCard(stepNumber = 5) }
-        item { TutorialEditCard(stepNumber = 6) }
+        item {
+            SettingsSectionCard(title = stringResource(R.string.llm_tutorial_ar_responses_title)) {
+                TutorialText(R.string.llm_tutorial_ar_responses_step)
+                TutorialImage(R.drawable.llm_tutorial_ar_responses, R.string.llm_tutorial_ar_image_responses, 1316f / 1176f)
+            }
+        }
+        item { TutorialTestCard(stepNumber = 6) }
+        item { TutorialEditCard(stepNumber = 7) }
+    }
+}
+
+@Composable
+fun LauncherLlmTutorialAiHubScreen(
+    modifier: Modifier = Modifier,
+    uiState: SettingsScreenViewModel.UiState,
+) {
+    val navigator = currentNavigator
+    val clipboard = LocalClipboardManager.current
+    val uriHandler = LocalUriHandler.current
+
+    SettingsRouteScaffold(
+        modifier = modifier,
+        uiState = uiState,
+        title = stringResource(R.string.llm_tutorial_title),
+        subtitle = stringResource(R.string.llm_tutorial_provider_aihub),
+        iconResId = R.drawable.ic_llm_support,
+        onGoBack = navigator::goBack,
+    ) {
+        item {
+            SettingsSectionCard(title = stringResource(R.string.llm_tutorial_intro_title)) {
+                TutorialText(R.string.llm_tutorial_aihub_intro)
+            }
+        }
+        item {
+            SettingsSectionCard(title = stringResource(R.string.llm_tutorial_aihub_register_title)) {
+                TutorialText(R.string.llm_tutorial_aihub_register_step)
+                TutorialUrlBlock(
+                    url = AIHUB_INVITE_URL,
+                    copyLabelRes = R.string.llm_tutorial_copy_link,
+                    onCopy = { clipboard.setText(AnnotatedString(AIHUB_INVITE_URL)) },
+                    onOpen = { uriHandler.openUri(AIHUB_INVITE_URL) },
+                )
+            }
+        }
+        item {
+            SettingsSectionCard(title = stringResource(R.string.llm_tutorial_aihub_wallet_title)) {
+                TutorialText(R.string.llm_tutorial_aihub_wallet_step)
+                TutorialImage(R.drawable.llm_tutorial_aihub_wallet, R.string.llm_tutorial_aihub_image_wallet, 722f / 692f)
+            }
+        }
+        item {
+            SettingsSectionCard(title = stringResource(R.string.llm_tutorial_aihub_token_title)) {
+                TutorialText(R.string.llm_tutorial_aihub_token_entry_step)
+                TutorialImage(R.drawable.llm_tutorial_aihub_token_entry, R.string.llm_tutorial_aihub_image_token_entry, 271f / 302f)
+                TutorialText(R.string.llm_tutorial_aihub_token_action_step)
+                TutorialImage(R.drawable.llm_tutorial_aihub_token_action, R.string.llm_tutorial_aihub_image_token_action, 689f / 330f)
+                TutorialText(R.string.llm_tutorial_aihub_token_form_step)
+                TutorialImage(R.drawable.llm_tutorial_aihub_token_form, R.string.llm_tutorial_aihub_image_token_form, 707f / 467f)
+                TutorialText(R.string.llm_tutorial_aihub_token_copy_step)
+                TutorialImage(R.drawable.llm_tutorial_aihub_token_copy, R.string.llm_tutorial_aihub_image_token_copy, 647f / 547f)
+                TutorialText(R.string.llm_tutorial_key_warning)
+            }
+        }
+        item {
+            TutorialConnectionCard(
+                stepNumber = 4,
+                baseUrl = AIHUB_BASE_URL,
+                onCopy = { clipboard.setText(AnnotatedString(AIHUB_BASE_URL)) },
+            )
+        }
+        item { TutorialModelsCard(stepNumber = 5) }
+        item { TutorialTestCard(stepNumber = 6) }
+        item { TutorialEditCard(stepNumber = 7) }
     }
 }
 

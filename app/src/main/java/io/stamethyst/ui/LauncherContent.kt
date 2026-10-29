@@ -149,6 +149,7 @@ import io.stamethyst.ui.settings.llm.LauncherLlmTutorialScreen
 import io.stamethyst.ui.settings.llm.LauncherLlmTutorialDeepSeekScreen
 import io.stamethyst.ui.settings.llm.LauncherLlmTutorialSiliconFlowScreen
 import io.stamethyst.ui.settings.llm.LauncherLlmTutorialAgentRouterScreen
+import io.stamethyst.ui.settings.llm.LauncherLlmTutorialAiHubScreen
 import io.stamethyst.ui.aimod.LauncherAiModEditorScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudGuardScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudLoginScreen
@@ -883,6 +884,10 @@ fun LauncherContent(
 
                         entry<Route.SettingsLlmTutorialAgentRouter> {
                             LauncherLlmTutorialAgentRouterScreen(modifier = Modifier.fillMaxSize(), uiState = settingsUiState)
+                        }
+
+                        entry<Route.SettingsLlmTutorialAiHub> {
+                            LauncherLlmTutorialAiHubScreen(modifier = Modifier.fillMaxSize(), uiState = settingsUiState)
                         }
 
                         entry<Route.SettingsWorkshopAutoImportDefaults> {
@@ -1775,7 +1780,8 @@ private fun Route?.launcherDockRoute(): Route? {
            Route.SettingsLlmTutorial,
            Route.SettingsLlmTutorialDeepSeek,
            Route.SettingsLlmTutorialSiliconFlow,
-           Route.SettingsLlmTutorialAgentRouter,
+            Route.SettingsLlmTutorialAgentRouter,
+            Route.SettingsLlmTutorialAiHub,
           Route.SettingsWorkshopAutoImportDefaults,
          Route.SettingsFeedback,
          Route.SettingsAbout -> Route.Settings

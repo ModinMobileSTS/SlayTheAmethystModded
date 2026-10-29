@@ -56,6 +56,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object SettingsLlmTutorialAgentRouter : Route
     @Serializable
+    data object SettingsLlmTutorialAiHub : Route
+    @Serializable
     data object SettingsWorkshopAutoImportDefaults : Route
     @Serializable
     data object SettingsFeedback : Route
