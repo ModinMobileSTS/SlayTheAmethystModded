@@ -849,7 +849,7 @@ Do you still want to continue?</string>
     <string name="main_mod_agent_patch_upload_busy_note">Keep the app in the foreground while uploading.</string>
     <string name="main_mod_agent_patch_upload_thanks_title">Upload complete</string>
     <string name="main_mod_agent_patch_upload_thanks_message">Thank you for sharing this patch with mobile players around the world!</string>
-    <string name="main_mod_agent_patch_upload_thanks_status">Upload complete. The patch will appear in the community catalogue after indexing. Indexing: %1$s</string>
+    <string name="main_mod_agent_patch_upload_thanks_status">Your submitted mod will appear in the community mod repository after review.</string>
     <string name="main_mod_agent_patch_upload_view_commit">View commit</string>
     <string name="main_mod_agent_patch_rename_title">Rename AI patch</string>
     <string name="main_mod_agent_patch_rename_name">Patch name</string>

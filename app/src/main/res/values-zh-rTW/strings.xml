@@ -836,7 +836,7 @@
     <string name="main_mod_agent_patch_upload_busy_note">上傳過程中請保持應用程式在前景。</string>
     <string name="main_mod_agent_patch_upload_thanks_title">上傳完成</string>
     <string name="main_mod_agent_patch_upload_thanks_message">感謝你與全世界的手機版玩家分享此補丁！</string>
-    <string name="main_mod_agent_patch_upload_thanks_status">上傳完成，索引完成後會出現在社區目錄中。索引狀態：%1$s</string>
+    <string name="main_mod_agent_patch_upload_thanks_status">您提交的模組將會審核後出現在社區模組倉庫中。</string>
     <string name="main_mod_agent_patch_upload_view_commit">查看提交</string>
     <string name="main_mod_agent_patch_rename_title">重新命名 AI 補丁</string>
     <string name="main_mod_agent_patch_rename_name">補丁名稱</string>

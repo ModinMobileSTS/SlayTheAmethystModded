@@ -276,11 +276,12 @@ internal fun AgentPatchCatalogueDialog(
                     )
                 }
                 progressUpdates.close()
-                if (result.isSuccess) progressJob.join() else progressJob.cancel()
+                progressJob.cancel()
                 result.onSuccess { uploaded ->
                     prefs.edit().putString("username", username.trim()).putString("email", email.trim()).apply()
                     uploadResult = uploaded
                     uploadProgress = AgentPatchUploadProgress(AgentPatchUploadStage.DONE, 1f)
+                    uploadCheckpointProgress = uploadProgress
                     workingPatchModId = null
                 }.onFailure {
                     if (it is CancellationException) throw it
@@ -1438,16 +1439,13 @@ private fun AgentPatchUploadThanksContent(
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
         )
+        Text(
+            stringResource(R.string.main_mod_agent_patch_upload_thanks_status),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
         result?.let {
-            Text(
-                stringResource(
-                    R.string.main_mod_agent_patch_upload_thanks_status,
-                    it.indexing.ifBlank { "unknown" },
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
             if (it.commitUrl.isNotBlank()) {
                 TextButton(onClick = { runCatching { uriHandler.openUri(it.commitUrl) } }) {
                     Text(stringResource(R.string.main_mod_agent_patch_upload_view_commit))
