@@ -330,7 +330,8 @@ private fun AiHistoryStepRow(step: AiHistoryStep, number: Int, expanded: Boolean
             }
         }
     }
-    Surface(onClick = onClick, color = colors.surfaceContainer.copy(alpha = 0.7f), shape = RoundedCornerShape(14.dp),
+    Surface(onClick = onClick, color = if (step.kind == AgentStepKind.ERROR) colors.errorContainer.copy(alpha = 0.35f)
+        else colors.surfaceContainer.copy(alpha = 0.7f), shape = RoundedCornerShape(14.dp),
         modifier = modifier.fillMaxWidth().padding(start = 10.dp).testTag("ai-history-step-${step.key}")) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Surface(shape = RoundedCornerShape(10.dp), color = accent.copy(alpha = 0.13f)) {
@@ -339,6 +340,7 @@ private fun AiHistoryStepRow(step: AiHistoryStep, number: Int, expanded: Boolean
                 else Icon(painterResource(when (step.kind) {
                     AgentStepKind.MODEL -> R.drawable.ic_ai_execution_history
                     AgentStepKind.COMPACTION -> R.drawable.ic_inventory
+                    AgentStepKind.ERROR -> R.drawable.ic_error_outline
                     else -> R.drawable.ic_refresh
                 }), null, Modifier.padding(8.dp).size(18.dp), tint = accent)
             }
@@ -359,6 +361,7 @@ private fun AiHistoryStepRow(step: AiHistoryStep, number: Int, expanded: Boolean
                     AgentStepKind.TOOL -> R.string.ai_history_tool_detail
                     AgentStepKind.COMPACTION -> R.string.ai_history_compaction_detail
                     AgentStepKind.RETRY -> R.string.ai_history_retry_detail
+                    AgentStepKind.ERROR -> R.string.ai_history_error_detail
                 }) }
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant,
                     maxLines = if (expanded) 8 else 2, overflow = TextOverflow.Ellipsis)
@@ -367,6 +370,12 @@ private fun AiHistoryStepRow(step: AiHistoryStep, number: Int, expanded: Boolean
                 AnimatedVisibility(expanded, enter = fadeIn(tween(160)) + expandVertically(tween(200)),
                     exit = fadeOut(tween(100)) + shrinkVertically(tween(160))) {
                     Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (step.kind == AgentStepKind.ERROR) {
+                            if (step.name.isNotBlank()) Text(stringResource(R.string.ai_history_error_source, step.name),
+                                style = MaterialTheme.typography.labelSmall, color = accent)
+                            step.relatedStepNumber?.let { Text(stringResource(R.string.ai_history_related_step, it),
+                                style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant) }
+                        }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             HistoryMetric(stringResource(R.string.ai_history_input), step.inputTokens?.let(::formatAiTokenCount) ?: "—", Modifier.weight(1f))
                             HistoryMetric(stringResource(R.string.ai_history_output), step.outputTokens?.let(::formatAiTokenCount) ?: "—", Modifier.weight(1f))
@@ -440,11 +449,12 @@ private fun historyPalette(): Map<AgentStepKind, Color> {
     val colors = MaterialTheme.colorScheme
     // Primary follows the launcher's dynamic theme; supporting tones remain distinct in both modes.
     val dark = colors.surface.red + colors.surface.green + colors.surface.blue < 1.5f
-    return remember(colors.primary, dark) { linkedMapOf(
+    return remember(colors.primary, colors.error, dark) { linkedMapOf(
         AgentStepKind.MODEL to colors.primary,
         AgentStepKind.TOOL to if (dark) Color(0xFF77DCC3) else Color(0xFF087E6A),
         AgentStepKind.COMPACTION to if (dark) Color(0xFFF1C879) else Color(0xFFA66B11),
         AgentStepKind.RETRY to if (dark) Color(0xFFE9A1BC) else Color(0xFFB34E78),
+        AgentStepKind.ERROR to colors.error,
     ) }
 }
 
@@ -454,4 +464,5 @@ private fun historyKindLabel(kind: AgentStepKind): String = stringResource(when 
     AgentStepKind.TOOL -> R.string.ai_history_tool
     AgentStepKind.COMPACTION -> R.string.ai_history_compaction
     AgentStepKind.RETRY -> R.string.ai_history_retry
+    AgentStepKind.ERROR -> R.string.ai_history_error
 })

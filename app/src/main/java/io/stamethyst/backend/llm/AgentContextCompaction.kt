@@ -45,12 +45,29 @@ internal class AgentContextCompaction(
     private val timeoutMillis: Long,
     private val checkCancelled: () -> Unit,
     private val progress: (AgentCompactionProgress) -> Unit,
+    private val onExecutionStep: (AgentExecutionStep) -> Unit = {},
 ) {
     fun run(state: AgentContextState, reason: String, commit: (String, String) -> Unit) {
         val timer = AgentStepTimer(AgentStepKind.COMPACTION)
         var event = AgentCompactionProgress(reason = reason, startedAtMs = timer.step.startedAtMs)
         var committing = false
         var progressFailed = false
+        var reportedError: Throwable? = null
+        fun reportProblem(error: Throwable) {
+            if (reportedError === error || progressFailed) return
+            val status = agentStepFailureStatus(error)
+            val interrupted = Thread.interrupted()
+            try {
+                onExecutionStep(agentErrorStep("COMPACTION", agentErrorDetail(error), event.id, status,
+                    id = java.util.UUID.randomUUID().toString()))
+                reportedError = error
+            } catch (checkpoint: Exception) {
+                progressFailed = true
+                throw checkpoint
+            } finally {
+                if (interrupted) Thread.currentThread().interrupt()
+            }
+        }
         fun publish() {
             if (event.status != "running") event = event.copy(elapsedMs = timer.finish().elapsedMs)
             try { progress(event) } catch (error: Exception) { progressFailed = true; throw error }
@@ -117,6 +134,7 @@ internal class AgentContextCompaction(
                     var response = send()
                     var summary = response.aiMessage().text().orEmpty().trim()
                     if (!filled(summary)) {
+                        reportProblem(AgentCompactionException("Compaction summary did not match the required template; requesting a corrected summary."))
                         prompted = prompted + UserMessage.from(NUDGE)
                         response = send()
                         summary = response.aiMessage().text().orEmpty().trim()
@@ -129,6 +147,8 @@ internal class AgentContextCompaction(
                     publish()
                     return
                 } catch (error: Exception) {
+                    reportProblem(error)
+                    if (agentStepFailureStatus(error) == AgentStepStatus.CANCELLED) throw error
                     checkCancelled()
                     if (committing || progressFailed) throw error
                     val tooLarge = generateSequence<Throwable>(error) { it.cause }.take(8).any {
@@ -158,7 +178,13 @@ internal class AgentContextCompaction(
             val cancelled = error is java.util.concurrent.CancellationException || error is InterruptedException || Thread.currentThread().isInterrupted
             event = event.copy(status = if (cancelled) "interrupted" else "failed", summary = "",
                 error = if (cancelled) "" else error.message.orEmpty(), elapsedMs = timer.finish().elapsedMs)
-            runCatching { progress(event) }.onFailure { if (it !== error) error.addSuppressed(it) }
+            val interrupted = Thread.interrupted()
+            try {
+                runCatching { progress(event) }.onFailure { if (it !== error) error.addSuppressed(it) }
+                runCatching { reportProblem(error) }.onFailure { if (it !== error) error.addSuppressed(it) }
+            } finally {
+                if (interrupted) Thread.currentThread().interrupt()
+            }
             if (committing || progressFailed || cancelled || error is AgentCompactionException || error is AgentContextCapacityException) throw error
             throw AgentCompactionException("Context summarization failed; original messages were retained.", error)
         }

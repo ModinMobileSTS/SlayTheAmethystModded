@@ -19,10 +19,14 @@
     <string name="ai_history_tool">Tool</string>
     <string name="ai_history_compaction">Compact</string>
     <string name="ai_history_retry">Retry</string>
+    <string name="ai_history_error">Error</string>
     <string name="ai_history_model_detail">Generate a response, plan actions or request tools.</string>
     <string name="ai_history_tool_detail">Execute the requested tool.</string>
     <string name="ai_history_compaction_detail">Summarize earlier conversation into a context checkpoint.</string>
     <string name="ai_history_retry_detail">Wait for retry backoff and network recovery.</string>
+    <string name="ai_history_error_detail">A problem interrupted this action. Inspect the error message for the cause.</string>
+    <string name="ai_history_error_source">Source: %1$s</string>
+    <string name="ai_history_related_step">Related action: Step %1$d</string>
     <string name="ai_history_input">Input tokens</string>
     <string name="ai_history_output">Output tokens</string>
     <string name="ai_history_running">Running</string>

@@ -166,6 +166,7 @@ internal class AiModAgentExecutor(
             streamingModel = AgentChatModelFactory.createStreaming(config.copy(reasoningEffort = LlmReasoningEffort.OFF)),
             summaryTimeoutMillis = config.requestTimeoutSeconds.toLong() * 1_000,
             onCompaction = onCompaction,
+            onExecutionStep = onExecutionStep,
             supportsImageInput = settings.supportsImageInput,
         )
         contextManager = manager

@@ -4,6 +4,9 @@ import io.stamethyst.backend.llm.AgentCompactionProgress
 import io.stamethyst.backend.llm.AgentExecutionStep
 import io.stamethyst.backend.llm.AgentStepKind
 import io.stamethyst.backend.llm.AgentStepStatus
+import io.stamethyst.backend.llm.agentErrorDetail
+import io.stamethyst.backend.llm.agentErrorStep
+import io.stamethyst.backend.llm.agentToolFailure
 import kotlinx.serialization.json.Json
 import java.util.Locale
 
@@ -17,6 +20,26 @@ internal fun AiEditorMessage.withExecutionStep(step: AgentExecutionStep): AiEdit
 internal fun AiEditorMessage.closeExecutionSteps(status: AgentStepStatus): AiEditorMessage = copy(
     executionSteps = executionSteps.map { if (it.status == AgentStepStatus.RUNNING) it.copy(status = status) else it },
 )
+
+/** A terminal event is idempotent, including recovery when the actual end time is unknowable. */
+internal fun AiEditorMessage.withExecutionProblem(
+    detail: String,
+    status: AgentStepStatus,
+    source: String = "SESSION",
+): AiEditorMessage {
+    val related = executionSteps.lastOrNull { it.kind != AgentStepKind.ERROR }?.id
+    val eventId = "$id:terminal-error"
+    val closed = closeExecutionSteps(status)
+    return if (closed.executionSteps.any { it.id == eventId }) closed else closed.withExecutionStep(
+        agentErrorStep(source, detail, related, status, id = eventId),
+    )
+}
+
+internal fun historyToolError(result: String?, errorDetail: String = ""): String {
+    if (errorDetail.isNotBlank()) return agentErrorDetail(errorDetail)
+    // Never retain a complete tool result (which can contain source code or image data).
+    return result?.takeIf { it.length <= 51_200 }?.let(::agentToolFailure) ?: "tool_execution_failed"
+}
 
 internal fun AgentCompactionProgress.executionStep() = startedAtMs?.let { started ->
     AgentExecutionStep(
@@ -44,6 +67,8 @@ internal data class AiHistoryStep(
     val inputTokens: Long?,
     val outputTokens: Long?,
     val legacy: Boolean = false,
+    val relatedStepId: String? = null,
+    val relatedStepNumber: Int? = null,
 ) {
     val totalTokens: Long? get() = if (inputTokens != null && outputTokens != null) inputTokens + outputTokens else null
     val billable: Boolean get() = kind == AgentStepKind.MODEL || kind == AgentStepKind.COMPACTION
@@ -95,7 +120,8 @@ private fun historySpectrum(steps: List<AiHistoryStep>, limit: Int = 64): List<A
     if (steps.isEmpty()) return emptyList()
     val size = ((steps.size + limit - 1) / limit).coerceAtLeast(1)
     return steps.chunked(size).map { group ->
-        val kind = group.groupingBy { it.kind }.eachCount().maxBy { it.value }.key
+        val kind = if (group.any { it.kind == AgentStepKind.ERROR }) AgentStepKind.ERROR else
+            group.groupingBy { it.kind }.eachCount().maxBy { it.value }.key
         AiHistorySegment(kind, group.sumOf { (it.elapsedMs ?: 1_000L).coerceAtLeast(100L) }.toFloat(),
             group.any { it.status == AgentStepStatus.FAILED || it.status == AgentStepStatus.CANCELLED })
     }
@@ -118,9 +144,15 @@ internal class AiHistoryBuilder {
         val steps = ArrayList<AiHistoryStep>()
         fun flush() {
             if (!started) return
-            val frozen = steps.toList()
-            val first = frozen.mapNotNull { it.startedAtMs }.minOrNull()
-            val last = frozen.mapNotNull { step -> step.startedAtMs?.let { start -> step.elapsedMs?.let { start + it } } }.maxOrNull()
+            val positions = steps.mapIndexed { index, step -> step.key to index + 1 }.toMap()
+            val frozen = steps.map { step ->
+                if (step.relatedStepId == null) step else step.copy(
+                    relatedStepNumber = positions["${step.key.substringBefore(':')}:${step.relatedStepId}"],
+                )
+            }
+            val actions = frozen.filter { it.kind != AgentStepKind.ERROR }
+            val first = actions.mapNotNull { it.startedAtMs }.minOrNull()
+            val last = actions.mapNotNull { step -> step.startedAtMs?.let { start -> step.elapsedMs?.let { start + it } } }.maxOrNull()
             val elapsed = if (first != null && last != null) (last - first).coerceAtLeast(0) else fallbackMs
             turns += AiHistoryTurn(id, turns.size + 1, prompt, frozen, running, failed, elapsed, aiHistoryUsage(frozen), historySpectrum(frozen))
             steps.clear()
@@ -162,11 +194,15 @@ internal class AiHistoryBuilder {
     }
 
     private fun prepareSteps(message: AiEditorMessage): List<AiHistoryStep> {
-        if (message.executionSteps.isNotEmpty()) return message.executionSteps.map { step ->
+        val recorded = message.executionSteps.map { step ->
             AiHistoryStep("${message.id}:${step.id}", step.kind, step.name, step.detail.take(480), message.modelName,
                 step.startedAtMs, step.elapsedMs,
                 if (!message.streaming && step.status == AgentStepStatus.RUNNING) AgentStepStatus.CANCELLED else step.status,
-                step.inputTokens, step.outputTokens)
+                step.inputTokens, step.outputTokens, relatedStepId = step.relatedStepId)
+        }
+        if (recorded.any { it.kind != AgentStepKind.ERROR }) return recorded.let { steps ->
+            if ((message.failed || message.errorMessage.isNotBlank()) && steps.none { it.kind == AgentStepKind.ERROR })
+                steps + legacyProblem(message) else steps
         }
         // Legacy conversations retain their real action order, but never borrow the last request's
         // context token count or divide a whole turn's duration between invented steps.
@@ -187,6 +223,7 @@ internal class AiHistoryBuilder {
                 flushModel()
                 add(AgentStepKind.TOOL, it.name, historyToolDetail(it.arguments), it.failed,
                     message.streaming && it.result == null, input = 0, output = 0)
+                if (it.failed) add(AgentStepKind.ERROR, "TOOL: ${it.name}", historyToolError(it.result), failed = true, input = 0, output = 0)
             }
         }
         if (message.parts.isNotEmpty()) message.parts.forEach { part ->
@@ -199,6 +236,8 @@ internal class AiHistoryBuilder {
                     val event = runCatching { json.decodeFromString<AgentCompactionProgress>(part.content) }.getOrNull()
                     add(AgentStepKind.COMPACTION, event?.reason.orEmpty(), event?.error.orEmpty(), event?.status == "failed",
                         message.streaming && event?.status == "running", event?.inputTokens, event?.outputTokens)
+                    if (event?.status == "failed" || event?.status == "interrupted")
+                        add(AgentStepKind.ERROR, "COMPACTION", agentErrorDetail(event.error), failed = true, input = 0, output = 0)
                 }
             }
         } else {
@@ -209,10 +248,21 @@ internal class AiHistoryBuilder {
             model.append(message.text.take(480))
         }
         flushModel()
-        if (result.isEmpty() && (message.streaming || message.failed || message.elapsedMs != null))
+        if (result.isEmpty() && recorded.isEmpty() && (message.streaming || message.failed || message.elapsedMs != null))
             add(AgentStepKind.MODEL, failed = message.failed, running = message.streaming)
+        // Recovering an older in-flight conversation must not hide its actions just because its
+        // first durable telemetry is the new interruption event. A startup error invents no model.
+        if (recorded.isNotEmpty()) return result + recorded
+        if (message.failed || message.errorMessage.isNotBlank()) result += legacyProblem(message)
         return result
     }
+
+    private fun legacyProblem(message: AiEditorMessage) = AiHistoryStep(
+        key = "${message.id}:legacy-error", kind = AgentStepKind.ERROR, name = "SESSION",
+        detail = agentErrorDetail(message.errorMessage), modelName = message.modelName,
+        startedAtMs = null, elapsedMs = null, status = AgentStepStatus.FAILED,
+        inputTokens = 0, outputTokens = 0, legacy = true,
+    )
 }
 
 internal fun historyToolDetail(arguments: String): String {

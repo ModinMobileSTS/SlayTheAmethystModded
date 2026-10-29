@@ -269,6 +269,7 @@ class AgentContextManager(
     private val onCompaction: (AgentCompactionProgress) -> Unit = {},
     /** When false, images are replaced by a short text notice instead of an image part. */
     val supportsImageInput: Boolean = true,
+    private val onExecutionStep: (AgentExecutionStep) -> Unit = {},
 ) {
     var state: AgentContextState = initial.closeInterruptedTools()
         private set
@@ -415,7 +416,7 @@ class AgentContextManager(
     private fun compact(reason: String) {
         val original = state
         val compactor = AgentContextCompaction(model, streamingModel, systemPrompt, toolSchema,
-            toolSpecifications, budget, summaryTimeoutMillis, checkCancelled, onCompaction)
+            toolSpecifications, budget, summaryTimeoutMillis, checkCancelled, onCompaction, onExecutionStep)
         compactor.run(original, reason) { summary, recent ->
             val candidate = original.copy(summary = summary, recent = recent, checkpointVersion = 2,
                 summarizedCount = original.messages.size, compactionCount = original.compactionCount + 1,

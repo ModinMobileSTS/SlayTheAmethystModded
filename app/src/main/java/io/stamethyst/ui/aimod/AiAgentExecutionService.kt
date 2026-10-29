@@ -21,6 +21,7 @@ import io.stamethyst.backend.llm.AgentToolExecutionEvent
 import io.stamethyst.backend.llm.AgentExecutionStep
 import io.stamethyst.backend.llm.AgentStepKind
 import io.stamethyst.backend.llm.AgentStepStatus
+import io.stamethyst.backend.llm.agentErrorStep
 import io.stamethyst.backend.llm.DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
 import io.stamethyst.backend.llm.LlmSettingsRepository
 import io.stamethyst.backend.llm.MAX_LLM_REQUEST_TIMEOUT_SECONDS
@@ -47,7 +48,12 @@ internal fun applyToolExecutionEvent(
                 else -> AgentStepStatus.RUNNING
             }, inputTokens = 0, outputTokens = 0)
     }
-    val recorded = step?.let(message::withExecutionStep) ?: message
+    var recorded = step?.let(message::withExecutionStep) ?: message
+    if (event.failed) {
+        val error = agentErrorStep("TOOL: ${event.name}", historyToolError(event.result, event.errorDetail), event.id)
+        // A repeated terminal callback updates neither the position nor the occurrence timestamp.
+        if (message.executionSteps.none { it.id == error.id }) recorded = recorded.withExecutionStep(error)
+    }
     if (event.result == null) {
         val orderedParts = buildList {
             addAll(message.parts)
@@ -483,7 +489,7 @@ class AiAgentExecutionService : Service() {
         assistantMessageId: Long,
         event: AgentToolExecutionEvent,
     ) {
-        updateAssistant(job, conversationStore, assistantMessageId) { message ->
+        updateAssistant(job, conversationStore, assistantMessageId, includeExecutionSteps = event.failed) { message ->
             applyToolExecutionEvent(message, event, json)
         }
     }
@@ -507,7 +513,7 @@ class AiAgentExecutionService : Service() {
     ) {
         val conversationStore = conversationStore(job.modId)
         updateAssistant(job, conversationStore, assistantMessageId, includeExecutionSteps = true) {
-            it.closeExecutionSteps(AgentStepStatus.FAILED).copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
+            it.withExecutionProblem(message, AgentStepStatus.FAILED).copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
         }
         jobStore.update(job.jobId) {
             it.copy(status = AiAgentJobStatus.FAILED, errorMessage = message)
@@ -569,7 +575,7 @@ class AiAgentExecutionService : Service() {
         val message = getString(R.string.ai_mod_editor_error_stopped)
         val conversationStore = conversationStore(job.modId)
         updateAssistant(job, conversationStore, assistantMessageId, includeExecutionSteps = true) {
-            it.closeExecutionSteps(AgentStepStatus.CANCELLED).copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
+            it.withExecutionProblem(message, AgentStepStatus.CANCELLED).copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
         }
         jobStore.update(job.jobId) {
             it.copy(status = AiAgentJobStatus.CANCELLED, errorMessage = message)

@@ -80,9 +80,92 @@ class AiExecutionHistoryTest {
     @Test fun orphanedRunningStepsAreNotPresentedAsStillRunning() {
         val message = assistant(listOf(step("unfinished").copy(elapsedMs = null, status = AgentStepStatus.RUNNING))).copy(failed = true)
         val turn = AiHistoryBuilder().build(listOf(user(1), message)).turns.single()
-        assertEquals(AgentStepStatus.CANCELLED, turn.steps.single().status)
-        assertNull(turn.steps.single().elapsedMs)
+        assertEquals(AgentStepStatus.CANCELLED, turn.steps.first().status)
+        assertNull(turn.steps.first().elapsedMs)
+        assertEquals(AgentStepKind.ERROR, turn.steps.last().kind)
+        assertNull(turn.steps.last().startedAtMs)
         assertTrue(turn.failed)
+    }
+
+    @Test fun toolFailuresAddOneAssociatedErrorAndPreserveActionMeasurements() {
+        val event = AgentToolExecutionEvent("read", "read_workspace_file", "{}", startedAtMs = 100)
+        val started = applyToolExecutionEvent(assistant(emptyList()), event)
+        val failure = event.copy(result = """{"error":"file_not_found","content":"do not copy source"}""", failed = true, elapsedMs = 50)
+        val message = applyToolExecutionEvent(started, failure)
+        assertEquals(message, applyToolExecutionEvent(message, failure))
+        val (tool, error) = message.executionSteps
+        assertEquals(50L, tool.elapsedMs)
+        assertEquals(AgentStepKind.ERROR, error.kind)
+        assertEquals(tool.id, error.relatedStepId)
+        assertEquals("file_not_found", error.detail)
+        assertEquals(0L, error.totalTokens)
+        val history = AiHistoryBuilder().build(listOf(user(1), message))
+        assertEquals(50L, history.elapsedMs)
+        assertEquals(0, history.usage.requests)
+    }
+
+    @Test fun terminalAndRecoveryProblemsAreIdempotentAndNeverInventEndTimes() {
+        val running = step("request").copy(status = AgentStepStatus.RUNNING, elapsedMs = null)
+        val closed = assistant(listOf(running)).withExecutionProblem("Process interrupted", AgentStepStatus.CANCELLED, "RECOVERY")
+        assertEquals(closed, closed.withExecutionProblem("Process interrupted", AgentStepStatus.CANCELLED, "RECOVERY"))
+        assertEquals(AgentStepStatus.CANCELLED, closed.executionSteps.first().status)
+        assertNull(closed.executionSteps.first().elapsedMs)
+        assertEquals("request", closed.executionSteps.last().relatedStepId)
+        assertEquals("RECOVERY", closed.executionSteps.last().name)
+        assertNull(AiHistoryBuilder().build(listOf(user(1), closed)).elapsedMs)
+    }
+
+    @Test fun errorsDoNotDoubleCountUsageOrInflateDurationAndStayVisibleInLargeCharts() {
+        val actions = List(1_000) { step("s$it", start = 100, elapsed = 200, input = 1, output = 1) }
+        val error = AgentExecutionStep("error", AgentStepKind.ERROR, "MODEL", "request failed", startedAtMs = 99_000,
+            elapsedMs = 0, status = AgentStepStatus.FAILED, inputTokens = 0, outputTokens = 0, relatedStepId = "s999")
+        val history = AiHistoryBuilder().build(listOf(user(1), assistant(actions + error)))
+        assertEquals(2_000L, history.usage.tokens)
+        assertEquals(1_000, history.usage.requests)
+        assertEquals(200L, history.elapsedMs)
+        assertTrue(history.overview.single().segments.any { it.kind == AgentStepKind.ERROR })
+        assertEquals("s999", history.turns.single().steps.last().relatedStepId)
+        assertEquals(1_000, history.turns.single().steps.last().relatedStepNumber)
+    }
+
+    @Test fun legacyFailedMessagesExposeKnownErrorWithoutFabricatedTiming() {
+        val history = AiHistoryBuilder().build(listOf(user(1), assistant(emptyList()).copy(failed = true, errorMessage = "network unavailable")))
+        val error = history.turns.single().steps.last()
+        assertEquals(AgentStepKind.ERROR, error.kind)
+        assertEquals("network unavailable", error.detail)
+        assertNull(error.startedAtMs)
+        assertNull(error.elapsedMs)
+        assertTrue(error.legacy)
+    }
+
+    @Test fun compilerFailureEventRecordsDiagnosticRatherThanSuccessfulToolState() {
+        val event = AgentToolExecutionEvent("compile", "compile_agent_patch_source", "{}", startedAtMs = 100)
+        val message = applyToolExecutionEvent(applyToolExecutionEvent(assistant(emptyList()), event),
+            event.copy(failed = true, result = """{"status":"failed","diagnostics":"symbol not found"}""", elapsedMs = 20))
+        assertEquals("failed: symbol not found", message.executionSteps.last().detail)
+        assertEquals(AgentStepStatus.FAILED, message.executionSteps.first().status)
+        assertEquals(20L, AiHistoryBuilder().build(listOf(user(1), message)).elapsedMs)
+    }
+
+    @Test fun recoveryOfLegacyConversationDoesNotHideItsOriginalActions() {
+        val message = AiEditorMessage(2, false, "reply", tools = listOf(
+            AiToolCall("read", "read_workspace_file", "{}", result = "source"),
+        )).withExecutionProblem("Process interrupted", AgentStepStatus.CANCELLED, "RECOVERY")
+        val history = AiHistoryBuilder().build(listOf(user(1), message))
+        assertEquals(listOf(AgentStepKind.TOOL, AgentStepKind.MODEL, AgentStepKind.ERROR), history.turns.single().steps.map { it.kind })
+        assertTrue(history.turns.single().steps.first().legacy)
+        assertEquals("RECOVERY", history.turns.single().steps.last().name)
+        assertNull(history.elapsedMs)
+    }
+
+    @Test fun startupFailureDoesNotInventAModelRequest() {
+        val message = AiEditorMessage(2, false, "", streaming = true)
+            .withExecutionProblem("Unable to start service", AgentStepStatus.FAILED, "STARTUP")
+            .copy(streaming = false, failed = true)
+        val history = AiHistoryBuilder().build(listOf(user(1), message))
+        assertEquals(AgentStepKind.ERROR, history.turns.single().steps.single().kind)
+        assertEquals(0, history.usage.requests)
+        assertNull(history.elapsedMs)
     }
 
     @Test fun toolEventsCaptureDurationWithoutAddingTokens() {

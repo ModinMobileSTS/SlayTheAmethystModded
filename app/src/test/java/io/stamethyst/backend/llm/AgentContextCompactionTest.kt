@@ -144,12 +144,13 @@ class AgentContextCompactionTest {
 
     @Test fun payloadTooLargeRetriesOnceAsTextWithoutResendingToolProtocol() {
         var calls = 0
+        val problems = ArrayList<AgentExecutionStep>()
         val state = AgentContextState(messages = listOf(
             AgentContextMessage(1, "user", "Inspect"),
             AgentContextMessage(2, "assistant", calls = listOf(AgentContextToolCall("a", "read", "{}"))),
             AgentContextMessage(2, "tool", "result", callId = "a", toolName = "read"),
         ))
-        val manager = manager(state = state, model = fake { request ->
+        val manager = manager(state = state, steps = problems, model = fake { request ->
             if (++calls == 1) throw IllegalArgumentException("payload too large")
             assertTrue(request.messages().none { it is ToolExecutionResultMessage })
             assertTrue(request.messages().filterIsInstance<UserMessage>().any { it.singleText().contains("[Tool result]: result") })
@@ -160,6 +161,40 @@ class AgentContextCompactionTest {
 
         assertEquals(2, calls)
         assertEquals(state.messages, manager.state.messages)
+        assertEquals(AgentStepKind.ERROR, problems.single().kind)
+        assertTrue(problems.single().detail.contains("payload too large"))
+        assertNotNull(problems.single().relatedStepId)
+        assertEquals(0L, problems.single().totalTokens)
+    }
+
+    @Test fun compactionFailureRecordsOneProblemEvenAcrossNestedCatches() {
+        val problems = ArrayList<AgentExecutionStep>()
+        val events = ArrayList<AgentCompactionProgress>()
+        val manager = manager(steps = problems, events = events, model = fake {
+            throw IllegalArgumentException("invalid provider response")
+        })
+        assertThrows(AgentCompactionException::class.java) { manager.prepare(manual = true) }
+        assertEquals(1, problems.size)
+        assertEquals(events.last().id, problems.single().relatedStepId)
+        assertEquals(AgentStepStatus.FAILED, problems.single().status)
+        assertTrue(problems.single().detail.contains("invalid provider response"))
+    }
+
+    @Test fun compactionCancellationRecordsAnInterruptedProblem() {
+        val problems = ArrayList<AgentExecutionStep>()
+        val manager = manager(steps = problems, model = fake { throw CancellationException("summary stopped") })
+        assertThrows(CancellationException::class.java) { manager.prepare(manual = true) }
+        assertEquals(AgentStepStatus.CANCELLED, problems.single().status)
+        assertTrue(problems.single().detail.contains("summary stopped"))
+    }
+
+    @Test fun errorHistoryCheckpointFailureNeverRetriesCompactionRequest() {
+        var calls = 0
+        val manager = AgentContextManager(history, "system", "tools", AgentContextBudget(), 5,
+            fake { calls++; throw java.io.IOException("network unavailable") }, {},
+            onExecutionStep = { throw java.io.IOException("history unavailable") })
+        assertThrows(java.io.IOException::class.java) { manager.prepare(manual = true) }
+        assertEquals(1, calls)
     }
 
     @Test fun summaryOverflowNeverDropsNewestExchangeToMakeRequestFit() {
@@ -288,8 +323,9 @@ class AgentContextCompactionTest {
         streaming: StreamingChatModel? = null,
         events: MutableList<AgentCompactionProgress> = ArrayList(),
         cancelled: () -> Unit = {},
+        steps: MutableList<AgentExecutionStep> = ArrayList(),
     ) = AgentContextManager(state, "system", "tools", AgentContextBudget(), 5, model, {}, cancelled,
-        streamingModel = streaming, onCompaction = { events += it })
+        streamingModel = streaming, onCompaction = { events += it }, onExecutionStep = { steps += it })
 
     private fun fake(reply: (ChatRequest) -> ChatResponse) = object : ChatModel {
         override fun doChat(request: ChatRequest) = reply(request)

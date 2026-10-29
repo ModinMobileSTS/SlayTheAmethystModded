@@ -5,7 +5,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 @Serializable
-enum class AgentStepKind { MODEL, TOOL, COMPACTION, RETRY }
+enum class AgentStepKind { MODEL, TOOL, COMPACTION, RETRY, ERROR }
 
 @Serializable
 enum class AgentStepStatus { RUNNING, COMPLETED, FAILED, CANCELLED }
@@ -23,6 +23,8 @@ data class AgentExecutionStep(
     /** Null means not reported; tools/retry waits explicitly consume zero model tokens. */
     val inputTokens: Long? = null,
     val outputTokens: Long? = null,
+    /** The action which caused an ERROR event; its timing/usage remains on that action. */
+    val relatedStepId: String? = null,
 ) {
     val totalTokens: Long? get() = if (inputTokens != null && outputTokens != null)
         inputTokens + outputTokens else null
@@ -37,8 +39,8 @@ internal class AgentStepTimer(
 ) {
     private val startedNanos = System.nanoTime()
     val step = AgentExecutionStep(id, kind, name, detail.take(480), System.currentTimeMillis(),
-        inputTokens = if (kind == AgentStepKind.TOOL || kind == AgentStepKind.RETRY) 0 else null,
-        outputTokens = if (kind == AgentStepKind.TOOL || kind == AgentStepKind.RETRY) 0 else null)
+        inputTokens = if (kind == AgentStepKind.TOOL || kind == AgentStepKind.RETRY || kind == AgentStepKind.ERROR) 0 else null,
+        outputTokens = if (kind == AgentStepKind.TOOL || kind == AgentStepKind.RETRY || kind == AgentStepKind.ERROR) 0 else null)
 
     fun finish(
         status: AgentStepStatus = AgentStepStatus.COMPLETED,

@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.stamethyst.backend.llm.AgentExecutionStep
 import io.stamethyst.backend.llm.AgentStepKind
 import io.stamethyst.backend.llm.AgentStepStatus
+import io.stamethyst.backend.llm.agentErrorStep
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -64,6 +65,22 @@ class AiExecutionHistoryStoreInstrumentedTest {
         val restored = store.load("test")!!
         assertEquals(listOf("model", "second"), restored.messages.last().executionSteps.map { it.id })
         assertEquals(42L, restored.messages.last().executionSteps.first().elapsedMs)
+    }
+
+    @Test fun errorNodesAndLinksSurviveStreamingAndTerminalUpdates() = withStore { root, store ->
+        seed(store)
+        val error = agentErrorStep("MODEL", "IOException: connection reset", "model")
+        store.recordExecutionStep("test", 2, step())
+        store.recordExecutionStep("test", 2, error)
+        store.updateMessage("test", 2, includeExecutionSteps = false) { it.copy(text = "partial response") }
+        store.updateMessage("test", 2) {
+            it.withExecutionProblem("Task failed", AgentStepStatus.FAILED).copy(streaming = false, failed = true)
+        }
+        val restored = AiConversationStore(root).load("test")!!.messages.last()
+        assertEquals(listOf(AgentStepKind.MODEL, AgentStepKind.ERROR, AgentStepKind.ERROR), restored.executionSteps.map { it.kind })
+        assertEquals(error, restored.executionSteps[1])
+        assertEquals("model", restored.executionSteps.last().relatedStepId)
+        assertEquals(150L, AiHistoryBuilder().build(listOf(restored)).usage.tokens)
     }
 
     private fun seed(store: AiConversationStore) {

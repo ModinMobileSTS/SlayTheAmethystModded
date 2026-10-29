@@ -19,10 +19,14 @@
     <string name="ai_history_tool">工具</string>
     <string name="ai_history_compaction">压缩</string>
     <string name="ai_history_retry">重试</string>
+    <string name="ai_history_error">错误</string>
     <string name="ai_history_model_detail">生成回复、规划行动或发起工具调用。</string>
     <string name="ai_history_tool_detail">执行所请求的工具操作。</string>
     <string name="ai_history_compaction_detail">将较早的对话整理为上下文检查点。</string>
     <string name="ai_history_retry_detail">等待重试退避和网络恢复。</string>
+    <string name="ai_history_error_detail">此操作被问题中断。展开查看错误类型和具体原因。</string>
+    <string name="ai_history_error_source">发生位置：%1$s</string>
+    <string name="ai_history_related_step">关联行动：Step %1$d</string>
     <string name="ai_history_input">输入 token</string>
     <string name="ai_history_output">输出 token</string>
     <string name="ai_history_running">进行中</string>

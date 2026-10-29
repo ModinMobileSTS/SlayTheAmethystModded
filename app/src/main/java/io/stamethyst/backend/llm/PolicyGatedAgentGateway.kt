@@ -276,6 +276,7 @@ data class AgentToolExecutionEvent(
     val attachments: List<AgentContextAttachment> = emptyList(),
     val startedAtMs: Long? = null,
     val elapsedMs: Long? = null,
+    val errorDetail: String = "",
 )
 
 class AgentToolRegistry(
@@ -317,6 +318,7 @@ class AgentToolRegistry(
         notifyExecution(event, checkCancelled)
         checkCancelled()
         val tool = toolsByName[request.name()]
+        var executionError = ""
         val output = when {
             tool == null -> failure("unknown_tool")
             !policyGate.allows(tool) -> failure("approval_required")
@@ -328,6 +330,7 @@ class AgentToolRegistry(
                 Thread.currentThread().interrupt()
                 throw java.util.concurrent.CancellationException("Agent tool cancelled").apply { initCause(error) }
             } catch (error: Exception) {
+                executionError = agentErrorDetail(error)
                 failure("tool_execution_failed")
             }
         }
@@ -336,11 +339,10 @@ class AgentToolRegistry(
         }
         checkCancelled()
         Log.i(TAG, "tool=${request.name()} resultChars=${output.text.length} images=${output.attachments.size}")
-        val failed = runCatching {
-            Json.parseToJsonElement(output.text).jsonObject.containsKey("error")
-        }.getOrDefault(false)
+        val failure = agentToolFailure(output.text)
+        val failed = failure != null
         notifyExecution(event.copy(result = output.text, failed = failed, attachments = output.attachments,
-            elapsedMs = timer.finish().elapsedMs), checkCancelled)
+            elapsedMs = timer.finish().elapsedMs, errorDetail = executionError.ifBlank { failure.orEmpty() }), checkCancelled)
         return output
     }
 
@@ -2653,7 +2655,7 @@ class PolicyGatedAgentGateway(
                 try {
                     awaitNetworkAndBackoff(delaySeconds)
                 } catch (cancelled: Exception) {
-                    publishExecutionStep(wait.finish(agentStepFailureStatus(cancelled)))
+                    publishProblem(wait, cancelled)
                     throw cancelled
                 }
                 publishExecutionStep(wait.finish())
@@ -2672,16 +2674,7 @@ class PolicyGatedAgentGateway(
         val result = try {
             request(messages)
         } catch (error: Exception) {
-            // An interrupt must be cleared before SQLite can persist the terminal step.
-            val status = agentStepFailureStatus(error)
-            val interrupted = Thread.interrupted()
-            try {
-                publishExecutionStep(timer.finish(status, error.javaClass.simpleName))
-            } catch (checkpoint: Exception) {
-                error.addSuppressed(checkpoint)
-            } finally {
-                if (interrupted) Thread.currentThread().interrupt()
-            }
+            publishProblem(timer, error)
             throw error
         }
         val response = when (result) {
@@ -2704,7 +2697,32 @@ class PolicyGatedAgentGateway(
             inputTokens = usage?.input,
             outputTokens = response?.tokenUsage()?.outputTokenCount()?.toLong(),
         ))
+        // An empty response is a protocol problem even when the next attempt/fallback recovers.
+        if (message != null && !message.hasToolExecutionRequests() && message.text().orEmpty().isBlank() &&
+            (result !is StreamingResult || result.text.isBlank())) {
+            publishExecutionStep(agentErrorStep("MODEL", agentErrorDetail(AgentEmptyResponseException(finishReason(response))), timer.step.id))
+        } else if (finishReason(response) in setOf("LENGTH", "CONTENT_FILTER", "OTHER")) {
+            publishExecutionStep(agentErrorStep("MODEL", "Provider response ended with finish reason: ${finishReason(response)}.", timer.step.id))
+        }
         return result
+    }
+
+    private fun publishProblem(timer: AgentStepTimer, error: Exception) {
+        val status = agentStepFailureStatus(error)
+        // File/SQLite checkpoints must run without the interrupt flag, then restore cancellation.
+        val interrupted = Thread.interrupted()
+        try {
+            publishExecutionStep(timer.finish(status, error.javaClass.simpleName))
+            publishExecutionStep(agentErrorStep(timer.step.kind.name, agentErrorDetail(error), timer.step.id, status))
+        } catch (checkpoint: Exception) {
+            if (status != AgentStepStatus.CANCELLED) {
+                if (checkpoint !== error) checkpoint.addSuppressed(error)
+                throw checkpoint
+            }
+            if (checkpoint !== error) error.addSuppressed(checkpoint)
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
+        }
     }
 
     private class AgentHistoryCheckpointException(cause: Exception) : IllegalStateException("Execution history checkpoint failed", cause)
