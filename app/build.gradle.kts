@@ -509,11 +509,24 @@ val runAiCacheAcceptance = gradle.startParameter.taskNames.any {
     it == "aiCacheAcceptanceTest" || it.endsWith(":aiCacheAcceptanceTest")
 }
 val aiEditorScrollCostTestClass = "io.stamethyst.ui.aimod.AiEditorScrollCostTest"
+val aiConversationLoadingCostTestClass = "io.stamethyst.ui.aimod.AiConversationLoadingCostTest"
+val runAiConversationLoadingCost = gradle.startParameter.taskNames.any {
+    it == "aiConversationLoadingCostTest" || it.endsWith(":aiConversationLoadingCostTest")
+}
 val runAiEditorScrollCost = gradle.startParameter.taskNames.any {
     it == "aiEditorScrollCostTest" || it.endsWith(":aiEditorScrollCostTest")
 }
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    if (name == "testDebugUnitTest" && runAiConversationLoadingCost) {
+        filter { includeTestsMatching(aiConversationLoadingCostTestClass) }
+        systemProperty("sts.runAiConversationLoadingCost", "true")
+        outputs.upToDateWhen { false }
+        testLogging.showStandardStreams = true
+        maxParallelForks = 1
+    } else {
+        filter { excludeTestsMatching(aiConversationLoadingCostTestClass) }
+    }
     if (name == "testDebugUnitTest" && runAiCacheAcceptance) {
         filter { includeTestsMatching(aiCacheAcceptanceTestClass) }
         systemProperty("sts.runAiCacheAcceptance", "true")
@@ -559,6 +572,12 @@ tasks.register("aiCompactionAcceptanceTest") {
 tasks.register("aiEditorScrollCostTest") {
     group = "verification"
     description = "Measures the AI editor transcript costs: markdown rows on scroll and the 500 ms poll."
+    dependsOn("testDebugUnitTest")
+}
+
+tasks.register("aiConversationLoadingCostTest") {
+    group = "verification"
+    description = "Measures AI conversation opening preparation as history and message payloads grow (no disk/UI timing)."
     dependsOn("testDebugUnitTest")
 }
 
