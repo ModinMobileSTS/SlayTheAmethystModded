@@ -159,10 +159,9 @@ async function publishPatchUpload(upload, config) {
         { path: metadata.jar, mode: '100644', type: 'blob', sha: jarSha }
       ];
       if (upload.sources) {
-        const files = [];
-        for (const [path, buffer] of upload.sources) {
-          files.push({ path, mode: '100644', type: 'blob', sha: await createBlob(buffer) });
-        }
+        const files = await Promise.all(Array.from(upload.sources.entries()).map(async ([path, buffer]) => ({
+          path, mode: '100644', type: 'blob', sha: await createBlob(buffer)
+        })));
         const sourceTree = await createTree(files);
         additions.push({ path: 'src', mode: '040000', type: 'tree', sha: sourceTree.sha });
       }
