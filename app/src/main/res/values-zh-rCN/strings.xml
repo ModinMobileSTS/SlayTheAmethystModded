@@ -844,7 +844,7 @@
     <string name="main_mod_agent_patch_upload_stage_packaging_sources">打包源码</string>
     <string name="main_mod_agent_patch_upload_stage_uploading">上传文件</string>
     <string name="main_mod_agent_patch_upload_stage_processing">社区仓库处理中</string>
-    <string name="main_mod_agent_patch_upload_processing_hint">文件已上传，正在等待社区仓库确认提交…</string>
+    <string name="main_mod_agent_patch_upload_processing_hint">正在提交文件，请稍候…</string>
     <string name="main_mod_agent_patch_upload_busy_note">上传过程中请保持应用在前台。</string>
     <string name="main_mod_agent_patch_upload_thanks_title">上传完成</string>
     <string name="main_mod_agent_patch_upload_thanks_message">感谢你与全世界的手机版玩家分享这个补丁！</string>

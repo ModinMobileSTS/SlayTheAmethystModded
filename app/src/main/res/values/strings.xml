@@ -845,7 +845,7 @@ Do you still want to continue?</string>
     <string name="main_mod_agent_patch_upload_stage_packaging_sources">Packaging sources</string>
     <string name="main_mod_agent_patch_upload_stage_uploading">Uploading files</string>
     <string name="main_mod_agent_patch_upload_stage_processing">Community repository processing</string>
-    <string name="main_mod_agent_patch_upload_processing_hint">Files uploaded. Waiting for the community repository to confirm the commit…</string>
+    <string name="main_mod_agent_patch_upload_processing_hint">Submitting files, please wait…</string>
     <string name="main_mod_agent_patch_upload_busy_note">Keep the app in the foreground while uploading.</string>
     <string name="main_mod_agent_patch_upload_thanks_title">Upload complete</string>
     <string name="main_mod_agent_patch_upload_thanks_message">Thank you for sharing this patch with mobile players around the world!</string>

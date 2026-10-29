@@ -14,6 +14,7 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -124,6 +125,9 @@ object AgentPatchCatalogueService {
     private const val MAX_ARCHIVE_ENTRIES = 4096
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 30_000
+    private const val UPLOAD_READ_TIMEOUT_MS = 5 * 60_000L
+    private const val UPLOAD_WRITE_TIMEOUT_MS = 5 * 60_000L
+    private const val UPLOAD_CALL_TIMEOUT_MS = 10 * 60_000L
     private const val USER_AGENT = "SlayTheAmethyst-AIPatchCatalogue"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
     private val clients = ConcurrentHashMap<String, GithubRequestClients>()
@@ -400,7 +404,12 @@ object AgentPatchCatalogueService {
                 .header("User-Agent", USER_AGENT)
                 .post(requestBody)
                 .build()
-            val responseBytes = sharedClients(context).plainClient.newCall(request).execute().use { response ->
+            val uploadClient = sharedClients(context).plainClient.newBuilder()
+                .readTimeout(UPLOAD_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .writeTimeout(UPLOAD_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .callTimeout(UPLOAD_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .build()
+            val responseBytes = uploadClient.newCall(request).execute().use { response ->
                 val bytes = response.body?.byteStream()?.let { readBounded(it, 128 * 1024) } ?: ByteArray(0)
                 if (!response.isSuccessful) {
                     val detail = runCatching { JSONObject(bytes.toString(Charsets.UTF_8)).optString("message") }.getOrNull()

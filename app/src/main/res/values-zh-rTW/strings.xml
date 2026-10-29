@@ -832,7 +832,7 @@
     <string name="main_mod_agent_patch_upload_stage_packaging_sources">打包原始碼</string>
     <string name="main_mod_agent_patch_upload_stage_uploading">上傳檔案</string>
     <string name="main_mod_agent_patch_upload_stage_processing">社區倉庫處理中</string>
-    <string name="main_mod_agent_patch_upload_processing_hint">檔案已上傳，正在等待社區倉庫確認提交…</string>
+    <string name="main_mod_agent_patch_upload_processing_hint">正在提交檔案，請稍候…</string>
     <string name="main_mod_agent_patch_upload_busy_note">上傳過程中請保持應用程式在前景。</string>
     <string name="main_mod_agent_patch_upload_thanks_title">上傳完成</string>
     <string name="main_mod_agent_patch_upload_thanks_message">感謝你與全世界的手機版玩家分享此補丁！</string>
