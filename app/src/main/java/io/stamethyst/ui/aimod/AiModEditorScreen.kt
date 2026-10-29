@@ -1553,9 +1553,9 @@ internal fun AiMessageCard(
                         }
                     }
                 }
-                if (showProgress && message.streaming && showFooter && !hasCopyContent && message.text.isBlank() && message.thinking.isBlank() && message.parts.isEmpty()) {
+                if (showProgress && message.streaming && !hasCopyContent && message.text.isBlank() && message.thinking.isBlank() && message.parts.isEmpty()) {
                     CircularProgressIndicator(
-                        modifier = Modifier.padding(vertical = 12.dp).size(18.dp),
+                        modifier = Modifier.padding(vertical = 12.dp).size(18.dp).testTag("ai-assistant-loading"),
                         strokeWidth = 2.dp,
                         color = colors.onSurfaceVariant,
                     )
