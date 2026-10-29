@@ -97,6 +97,7 @@ internal fun AiChatComposer(
     onSteerInbox: (AiInboxItem) -> Unit = {},
     onReorderInbox: (String, Int) -> Unit = { _, _ -> },
     onCancelInboxEdit: () -> Unit = {},
+    outputTokensPerSecond: Double? = null,
     modifier: Modifier = Modifier,
 ) {
     var modelMenu by remember { mutableStateOf(false) }
@@ -232,6 +233,14 @@ internal fun AiChatComposer(
                             }
                         }
                     }
+                    Text(
+                        text = outputTokensPerSecond?.let { String.format(java.util.Locale.ROOT, "%.1f token/s", it) } ?: "— token/s",
+                        modifier = Modifier.padding(start = 8.dp, end = 8.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = colors.onSurfaceVariant,
+                        maxLines = 1,
+                    )
                 }
             }
         }

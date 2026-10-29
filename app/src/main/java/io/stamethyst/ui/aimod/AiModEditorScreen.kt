@@ -51,6 +51,7 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -1172,6 +1173,7 @@ fun LauncherAiModEditorScreen(
                 }
             }
         }
+        val outputSpeeds by AiAgentExecutionService.outputSpeeds.collectAsState()
         AiChatComposer(
             modifier = Modifier.align(Alignment.BottomCenter),
             hazeState = composerHazeState,
