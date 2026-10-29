@@ -92,6 +92,8 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import io.stamethyst.R
 import io.stamethyst.backend.llm.JarPatch
+import io.stamethyst.backend.llm.AgentStepStatus
+import io.stamethyst.backend.llm.agentErrorDetail
 import io.stamethyst.backend.llm.JarPatchApplier
 import io.stamethyst.backend.llm.JarPatchCodec
 import io.stamethyst.backend.llm.LlmReasoningEffort
@@ -509,7 +511,7 @@ internal class AiModEditorViewModel(
         )
         interrupted.forEach { job ->
             conversationStore.updateMessage(job.conversationId, job.assistantMessageId) { message ->
-                message.copy(
+                message.withExecutionProblem(interruptedMessage, AgentStepStatus.CANCELLED, source = "RECOVERY").copy(
                     streaming = false,
                     failed = true,
                     errorMessage = interruptedMessage,
@@ -721,7 +723,8 @@ internal class AiModEditorViewModel(
                         withContext(Dispatchers.Main.immediate) {
                             runCatching { mutateCurrent { session ->
                                 session.copy(messages = session.messages.map {
-                                    if (it.id == assistantId) it.copy(streaming = false, failed = true, errorMessage = message) else it
+                                    if (it.id == assistantId) it.withExecutionProblem(agentErrorDetail(failure), AgentStepStatus.FAILED, "STARTUP")
+                                        .copy(streaming = false, failed = true, errorMessage = message) else it
                                 })
                             } }
                             busy = false
@@ -735,7 +738,8 @@ internal class AiModEditorViewModel(
                 val message = failure.message ?: failure.javaClass.simpleName
                 runCatching { mutateCurrent { session ->
                     session.copy(messages = session.messages.map {
-                        if (it.id == assistantId) it.copy(streaming = false, failed = true, errorMessage = message) else it
+                        if (it.id == assistantId) it.withExecutionProblem(agentErrorDetail(failure), AgentStepStatus.FAILED, "STARTUP")
+                            .copy(streaming = false, failed = true, errorMessage = message) else it
                     })
                 } }
                 busy = false
