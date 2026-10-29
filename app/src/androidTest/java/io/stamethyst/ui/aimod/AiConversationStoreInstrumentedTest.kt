@@ -28,6 +28,105 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AiConversationStoreInstrumentedTest {
+    @Test fun externalWriteLockWaitsWithoutReplayingMutation() {
+        val root = newRoot()
+        val locked = CountDownLatch(1)
+        val failures = java.util.concurrent.ConcurrentLinkedQueue<Throwable>()
+        var holder: Thread? = null
+        try {
+            val store = AiConversationStore(root)
+            store.mutate("locked", create = AiEditorSession("locked")) { it }
+            val file = root.listFiles { file -> file.extension == "db" }!!.single()
+            // Bypass the store's process-local lock, as a second process would.
+            holder = thread {
+                try {
+                    SQLiteDatabase.openDatabase(file.path, null,
+                        SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING).use { db ->
+                        db.beginTransactionNonExclusive()
+                        try {
+                            locked.countDown()
+                            Thread.sleep(1_500)
+                            db.setTransactionSuccessful()
+                        } finally {
+                            db.endTransaction()
+                        }
+                    }
+                } catch (error: Throwable) {
+                    failures.add(error)
+                    locked.countDown()
+                }
+            }
+            assertTrue(locked.await(10, java.util.concurrent.TimeUnit.SECONDS))
+            var calls = 0
+            store.mutate("locked") {
+                calls++
+                it.copy(messages = it.messages + AiEditorMessage(1, true, "only once"))
+            }
+            holder.join(10_000)
+            assertTrue(failures.toString(), failures.isEmpty())
+            assertEquals(1, calls)
+            assertEquals("only once", store.load("locked")!!.messages.single().text)
+        } finally {
+            holder?.join(10_000)
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun interruptionRecoveryDoesNotOverwriteCompletionAfterSnapshot() {
+        val root = newRoot()
+        try {
+            val store = AiConversationStore(root)
+            val jobs = AiAgentJobStore(store)
+            val job = AiAgentJobRecord("completion-race", "session", "mod", "Mod", "", 2)
+            jobs.upsert(job)
+            val workerStore = AiConversationStore(root)
+            val recovered = jobs.markInterrupted("interrupted") {
+                // Deterministically finish after recovery read RUNNING, just before the worker
+                // releases its process-local reservation and isRunning returns false.
+                workerStore.updateJob(it.jobId) { current ->
+                    current.copy(status = AiAgentJobStatus.SUCCEEDED)
+                }
+                false
+            }
+            assertTrue(recovered.isEmpty())
+            assertEquals(AiAgentJobStatus.SUCCEEDED, jobs.find(job.jobId)!!.status)
+            assertEquals("", jobs.find(job.jobId)!!.errorMessage)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun interruptionRecoveryRechecksReservationBeforeClaimingJob() {
+        val root = newRoot()
+        try {
+            val jobs = AiAgentJobStore(AiConversationStore(root))
+            val job = AiAgentJobRecord("starting-race", "session", "mod", "Mod", "", 2)
+            jobs.upsert(job)
+            var checks = 0
+            val recovered = jobs.markInterrupted("interrupted") { ++checks > 1 }
+            assertTrue(recovered.isEmpty())
+            assertEquals(2, checks)
+            assertEquals(AiAgentJobStatus.RUNNING, jobs.find(job.jobId)!!.status)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun interruptionRecoveryClaimsOnlyOrphanedJobsOnce() {
+        val root = newRoot()
+        try {
+            val jobs = AiAgentJobStore(AiConversationStore(root))
+            val job = AiAgentJobRecord("orphan", "session", "mod", "Mod", "", 2)
+            jobs.upsert(job)
+            assertEquals(listOf(job.jobId), jobs.markInterrupted("interrupted") { false }.map { it.jobId })
+            assertEquals(AiAgentJobStatus.FAILED, jobs.find(job.jobId)!!.status)
+            assertEquals("interrupted", jobs.find(job.jobId)!!.errorMessage)
+            assertTrue(jobs.markInterrupted("interrupted") { false }.isEmpty())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test fun incrementalSyncAfterVersionTwoMigration() {
         val root = newRoot()
         try {

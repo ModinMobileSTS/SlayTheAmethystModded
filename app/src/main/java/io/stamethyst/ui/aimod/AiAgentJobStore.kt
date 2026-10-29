@@ -25,12 +25,11 @@ internal data class AiAgentJobRecord(
     val updatedAtMillis: Long = System.currentTimeMillis(),
 )
 
-internal class AiAgentJobStore(context: Context, modId: String) {
-    private val root = RuntimePaths.agentModConversationsRoot(
+internal class AiAgentJobStore internal constructor(private val conversationStore: AiConversationStore) {
+    constructor(context: Context, modId: String) : this(AiConversationStore(RuntimePaths.agentModConversationsRoot(
         context.applicationContext,
         AgentPatchModManager.parentModSegment(modId),
-    )
-    private val conversationStore = AiConversationStore(root)
+    )))
 
     fun list(): List<AiAgentJobRecord> {
         conversationStore.migrateLegacyJobs()
@@ -51,7 +50,7 @@ internal class AiAgentJobStore(context: Context, modId: String) {
 
     fun update(jobId: String, transform: (AiAgentJobRecord) -> AiAgentJobRecord) {
         conversationStore.migrateLegacyJobs()
-        conversationStore.updateJob(jobId, transform)
+        conversationStore.updateJob(jobId, transform = transform)
     }
 
     fun markInterrupted(
@@ -61,8 +60,12 @@ internal class AiAgentJobStore(context: Context, modId: String) {
         val interrupted = list().filter {
             it.status == AiAgentJobStatus.RUNNING && !isRunning(it)
         }
-        interrupted.forEach { record ->
-            update(record.jobId) {
+        return interrupted.mapNotNull { record ->
+            // The worker can finish between list() and isRunning(). Never overwrite its terminal
+            // status using that stale snapshot, or report a message as interrupted without a claim.
+            conversationStore.updateJob(record.jobId, predicate = {
+                it.status == AiAgentJobStatus.RUNNING && !isRunning(it)
+            }) {
                 it.copy(
                     status = AiAgentJobStatus.FAILED,
                     errorMessage = interruptedMessage,
@@ -70,6 +73,5 @@ internal class AiAgentJobStore(context: Context, modId: String) {
                 )
             }
         }
-        return interrupted
     }
 }

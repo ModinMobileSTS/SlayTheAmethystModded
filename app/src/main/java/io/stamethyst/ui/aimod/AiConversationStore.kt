@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.CursorWrapper
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteDatabaseLockedException
 import io.stamethyst.backend.llm.AgentContextState
 import io.stamethyst.backend.workshop.WorkshopJsonFileStore
 import java.io.File
@@ -70,7 +71,7 @@ internal class AiConversationStore(root: File) {
     fun load(sessionId: String): AiEditorSession? {
         migrateLegacyConversations()
         return withDatabase(sessionId, create = false) { db ->
-            db.beginTransactionNonExclusive()
+            db.beginWriteTransactionWithRetry()
             try {
                 readSession(db, sessionId).also { db.setTransactionSuccessful() }
             } finally {
@@ -82,7 +83,7 @@ internal class AiConversationStore(root: File) {
     /** Read a consistent snapshot, reusing unchanged message/context objects across polls. */
     fun loadChanges(previous: AiEditorSession): AiEditorSession? =
         withDatabase(previous.id, create = false) { db ->
-            db.beginTransactionNonExclusive()
+            db.beginWriteTransactionWithRetry()
             try {
                 readSession(db, previous.id, previous).also { db.setTransactionSuccessful() }
             } finally {
@@ -114,7 +115,7 @@ internal class AiConversationStore(root: File) {
         require(sessionId.isNotBlank()) { "Conversation id must not be blank" }
         migrateLegacyConversations()
         return withLockedDatabase(sessionId, create = true) { db ->
-            db.beginTransactionNonExclusive()
+            db.beginWriteTransactionWithRetry()
             try {
                 val previous = readSession(db, sessionId) ?: create ?: return@withLockedDatabase null
                 val next = transform(previous).copy(revision = previous.revision + 1)
@@ -139,7 +140,7 @@ internal class AiConversationStore(root: File) {
     ): AiEditorMessage? {
         migrateLegacyConversations()
         return withLockedDatabase(sessionId, create = false) { db ->
-            db.beginTransactionNonExclusive()
+            db.beginWriteTransactionWithRetry()
             try {
                 val previous = readMessage(db, messageId) ?: return@withLockedDatabase null
                 val next = transform(previous)
@@ -156,7 +157,7 @@ internal class AiConversationStore(root: File) {
     fun updateContext(sessionId: String, context: AgentContextState): Boolean {
         migrateLegacyConversations()
         return withLockedDatabase(sessionId, create = false) { db ->
-            db.beginTransactionNonExclusive()
+            db.beginWriteTransactionWithRetry()
             try {
                 val values = ContentValues().apply {
                     put(COLUMN_CONTEXT, json.encodeToString(context))
@@ -190,7 +191,7 @@ internal class AiConversationStore(root: File) {
     internal fun upsertJob(record: AiAgentJobRecord) {
         migrateLegacyConversations()
         withLockedDatabase(record.conversationId, create = true) { db ->
-            db.beginTransactionNonExclusive()
+            db.beginWriteTransactionWithRetry()
             try {
                 ensureConversationRow(db, record.conversationId)
                 writeJob(db, record)
@@ -201,15 +202,23 @@ internal class AiConversationStore(root: File) {
         }
     }
 
-    internal fun updateJob(jobId: String, transform: (AiAgentJobRecord) -> AiAgentJobRecord) {
+    /** Recheck conditional updates against the current row while holding the write transaction. */
+    internal fun updateJob(
+        jobId: String,
+        predicate: (AiAgentJobRecord) -> Boolean = { true },
+        transform: (AiAgentJobRecord) -> AiAgentJobRecord,
+    ): AiAgentJobRecord? {
         migrateLegacyConversations()
-        val current = findJob(jobId) ?: return
-        withLockedDatabase(current.conversationId, create = false) { db ->
-            db.beginTransactionNonExclusive()
+        val current = findJob(jobId) ?: return null
+        return withLockedDatabase(current.conversationId, create = false) { db ->
+            db.beginWriteTransactionWithRetry()
             try {
-                val stored = readJobs(db).firstOrNull { it.jobId == jobId } ?: return@withLockedDatabase
-                writeJob(db, transform(stored).copy(updatedAtMillis = System.currentTimeMillis()))
+                val stored = readJobs(db).firstOrNull { it.jobId == jobId } ?: return@withLockedDatabase null
+                if (!predicate(stored)) return@withLockedDatabase null
+                val updated = transform(stored).copy(updatedAtMillis = System.currentTimeMillis())
+                writeJob(db, updated)
                 db.setTransactionSuccessful()
+                updated
             } finally {
                 db.endTransaction()
             }
@@ -236,7 +245,7 @@ internal class AiConversationStore(root: File) {
 
     private fun upsertJobWithoutMigration(record: AiAgentJobRecord) {
         withLockedDatabase(record.conversationId, create = true) { db ->
-            db.beginTransactionNonExclusive()
+            db.beginWriteTransactionWithRetry()
             try {
                 ensureConversationRow(db, record.conversationId)
                 writeJob(db, record)
@@ -269,7 +278,7 @@ internal class AiConversationStore(root: File) {
                         runCatching {
                             if (loadWithoutMigration(session.id)?.messages?.isNotEmpty() == true) return@runCatching
                             withLockedDatabase(session.id, create = true) { db ->
-                                db.beginTransactionNonExclusive()
+                                db.beginWriteTransactionWithRetry()
                                 try {
                                     writeSession(db, null, session)
                                     db.setTransactionSuccessful()
@@ -316,30 +325,54 @@ internal class AiConversationStore(root: File) {
         file: File,
         create: Boolean = false,
         block: (SQLiteDatabase) -> T,
-    ): T? {
-        if (!create && !file.isFile) return null
+    ): T? = synchronized(lockFor(file)) {
+        if (!create && !file.isFile) return@synchronized null
         file.parentFile?.mkdirs()
-        val flags = SQLiteDatabase.OPEN_READWRITE or
-            if (create) SQLiteDatabase.CREATE_IF_NECESSARY else 0
-        val database = SQLiteDatabase.openDatabase(file.path, null, flags)
-        return try {
-            database.enableWriteAheadLogging()
-            database.setForeignKeyConstraintsEnabled(true)
-            // PRAGMA statements that return a row must not go through execSQL, which only accepts
-            // statements that change rows. rawQuery tolerates both forms.
-            database.execPragma("PRAGMA synchronous=NORMAL")
-            database.execPragma("PRAGMA busy_timeout=5000")
-            ensureSchema(database)
+        // Readers also open/configure the database and may initialize its schema. Serialize the
+        // entire handle lifetime locally, not just writes; SQLite handles other processes below.
+        val database = retryDatabaseLocked {
+            val flags = SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING or
+                if (create) SQLiteDatabase.CREATE_IF_NECESSARY else 0
+            val opened = SQLiteDatabase.openDatabase(file.path, null, flags)
+            try {
+                opened.execPragma("PRAGMA busy_timeout=1000")
+                opened.setForeignKeyConstraintsEnabled(true)
+                opened.execPragma("PRAGMA synchronous=NORMAL")
+                ensureSchema(opened)
+                opened
+            } catch (error: Throwable) {
+                opened.close()
+                throw error
+            }
+        }
+        try {
             block(database)
         } finally {
             database.close()
         }
     }
 
-    private fun <T> withLockedDatabase(sessionId: String, create: Boolean, block: (SQLiteDatabase) -> T): T? {
-        val file = databaseFile(sessionId)
-        return synchronized(lockFor(file)) {
-            withDatabaseFile(file, create, block)
+    private fun <T> withLockedDatabase(sessionId: String, create: Boolean, block: (SQLiteDatabase) -> T): T? =
+        withDatabase(sessionId, create, block)
+
+    /** Retry only before executing a caller's transform; replaying a whole mutation is unsafe. */
+    private fun SQLiteDatabase.beginWriteTransactionWithRetry() {
+        retryDatabaseLocked { beginTransactionNonExclusive() }
+    }
+
+    private fun <T> retryDatabaseLocked(block: () -> T): T {
+        val deadline = android.os.SystemClock.elapsedRealtime() + 5_000L
+        var delayMillis = 25L
+        while (true) {
+            try {
+                return block()
+            } catch (error: SQLiteDatabaseLockedException) {
+                val remaining = deadline - android.os.SystemClock.elapsedRealtime()
+                if (remaining <= 0) throw error
+                // Thread.sleep preserves cancellation by throwing instead of swallowing interrupts.
+                Thread.sleep(minOf(delayMillis, remaining))
+                delayMillis = minOf(delayMillis * 2, 250L)
+            }
         }
     }
 
@@ -364,7 +397,7 @@ internal class AiConversationStore(root: File) {
      */
     private fun ensureSchema(db: SQLiteDatabase) {
         if (db.version >= SCHEMA_VERSION) return
-        db.beginTransactionNonExclusive()
+        db.beginWriteTransactionWithRetry()
         try {
             createSchema(db)
             if (db.version < 2) {
@@ -378,11 +411,11 @@ internal class AiConversationStore(root: File) {
             addColumnIfMissing(db, TABLE_ATTACHMENTS, COLUMN_MIME, "TEXT NOT NULL DEFAULT 'text/plain'")
             addColumnIfMissing(db, TABLE_ATTACHMENTS, COLUMN_ATTACHMENT_DATA, "TEXT NOT NULL DEFAULT ''")
             addColumnIfMissing(db, TABLE_TOOLS, COLUMN_IMAGE_ATTACHMENTS_JSON, "TEXT NOT NULL DEFAULT '[]'")
+            db.version = SCHEMA_VERSION
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
-        db.version = SCHEMA_VERSION
     }
 
     private fun createSchema(db: SQLiteDatabase) {
