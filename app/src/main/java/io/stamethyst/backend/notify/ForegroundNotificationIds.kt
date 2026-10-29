@@ -1,7 +1,7 @@
 package io.stamethyst.backend.notify
 
 /**
- * Notification ids for every foreground service in the launcher.
+ * Notification ids for every foreground service and its result notifications in the launcher.
  *
  * `NotificationManager` identifies a notification by (tag, id) inside the package, so two services
  * that pick the same id overwrite each other: whichever posted last owns the entry, and the text,
@@ -24,4 +24,7 @@ object ForegroundNotificationIds {
 
     /** The AI agent run is long lived and must stay visible for its whole duration. */
     const val AI_AGENT = 646575
+
+    /** Not a foreground notification: service cleanup must not remove the synchronization result. */
+    const val STEAM_CLOUD_SYNC_RESULT = 646576
 }

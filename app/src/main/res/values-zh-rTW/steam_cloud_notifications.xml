@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cloud_sync_result_channel">Steam 雲端存檔同步結果</string>
+    <string name="cloud_sync_result_completed_title">雲端存檔同步完成</string>
+    <string name="cloud_sync_result_completed_message">本次操作的存檔快照已與 Steam Cloud 同步。</string>
+    <string name="cloud_sync_result_up_to_date_title">雲端存檔已是最新</string>
+    <string name="cloud_sync_result_up_to_date_message">本次檢查的存檔快照與 Steam Cloud 一致，無需傳輸。</string>
+    <string name="cloud_sync_result_failed_title">雲端存檔同步失敗</string>
+    <string name="cloud_sync_result_failed_message">請返回啟動器查看錯誤並重新檢查同步。</string>
+    <string name="cloud_sync_result_conflict_title">雲端存檔衝突，同步未完成</string>
+    <string name="cloud_sync_result_conflict_message">本機與雲端存檔的變更存在衝突，請返回啟動器選擇需要保留的進度。</string>
+    <string name="cloud_sync_result_recovery_title">雲端存檔同步需要驗證</string>
+    <string name="cloud_sync_result_recovery_message">尚未確認雲端寫入結果，請返回啟動器重新檢查後再處理。</string>
+    <string name="cloud_sync_result_deferred_title">雲端存檔同步等待退出遊戲</string>
+    <string name="cloud_sync_result_deferred_message">遊戲正在使用存檔，本次同步尚未完成。退出遊戲返回啟動器後會重新檢查。</string>
+    <string name="cloud_sync_result_cancelled_title">雲端存檔同步已取消</string>
+    <string name="cloud_sync_result_cancelled_message">同步已停止，可返回啟動器重新檢查。</string>
+</resources>

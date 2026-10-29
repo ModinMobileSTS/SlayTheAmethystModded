@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cloud_sync_result_channel">Steam 云存档同步结果</string>
+    <string name="cloud_sync_result_completed_title">云存档同步完成</string>
+    <string name="cloud_sync_result_completed_message">本次操作的存档快照已与 Steam Cloud 同步。</string>
+    <string name="cloud_sync_result_up_to_date_title">云存档已是最新</string>
+    <string name="cloud_sync_result_up_to_date_message">本次检查的存档快照与 Steam Cloud 一致，无需传输。</string>
+    <string name="cloud_sync_result_failed_title">云存档同步失败</string>
+    <string name="cloud_sync_result_failed_message">请返回启动器查看错误并重新检查同步。</string>
+    <string name="cloud_sync_result_conflict_title">云存档冲突，同步未完成</string>
+    <string name="cloud_sync_result_conflict_message">本地与云端存档的变更存在冲突，请返回启动器选择需要保留的进度。</string>
+    <string name="cloud_sync_result_recovery_title">云存档同步需要核验</string>
+    <string name="cloud_sync_result_recovery_message">尚未确认云端写入结果，请返回启动器重新检查后再处理。</string>
+    <string name="cloud_sync_result_deferred_title">云存档同步等待退出游戏</string>
+    <string name="cloud_sync_result_deferred_message">游戏正在使用存档，本次同步尚未完成。退出游戏返回启动器后会重新检查。</string>
+    <string name="cloud_sync_result_cancelled_title">云存档同步已取消</string>
+    <string name="cloud_sync_result_cancelled_message">同步已停止，可返回启动器重新检查。</string>
+</resources>

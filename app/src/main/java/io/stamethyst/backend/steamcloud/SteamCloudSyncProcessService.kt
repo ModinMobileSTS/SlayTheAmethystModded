@@ -122,12 +122,27 @@ class SteamCloudSyncProcessService : Service() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) app.startForegroundService(intent) else app.startService(intent)
                 true
             } catch (error: IllegalStateException) {
-                deliver(app, receiver, id, 1, RESULT_FAILURE, Bundle().apply {
+                val failure = Bundle().apply {
                     putString(EXTRA_ERROR_SUMMARY, app.getString(R.string.main_steam_cloud_service_start_blocked))
                     putString(EXTRA_FAILURE_CATEGORY, SteamCloudFailureCategory.UNKNOWN.name)
-                })
+                    putBoolean(EXTRA_USER_INITIATED, intent.getBooleanExtra(EXTRA_USER_INITIATED, false) || action != ACTION_CHECK_AND_SYNC)
+                }
+                reportResult(app, RESULT_FAILURE, failure)
+                deliver(app, receiver, id, 1, RESULT_FAILURE, failure)
                 false
             }
+        }
+        private fun reportResult(context: Context, code: Int, data: Bundle, plan: SteamCloudUploadPlan? = null) {
+            val notice = steamCloudSyncResultNotice(code, plan, data.getBoolean(EXTRA_REQUIRES_RESOLUTION)) ?: return
+            // Notification delivery is best-effort status, never part of the save transaction.
+            runCatching {
+                val backgroundLaunchRequested = runCatching { LauncherConfig.isSteamCloudBackgroundLaunchRequested(context) }
+                    .getOrDefault(false)
+                SteamCloudSyncResultNotification.show(context, notice,
+                    userInitiated = data.getBoolean(EXTRA_USER_INITIATED),
+                    backgroundLaunchRequested = backgroundLaunchRequested,
+                    errorSummary = data.getString(EXTRA_ERROR_SUMMARY).orEmpty())
+            }.onFailure { android.util.Log.w("SteamCloudNotice", "Cannot report synchronization result", it) }
         }
         private fun event(id: String, sequence: Long, code: Int, data: Bundle) = Bundle(data).apply {
                 putString(EXTRA_OPERATION_ID, id)
@@ -201,6 +216,7 @@ class SteamCloudSyncProcessService : Service() {
         running = true
         latest = null
         cancelled.set(false)
+        SteamCloudSyncResultNotification.clear(this)
         startForeground(NOTIFICATION_ID, notification(getString(R.string.main_steam_cloud_progress_preparing_auto_sync)))
         worker = Thread({ runRequest(request, id, receiver) }, "STS-SteamCloudSync").also { it.start() }
         // Never replay a destructive intent after process death; journals drive recovery instead.
@@ -323,6 +339,9 @@ class SteamCloudSyncProcessService : Service() {
                 })
         } finally {
             Thread.interrupted()
+            // Report only the final worker outcome, once. Reattachment/query/callback duplicates
+            // must not replay notices, and removing the foreground entry must not erase the result.
+            latest?.let { reportResult(this, it.getInt(EXTRA_EVENT_RESULT_CODE), it, activePlan) }
             try { LauncherConfig.setSteamCloudBackgroundLaunchRequested(this, false) }
             finally {
                 // onStartCommand and lifecycle cleanup must not interleave on different threads:

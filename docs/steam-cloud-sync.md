@@ -134,6 +134,19 @@ without the lease. Pure uploads from an existing frozen snapshot continue normal
 Cloud conflicts/failures discovered after launch are reported without relaunching
 the game or replacing local saves. This choice can start with older local progress.
 
+The cloud service owns result notifications independently of the launcher Activity,
+which finishes when the game opens. Completed transfers, failures, conflicts,
+unverified cloud writes, deferrals and cancellations each have a distinct,
+dismissible result on the `steam_cloud_sync_results` channel. Its notification ID
+is separate from foreground progress, so service cleanup cannot remove the result.
+Only the final worker event reports a result; querying persisted state or receiving
+duplicate UI callbacks/broadcasts does not report it again. Automatic no-change
+checks stay silent unless explicitly requested or reused for background launch.
+Background-launch results also show a text toast, including when notification
+permission is declined. Android 13+ requests notification permission once when
+cloud saves become available; declining never blocks game launch or sync.
+Notifications are best-effort and cannot turn a verified save commit into failure.
+
 Automatic-launch readiness (distinct from the explicit immediate button) still
 requires both the worker's readiness flag and an inspected conflict-free plan
 with no remote-to-local changes. Progress snapshots retain the plan for service

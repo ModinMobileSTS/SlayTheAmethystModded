@@ -19,6 +19,7 @@ class ForegroundNotificationIdsTest {
             "easytier connect" to ForegroundNotificationIds.EASY_TIER_CONNECT,
             "easytier vpn" to ForegroundNotificationIds.EASY_TIER_VPN,
             "ai agent" to ForegroundNotificationIds.AI_AGENT,
+            "steam cloud sync result" to ForegroundNotificationIds.STEAM_CLOUD_SYNC_RESULT,
         )
 
         val duplicates = ids.groupBy { it.second }.filterValues { it.size > 1 }
@@ -36,6 +37,7 @@ class ForegroundNotificationIdsTest {
             ForegroundNotificationIds.EASY_TIER_CONNECT,
             ForegroundNotificationIds.EASY_TIER_VPN,
             ForegroundNotificationIds.AI_AGENT,
+            ForegroundNotificationIds.STEAM_CLOUD_SYNC_RESULT,
         ).forEach { assertEquals(it >= 646_570, true) }
     }
 }

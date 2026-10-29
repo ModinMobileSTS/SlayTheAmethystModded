@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="cloud_sync_result_channel">Steam Cloud sync results</string>
+    <string name="cloud_sync_result_completed_title">Cloud save sync completed</string>
+    <string name="cloud_sync_result_completed_message">The save snapshot for this operation has been synchronized with Steam Cloud.</string>
+    <string name="cloud_sync_result_up_to_date_title">Cloud saves are up to date</string>
+    <string name="cloud_sync_result_up_to_date_message">The checked save snapshot matches Steam Cloud. No transfer was needed.</string>
+    <string name="cloud_sync_result_failed_title">Cloud save sync failed</string>
+    <string name="cloud_sync_result_failed_message">Open the launcher to view the error and recheck synchronization.</string>
+    <string name="cloud_sync_result_conflict_title">Cloud save conflict — sync incomplete</string>
+    <string name="cloud_sync_result_conflict_message">Local and cloud saves have conflicting changes. Return to the launcher to choose which progress to keep.</string>
+    <string name="cloud_sync_result_recovery_title">Cloud save sync needs verification</string>
+    <string name="cloud_sync_result_recovery_message">The cloud write could not be verified. Return to the launcher and recheck before resolving it.</string>
+    <string name="cloud_sync_result_deferred_title">Cloud save sync waiting for game exit</string>
+    <string name="cloud_sync_result_deferred_message">Sync has not completed because the game is using the saves. Saves will be rechecked after returning to the launcher.</string>
+    <string name="cloud_sync_result_cancelled_title">Cloud save sync cancelled</string>
+    <string name="cloud_sync_result_cancelled_message">Synchronization stopped. Open the launcher to recheck when ready.</string>
+</resources>
