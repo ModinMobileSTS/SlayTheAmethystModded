@@ -5,9 +5,13 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
+import io.stamethyst.backend.github.GithubRequestClients
+import io.stamethyst.backend.github.GithubResourceRequests
+import io.stamethyst.backend.update.toGithubMirrorHttpException
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.config.RuntimePaths
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import okhttp3.OkHttpClient
@@ -20,7 +24,6 @@ internal object RemoteBitmapCacheStore {
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 20_000
     private const val CLIENT_KEY_STEAM = "steam"
-    private const val CLIENT_KEY_WATT = "watt"
 
     private val memoryCache = object : LruCache<String, Bitmap>(CACHE_SIZE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
@@ -28,6 +31,7 @@ internal object RemoteBitmapCacheStore {
 
     /** One client per host family so keep-alive connections survive across images. */
     private val sharedClients = ConcurrentHashMap<String, OkHttpClient>()
+    private val githubClients = ConcurrentHashMap<String, GithubRequestClients>()
 
     fun load(context: Context, imageUrl: String): Bitmap? {
         val normalizedUrl = imageUrl.trim()
@@ -58,18 +62,33 @@ internal object RemoteBitmapCacheStore {
             val directory = cacheDirectory(context).apply { mkdirs() }
             val outputFile = cacheFile(context, cacheKey)
             val tempFile = File(directory, "$cacheKey.tmp")
-            val client = createClient(context, imageUrl)
-            val request = Request.Builder()
-                .url(imageUrl)
-                .header("User-Agent", "SlayTheAmethyst-MarkdownImage")
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@runCatching null
+            val download: (OkHttpClient, String) -> Bitmap = { client, requestUrl ->
+                val request = Request.Builder()
+                    .url(requestUrl)
+                    .header("User-Agent", "SlayTheAmethyst-MarkdownImage")
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw response.toGithubMirrorHttpException("Image request failed.")
+                    response.body.byteStream().use { input ->
+                        tempFile.outputStream().use { output -> input.copyTo(output) }
+                    }
                 }
-                response.body.byteStream().use { input ->
-                    tempFile.outputStream().use { output -> input.copyTo(output) }
+                BitmapFactory.decodeFile(tempFile.absolutePath)
+                    ?: throw IOException("Invalid image response.")
+            }
+            val bitmap = if (isSteamUrl(imageUrl)) {
+                download(createSteamClient(context), imageUrl)
+            } else {
+                val app = context.applicationContext
+                val pair = githubClients.getOrPut(RuntimePaths.transientFilesRoot(app).absolutePath) {
+                    WattToolkitAcceleratedHttp.createClientPair(
+                        context = app,
+                        connectTimeoutMs = CONNECT_TIMEOUT_MS,
+                        readTimeoutMs = READ_TIMEOUT_MS,
+                        followRedirects = true,
+                    )
                 }
+                GithubResourceRequests.run(context, pair, imageUrl, block = download)
             }
             if (outputFile.exists() && !outputFile.delete()) {
                 return@runCatching null
@@ -77,7 +96,7 @@ internal object RemoteBitmapCacheStore {
             if (!tempFile.renameTo(outputFile)) {
                 return@runCatching null
             }
-            BitmapFactory.decodeFile(outputFile.absolutePath)
+            bitmap
         }.getOrNull()
     }
 
@@ -87,28 +106,19 @@ internal object RemoteBitmapCacheStore {
     private fun cacheDirectory(context: Context): File =
         File(RuntimePaths.transientFilesRoot(context.applicationContext), DIRECTORY_NAME)
 
-    private fun createClient(context: Context, imageUrl: String): OkHttpClient {
+    private fun createSteamClient(context: Context): OkHttpClient {
         val appContext = context.applicationContext
-        val key = if (isSteamUrl(imageUrl)) CLIENT_KEY_STEAM else CLIENT_KEY_WATT
+        val key = "${RuntimePaths.transientFilesRoot(appContext).absolutePath}:$CLIENT_KEY_STEAM"
         return sharedClients.getOrPut(key) {
-            if (key == CLIENT_KEY_STEAM) {
-                val enabled = SteamCloudAcceleratedHttp.isEnabled(appContext)
-                SteamCloudAcceleratedHttp.createClient(
-                    context = appContext,
-                    connectTimeoutMs = CONNECT_TIMEOUT_MS.toLong(),
-                    readTimeoutMs = READ_TIMEOUT_MS.toLong(),
-                    callTimeoutMs = READ_TIMEOUT_MS.toLong() + CONNECT_TIMEOUT_MS.toLong(),
-                    enabled = enabled,
-                    enabledProvider = { SteamCloudAcceleratedHttp.isEnabled(appContext) },
-                )
-            } else {
-                WattToolkitAcceleratedHttp.createClient(
-                    context = appContext,
-                    connectTimeoutMs = CONNECT_TIMEOUT_MS,
-                    readTimeoutMs = READ_TIMEOUT_MS,
-                    followRedirects = true,
-                )
-            }
+            val enabled = SteamCloudAcceleratedHttp.isEnabled(appContext)
+            SteamCloudAcceleratedHttp.createClient(
+                context = appContext,
+                connectTimeoutMs = CONNECT_TIMEOUT_MS.toLong(),
+                readTimeoutMs = READ_TIMEOUT_MS.toLong(),
+                callTimeoutMs = READ_TIMEOUT_MS.toLong() + CONNECT_TIMEOUT_MS.toLong(),
+                enabled = enabled,
+                enabledProvider = { SteamCloudAcceleratedHttp.isEnabled(appContext) },
+            )
         }
     }
 

@@ -5,9 +5,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
+import io.stamethyst.backend.github.GithubRequestClients
+import io.stamethyst.backend.github.GithubResourceRequests
+import io.stamethyst.backend.update.toGithubMirrorHttpException
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.security.MessageDigest
+import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import okhttp3.Request
 
 internal object FeedbackAvatarCacheStore {
@@ -15,6 +20,7 @@ internal object FeedbackAvatarCacheStore {
     private const val CACHE_SIZE_BYTES = 2 * 1024 * 1024
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 15_000
+    private val clients = ConcurrentHashMap<String, GithubRequestClients>()
 
     private val memoryCache = object : LruCache<String, Bitmap>(CACHE_SIZE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
@@ -49,23 +55,28 @@ internal object FeedbackAvatarCacheStore {
             val directory = cacheDirectory(context).apply { mkdirs() }
             val outputFile = cacheFile(context, cacheKey)
             val tempFile = File(directory, "$cacheKey.tmp")
-            val client = WattToolkitAcceleratedHttp.createClient(
-                context = context,
-                connectTimeoutMs = CONNECT_TIMEOUT_MS,
-                readTimeoutMs = READ_TIMEOUT_MS,
-                followRedirects = true
-            )
-            val request = Request.Builder()
-                .url(avatarUrl)
-                .header("User-Agent", "SlayTheAmethyst-FeedbackAvatar")
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@runCatching null
+            val app = context.applicationContext
+            val pair = clients.getOrPut(RuntimePaths.transientFilesRoot(app).absolutePath) {
+                WattToolkitAcceleratedHttp.createClientPair(
+                    context = app,
+                    connectTimeoutMs = CONNECT_TIMEOUT_MS,
+                    readTimeoutMs = READ_TIMEOUT_MS,
+                    followRedirects = true,
+                )
+            }
+            val bitmap = GithubResourceRequests.run(context, pair, avatarUrl) { client, requestUrl ->
+                val request = Request.Builder()
+                    .url(requestUrl)
+                    .header("User-Agent", "SlayTheAmethyst-FeedbackAvatar")
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw response.toGithubMirrorHttpException("Avatar request failed.")
+                    response.body.byteStream().use { input ->
+                        tempFile.outputStream().use { output -> input.copyTo(output) }
+                    }
                 }
-                response.body.byteStream().use { input ->
-                    tempFile.outputStream().use { output -> input.copyTo(output) }
-                }
+                BitmapFactory.decodeFile(tempFile.absolutePath)
+                    ?: throw IOException("Invalid avatar image response.")
             }
             if (outputFile.exists() && !outputFile.delete()) {
                 return@runCatching null
@@ -73,7 +84,7 @@ internal object FeedbackAvatarCacheStore {
             if (!tempFile.renameTo(outputFile)) {
                 return@runCatching null
             }
-            BitmapFactory.decodeFile(outputFile.absolutePath)
+            bitmap
         }.getOrNull()
     }
 
