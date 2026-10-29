@@ -96,6 +96,8 @@ class AiAgentExecutionService : Service() {
         private const val MIN_WAKE_LOCK_LEASE_MS = 5 * 60_000L
 
         private val runningJobs = AiAgentRunningJobs()
+        private val mutableOutputSpeeds = kotlinx.coroutines.flow.MutableStateFlow<Map<Pair<String, String>, Double>>(emptyMap())
+        internal val outputSpeeds: kotlinx.coroutines.flow.StateFlow<Map<Pair<String, String>, Double>> = mutableOutputSpeeds
         internal val isRunning = runningJobs.isRunning
         internal val activeEditorRoute = runningJobs.activeEditorRoute
 
@@ -274,6 +276,9 @@ class AiAgentExecutionService : Service() {
         }
 
         val startedAt = System.currentTimeMillis()
+        synchronized(mutableOutputSpeeds) {
+            mutableOutputSpeeds.value = mutableOutputSpeeds.value - (job.modId to job.conversationId)
+        }
         val accepting = java.util.concurrent.atomic.AtomicBoolean(true)
         val streamLock = Any()
         val textBuffer = StringBuilder()
@@ -313,6 +318,13 @@ class AiAgentExecutionService : Service() {
             modName = job.modName,
             modId = job.modId,
             reasoningEffort = LlmSettingsRepository(applicationContext).get().reasoningEffort,
+            onOutputSpeed = { speed ->
+                synchronized(mutableOutputSpeeds) {
+                    val key = job.modId to job.conversationId
+                    mutableOutputSpeeds.value = (mutableOutputSpeeds.value - key).entries.toList().takeLast(63)
+                        .associate { it.toPair() } + (key to speed)
+                }
+            },
             onToolExecution = { event ->
                 checkActive()
                 synchronized(streamLock) { flush(true) }

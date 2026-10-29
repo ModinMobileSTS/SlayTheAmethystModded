@@ -2454,6 +2454,7 @@ class PolicyGatedAgentGateway(
     /** Called only at complete model/tool boundaries, never between a tool call and its result. */
     private val receiveInbox: (idle: Boolean) -> Boolean = { false },
     private val onNonStreamingText: (String) -> Unit = {},
+    private val onOutputSpeed: (Double) -> Unit = {},
     private val currentChatModel: (() -> ChatModel)? = null,
     private val currentStreamingModel: (() -> StreamingChatModel?)? = null,
     /**
@@ -2486,7 +2487,15 @@ class PolicyGatedAgentGateway(
             var lastResponse: ChatResponse? = null
             var response: ChatResponse? = null
             for (attempt in 0..MAX_EMPTY_RETRIES) {
-                val candidate = modelTurn(messages) { (currentChatModel?.invoke() ?: chatModel).chat(chatRequest(it)) }
+                val candidate = modelTurn(messages) {
+                    val startedAt = System.nanoTime()
+                    (currentChatModel?.invoke() ?: chatModel).chat(chatRequest(it)).also { response ->
+                        val elapsed = System.nanoTime() - startedAt
+                        response.tokenUsage()?.outputTokenCount()?.takeIf { count -> count > 0 }?.let { count ->
+                            if (elapsed > 0L) onOutputSpeed(count.toDouble() * 1_000_000_000.0 / elapsed)
+                        }
+                    }
+                }
                 val message = candidate.aiMessage()
                 lastResponse = candidate
                 if (message.hasToolExecutionRequests() || message.text().orEmpty().isNotBlank()) {
@@ -2901,7 +2910,12 @@ class PolicyGatedAgentGateway(
             synchronized(lock) { closed.set(true) }
         }
         failure.get()?.let { throw it }
-        return StreamingResult(requireNotNull(response.get()), text.toString())
+        val completed = requireNotNull(response.get())
+        val elapsedNanos = System.nanoTime() - startedAt
+        completed.tokenUsage()?.outputTokenCount()?.takeIf { it > 0 }?.let { tokens ->
+            if (elapsedNanos > 0L) onOutputSpeed(tokens.toDouble() * 1_000_000_000.0 / elapsedNanos)
+        }
+        return StreamingResult(completed, text.toString())
     }
 
     private data class StreamingResult(val response: ChatResponse, val text: String)
