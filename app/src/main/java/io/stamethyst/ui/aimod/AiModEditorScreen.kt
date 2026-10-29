@@ -280,12 +280,15 @@ internal class AiModEditorViewModel(
 
     fun saveInboxEdit(id: String, text: String, attachments: List<AiAttachment>, onSaved: () -> Unit) {
         val sessionId = currentSessionId
+        val modelName = llmSettings.modelName
+        val effort = reasoningEffort
         launchStorage {
             var found = false
             val updated = conversationStore.mutate(sessionId) { session ->
                 found = session.inbox.any { it.id == id }
                 session.copy(inbox = session.inbox.map {
-                    if (it.id == id) it.copy(text = text.trim(), attachments = attachments) else it
+                    if (it.id == id) it.copy(text = text.trim(), attachments = attachments,
+                        modelName = modelName, reasoningEffort = effort) else it
                 })
             }
             withContext(Dispatchers.Main.immediate) {
@@ -543,7 +546,8 @@ internal class AiModEditorViewModel(
         if (!storageReady || currentSessionId.isBlank() || (trimmed.isEmpty() && attachments.isEmpty())) return
         if (busy) {
             val sessionId = currentSessionId
-            val item = AiInboxItem(UUID.randomUUID().toString(), trimmed, attachments)
+            val item = AiInboxItem(UUID.randomUUID().toString(), trimmed, attachments,
+                modelName = llmSettings.modelName, reasoningEffort = reasoningEffort)
             launchStorage {
                 val updated = conversationStore.mutate(sessionId) { it.copy(inbox = it.inbox + item) }
                 withContext(Dispatchers.Main.immediate) { updated?.let(::installSession) }
@@ -817,11 +821,15 @@ fun LauncherAiModEditorScreen(
     var editingInboxId by remember(viewModel.currentSessionId) { mutableStateOf<String?>(null) }
     var stashedDraft by remember { mutableStateOf("") }
     var stashedAttachments by remember { mutableStateOf<List<AiAttachment>>(emptyList()) }
+    var stashedModel by remember { mutableStateOf<String?>(null) }
+    var stashedEffort by remember { mutableStateOf<LlmReasoningEffort?>(null) }
     fun finishInboxEdit() {
         editingInboxId = null
         draft = stashedDraft
         draftAttachments.clear()
         draftAttachments.addAll(stashedAttachments)
+        stashedModel?.let(viewModel::selectModel)
+        stashedEffort?.let(viewModel::updateReasoningEffort)
     }
     var showApplyConfirmation by rememberSaveable { mutableStateOf(false) }
     var showRestoreConfirmation by rememberSaveable { mutableStateOf(false) }
@@ -1185,11 +1193,15 @@ fun LauncherAiModEditorScreen(
                 if (editingInboxId == null) {
                     stashedDraft = draft
                     stashedAttachments = draftAttachments.toList()
+                    stashedModel = viewModel.llmSettings.modelName
+                    stashedEffort = viewModel.reasoningEffort
                 }
                 editingInboxId = item.id
                 draft = item.text
                 draftAttachments.clear()
                 draftAttachments.addAll(item.attachments)
+                item.modelName?.let(viewModel::selectModel)
+                item.reasoningEffort?.let(viewModel::updateReasoningEffort)
             },
             onUndoInbox = { item ->
                 viewModel.updateInbox(item.id, remove = true)
