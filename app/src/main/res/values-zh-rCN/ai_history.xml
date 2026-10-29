@@ -1,16 +1,11 @@
 <resources>
     <string name="ai_history_title">执行历史</string>
-    <string name="ai_history_subtitle">每一轮对话，每一步行动</string>
     <string name="ai_history_open">查看执行历史</string>
     <string name="ai_history_close">关闭执行历史</string>
     <string name="ai_history_empty">还没有执行记录</string>
-    <string name="ai_history_empty_hint">发送消息后，每一步行动、耗时和 token 消耗都会在这里留下彩色轨迹。</string>
     <string name="ai_history_duration">累计耗时</string>
     <string name="ai_history_tokens">Token 消耗</string>
-    <string name="ai_history_activity">行动光谱</string>
-    <string name="ai_history_chart_hint">最早 → 最新</string>
-    <string name="ai_history_chart_description">彩色行动图表，以不同色块区分模型、工具、压缩和重试。选择下方 Turn 可查看每一个 Step。</string>
-    <string name="ai_history_turns">对话轮次 · 最新在前</string>
+    <string name="ai_history_chart_description">执行活动图表。</string>
     <string name="ai_history_step_count">%1$d 个 Step</string>
     <string name="ai_history_expanded">已展开</string>
     <string name="ai_history_collapsed">已收起</string>
@@ -37,5 +32,4 @@
     <string name="ai_history_no_steps">这一轮没有已记录的 Step。</string>
     <string name="ai_history_unrecorded">部分耗时或 token 数据未记录，或服务商未返回。</string>
     <string name="ai_history_no_model_tokens">此步骤不调用模型，token 消耗计入对应的模型 Step。</string>
-    <string name="ai_history_accounting">Token 为各次请求上报的输入 + 输出总和，包含压缩；≥ 表示仅有部分数据，— 表示未知。工具和重试等待不消耗模型 token。耗时为已记录的整轮时间，并行工具不会重复累加。点击 Step 可展开详情。</string>
 </resources>

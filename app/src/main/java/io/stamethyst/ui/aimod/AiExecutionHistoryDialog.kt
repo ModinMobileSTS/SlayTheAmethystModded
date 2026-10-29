@@ -12,6 +12,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -135,8 +137,6 @@ internal fun AiExecutionHistoryPanel(snapshot: AiHistorySnapshot?, onDismiss: ()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(stringResource(R.string.ai_history_title), style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold)
-                Text(stringResource(R.string.ai_history_subtitle), style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant)
             }
             IconButton(onClick = onDismiss, modifier = Modifier.testTag("ai-history-close")) {
                 Icon(Icons.Close, stringResource(R.string.ai_history_close))
@@ -151,8 +151,6 @@ internal fun AiExecutionHistoryPanel(snapshot: AiHistorySnapshot?, onDismiss: ()
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AiHistoryGlyph(Modifier.size(52.dp))
                 Text(stringResource(R.string.ai_history_empty), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.ai_history_empty_hint), style = MaterialTheme.typography.bodyMedium,
-                    color = colors.onSurfaceVariant)
             }
         } else LazyColumn(
             state = listState,
@@ -166,14 +164,6 @@ internal fun AiExecutionHistoryPanel(snapshot: AiHistorySnapshot?, onDismiss: ()
                     expandedTurn = id
                     expandedStep = null
                     scrollTarget = id
-                }
-            }
-            item(key = "turn-label", contentType = "label") {
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.ai_history_turns), style = MaterialTheme.typography.labelLarge)
-                    Text(stringResource(R.string.ai_history_step_count, snapshot.stepCount),
-                        style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
                 }
             }
             snapshot.turns.asReversed().forEach { turn ->
@@ -195,10 +185,6 @@ internal fun AiExecutionHistoryPanel(snapshot: AiHistorySnapshot?, onDismiss: ()
                             Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                     }
                 }
-            }
-            item(key = "accounting", contentType = "note") {
-                Text(stringResource(R.string.ai_history_accounting), Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp),
-                    style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
             }
         }
     }
@@ -235,15 +221,10 @@ private fun historyUsageLabel(usage: AiHistoryUsage): String = usage.tokens?.let
 private fun AiHistoryOverview(columns: List<AiHistoryColumn>, selectedTurn: Long?, onSelect: (Long) -> Unit) {
     val palette = historyPalette()
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val chartDescription = stringResource(R.string.ai_history_chart_description)
     val reveal = remember { Animatable(0f) }
     LaunchedEffect(Unit) { reveal.animateTo(1f, tween(360)) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(stringResource(R.string.ai_history_activity), style = MaterialTheme.typography.labelLarge)
-            Text(stringResource(R.string.ai_history_chart_hint), style = MaterialTheme.typography.labelSmall, color = muted)
-        }
         Canvas(Modifier.fillMaxWidth().height(70.dp).testTag("ai-history-chart")
             .semantics { contentDescription = chartDescription }
             .pointerInput(columns) {
@@ -276,11 +257,12 @@ private fun AiHistoryOverview(columns: List<AiHistoryColumn>, selectedTurn: Long
                     radius = 2.dp.toPx(), center = Offset(x + width / 2, size.height - columnHeight - 6.dp.toPx()))
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             AgentStepKind.entries.forEach { kind ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Box(Modifier.size(7.dp).clip(RoundedCornerShape(2.dp)).background(palette.getValue(kind)))
-                    Text(historyKindLabel(kind), style = MaterialTheme.typography.labelSmall, color = muted)
+                    Text(historyKindLabel(kind), style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

@@ -1,16 +1,11 @@
 <resources>
     <string name="ai_history_title">執行歷史</string>
-    <string name="ai_history_subtitle">每一輪對話，每一步行動</string>
     <string name="ai_history_open">查看執行歷史</string>
     <string name="ai_history_close">關閉執行歷史</string>
     <string name="ai_history_empty">還沒有執行紀錄</string>
-    <string name="ai_history_empty_hint">傳送訊息後，每一步行動、耗時和 token 用量都會在這裡留下彩色軌跡。</string>
     <string name="ai_history_duration">累計耗時</string>
     <string name="ai_history_tokens">Token 用量</string>
-    <string name="ai_history_activity">行動光譜</string>
-    <string name="ai_history_chart_hint">最早 → 最新</string>
-    <string name="ai_history_chart_description">彩色行動圖表，以不同色塊區分模型、工具、壓縮和重試。選擇下方 Turn 可查看每一個 Step。</string>
-    <string name="ai_history_turns">對話輪次 · 最新在前</string>
+    <string name="ai_history_chart_description">執行活動圖表。</string>
     <string name="ai_history_step_count">%1$d 個 Step</string>
     <string name="ai_history_expanded">已展開</string>
     <string name="ai_history_collapsed">已收合</string>
@@ -37,5 +32,4 @@
     <string name="ai_history_no_steps">這一輪沒有已記錄的 Step。</string>
     <string name="ai_history_unrecorded">部分耗時或 token 資料未記錄，或服務商未回傳。</string>
     <string name="ai_history_no_model_tokens">此步驟不呼叫模型，token 用量計入對應的模型 Step。</string>
-    <string name="ai_history_accounting">Token 為各次請求回報的輸入 + 輸出總和，包含壓縮；≥ 表示僅有部分資料，— 表示未知。工具和重試等待不消耗模型 token。耗時為已記錄的整輪時間，平行工具不會重複累加。點選 Step 可展開詳情。</string>
 </resources>
