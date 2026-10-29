@@ -258,7 +258,7 @@ class AgentContextManager(
     initial: AgentContextState,
     private val systemPrompt: String,
     private val toolSchema: String,
-    val budget: AgentContextBudget,
+    var budget: AgentContextBudget,
     private var sourceMessageId: Long,
     private val model: ChatModel,
     private val checkpoint: (AgentContextState) -> Unit,
@@ -272,6 +272,15 @@ class AgentContextManager(
 ) {
     var state: AgentContextState = initial.closeInterruptedTools()
         private set
+
+    fun switchModel(modelKey: String, contextLimit: Int) {
+        if (state.modelKey == modelKey) return
+        budget = AgentContextBudget(contextLimit)
+        state = state.copy(modelKey = modelKey, estimateScale = 1.0,
+            lastInputTokens = null, lastOutputTokens = null, measuredMessageCount = null,
+            cacheStats = AgentCacheStats(endpoint = state.cacheStats.endpoint))
+        persist()
+    }
 
     private fun activeRecords(value: AgentContextState = state): List<AgentContextMessage> {
         val tail = value.messages.drop(value.summarizedCount)

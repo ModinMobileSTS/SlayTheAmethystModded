@@ -2454,6 +2454,8 @@ class PolicyGatedAgentGateway(
     /** Called only at complete model/tool boundaries, never between a tool call and its result. */
     private val receiveInbox: (idle: Boolean) -> Boolean = { false },
     private val onNonStreamingText: (String) -> Unit = {},
+    private val currentChatModel: (() -> ChatModel)? = null,
+    private val currentStreamingModel: (() -> StreamingChatModel?)? = null,
     /**
      * Whether the device currently has a usable network.
      *
@@ -2484,7 +2486,7 @@ class PolicyGatedAgentGateway(
             var lastResponse: ChatResponse? = null
             var response: ChatResponse? = null
             for (attempt in 0..MAX_EMPTY_RETRIES) {
-                val candidate = modelTurn(messages) { chatModel.chat(chatRequest(it)) }
+                val candidate = modelTurn(messages) { (currentChatModel?.invoke() ?: chatModel).chat(chatRequest(it)) }
                 val message = candidate.aiMessage()
                 lastResponse = candidate
                 if (message.hasToolExecutionRequests() || message.text().orEmpty().isNotBlank()) {
@@ -2531,7 +2533,7 @@ class PolicyGatedAgentGateway(
             var accepted: StreamingResult? = null
             for (attempt in 0..MAX_EMPTY_RETRIES) {
                 val candidate = modelTurn(messages) { activeMessages -> streamRequest(
-                    streamingModel = streamingModel,
+                    streamingModel = currentStreamingModel?.invoke() ?: streamingModel,
                     messages = activeMessages,
                     onText = onText,
                     onThinking = onThinking,
@@ -2553,7 +2555,7 @@ class PolicyGatedAgentGateway(
                 // cannot assemble, so the round arrives with no text and no tool call. Retrying the
                 // same streamed request rarely helps; re-issue it non-streaming, where the tool call
                 // is read straight from the response body.
-                val fallback = modelTurn(messages) { chatModel.chat(chatRequest(it)) }
+                val fallback = modelTurn(messages) { (currentChatModel?.invoke() ?: chatModel).chat(chatRequest(it)) }
                 val fallbackMessage = fallback?.aiMessage()
                 val fallbackText = fallbackMessage?.text().orEmpty()
                 if (fallback != null && fallbackMessage != null &&

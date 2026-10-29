@@ -7,6 +7,23 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
 class AiAgentInboxTest {
+    @Test fun queuedSettingsAndAttachmentsSurviveSerializationAndDelivery() {
+        val item = AiInboxItem("configured", "next", listOf(AiAttachment("test.txt", "payload")),
+            modelName = "next-model", reasoningEffort = io.stamethyst.backend.llm.LlmReasoningEffort.HIGH)
+        val restored = Json.decodeFromString<AiInboxItem>(Json.encodeToString(item))
+        assertEquals(item, restored)
+        val delivered = AiEditorSession("test", inbox = listOf(restored)).deliverInbox(restored, "old-model")
+        assertEquals("next-model", delivered.messages.last().modelName)
+        assertEquals(item.attachments, delivered.messages.first().attachments)
+    }
+
+    @Test fun legacyInboxKeepsAttachmentsAndDefaultsSettingsToNull() {
+        val item = Json.decodeFromString<AiInboxItem>("""{"id":"old","text":"queued","attachments":[{"name":"a.txt","content":"a"}]}""")
+        assertNull(item.modelName)
+        assertNull(item.reasoningEffort)
+        assertEquals("a.txt", item.attachments.single().name)
+    }
+
     private val queued = AiInboxItem("q", "next task")
     private val steer = AiInboxItem("s", "change direction", delivery = AiInboxDelivery.STEER)
 

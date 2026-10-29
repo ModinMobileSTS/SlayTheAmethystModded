@@ -68,7 +68,7 @@ internal class AiModAgentExecutor(
     private val onContext: (AgentContextState) -> Unit = {},
     private val checkCancelled: () -> Unit = {},
     private val onCompaction: (io.stamethyst.backend.llm.AgentCompactionProgress) -> Unit = {},
-    private val receiveInbox: (Boolean) -> Pair<AiEditorMessage, Long>? = { null },
+    private val receiveInbox: (Boolean) -> AiDeliveredInput? = { null },
 ) {
     private val settingsRepository = io.stamethyst.backend.llm.LlmSettingsRepository(context)
     private val workspaceAccessRoot = RuntimePaths.agentModWorkspaceRoot(
@@ -106,6 +106,22 @@ internal class AiModAgentExecutor(
             cacheAffinity = java.util.UUID.nameUUIDFromBytes(session.id.toByteArray(Charsets.UTF_8)).toString(),
         )
         val model = AgentChatModelFactory.create(config)
+        var activeConfig = config
+        var activeModel = model
+        var activeStreamingModel = AgentChatModelFactory.createStreaming(config)
+        fun applyInputSettings(input: AiDeliveredInput) {
+            val next = activeConfig.copy(
+                modelName = input.modelName ?: activeConfig.modelName,
+                reasoningEffort = input.reasoningEffort ?: activeConfig.reasoningEffort,
+            )
+            if (next != activeConfig) {
+                activeModel = AgentChatModelFactory.create(next)
+                activeStreamingModel = AgentChatModelFactory.createStreaming(next)
+                activeConfig = next
+                val key = AiContextLimits.key(next.baseUrl, next.modelName)
+                contextManager?.switchModel(key, AiContextLimits.get(context, key))
+            }
+        }
         // Compaction needs visible factual text. Reasoning tokens can consume the summary
         // output budget and leave the provider with an empty or truncated answer.
         val compactionModel = if (reasoningEffort == LlmReasoningEffort.OFF) {
@@ -165,9 +181,12 @@ internal class AiModAgentExecutor(
             checkCancelled = checkCancelled,
             onRetry = onRetry,
             onNonStreamingText = onText,
+            currentChatModel = { activeModel },
+            currentStreamingModel = { activeStreamingModel },
             receiveInbox = { idle ->
                 val input = receiveInbox(idle)
                 if (input == null) false else {
+                    applyInputSettings(input)
                     val (message, assistantId) = input
                     manager.appendInput(io.stamethyst.backend.llm.AgentContextMessage(
                         message.id, "user", message.text,
@@ -192,10 +211,11 @@ internal class AiModAgentExecutor(
             hasUsableNetwork = { NetworkAvailability.hasValidatedNetwork(context) },
             evictConnectionPool = { AgentChatModelFactory.evictConnectionPool(config) },
         )
-        val streamingModel = AgentChatModelFactory.createStreaming(config)
         // A resume-only request has no new user prompt; claim pending work before calling the model.
         if (session.messages.lastOrNull { it.id != assistantMessageId }?.fromUser == false) {
-            receiveInbox(true)?.let { (message, assistantId) ->
+            receiveInbox(true)?.let { input ->
+                applyInputSettings(input)
+                val (message, assistantId) = input
                 manager.appendInput(io.stamethyst.backend.llm.AgentContextMessage(
                     message.id, "user", message.text,
                     attachments = message.attachments.map {
@@ -209,6 +229,7 @@ internal class AiModAgentExecutor(
                 ), assistantId)
             }
         }
+        val streamingModel = activeStreamingModel
         return if (streamingModel == null) {
             val reply = gateway.respond(systemPrompt, "")
             AiAgentExecutionResult(reply.text, reply.contextTokens)

@@ -379,7 +379,7 @@ class AiAgentExecutionService : Service() {
                 checkActive()
                 synchronized(streamLock) {
                     flush(true)
-                    var delivered: Pair<AiEditorMessage, Long>? = null
+                    var delivered: AiDeliveredInput? = null
                     if (conversationStore.load(job.conversationId)?.nextInboxItem(idle) == null) {
                         return@synchronized null
                     }
@@ -388,7 +388,7 @@ class AiAgentExecutionService : Service() {
                         val next = current.deliverInbox(item, assistant.modelName)
                         val user = next.messages[next.messages.lastIndex - 1]
                         activeAssistantMessageId = next.messages.last().id
-                        delivered = user to activeAssistantMessageId
+                        delivered = AiDeliveredInput(user, activeAssistantMessageId, item.modelName, item.reasoningEffort)
                         next
                     }
                     if (delivered != null) {
