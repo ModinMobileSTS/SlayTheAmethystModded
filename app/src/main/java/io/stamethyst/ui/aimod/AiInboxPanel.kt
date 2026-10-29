@@ -79,10 +79,14 @@ internal fun AiInboxPanel(
                             for (x in 0..1) for (y in 0..2) drawCircle(dotColor, 1.dp.toPx(),
                                 Offset(size.width / 2 + (x - 0.5f) * 4.dp.toPx(), size.height / 2 + (y - 1) * 4.dp.toPx()))
                         }
+                        Column(Modifier.weight(1f).clip(RoundedCornerShape(3.dp)).clickable { onEdit(item) }.padding(vertical = 8.dp)) {
                         Text(item.text.ifBlank { stringResource(R.string.ai_inbox_attachments, item.attachments.size) },
-                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(3.dp)).clickable { onEdit(item) }.padding(vertical = 8.dp),
                             fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = if (editingId == item.id) colors.onSurfaceVariant else colors.onSurface)
+                        val settings = listOfNotNull(item.modelName, item.reasoningEffort?.name?.lowercase()).joinToString(" · ")
+                        if (settings.isNotEmpty()) Text(settings, fontSize = 11.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, color = colors.onSurfaceVariant)
+                        }
                         if (item.text.isNotBlank() && item.attachments.isNotEmpty()) Text(
                             stringResource(R.string.ai_inbox_attachments, item.attachments.size),
                             fontSize = 11.sp, color = colors.onSurfaceVariant)
