@@ -69,7 +69,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -79,6 +78,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -960,6 +960,14 @@ fun LauncherAiModEditorScreen(
         awaitingEarlierAnchorRestore = false
     }
 
+    val presentation = aiConversationPresentation(
+        storageReady = viewModel.storageReady,
+        switchingConversation = viewModel.switchingConversation,
+        hasMessages = allMessages.isNotEmpty(),
+        transcriptReady = preparedTranscript.first == viewModel.currentSessionId,
+        initialScrollApplied = initialScrollApplied,
+    )
+
     Scaffold(
         modifier = modifier,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -1081,14 +1089,20 @@ fun LauncherAiModEditorScreen(
             return@Scaffold
         }
         Box(Modifier.fillMaxSize().padding(paddingValues).imePadding()) {
+        // Keep the transcript viewport separate from the composer. Loading feedback belongs to
+        // this layer only, so opening/switching a conversation never covers the header or input.
+        Box(
+            Modifier.fillMaxSize().padding(bottom = composerHeight),
+            contentAlignment = Alignment.Center,
+        ) {
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .hazeSource(state = composerHazeState),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = composerHeight + 16.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
         ) {
-            if (allMessages.isEmpty()) {
+            if (presentation == AiConversationPresentation.EMPTY) {
                 item(key = "prompt-examples") {
                     val examples = listOf(
                         stringResource(R.string.ai_mod_editor_example_translate),
@@ -1187,9 +1201,9 @@ fun LauncherAiModEditorScreen(
             }
             item(key = "conversation-end") { Spacer(Modifier.height(1.dp)) }
         }
-        if (showJumpToLatest) {
+        if (showJumpToLatest && presentation == AiConversationPresentation.CONTENT) {
             androidx.compose.material3.Surface(
-                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = composerHeight + 12.dp),
+                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 12.dp),
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shadowElevation = 2.dp,
@@ -1204,6 +1218,20 @@ fun LauncherAiModEditorScreen(
                     Icon(Icons.KeyboardArrowUp, jumpLabel, Modifier.rotate(180f))
                 }
             }
+        }
+        if (presentation == AiConversationPresentation.LOADING) {
+            Box(
+                Modifier.fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.72f))
+                    .testTag("ai-conversation-loading"),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp).testTag("ai-conversation-loading-indicator"),
+                    strokeWidth = 2.5.dp,
+                )
+            }
+        }
         }
         val outputSpeeds by AiAgentExecutionService.outputSpeeds.collectAsState()
         if (showExecutionHistory) {
