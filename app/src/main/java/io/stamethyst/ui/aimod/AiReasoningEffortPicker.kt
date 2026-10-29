@@ -1,6 +1,8 @@
 package io.stamethyst.ui.aimod
 
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -72,6 +74,13 @@ internal fun AiReasoningEffortPicker(
     val options = LlmReasoningEffort.selectable
     val selected = options.indexOf(effort).takeIf { it >= 0 } ?: 1
     var expanded by remember { mutableStateOf(false) }
+    val popupState = remember { MutableTransitionState(false) }
+    popupState.targetState = expanded
+    val popupTransition = updateTransition(popupState, label = "effort popup visibility")
+    val reveal by popupTransition.animateFloat(
+        transitionSpec = { tween(160) },
+        label = "effort popup",
+    ) { visible -> if (visible) 1f else 0f }
     var position by remember { mutableStateOf(selected.toFloat()) }
     var dragging by remember { mutableStateOf(false) }
     LaunchedEffect(selected) { if (!dragging) position = selected.toFloat() }
@@ -101,14 +110,12 @@ internal fun AiReasoningEffortPicker(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (expanded) Popup(
+        // Keep the popup composed until its exit transition has finished.
+        if (popupState.currentState || popupState.targetState || !popupState.isIdle) Popup(
             popupPositionProvider = remember { EffortPopupPositionProvider() },
             onDismissRequest = { expanded = false },
             properties = PopupProperties(focusable = true),
         ) {
-            var entered by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) { entered = true }
-            val reveal by animateFloatAsState(if (entered) 1f else 0f, tween(160), label = "effort popup")
             FrostedGlassChrome(
                 modifier = Modifier.width(246.dp).graphicsLayer {
                     alpha = reveal
@@ -134,7 +141,7 @@ internal fun AiReasoningEffortPicker(
                     valueRange = 0f..2f,
                     // Continuous during touch; snap only after release, not on every move.
                     steps = 0,
-                    enabled = enabled,
+                    enabled = enabled && expanded,
                     colors = SliderDefaults.colors(thumbColor = accent, activeTrackColor = accent),
                     modifier = Modifier.semantics {
                         contentDescription = label
@@ -146,7 +153,7 @@ internal fun AiReasoningEffortPicker(
                         Box(
                             Modifier.selectable(
                                 selected = preview == option,
-                                enabled = enabled,
+                                enabled = enabled && expanded,
                                 role = Role.RadioButton,
                                 onClick = { dragging = false; position = index.toFloat(); onEffortChange(option) },
                             ).size(48.dp),

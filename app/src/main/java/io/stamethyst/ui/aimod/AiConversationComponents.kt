@@ -29,6 +29,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -174,26 +176,45 @@ internal fun AiChatComposer(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     AiMessageAction(Icons.AttachFile, stringResource(R.string.ai_mod_editor_attach), onAttach, configured)
                     Box(Modifier.weight(1f)) {
-                        AiReasoningEffortPicker(effort, onEffortChange, enabled = !busy, hazeState = hazeState)
+                        AiReasoningEffortPicker(effort, onEffortChange, enabled = configured, hazeState = hazeState)
                     }
-                    if (busy) AiMessageAction(
-                        icon = ImageVector.vectorResource(R.drawable.ic_stop),
-                        label = stringResource(R.string.ai_mod_editor_stop), onClick = onStop,
-                    )
-                    AiMessageAction(
-                        icon = ImageVector.vectorResource(R.drawable.ic_arrow_upward),
-                        label = stringResource(if (editingInboxId != null) R.string.ai_inbox_save else if (busy) R.string.ai_inbox_add else R.string.ai_mod_editor_send),
-                        onClick = onSend,
-                        enabled = configured && (draft.isNotBlank() || attachments.isNotEmpty()),
-                        prominent = true,
-                    )
+                    val hasContent = draft.isNotBlank() || attachments.isNotEmpty()
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (!busy || hasContent) {
+                            IconButton(
+                                onClick = onSend,
+                                enabled = configured && hasContent,
+                                modifier = Modifier.size(48.dp),
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    contentColor = colors.primary,
+                                    disabledContentColor = colors.onSurfaceVariant.copy(alpha = 0.3f),
+                                ),
+                            ) {
+                                Icon(
+                                    ImageVector.vectorResource(R.drawable.ic_agent_send),
+                                    stringResource(if (editingInboxId != null) R.string.ai_inbox_save else if (busy) R.string.ai_inbox_add else R.string.ai_mod_editor_send),
+                                    Modifier.size(24.dp).then(if (busy) Modifier.rotate(-90f) else Modifier),
+                                )
+                            }
+                        }
+                        if (busy) {
+                            IconButton(onClick = onStop, modifier = Modifier.size(48.dp)) {
+                                Icon(
+                                    ImageVector.vectorResource(R.drawable.ic_agent_stop),
+                                    stringResource(R.string.ai_mod_editor_stop),
+                                    Modifier.size(24.dp),
+                                    tint = colors.error,
+                                )
+                            }
+                        }
+                    }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     val modelLabel = stringResource(R.string.llm_select_model)
                     Box(Modifier.weight(1f)) {
                         Row(
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                                .clickable(enabled = !busy && models.isNotEmpty(), onClick = { modelMenu = true })
+                                .clickable(enabled = configured && models.isNotEmpty(), onClick = { modelMenu = true })
                                 .semantics { contentDescription = modelLabel }
                                 .padding(horizontal = 8.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
