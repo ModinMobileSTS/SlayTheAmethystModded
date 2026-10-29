@@ -838,6 +838,7 @@ fun LauncherAiModEditorScreen(
     var showRestoreConfirmation by rememberSaveable { mutableStateOf(false) }
     var rollbackTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var showHistory by remember { mutableStateOf(false) }
+    var showExecutionHistory by rememberSaveable(viewModel.currentSessionId) { mutableStateOf(false) }
     val settings = viewModel.llmSettings
     val configured = settings.isConfigured()
     val attachmentScope = rememberCoroutineScope()
@@ -1184,6 +1185,14 @@ fun LauncherAiModEditorScreen(
             }
         }
         val outputSpeeds by AiAgentExecutionService.outputSpeeds.collectAsState()
+        if (showExecutionHistory) {
+            AiExecutionHistoryDialog(
+                sessionId = viewModel.currentSessionId,
+                revision = viewModel.transcriptRevision,
+                messages = viewModel.messages,
+                onDismiss = { showExecutionHistory = false },
+            )
+        }
         AiChatComposer(
             modifier = Modifier.align(Alignment.BottomCenter),
             hazeState = composerHazeState,
@@ -1197,6 +1206,8 @@ fun LauncherAiModEditorScreen(
             onAttach = { picker.launch(arrayOf("text/*", "application/json", "application/octet-stream", "image/*")) },
             configured = configured && viewModel.storageReady,
             busy = viewModel.busy,
+            outputTokensPerSecond = outputSpeeds[modId to viewModel.currentSessionId],
+            onExecutionHistory = { showExecutionHistory = true },
             inbox = viewModel.inbox,
             onInboxChange = viewModel::updateInbox,
             onResumeInbox = viewModel::resumeInbox,

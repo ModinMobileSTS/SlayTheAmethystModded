@@ -1,0 +1,37 @@
+<resources>
+    <string name="ai_history_title">Execution history</string>
+    <string name="ai_history_subtitle">Every Turn. Every Step.</string>
+    <string name="ai_history_open">Open execution history</string>
+    <string name="ai_history_close">Close execution history</string>
+    <string name="ai_history_empty">No activity yet</string>
+    <string name="ai_history_empty_hint">Send a message to start a colorful record of each action, its time and token usage.</string>
+    <string name="ai_history_duration">Elapsed</string>
+    <string name="ai_history_tokens">Tokens used</string>
+    <string name="ai_history_activity">Activity spectrum</string>
+    <string name="ai_history_chart_hint">Earlier → Latest</string>
+    <string name="ai_history_chart_description">Colored activity chart. Model, tool, compaction and retry steps are distinguished by color. Select a Turn below to inspect every Step.</string>
+    <string name="ai_history_turns">Turns · newest first</string>
+    <string name="ai_history_step_count">%1$d Steps</string>
+    <string name="ai_history_expanded">Expanded</string>
+    <string name="ai_history_collapsed">Collapsed</string>
+    <string name="ai_history_maintenance">Context maintenance</string>
+    <string name="ai_history_model">Model</string>
+    <string name="ai_history_tool">Tool</string>
+    <string name="ai_history_compaction">Compact</string>
+    <string name="ai_history_retry">Retry</string>
+    <string name="ai_history_model_detail">Generate a response, plan actions or request tools.</string>
+    <string name="ai_history_tool_detail">Execute the requested tool.</string>
+    <string name="ai_history_compaction_detail">Summarize earlier conversation into a context checkpoint.</string>
+    <string name="ai_history_retry_detail">Wait for retry backoff and network recovery.</string>
+    <string name="ai_history_input">Input tokens</string>
+    <string name="ai_history_output">Output tokens</string>
+    <string name="ai_history_running">Running</string>
+    <string name="ai_history_completed">Done</string>
+    <string name="ai_history_failed">Failed</string>
+    <string name="ai_history_cancelled">Interrupted</string>
+    <string name="ai_history_waiting">Preparing the first Step…</string>
+    <string name="ai_history_no_steps">No recorded Steps in this Turn.</string>
+    <string name="ai_history_unrecorded">Some timing or token usage was not recorded or reported.</string>
+    <string name="ai_history_no_model_tokens">No model request; token usage is counted on the model Step.</string>
+    <string name="ai_history_accounting">Tokens = reported input + output across requests, including compaction. ≥ means partial reporting; — means unknown. Tools and retry waits use no model tokens. Elapsed is recorded Turn wall time; parallel tool time is not added twice. Expand a Step for details.</string>
+</resources>

@@ -2,6 +2,13 @@ package io.stamethyst.ui.aimod
 
 import android.graphics.BitmapFactory
 import android.util.Base64
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -100,6 +107,7 @@ internal fun AiChatComposer(
     onReorderInbox: (String, Int) -> Unit = { _, _ -> },
     onCancelInboxEdit: () -> Unit = {},
     outputTokensPerSecond: Double? = null,
+    onExecutionHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var modelMenu by remember { mutableStateOf(false) }
@@ -179,31 +187,45 @@ internal fun AiChatComposer(
                         AiReasoningEffortPicker(effort, onEffortChange, enabled = configured, hazeState = hazeState)
                     }
                     val hasContent = draft.isNotBlank() || attachments.isNotEmpty()
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (!busy || hasContent) {
-                            IconButton(
-                                onClick = onSend,
-                                enabled = configured && hasContent,
-                                modifier = Modifier.size(48.dp),
-                                colors = IconButtonDefaults.iconButtonColors(
-                                    contentColor = colors.primary,
-                                    disabledContentColor = colors.onSurfaceVariant.copy(alpha = 0.3f),
-                                ),
-                            ) {
-                                Icon(
-                                    ImageVector.vectorResource(R.drawable.ic_agent_send),
-                                    stringResource(if (editingInboxId != null) R.string.ai_inbox_save else if (busy) R.string.ai_inbox_add else R.string.ai_mod_editor_send),
-                                    Modifier.size(24.dp).then(if (busy) Modifier.rotate(-90f) else Modifier),
-                                )
-                            }
-                        }
-                        if (busy) {
-                            IconButton(onClick = onStop, modifier = Modifier.size(48.dp)) {
+                    val sendEnabled = configured && hasContent
+                    val sendColor by animateColorAsState(
+                        if (sendEnabled) colors.primary else colors.onSurfaceVariant.copy(alpha = 0.3f),
+                        animationSpec = tween(160),
+                        label = "composer send color",
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AnimatedVisibility(
+                            visible = busy,
+                            enter = fadeIn(tween(160)) + expandHorizontally(tween(180), expandFrom = Alignment.End),
+                            exit = fadeOut(tween(120)) + shrinkHorizontally(tween(180), shrinkTowards = Alignment.End),
+                        ) {
+                            IconButton(onClick = onStop, enabled = busy, modifier = Modifier.size(48.dp)) {
                                 Icon(
                                     ImageVector.vectorResource(R.drawable.ic_agent_stop),
                                     stringResource(R.string.ai_mod_editor_stop),
                                     Modifier.size(24.dp),
                                     tint = colors.error,
+                                )
+                            }
+                        }
+                        AnimatedVisibility(
+                            visible = !busy || hasContent,
+                            enter = fadeIn(tween(160)) + expandHorizontally(tween(180), expandFrom = Alignment.End),
+                            exit = fadeOut(tween(120)) + shrinkHorizontally(tween(180), shrinkTowards = Alignment.End),
+                        ) {
+                            IconButton(
+                                onClick = onSend,
+                                enabled = sendEnabled,
+                                modifier = Modifier.size(48.dp),
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    contentColor = sendColor,
+                                    disabledContentColor = sendColor,
+                                ),
+                            ) {
+                                Icon(
+                                    ImageVector.vectorResource(R.drawable.ic_agent_send),
+                                    stringResource(if (editingInboxId != null) R.string.ai_inbox_save else if (busy) R.string.ai_inbox_add else R.string.ai_mod_editor_send),
+                                    Modifier.size(24.dp),
                                 )
                             }
                         }
@@ -254,14 +276,7 @@ internal fun AiChatComposer(
                             }
                         }
                     }
-                    Text(
-                        text = outputTokensPerSecond?.let { String.format(java.util.Locale.ROOT, "%.1f token/s", it) } ?: "— token/s",
-                        modifier = Modifier.padding(start = 8.dp, end = 8.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = colors.onSurfaceVariant,
-                        maxLines = 1,
-                    )
+                    AiHistorySpeedButton(outputTokensPerSecond, onExecutionHistory)
                 }
             }
         }
