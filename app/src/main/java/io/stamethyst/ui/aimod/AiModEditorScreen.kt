@@ -68,6 +68,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -237,6 +238,8 @@ internal class AiModEditorViewModel(
     var busy by mutableStateOf(false)
         private set
     var storageReady by mutableStateOf(false)
+        private set
+    var switchingConversation by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
         private set
@@ -601,7 +604,7 @@ internal class AiModEditorViewModel(
     }
 
     fun newConversation() {
-        if (!storageReady || busy) return
+        if (!storageReady || switchingConversation || busy) return
         val current = sessions.firstOrNull { it.id == currentSessionId }
         if (current == null || current.hasUserPrompt()) {
             val session = AiEditorSession(UUID.randomUUID().toString())
@@ -615,18 +618,23 @@ internal class AiModEditorViewModel(
     }
 
     fun switchConversation(sessionId: String) {
-        if (!storageReady || busy || sessionId == currentSessionId) return
+        if (!storageReady || switchingConversation || busy || sessionId == currentSessionId) return
+        switchingConversation = true
         launchStorage {
-            val session = conversationStore.load(sessionId) ?: return@launchStorage
-            withContext(Dispatchers.Main.immediate) {
-                currentSessionId = session.id
-                messages.clear()
-                messages += session.messages
-                nextMessageId = (messages.maxOfOrNull { it.id } ?: 0L) + 1L
-                error = null
-                appliedBackupPath = null
-                installSession(session)
-                refreshBusyState()
+            try {
+                val session = conversationStore.load(sessionId) ?: return@launchStorage
+                withContext(Dispatchers.Main.immediate) {
+                    currentSessionId = session.id
+                    messages.clear()
+                    messages += session.messages
+                    nextMessageId = (messages.maxOfOrNull { it.id } ?: 0L) + 1L
+                    error = null
+                    appliedBackupPath = null
+                    installSession(session)
+                    refreshBusyState()
+                }
+            } finally {
+                withContext(Dispatchers.Main.immediate) { switchingConversation = false }
             }
         }
     }
@@ -929,7 +937,7 @@ fun LauncherAiModEditorScreen(
                         Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .clickable { showHistory = !showHistory }
+                                .clickable(enabled = viewModel.storageReady && !viewModel.switchingConversation) { showHistory = !showHistory }
                                 .padding(horizontal = 4.dp, vertical = 2.dp)
                                 .semantics { contentDescription = historyContentDescription },
                             verticalAlignment = Alignment.CenterVertically,
@@ -1021,7 +1029,7 @@ fun LauncherAiModEditorScreen(
                 )
             },
     ) { paddingValues ->
-        if (!configured) {
+        if (viewModel.storageReady && !configured) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
