@@ -21,6 +21,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.llm.AgentExecutionStep
 import io.stamethyst.backend.llm.AgentStepKind
 import io.stamethyst.backend.llm.AgentStepStatus
+import io.stamethyst.backend.llm.agentErrorStep
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,6 +76,25 @@ class AiExecutionHistoryInstrumentedTest {
         compose.setContent { MaterialTheme { AiExecutionHistoryPanel(AiHistorySnapshot()) {} } }
         compose.onNodeWithText(context.getString(R.string.ai_history_empty)).assertIsDisplayed()
         compose.onNodeWithTag("ai-history-list").assertDoesNotExist()
+    }
+
+    @Test fun errorNodeShowsItsCauseAndAssociatedAction() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val snapshot = AiHistoryBuilder().build(listOf(
+            AiEditorMessage(1, true, "Read source"),
+            AiEditorMessage(2, false, "", executionSteps = listOf(
+                AgentExecutionStep("request", AgentStepKind.MODEL, startedAtMs = 1_000,
+                    elapsedMs = 50, status = AgentStepStatus.FAILED),
+                agentErrorStep("MODEL", "IOException: connection reset", "request"),
+            )),
+        ))
+        compose.setContent { MaterialTheme { AiExecutionHistoryPanel(snapshot) {} } }
+        val tag = "ai-history-step-2:request:error"
+        compose.onNodeWithTag("ai-history-list").performScrollToNode(hasTestTag(tag))
+        compose.onNodeWithTag(tag).performClick()
+        compose.onNodeWithText("IOException: connection reset").assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.ai_history_error_source, "MODEL")).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.ai_history_related_step, 1)).performScrollTo().assertIsDisplayed()
     }
 
     private fun fixture(tools: Int = 1): AiHistorySnapshot = AiHistoryBuilder().build(listOf(
