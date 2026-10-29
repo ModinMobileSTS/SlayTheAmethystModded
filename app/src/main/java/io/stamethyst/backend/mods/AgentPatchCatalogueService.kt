@@ -2,6 +2,10 @@ package io.stamethyst.backend.mods
 
 import android.content.Context
 import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
+import io.stamethyst.backend.github.GithubRequestClients
+import io.stamethyst.backend.github.GithubResourceRequests
+import io.stamethyst.backend.update.UpdateSource
+import io.stamethyst.backend.update.toGithubMirrorHttpException
 import io.stamethyst.backend.github.AcceleratedResponseValidator
 import io.stamethyst.config.RuntimePaths
 import java.io.ByteArrayOutputStream
@@ -122,7 +126,7 @@ object AgentPatchCatalogueService {
     private const val READ_TIMEOUT_MS = 30_000
     private const val USER_AGENT = "SlayTheAmethyst-AIPatchCatalogue"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-    private val clients = ConcurrentHashMap<String, okhttp3.OkHttpClient>()
+    private val clients = ConcurrentHashMap<String, GithubRequestClients>()
     private val parsedCache = ConcurrentHashMap<String, AgentPatchCatalogueSnapshot>()
     private val catalogueRequests = CatalogueRequestStateMachine<AgentPatchCatalogueData>(
         CoroutineScope(SupervisorJob() + Dispatchers.IO),
@@ -205,16 +209,35 @@ object AgentPatchCatalogueService {
 
     /**
      * Runs one catalogue fetch under a narration session so the AI patch catalogue screen can show
-     * the same stage bar as the market. Route discovery, node probing and failover are reported by
-     * [CatalogueLoadProgressReporter]'s own transport listener; only the request framing, the
-     * parse step and the terminal states belong here.
+     * the same stage bar as the market. Narrate source attempts rather than Watt transport events:
+     * a direct candidate's internal official fallback is not the end of the mirror chain.
      */
     private fun narrateCatalogueFetch(context: Context): AgentPatchCatalogueData {
-        val sessionId = CatalogueLoadProgressReporter.beginSession()
+        val sessionId = CatalogueLoadProgressReporter.beginSession(observeRoutes = false)
         try {
-            val data = fetchCatalogue(context) {
-                CatalogueLoadProgressReporter.report(sessionId, CatalogueLoadPhase.Parsing)
+            val cacheFile = RuntimePaths.agentPatchCatalogueCacheFile(context)
+            val data = GithubResourceRequests.run(
+                context = context,
+                clients = sharedClients(context),
+                url = CATALOGUE_URL,
+                onAttempt = { source ->
+                    CatalogueLoadProgressReporter.report(
+                        sessionId,
+                        if (source == UpdateSource.OFFICIAL) CatalogueLoadPhase.FallingBack
+                        else CatalogueLoadPhase.Connecting,
+                        target = source.displayName,
+                    )
+                },
+                onFailure = { source, error ->
+                    CatalogueLoadProgressReporter.report(
+                        sessionId, CatalogueLoadPhase.FailingOver,
+                        target = source.displayName, detail = error.message,
+                    )
+                },
+            ) { client, url ->
+                fetchCatalogue(client, cacheFile, url)
             }
+            CatalogueLoadProgressReporter.report(sessionId, CatalogueLoadPhase.Parsing)
             CatalogueLoadProgressReporter.report(sessionId, CatalogueLoadPhase.Completed)
             return data
         } catch (error: Exception) {
@@ -227,14 +250,6 @@ object AgentPatchCatalogueService {
         } finally {
             CatalogueLoadProgressReporter.endSession(sessionId)
         }
-    }
-
-    private fun fetchCatalogue(
-        context: Context,
-        onResponseReceived: () -> Unit = {},
-    ): AgentPatchCatalogueData {
-        val cacheFile = RuntimePaths.agentPatchCatalogueCacheFile(context)
-        return fetchCatalogue(sharedClient(context), cacheFile, onResponseReceived = onResponseReceived)
     }
 
     internal fun fetchCatalogue(
@@ -275,7 +290,7 @@ object AgentPatchCatalogueService {
         val packaged = File(targetDir, ".$stablePatchId.${System.nanoTime()}.tmp")
         try {
             onProgress(AgentPatchInstallProgress(AgentPatchInstallStage.DOWNLOADING, 0.02f))
-            downloadToFile(context, patch.downloadUrl, downloaded, patch.size) { fraction, downloadedBytes, totalBytes ->
+            downloadToFile(context, patch.downloadUrl, downloaded, patch.size, patch.sha256) { fraction, downloadedBytes, totalBytes ->
                 onProgress(
                     AgentPatchInstallProgress(
                         stage = AgentPatchInstallStage.DOWNLOADING,
@@ -385,7 +400,7 @@ object AgentPatchCatalogueService {
                 .header("User-Agent", USER_AGENT)
                 .post(requestBody)
                 .build()
-            val responseBytes = sharedClient(context).newCall(request).execute().use { response ->
+            val responseBytes = sharedClients(context).plainClient.newCall(request).execute().use { response ->
                 val bytes = response.body?.byteStream()?.let { readBounded(it, 128 * 1024) } ?: ByteArray(0)
                 if (!response.isSuccessful) {
                     val detail = runCatching { JSONObject(bytes.toString(Charsets.UTF_8)).optString("message") }.getOrNull()
@@ -580,7 +595,7 @@ object AgentPatchCatalogueService {
             })
             .build()
         return client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Catalogue request failed (HTTP ${response.code}).")
+            if (!response.isSuccessful) throw response.toGithubMirrorHttpException("Catalogue request failed.")
             val length = response.header("Content-Length")?.toLongOrNull()
             if (length != null && length > maximum) throw IOException("Catalogue response is too large.")
             readBounded(response.body?.byteStream() ?: throw IOException("Catalogue response is empty."), maximum.toInt())
@@ -592,38 +607,44 @@ object AgentPatchCatalogueService {
         url: String,
         target: File,
         expectedSize: Long,
+        expectedSha256: String,
         onProgress: (fraction: Float, downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _, _ -> },
     ) {
-        val request = Request.Builder().url(url).get().header("User-Agent", USER_AGENT).build()
-        sharedClient(context).newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("Patch download failed (HTTP ${response.code}).")
-            val declaredLength = response.header("Content-Length")?.toLongOrNull()
-            if (declaredLength != null && declaredLength != expectedSize) throw IOException("Patch download size does not match the catalogue.")
-            val input = response.body?.byteStream() ?: throw IOException("Patch download is empty.")
-            target.outputStream().buffered().use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var count = 0L
-                var lastPercent = -1
-                while (true) {
-                    if (Thread.currentThread().isInterrupted) throw IOException("Patch download was cancelled.")
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    if (read == 0) continue
-                    count += read
-                    if (count > expectedSize || count > MAX_PATCH_BYTES) throw IOException("Patch download exceeds its size limit.")
-                    output.write(buffer, 0, read)
-                    val percent = ((count * 100) / expectedSize).toInt().coerceIn(0, 100)
-                    if (percent != lastPercent) {
-                        lastPercent = percent
-                        onProgress(percent / 100f, count, expectedSize)
+        GithubResourceRequests.run(context, sharedClients(context), url) { client, requestUrl ->
+            val request = Request.Builder().url(requestUrl).get().header("User-Agent", USER_AGENT).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw response.toGithubMirrorHttpException("Patch download failed.")
+                val declaredLength = response.header("Content-Length")?.toLongOrNull()
+                if (declaredLength != null && declaredLength != expectedSize) throw IOException("Patch download size does not match the catalogue.")
+                val input = response.body.byteStream()
+                target.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var count = 0L
+                    var lastPercent = -1
+                    while (true) {
+                        if (Thread.currentThread().isInterrupted) throw IOException("Patch download was cancelled.")
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        if (read == 0) continue
+                        count += read
+                        if (count > expectedSize || count > MAX_PATCH_BYTES) throw IOException("Patch download exceeds its size limit.")
+                        output.write(buffer, 0, read)
+                        val percent = ((count * 100) / expectedSize).toInt().coerceIn(0, 100)
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            onProgress(percent / 100f, count, expectedSize)
+                        }
                     }
+                    if (count != expectedSize) throw IOException("Patch download size is incomplete.")
                 }
-                if (count != expectedSize) throw IOException("Patch download size is incomplete.")
+            }
+            if (!sha256(target).equals(expectedSha256, ignoreCase = true)) {
+                throw IOException("AI patch SHA-256 does not match the catalogue.")
             }
         }
     }
 
-    private fun sharedClient(context: Context): okhttp3.OkHttpClient {
+    private fun sharedClients(context: Context): GithubRequestClients {
         val app = context.applicationContext
         val key = RuntimePaths.transientFilesRoot(app).absolutePath
         return clients.getOrPut(key) {
@@ -632,7 +653,7 @@ object AgentPatchCatalogueService {
                 connectTimeoutMs = CONNECT_TIMEOUT_MS,
                 readTimeoutMs = READ_TIMEOUT_MS,
                 followRedirects = true,
-            ).acceleratedClient
+            )
         }
     }
 

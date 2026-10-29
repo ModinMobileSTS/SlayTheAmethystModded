@@ -83,6 +83,7 @@ internal object CatalogueLoadProgressReporter {
 
     private val lock = Any()
     private var activeSessionId: Long = 0L
+    private var observeRouteEvents = true
     private var routeListenerInstalled = false
 
     private val routeListener: (AcceleratedRouteEvent) -> Unit = ::onRouteEvent
@@ -92,13 +93,16 @@ internal object CatalogueLoadProgressReporter {
     }
 
     /** Opens a new attempt and makes it the only one whose updates are forwarded. */
-    fun beginSession(): Long {
+    fun beginSession(observeRoutes: Boolean = true): Long {
         installRouteListener()
         // Drop the previous attempt's final snapshot before the new one narrates, so the bar never
         // opens on the last run's "loaded, 100%" frame.
         mutableProgress.value = null
         val sessionId = session.beginSession()
-        synchronized(lock) { activeSessionId = sessionId }
+        synchronized(lock) {
+            activeSessionId = sessionId
+            observeRouteEvents = observeRoutes
+        }
         return sessionId
     }
 
@@ -141,7 +145,7 @@ internal object CatalogueLoadProgressReporter {
         // The catalogue is the only thing this screen waits on, so a routing event for any other
         // host (a workshop preview, an avatar) must not narrate this bar.
         if (!event.host.equals(CATALOGUE_HOST, ignoreCase = true)) return
-        val sessionId = synchronized(lock) { activeSessionId }
+        val sessionId = synchronized(lock) { if (observeRouteEvents) activeSessionId else 0L }
         if (sessionId == 0L) return
         when (event) {
             is AcceleratedRouteEvent.RouteDiscoveryStarted ->

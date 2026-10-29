@@ -20,10 +20,8 @@ import io.stamethyst.ui.LoadStageProgressBar
 /**
  * Narrates a community patch catalogue load directly under the screen's top bar.
  *
- * The catalogue is one index file, but reaching it goes through the same accelerated transport as
- * the Workshop market: route discovery, node probing, failover and an official fallback. Showing
- * those stages is the difference between "the list is empty for a while" and "the preferred node is
- * being retried", so this reuses the market's bar instead of an indeterminate spinner.
+ * The catalogue uses the update-source mirror chain. Show the source being attempted and failures
+ * using the market's stage bar instead of an indeterminate spinner.
  *
  * @param revealHeight animated height owned by the caller, so the bar's slot and the list below
  * grow from one shared value instead of reacting to the row's measured size.
