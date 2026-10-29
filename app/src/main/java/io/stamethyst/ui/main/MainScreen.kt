@@ -4232,6 +4232,8 @@ internal fun LauncherMainRoute(
     val hostActivity = context as? Activity
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState = viewModel.uiState
+    SteamCloudNotificationPermissionEffect(available = hostActivity != null && !uiState.launchInFlight &&
+        uiState.steamCloudIndicator.visible && !uiState.steamCloudIndicator.syncDisabled)
     val hasActiveWorkshopDownloads = uiState.optionalMods.any { mod ->
         when (mod.workshop?.state) {
             WorkshopModState.Queued,
