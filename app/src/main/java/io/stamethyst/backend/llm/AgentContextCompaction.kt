@@ -31,6 +31,8 @@ data class AgentCompactionProgress(
     val error: String = "",
     val inputTokens: Long? = null,
     val outputTokens: Long? = null,
+    val startedAtMs: Long? = null,
+    val elapsedMs: Long? = null,
 )
 
 internal class AgentContextCompaction(
@@ -45,10 +47,12 @@ internal class AgentContextCompaction(
     private val progress: (AgentCompactionProgress) -> Unit,
 ) {
     fun run(state: AgentContextState, reason: String, commit: (String, String) -> Unit) {
-        var event = AgentCompactionProgress(reason = reason)
+        val timer = AgentStepTimer(AgentStepKind.COMPACTION)
+        var event = AgentCompactionProgress(reason = reason, startedAtMs = timer.step.startedAtMs)
         var committing = false
         var progressFailed = false
         fun publish() {
+            if (event.status != "running") event = event.copy(elapsedMs = timer.finish().elapsedMs)
             try { progress(event) } catch (error: Exception) { progressFailed = true; throw error }
         }
         publish()
@@ -153,7 +157,7 @@ internal class AgentContextCompaction(
         } catch (error: Exception) {
             val cancelled = error is java.util.concurrent.CancellationException || error is InterruptedException || Thread.currentThread().isInterrupted
             event = event.copy(status = if (cancelled) "interrupted" else "failed", summary = "",
-                error = if (cancelled) "" else error.message.orEmpty())
+                error = if (cancelled) "" else error.message.orEmpty(), elapsedMs = timer.finish().elapsedMs)
             runCatching { progress(event) }.onFailure { if (it !== error) error.addSuppressed(it) }
             if (committing || progressFailed || cancelled || error is AgentCompactionException || error is AgentContextCapacityException) throw error
             throw AgentCompactionException("Context summarization failed; original messages were retained.", error)

@@ -172,6 +172,7 @@ internal fun buildAiTranscriptRows(message: AiEditorMessage): List<AiTranscriptR
                 tools = if (part.kind == AiMessagePartKind.TOOL) listOfNotNull(tools[part.toolId]) else emptyList(),
                 attachments = if (first) message.attachments else emptyList(),
                 failed = false,
+                executionSteps = emptyList(),
             ), false, message)
         }
     }
@@ -188,6 +189,6 @@ internal fun buildAiTranscriptRows(message: AiEditorMessage): List<AiTranscriptR
     val compactionOnly = message.parts.isNotEmpty() && message.parts.all {
         it.kind == AiMessagePartKind.COMPACTION || it.kind == AiMessagePartKind.COMPACTION_REQUEST
     }
-    if (!message.notice && !compactionOnly) rows += AiTranscriptRow("${message.id}:footer", message.copy(text = "", thinking = "", parts = emptyList(), tools = emptyList(), attachments = emptyList()), true, message)
+    if (!message.notice && !compactionOnly) rows += AiTranscriptRow("${message.id}:footer", message.copy(text = "", thinking = "", parts = emptyList(), tools = emptyList(), attachments = emptyList(), executionSteps = emptyList()), true, message)
     return rows
 }

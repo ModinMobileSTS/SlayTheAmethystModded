@@ -6,6 +6,7 @@ import android.database.CursorWrapper
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteDatabaseLockedException
 import io.stamethyst.backend.llm.AgentContextState
+import io.stamethyst.backend.llm.AgentExecutionStep
 import io.stamethyst.backend.workshop.WorkshopJsonFileStore
 import java.io.File
 import java.io.ByteArrayOutputStream
@@ -136,21 +137,40 @@ internal class AiConversationStore(root: File) {
     fun updateMessage(
         sessionId: String,
         messageId: Long,
+        includeExecutionSteps: Boolean = true,
         transform: (AiEditorMessage) -> AiEditorMessage,
     ): AiEditorMessage? {
         migrateLegacyConversations()
         return withLockedDatabase(sessionId, create = false) { db ->
             db.beginWriteTransactionWithRetry()
             try {
-                val previous = readMessage(db, messageId) ?: return@withLockedDatabase null
+                val previous = readMessage(db, messageId, includeExecutionSteps) ?: return@withLockedDatabase null
                 val next = transform(previous)
-                writeMessage(db, next)
+                writeMessage(db, next, previous = previous)
                 bumpRevision(db)
                 db.setTransactionSuccessful()
                 next
             } finally {
                 db.endTransaction()
             }
+        }
+    }
+
+    /** O(1) telemetry writes, independent of transcript length and the number of previous steps. */
+    fun recordExecutionStep(sessionId: String, messageId: Long, step: AgentExecutionStep) {
+        withLockedDatabase(sessionId, create = false) { db ->
+            db.beginWriteTransactionWithRetry()
+            try {
+                if (db.update(TABLE_MESSAGES, ContentValues().apply {
+                    put("changed_revision", db.rawQuery("SELECT revision + 1 FROM conversation LIMIT 1", null).use {
+                        if (it.moveToFirst()) it.getLong(0) else 1L
+                    })
+                }, "id = ?", arrayOf(messageId.toString())) > 0) {
+                    writeExecutionStep(db, messageId, step)
+                    bumpRevision(db)
+                }
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
         }
     }
 
@@ -498,6 +518,17 @@ internal class AiConversationStore(root: File) {
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_messages_id ON messages(id)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_jobs_status ON agent_jobs(status)")
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS execution_steps (
+                message_id INTEGER NOT NULL,
+                id TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                data_json TEXT NOT NULL,
+                PRIMARY KEY(message_id, id),
+                FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_execution_step_order ON execution_steps(message_id, position)")
     }
 
     private fun addColumnIfMissing(
@@ -601,8 +632,9 @@ internal class AiConversationStore(root: File) {
         val messages = if (previous == null) {
             val attachments = readAttachments(db)
             val tools = readTools(db)
+            val steps = readExecutionSteps(db)
             db.queryWindowSafe(TABLE_MESSAGES, null, null, null, null, null, "$COLUMN_MESSAGE_ID ASC").use { cursor ->
-                buildList { while (cursor.moveToNext()) add(cursor.readMessage(attachments, tools)) }
+                buildList { while (cursor.moveToNext()) add(cursor.readMessage(attachments, tools, steps)) }
             }
         } else {
             val cached = previous.messages.associateBy { it.id }
@@ -666,9 +698,10 @@ internal class AiConversationStore(root: File) {
         )
     }
 
-    private fun readMessage(db: SQLiteDatabase, messageId: Long): AiEditorMessage? {
+    private fun readMessage(db: SQLiteDatabase, messageId: Long, includeExecutionSteps: Boolean = true): AiEditorMessage? {
         val attachments = readAttachments(db, messageId)
         val tools = readTools(db, messageId)
+        val steps = if (includeExecutionSteps) readExecutionSteps(db, messageId) else emptyMap()
         return db.queryWindowSafe(
             TABLE_MESSAGES,
             null,
@@ -679,7 +712,7 @@ internal class AiConversationStore(root: File) {
             null,
             "1",
         ).use { cursor ->
-            if (!cursor.moveToFirst()) null else cursor.readMessage(attachments, tools)
+            if (!cursor.moveToFirst()) null else cursor.readMessage(attachments, tools, steps)
         }
     }
 
@@ -704,10 +737,11 @@ internal class AiConversationStore(root: File) {
         previousMessages.keys.filterNot(nextIds::contains).forEach { messageId ->
             db.delete(TABLE_ATTACHMENTS, "$COLUMN_FOREIGN_MESSAGE_ID = ?", arrayOf(messageId.toString()))
             db.delete(TABLE_TOOLS, "$COLUMN_FOREIGN_MESSAGE_ID = ?", arrayOf(messageId.toString()))
+            db.delete(TABLE_STEPS, "$COLUMN_FOREIGN_MESSAGE_ID = ?", arrayOf(messageId.toString()))
             db.delete(TABLE_MESSAGES, "$COLUMN_MESSAGE_ID = ?", arrayOf(messageId.toString()))
         }
         next.messages.forEach { message ->
-            if (previousMessages[message.id] != message) writeMessage(db, message, next.revision)
+            if (previousMessages[message.id] != message) writeMessage(db, message, next.revision, previousMessages[message.id])
         }
     }
 
@@ -729,7 +763,7 @@ internal class AiConversationStore(root: File) {
         )
     }
 
-    private fun writeMessage(db: SQLiteDatabase, message: AiEditorMessage, revision: Long? = null) {
+    private fun writeMessage(db: SQLiteDatabase, message: AiEditorMessage, revision: Long? = null, previous: AiEditorMessage? = null) {
         val values = ContentValues().apply {
             put("changed_revision", revision ?: db.rawQuery("SELECT revision + 1 FROM conversation LIMIT 1", null).use {
                 if (it.moveToFirst()) it.getLong(0) else 1L
@@ -748,8 +782,19 @@ internal class AiConversationStore(root: File) {
             message.elapsedMs?.let { put(COLUMN_ELAPSED_MS, it) } ?: putNull(COLUMN_ELAPSED_MS)
             message.contextTokens?.let { put(COLUMN_CONTEXT_TOKENS, it) } ?: putNull(COLUMN_CONTEXT_TOKENS)
         }
-        check(db.insertWithOnConflict(TABLE_MESSAGES, null, values, SQLiteDatabase.CONFLICT_REPLACE) != -1L) {
-            "Failed to save conversation message"
+        // REPLACE deletes the parent row and cascades all telemetry on every stream delta.
+        if (db.update(TABLE_MESSAGES, values, "id = ?", arrayOf(message.id.toString())) == 0) {
+            db.insertOrThrow(TABLE_MESSAGES, null, values)
+        }
+        if (previous?.executionSteps !== message.executionSteps) {
+            val old = previous?.executionSteps?.associateBy { it.id }.orEmpty()
+            val nextIds = message.executionSteps.mapTo(HashSet()) { it.id }
+            old.keys.filterNot(nextIds::contains).forEach { id ->
+                db.delete(TABLE_STEPS, "message_id = ? AND id = ?", arrayOf(message.id.toString(), id))
+            }
+            message.executionSteps.forEach { step ->
+                if (old[step.id] != step) writeExecutionStep(db, message.id, step)
+            }
         }
         db.delete(TABLE_ATTACHMENTS, "$COLUMN_FOREIGN_MESSAGE_ID = ?", arrayOf(message.id.toString()))
         message.attachments.forEachIndexed { position, attachment ->
@@ -839,6 +884,7 @@ internal class AiConversationStore(root: File) {
     private fun Cursor.readMessage(
         attachments: Map<Long, List<AiAttachment>>,
         tools: Map<Long, List<AiToolCall>>,
+        steps: Map<Long, List<AgentExecutionStep>> = emptyMap(),
     ): AiEditorMessage {
         val id = getLong(getColumnIndexOrThrow(COLUMN_MESSAGE_ID))
         return AiEditorMessage(
@@ -859,7 +905,36 @@ internal class AiConversationStore(root: File) {
             modelName = getString(getColumnIndexOrThrow(COLUMN_MODEL_NAME)),
             elapsedMs = getLongOrNull(COLUMN_ELAPSED_MS),
             contextTokens = getIntOrNull(COLUMN_CONTEXT_TOKENS),
+            executionSteps = steps[id].orEmpty(),
         )
+    }
+
+    private fun writeExecutionStep(db: SQLiteDatabase, messageId: Long, step: AgentExecutionStep) {
+        val data = json.encodeToString(step)
+        if (db.update(TABLE_STEPS, ContentValues().apply { put("data_json", data) },
+                "message_id = ? AND id = ?", arrayOf(messageId.toString(), step.id)) == 0) {
+            val position = db.rawQuery("SELECT COALESCE(MAX(position), -1) + 1 FROM execution_steps WHERE message_id = ?",
+                arrayOf(messageId.toString())).use { it.moveToFirst(); it.getLong(0) }
+            db.insertOrThrow(TABLE_STEPS, null, ContentValues().apply {
+                put("message_id", messageId)
+                put("id", step.id)
+                put("position", position)
+                put("data_json", data)
+            })
+        }
+    }
+
+    private fun readExecutionSteps(db: SQLiteDatabase, messageId: Long? = null): Map<Long, List<AgentExecutionStep>> {
+        val result = LinkedHashMap<Long, MutableList<AgentExecutionStep>>()
+        db.query(TABLE_STEPS, arrayOf("message_id", "data_json"), messageId?.let { "message_id = ?" },
+            messageId?.let { arrayOf(it.toString()) }, null, null, "message_id ASC, position ASC").use { cursor ->
+            while (cursor.moveToNext()) {
+                runCatching { json.decodeFromString<AgentExecutionStep>(cursor.getString(1)) }.getOrNull()?.let { step ->
+                    result.getOrPut(cursor.getLong(0)) { ArrayList() }.add(step)
+                }
+            }
+        }
+        return result
     }
 
     private fun readJobs(db: SQLiteDatabase): List<AiAgentJobRecord> = db.queryWindowSafe(
@@ -938,7 +1013,7 @@ internal class AiConversationStore(root: File) {
     private companion object {
         const val LOG_TAG = "AiModStore"
         /** Bump when [createSchema] changes so existing files are migrated on next open. */
-        const val SCHEMA_VERSION = 6
+        const val SCHEMA_VERSION = 7
         const val DATABASE_EXTENSION = "db"
         const val LEGACY_CONVERSATIONS_FILE = "conversations.json"
         const val LEGACY_JOBS_FILE = "agent_jobs.json"
@@ -947,6 +1022,7 @@ internal class AiConversationStore(root: File) {
         const val TABLE_ATTACHMENTS = "attachments"
         const val TABLE_TOOLS = "tool_calls"
         const val TABLE_JOBS = "agent_jobs"
+        const val TABLE_STEPS = "execution_steps"
         const val COLUMN_ID = "id"
         const val COLUMN_TITLE = "title"
         const val COLUMN_REVISION = "revision"

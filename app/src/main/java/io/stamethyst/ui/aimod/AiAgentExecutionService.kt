@@ -18,6 +18,9 @@ import androidx.core.content.ContextCompat
 import io.stamethyst.LauncherActivity
 import io.stamethyst.R
 import io.stamethyst.backend.llm.AgentToolExecutionEvent
+import io.stamethyst.backend.llm.AgentExecutionStep
+import io.stamethyst.backend.llm.AgentStepKind
+import io.stamethyst.backend.llm.AgentStepStatus
 import io.stamethyst.backend.llm.DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
 import io.stamethyst.backend.llm.LlmSettingsRepository
 import io.stamethyst.backend.llm.MAX_LLM_REQUEST_TIMEOUT_SECONDS
@@ -36,6 +39,15 @@ internal fun applyToolExecutionEvent(
     event: AgentToolExecutionEvent,
     json: Json = Json { ignoreUnknownKeys = true },
 ): AiEditorMessage {
+    val step = event.startedAtMs?.let { started ->
+        AgentExecutionStep(event.id, AgentStepKind.TOOL, event.name, historyToolDetail(event.arguments),
+            started, event.elapsedMs, when {
+                event.failed -> AgentStepStatus.FAILED
+                event.result != null -> AgentStepStatus.COMPLETED
+                else -> AgentStepStatus.RUNNING
+            }, inputTokens = 0, outputTokens = 0)
+    }
+    val recorded = step?.let(message::withExecutionStep) ?: message
     if (event.result == null) {
         val orderedParts = buildList {
             addAll(message.parts)
@@ -44,7 +56,7 @@ internal fun applyToolExecutionEvent(
             }
             add(AiMessagePart(AiMessagePartKind.TOOL, toolId = event.id))
         }
-        return message.copy(
+        return recorded.copy(
             text = "",
             tools = message.tools + AiToolCall(
                 id = event.id,
@@ -59,7 +71,7 @@ internal fun applyToolExecutionEvent(
     val displayResult = runCatching {
         json.parseToJsonElement(event.result).jsonObject["content"]?.jsonPrimitive?.content
     }.getOrNull() ?: event.result
-    return message.copy(tools = message.tools.map { tool ->
+    return recorded.copy(tools = message.tools.map { tool ->
         if (tool.id == event.id) {
             tool.copy(
                 result = displayResult.take(12_000),
@@ -325,6 +337,12 @@ class AiAgentExecutionService : Service() {
                         .associate { it.toPair() } + (key to speed)
                 }
             },
+            onExecutionStep = { step ->
+                synchronized(streamLock) {
+                    flush(true)
+                    conversationStore.recordExecutionStep(job.conversationId, activeAssistantMessageId, step)
+                }
+            },
             onToolExecution = { event ->
                 checkActive()
                 synchronized(streamLock) { flush(true) }
@@ -379,7 +397,8 @@ class AiAgentExecutionService : Service() {
                             val part = AiMessagePart(AiMessagePartKind.COMPACTION,
                                 kotlinx.serialization.json.Json.encodeToString(progress), toolId = progress.id)
                             val index = message.parts.indexOfFirst { it.kind == AiMessagePartKind.COMPACTION && it.toolId == progress.id }
-                            message.copy(parts = if (index < 0) message.parts.filterNot { it.kind == AiMessagePartKind.COMPACTION_REQUEST } + part
+                            val recorded = progress.executionStep()?.let(message::withExecutionStep) ?: message
+                            recorded.copy(parts = if (index < 0) message.parts.filterNot { it.kind == AiMessagePartKind.COMPACTION_REQUEST } + part
                                 else message.parts.toMutableList().apply { set(index, part) })
                         }
                         lastCompactionFlush = now
@@ -473,9 +492,11 @@ class AiAgentExecutionService : Service() {
         job: AiAgentJobRecord,
         conversationStore: AiConversationStore,
         assistantMessageId: Long,
+        includeExecutionSteps: Boolean = false,
         transform: (AiEditorMessage) -> AiEditorMessage,
     ) {
-        conversationStore.updateMessage(job.conversationId, assistantMessageId, transform)
+        conversationStore.updateMessage(job.conversationId, assistantMessageId,
+            includeExecutionSteps = includeExecutionSteps, transform = transform)
     }
 
     private fun markFailed(
@@ -485,8 +506,8 @@ class AiAgentExecutionService : Service() {
         assistantMessageId: Long = job.assistantMessageId,
     ) {
         val conversationStore = conversationStore(job.modId)
-        updateAssistant(job, conversationStore, assistantMessageId) {
-            it.copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
+        updateAssistant(job, conversationStore, assistantMessageId, includeExecutionSteps = true) {
+            it.closeExecutionSteps(AgentStepStatus.FAILED).copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
         }
         jobStore.update(job.jobId) {
             it.copy(status = AiAgentJobStatus.FAILED, errorMessage = message)
@@ -511,7 +532,7 @@ class AiAgentExecutionService : Service() {
             val index = session.messages.indexOfFirst { it.id == currentAssistantId }
             if (index < 0) return@mutate session
             val current = session.messages[index]
-            val hasOutput = current.text.isNotBlank() || current.thinking.isNotBlank() || current.tools.isNotEmpty()
+            val hasOutput = current.text.isNotBlank() || current.thinking.isNotBlank() || current.tools.isNotEmpty() || current.executionSteps.isNotEmpty()
             val nextId = (session.messages.maxOfOrNull { it.id } ?: currentAssistantId) + 1L
             val assistantId = nextId + 1L
             nextAssistantId = assistantId
@@ -547,8 +568,8 @@ class AiAgentExecutionService : Service() {
     ) {
         val message = getString(R.string.ai_mod_editor_error_stopped)
         val conversationStore = conversationStore(job.modId)
-        updateAssistant(job, conversationStore, assistantMessageId) {
-            it.copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
+        updateAssistant(job, conversationStore, assistantMessageId, includeExecutionSteps = true) {
+            it.closeExecutionSteps(AgentStepStatus.CANCELLED).copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
         }
         jobStore.update(job.jobId) {
             it.copy(status = AiAgentJobStatus.CANCELLED, errorMessage = message)

@@ -70,6 +70,7 @@ internal class AiModAgentExecutor(
     private val onCompaction: (io.stamethyst.backend.llm.AgentCompactionProgress) -> Unit = {},
     private val receiveInbox: (Boolean) -> AiDeliveredInput? = { null },
     private val onOutputSpeed: (Double) -> Unit = {},
+    private val onExecutionStep: (io.stamethyst.backend.llm.AgentExecutionStep) -> Unit = {},
 ) {
     private val settingsRepository = io.stamethyst.backend.llm.LlmSettingsRepository(context)
     private val workspaceAccessRoot = RuntimePaths.agentModWorkspaceRoot(
@@ -183,6 +184,7 @@ internal class AiModAgentExecutor(
             onRetry = onRetry,
             onNonStreamingText = onText,
             onOutputSpeed = onOutputSpeed,
+            onExecutionStep = onExecutionStep,
             currentChatModel = { activeModel },
             currentStreamingModel = { activeStreamingModel },
             receiveInbox = { idle ->

@@ -198,6 +198,7 @@ internal data class AiEditorMessage(
     val contextTokens: Int? = null,
     val notice: Boolean = false,
     val parts: List<AiMessagePart> = emptyList(),
+    val executionSteps: List<io.stamethyst.backend.llm.AgentExecutionStep> = emptyList(),
 )
 
 @Serializable

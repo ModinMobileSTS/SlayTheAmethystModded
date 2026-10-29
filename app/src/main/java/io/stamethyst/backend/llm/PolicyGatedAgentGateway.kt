@@ -274,6 +274,8 @@ data class AgentToolExecutionEvent(
     val result: String? = null,
     val failed: Boolean = false,
     val attachments: List<AgentContextAttachment> = emptyList(),
+    val startedAtMs: Long? = null,
+    val elapsedMs: Long? = null,
 )
 
 class AgentToolRegistry(
@@ -305,10 +307,12 @@ class AgentToolRegistry(
 
     fun execute(request: ToolExecutionRequest, checkCancelled: () -> Unit = {}): AgentToolOutput {
         checkCancelled()
+        val timer = AgentStepTimer(AgentStepKind.TOOL)
         val event = AgentToolExecutionEvent(
             id = java.util.UUID.randomUUID().toString(),
             name = request.name(),
             arguments = request.arguments(),
+            startedAtMs = timer.step.startedAtMs,
         )
         notifyExecution(event, checkCancelled)
         checkCancelled()
@@ -335,7 +339,8 @@ class AgentToolRegistry(
         val failed = runCatching {
             Json.parseToJsonElement(output.text).jsonObject.containsKey("error")
         }.getOrDefault(false)
-        notifyExecution(event.copy(result = output.text, failed = failed, attachments = output.attachments), checkCancelled)
+        notifyExecution(event.copy(result = output.text, failed = failed, attachments = output.attachments,
+            elapsedMs = timer.finish().elapsedMs), checkCancelled)
         return output
     }
 
@@ -2472,6 +2477,7 @@ class PolicyGatedAgentGateway(
      * connected, and OkHttp would otherwise hand the dead connection to the retry.
      */
     private val evictConnectionPool: () -> Unit = {},
+    private val onExecutionStep: (AgentExecutionStep) -> Unit = {},
 ) {
     private val toolScheduler = AgentToolScheduler(toolRegistry, maxParallelTools, checkCancelled)
 
@@ -2623,14 +2629,15 @@ class PolicyGatedAgentGateway(
         repeat(MAX_ABORT_RETRIES + 1) { attempt ->
             val result = try {
                 checkCancelled()
-                request(active)
+                requestWithHistory(active, request)
             } catch (error: Exception) {
                 checkCancelled()
+                if (error is AgentHistoryCheckpointException) throw error
                 lastError = error
                 if (contextManager != null && isAgentContextOverflow(error)) {
                     // Context overflow gets an immediate compaction retry, not a delayed network retry.
                     active = contextManager.prepare(force = true)
-                    return observeTurn(request(active))
+                    return observeTurn(requestWithHistory(active, request))
                 }
                 if (!isRetryableAgentRequestFailure(error)) throw error
                 // A dropped socket may need tens of seconds for the radio to come back, so it earns
@@ -2641,13 +2648,69 @@ class PolicyGatedAgentGateway(
                 onRetry(attempt + 1, delaySeconds, error)
                 // A dropped socket must not be handed to the next attempt.
                 if (isConnectionAbort(error)) evictConnectionPool()
-                awaitNetworkAndBackoff(delaySeconds)
+                val wait = AgentStepTimer(AgentStepKind.RETRY, detail = error.javaClass.simpleName)
+                publishExecutionStep(wait.step)
+                try {
+                    awaitNetworkAndBackoff(delaySeconds)
+                } catch (cancelled: Exception) {
+                    publishExecutionStep(wait.finish(agentStepFailureStatus(cancelled)))
+                    throw cancelled
+                }
+                publishExecutionStep(wait.finish())
                 return@repeat
             }
             // A checkpoint failure must never retry an already successful, billable request.
             return observeTurn(result)
         }
         throw requireNotNull(lastError)
+    }
+
+    /** Keep persistence failures outside the request catch: never replay a billable request. */
+    private fun <T> requestWithHistory(messages: List<ChatMessage>, request: (List<ChatMessage>) -> T): T {
+        val timer = AgentStepTimer(AgentStepKind.MODEL)
+        publishExecutionStep(timer.step)
+        val result = try {
+            request(messages)
+        } catch (error: Exception) {
+            // An interrupt must be cleared before SQLite can persist the terminal step.
+            val status = agentStepFailureStatus(error)
+            val interrupted = Thread.interrupted()
+            try {
+                publishExecutionStep(timer.finish(status, error.javaClass.simpleName))
+            } catch (checkpoint: Exception) {
+                error.addSuppressed(checkpoint)
+            } finally {
+                if (interrupted) Thread.currentThread().interrupt()
+            }
+            throw error
+        }
+        val response = when (result) {
+            is ChatResponse -> result
+            is StreamingResult -> result.response
+            else -> null
+        }
+        val message = response?.aiMessage()
+        val detail = buildString {
+            append(message?.text().orEmpty().take(320))
+            val tools = message?.toolExecutionRequests().orEmpty()
+            if (tools.isNotEmpty()) {
+                if (isNotEmpty()) append('\n')
+                append(tools.take(8).joinToString { it.name() })
+            }
+        }
+        val usage = response?.let { AgentCacheUsage.from(it, contextManager?.state?.cacheStats?.inputExcludesCached ?: false) }
+        publishExecutionStep(timer.finish(
+            detail = detail,
+            inputTokens = usage?.input,
+            outputTokens = response?.tokenUsage()?.outputTokenCount()?.toLong(),
+        ))
+        return result
+    }
+
+    private class AgentHistoryCheckpointException(cause: Exception) : IllegalStateException("Execution history checkpoint failed", cause)
+
+    private fun publishExecutionStep(step: AgentExecutionStep) {
+        try { onExecutionStep(step) } catch (error: Exception) { throw AgentHistoryCheckpointException(error) }
     }
 
     /**
