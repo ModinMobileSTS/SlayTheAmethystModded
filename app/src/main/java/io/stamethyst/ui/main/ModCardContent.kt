@@ -167,7 +167,7 @@ internal fun ModCardBodyContent(
 }
 
 @Composable
-private fun ModCardMetadataRow(
+internal fun ModCardMetadataRow(
     version: String,
     fileSize: String?,
 ) {
@@ -223,7 +223,7 @@ private fun ModCardMetadataItem(
     }
 }
 
-private fun formatModFileSize(bytes: Long): String? {
+internal fun formatModFileSize(bytes: Long): String? {
     if (bytes <= 0L) return null
     val units = arrayOf("B", "KB", "MB", "GB")
     var value = bytes.toDouble()
@@ -240,7 +240,7 @@ private fun formatModFileSize(bytes: Long): String? {
 }
 
 @Composable
-private fun ModCardLeadingImage(mod: ModItemUi) {
+internal fun ModCardLeadingImage(mod: ModItemUi, size: androidx.compose.ui.unit.Dp = 48.dp) {
     val context = LocalContext.current
     val publishedFileId = mod.workshop?.publishedFileId
     val imagePath = mod.workshop?.localPreviewImagePath.orEmpty()
@@ -257,7 +257,7 @@ private fun ModCardLeadingImage(mod: ModItemUi) {
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .size(48.dp)
+                .size(size)
                 .clip(RoundedCornerShape(12.dp))
         )
     } else {
@@ -265,7 +265,7 @@ private fun ModCardLeadingImage(mod: ModItemUi) {
             painter = painterResource(R.drawable.ic_image_mod),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(48.dp)
+            modifier = Modifier.size(size)
         )
     }
 }
@@ -594,7 +594,12 @@ private fun NewImportBadge() {
 
 @Composable
 private fun WorkshopStateBadge(state: WorkshopModState) {
-    val text = when (state) {
+    ModCardTextBadge(text = workshopStateBadgeText(state))
+}
+
+@Composable
+internal fun workshopStateBadgeText(state: WorkshopModState): String =
+    when (state) {
         WorkshopModState.NotDownloaded -> stringResource(R.string.workshop_download_state_not_downloaded)
         WorkshopModState.ImportedUnpatched -> stringResource(R.string.main_mod_workshop_state_needs_patch)
         WorkshopModState.ImportedPatched -> stringResource(R.string.main_mod_workshop_state_workshop)
@@ -608,8 +613,6 @@ private fun WorkshopStateBadge(state: WorkshopModState) {
         WorkshopModState.UpdateAvailable -> stringResource(R.string.main_mod_workshop_state_update_available)
         WorkshopModState.FileMissing -> stringResource(R.string.main_mod_workshop_state_file_missing)
     }
-    ModCardTextBadge(text = text)
-}
 
 @Composable
 private fun PriorityLoadBadge(priority: Int) {

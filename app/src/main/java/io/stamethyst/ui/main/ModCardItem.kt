@@ -14,7 +14,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -55,7 +54,6 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -67,7 +65,6 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import io.stamethyst.R
-import io.stamethyst.ui.LauncherNavigationRequestBus
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
@@ -134,10 +131,8 @@ internal fun ModCard(
     mod: ModItemUi,
     suggestionText: String? = null,
     suggestionRead: Boolean = true,
-    isExpanded: Boolean,
     isDraggedInOverlay: Boolean,
     showModFileName: Boolean,
-    setExpanded: (Boolean) -> Unit,
     selectionEnabled: Boolean,
     fileActionsEnabled: Boolean,
     dragEnabled: Boolean,
@@ -155,14 +150,13 @@ internal fun ModCard(
     callbacks: ModCardCallbacks
 ) {
     val context = LocalContext.current
-    // Configuration changes do not invalidate LocalContext reads, so strings come from Resources.
-    val resources = LocalResources.current
     val density = LocalDensity.current
     val actionsContentDescription = stringResource(R.string.main_mod_actions)
     val showAiEditorNewBadge = AiEditorNewBadgeStore.shouldShow(context)
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
-    var showActionsDialog by remember(mod.storagePath) { mutableStateOf(false) }
+    var showDetailsDialog by remember(mod.storagePath) { mutableStateOf(false) }
+    var detailsStartAtActions by remember(mod.storagePath) { mutableStateOf(false) }
     var showPriorityDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showSuggestionDialog by remember(mod.storagePath, suggestionText) { mutableStateOf(false) }
@@ -174,6 +168,7 @@ internal fun ModCard(
     var agentPatchDetails by remember(mod.storagePath) { mutableStateOf<io.stamethyst.model.AgentPatchModUi?>(null) }
     var initialLocalActionPatchId by remember(mod.storagePath) { mutableStateOf<String?>(null) }
     var initialLocalUploadPatchId by remember(mod.storagePath) { mutableStateOf<String?>(null) }
+    var initialRemotePatchModId by remember(mod.storagePath) { mutableStateOf<String?>(null) }
     var showWorkshopUpdateConfirmDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var updateChangeNotesReloadToken by remember(mod.storagePath) { mutableStateOf(0) }
     var updateChangeNotesState by remember(mod.storagePath) {
@@ -276,7 +271,8 @@ internal fun ModCard(
             if (batchSelectionMode && batchSelectionEnabled) {
                 onBatchSelectionChange(!batchSelected)
             } else {
-                setExpanded(!isExpanded)
+                detailsStartAtActions = false
+                showDetailsDialog = true
             }
         },
         onLongClick = {
@@ -352,7 +348,7 @@ internal fun ModCard(
     ) {
         ModCardBodyContent(
             mod = mod,
-            isExpanded = isExpanded,
+            isExpanded = false,
             showModFileName = showModFileName,
             modSuggestionText = suggestionText,
             suggestionUnread = !suggestionRead,
@@ -371,6 +367,7 @@ internal fun ModCard(
             agentPatchMods = mod.agentPatchMods,
             onSetAgentPatchEnabled = { patch, enabled -> callbacks.onSetAgentPatchEnabled(mod, patch, enabled) },
             onOpenAgentPatchCatalogue = {
+                initialRemotePatchModId = null
                 showAgentPatchContributions = false
                 agentPatchDialogLocalOnly = false
                 agentPatchActionsOnly = false
@@ -380,6 +377,7 @@ internal fun ModCard(
                 showAgentPatchCatalogue = true
             },
             onOpenAgentPatchContributions = {
+                initialRemotePatchModId = null
                 showAgentPatchContributions = true
                 agentPatchDialogLocalOnly = false
                 agentPatchActionsOnly = false
@@ -429,7 +427,10 @@ internal fun ModCard(
                     contentAlignment = Alignment.Center
                 ) {
                     IconButton(
-                        onClick = { showActionsDialog = true },
+                        onClick = {
+                            detailsStartAtActions = true
+                            showDetailsDialog = true
+                        },
                         enabled = actionsEnabled && !batchSelectionMode,
                         modifier = Modifier.semantics {
                             contentDescription = actionsContentDescription
@@ -452,23 +453,7 @@ internal fun ModCard(
                         .clipToBounds(),
                     contentAlignment = Alignment.Center
                 ) {
-                    val workshopState = mod.workshop?.state
-                    val showEnableCheckbox = (mod.installed || workshopState == WorkshopModState.TexturePackInstalled) && when (workshopState) {
-                        WorkshopModState.NotDownloaded,
-                        WorkshopModState.ImportedUnpatched,
-                        WorkshopModState.Queued,
-                        WorkshopModState.Downloading,
-                        WorkshopModState.Cancelling,
-                        WorkshopModState.DownloadPaused,
-                        WorkshopModState.DownloadFailed,
-                        WorkshopModState.NonStandardDownloaded,
-                        WorkshopModState.FileMissing -> false
-                        WorkshopModState.TexturePackInstalled -> true
-                        WorkshopModState.ImportedPatched,
-                        WorkshopModState.UpdateAvailable,
-                        null -> true
-                    }
-                    if (showEnableCheckbox) {
+                    if (mod.showsEnableControl()) {
                         Checkbox(
                             checked = mod.enabled,
                             onCheckedChange = { checked ->
@@ -515,53 +500,6 @@ internal fun ModCard(
             }
         )
 
-        if (isExpanded && mod.agentPatchMods.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.main_mod_agent_patches),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
-            )
-            androidx.compose.foundation.layout.Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                mod.agentPatchMods.forEach { patch ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Card(
-                            onClick = { agentPatchDetails = patch },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = androidx.compose.material3.CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                            ),
-                        ) {
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(patch.name.ifBlank { resources.getString(R.string.main_mod_agent_patch_unnamed) }, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                                    Text(patch.version, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                                }
-                                androidx.compose.material3.Checkbox(
-                                    checked = patch.enabled,
-                                    enabled = mod.enabled && !batchSelectionMode,
-                                    onCheckedChange = { callbacks.onSetAgentPatchEnabled(mod, patch, it) },
-                                )
-                            }
-                        }
-                        androidx.compose.material3.IconButton(
-                            onClick = {
-                                initialLocalActionPatchId = patch.patchId
-                                initialLocalUploadPatchId = null
-                                agentPatchDialogLocalOnly = true
-                                agentPatchActionsOnly = true
-                                agentPatchDetails = null
-                                showAgentPatchCatalogue = true
-                            },
-                        ) { Text("⋮", style = MaterialTheme.typography.titleMedium) }
-                    }
-                }
-            }
-        }
         val workshopActionModifier = Modifier
             .fillMaxWidth()
             .padding(top = 10.dp)
@@ -604,7 +542,10 @@ internal fun ModCard(
                 }
             }
             WorkshopModState.NonStandardDownloaded -> OutlinedButton(
-                onClick = { showActionsDialog = true },
+                onClick = {
+                    detailsStartAtActions = true
+                    showDetailsDialog = true
+                },
                 enabled = !batchSelectionMode,
                 modifier = workshopActionModifier
             ) {
@@ -751,27 +692,130 @@ internal fun ModCard(
         )
     }
 
-    ModActionsDialog(
-        visible = showActionsDialog,
-        controlsEnabled = fileActionsEnabled,
-        onDismiss = { showActionsDialog = false },
-        favorite = mod.favorite,
-        deleteEnabled = actionsEnabled,
-        onFavoriteChange = { favorite -> callbacks.onSetFavorite(mod, favorite) },
-        onEditPriority = { showPriorityDialog = true },
-        showOpenWorkshopDetails = mod.workshop != null,
-        onOpenWorkshopDetails = { callbacks.onOpenWorkshopDetails(mod) },
-        showAiEditorNewBadge = showAiEditorNewBadge,
-        onOpenAiEditor = {
+    if (showDetailsDialog && !batchSelectionMode) {
+        val openAiEditor = {
+            showDetailsDialog = false
             AiEditorNewBadgeStore.markSeen(context)
             callbacks.onOpenAiEditor(mod)
-        },
-        onAssociate = { callbacks.onAssociateMod(mod) },
-        onExport = { callbacks.onExportMod(mod) },
-        onShare = { callbacks.onShareMod(mod) },
-        onRename = { showRenameDialog = true },
-        onDelete = { callbacks.onDeleteMod(mod) }
-    )
+        }
+        val openCatalogue = {
+            showAgentPatchContributions = false
+            agentPatchDialogLocalOnly = false
+            agentPatchActionsOnly = false
+            initialLocalActionPatchId = null
+            initialLocalUploadPatchId = null
+            initialRemotePatchModId = null
+            showAgentPatchCatalogue = true
+        }
+        val openWorkshop = {
+            showDetailsDialog = false
+            callbacks.onOpenWorkshopDetails(mod)
+        }
+        ModDetailsDialog(
+            mod = mod,
+            showModFileName = showModFileName,
+            selectionEnabled = selectionEnabled,
+            fileActionsEnabled = fileActionsEnabled,
+            startAtActions = detailsStartAtActions,
+            onDismiss = { showDetailsDialog = false },
+            onToggleMod = {
+                if (it != mod.enabled) LauncherHaptics.vibrateToggle(context)
+                callbacks.onToggleMod(mod, it)
+            },
+            onFavoriteChange = { callbacks.onSetFavorite(mod, it) },
+            onOpenAiEditor = openAiEditor,
+            badgesContent = { onScrollToAi ->
+                ModDetailsBadges(
+                    mod = mod,
+                    suggestionText = suggestionText,
+                    suggestionRead = suggestionRead,
+                    associationBadge = associationBadge,
+                    associationEnabled = associationBadgeEnabled,
+                    priorityEnabled = fileActionsEnabled,
+                    onSuggestion = {
+                        onSuggestionRead()
+                        showSuggestionDialog = true
+                    },
+                    onImportPatch = { showImportPatchDialog = true },
+                    onAssociation = {
+                        showDetailsDialog = false
+                        callbacks.onAssociationBadgeClick(mod)
+                    },
+                    onUpdate = {
+                        updateChangeNotesState = WorkshopUpdateChangeNotesState.Idle
+                        updateChangeNotesReloadToken++
+                        showWorkshopUpdateConfirmDialog = true
+                    },
+                    onWorkshop = openWorkshop,
+                    onPriority = { if (fileActionsEnabled) showPriorityDialog = true },
+                    onCatalogue = openCatalogue,
+                    onContributions = {
+                        openCatalogue()
+                        showAgentPatchContributions = true
+                    },
+                    onAiMods = onScrollToAi,
+                )
+            },
+            aiContent = {
+                ModDetailsAiSection(
+                    mod = mod,
+                    controlsEnabled = fileActionsEnabled,
+                    onNew = openAiEditor,
+                    onToggle = { patch, enabled -> callbacks.onSetAgentPatchEnabled(mod, patch, enabled) },
+                    onDetails = { agentPatchDetails = it },
+                    onManage = {
+                        initialLocalActionPatchId = it.patchId
+                        initialLocalUploadPatchId = null
+                        initialRemotePatchModId = null
+                        agentPatchDialogLocalOnly = true
+                        agentPatchActionsOnly = true
+                        showAgentPatchCatalogue = true
+                    },
+                    onCommunityDetails = {
+                        openCatalogue()
+                        initialRemotePatchModId = it.patchModId
+                    },
+                    onCatalogueRefreshed = callbacks.onRefreshAgentPatchMods,
+                )
+            },
+            actionsContent = {
+                ModActionsList(
+                    controlsEnabled = fileActionsEnabled,
+                    favorite = mod.favorite,
+                    deleteEnabled = actionsEnabled,
+                    onFavoriteChange = { callbacks.onSetFavorite(mod, it) },
+                    onEditPriority = { showPriorityDialog = true },
+                    showOpenWorkshopDetails = mod.workshop != null,
+                    onOpenWorkshopDetails = openWorkshop,
+                    showAiEditorNewBadge = showAiEditorNewBadge,
+                    onOpenAiEditor = openAiEditor,
+                    onAssociate = {
+                        showDetailsDialog = false
+                        callbacks.onAssociateMod(mod)
+                    },
+                    onExport = {
+                        showDetailsDialog = false
+                        callbacks.onExportMod(mod)
+                    },
+                    onShare = {
+                        showDetailsDialog = false
+                        callbacks.onShareMod(mod)
+                    },
+                    onRename = { showRenameDialog = true },
+                    onDelete = {
+                        showDetailsDialog = false
+                        callbacks.onDeleteMod(mod)
+                    },
+                    showMove = true,
+                    moveEnabled = selectionEnabled && !mod.required && mod.canUseFolderOrganization(),
+                    onMove = {
+                        showDetailsDialog = false
+                        callbacks.onMoveFolderPickerRequest(mod)
+                    },
+                )
+            },
+        )
+    }
 
     if (showAgentPatchCatalogue && !batchSelectionMode) {
         AgentPatchCatalogueDialog(
@@ -780,6 +824,7 @@ internal fun ModCard(
             workshopId = mod.workshop?.publishedFileId,
             initialLocalActionPatchId = initialLocalActionPatchId,
             initialLocalUploadPatchId = initialLocalUploadPatchId,
+            initialRemotePatchModId = initialRemotePatchModId,
             localOnly = agentPatchDialogLocalOnly,
             contributionsOnly = showAgentPatchContributions,
             actionsOnly = agentPatchActionsOnly,

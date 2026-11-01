@@ -1,0 +1,210 @@
+package io.stamethyst.ui.main
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.UiDevice
+import io.stamethyst.R
+import io.stamethyst.model.AgentPatchModUi
+import io.stamethyst.model.ModItemUi
+import io.stamethyst.model.WorkshopModState
+import io.stamethyst.model.WorkshopModUi
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class ModDetailsDialogInstrumentedTest {
+    @get:Rule val compose = createComposeRule()
+    private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+    private val mod = ModItemUi(
+        modId = "details-test", manifestModId = "details-test", storagePath = "/missing-details-test.jar",
+        name = "Details Test Mod", version = "1.4.2", fileSizeBytes = 1572864,
+        description = "A test description", dependencies = listOf("basemod"),
+        required = false, installed = true, enabled = true, explicitPriority = null, effectivePriority = 10,
+    )
+
+    private fun setCard(
+        item: ModItemUi = mod,
+        batchSelectionMode: Boolean = false,
+        controlsEnabled: Boolean = true,
+        onBatchChange: (Boolean) -> Unit = {},
+        callbacks: ModCardCallbacks = ModCardCallbacks(),
+    ) {
+        compose.setContent {
+            MaterialTheme {
+                ModCard(
+                    mod = item, suggestionText = "Usage tip", isDraggedInOverlay = false,
+                    showModFileName = false, selectionEnabled = controlsEnabled, fileActionsEnabled = controlsEnabled,
+                    dragEnabled = false, showDragHandle = false, batchSelectionMode = batchSelectionMode,
+                    batchSelectionEnabled = batchSelectionMode, onBatchSelectionChange = onBatchChange,
+                    callbacks = callbacks,
+                )
+            }
+        }
+    }
+
+    @Test fun singleTapOpensDetailsWithMetadataAndNamedBadges() {
+        setCard()
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_details_dialog").assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.mod_details_author,
+            context.getString(R.string.mod_details_unknown_author))).assertIsDisplayed()
+        compose.onNode(hasText(mod.description) and hasAnyAncestor(hasTestTag("mod_details_dialog"))).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.mod_details_badge_suggestion)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.mod_details_badge_priority, 10)).assertIsDisplayed()
+    }
+
+    @Test fun actionsShortcutScrollsToOriginalListAndMoveOpensFolderPicker() {
+        var movedTo: String? = null
+        compose.setContent {
+            MaterialTheme {
+                var pendingMove by remember { mutableStateOf(false) }
+                ModCard(
+                    mod = mod, isDraggedInOverlay = false, showModFileName = false,
+                    selectionEnabled = true, fileActionsEnabled = true, dragEnabled = false, showDragHandle = false,
+                    callbacks = ModCardCallbacks(onMoveFolderPickerRequest = { pendingMove = true }),
+                )
+                MoveModToFolderDialog(
+                    visible = pendingMove, modName = mod.name,
+                    targets = listOf(ModFolderMoveTarget("current", "Current folder", true),
+                        ModFolderMoveTarget("other", "Other folder", false)),
+                    controlsEnabled = true, onDismiss = { pendingMove = false },
+                    onSelectTarget = { movedTo = it; pendingMove = false },
+                )
+            }
+        }
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_details_tab_actions").performClick()
+        compose.onNodeWithText(context.getString(R.string.main_mod_actions_group_management)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.mod_details_move)).performScrollTo().performClick()
+        compose.onNodeWithTag("mod_details_dialog").assertDoesNotExist()
+        compose.onNodeWithText("Other folder").performClick()
+        compose.runOnIdle { assertEquals("other", movedTo) }
+    }
+
+    @Test fun aiSwitchUsesExistingCallbackAndManagementRemainsAvailable() {
+        val patch = AgentPatchModUi("patch-id", "patch-mod-id", "Test AI Mod", "1.0", "AI description", false)
+        var toggled = false
+        setCard(item = mod.copy(agentPatchMods = listOf(patch)),
+            callbacks = ModCardCallbacks(onSetAgentPatchEnabled = { parent, selected, enabled ->
+                assertEquals(mod.modId, parent.modId)
+                assertEquals(patch.patchId, selected.patchId)
+                toggled = enabled
+            }))
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.mod_details_toggle, patch.name))
+            .performScrollTo().performClick()
+        compose.runOnIdle { assertTrue(toggled) }
+        compose.onNodeWithContentDescription(context.getString(R.string.mod_details_ai_manage_description, patch.name))
+            .performScrollTo().performClick()
+        compose.onNodeWithText(context.getString(R.string.main_mod_agent_patch_action_title)).assertIsDisplayed()
+    }
+
+    @Test fun disabledActionsCannotMoveOrToggle() {
+        setCard(controlsEnabled = false)
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.mod_details_toggle, mod.name)).assertIsNotEnabled()
+        compose.onNodeWithTag("mod_details_tab_actions").performClick()
+        compose.onNodeWithText(context.getString(R.string.mod_details_move)).performScrollTo().assertIsNotEnabled()
+    }
+
+    @Test fun batchSelectionTapDoesNotOpenDetails() {
+        var selected = false
+        setCard(batchSelectionMode = true, onBatchChange = { selected = it })
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_details_dialog").assertDoesNotExist()
+        compose.runOnIdle { assertTrue(selected) }
+    }
+
+    @Test fun backDismissesDetailsWithoutACloseButton() {
+        setCard()
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_details_dialog").assertIsDisplayed()
+        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
+        compose.onNodeWithTag("mod_details_dialog").assertDoesNotExist()
+    }
+
+    @Test fun secondaryTabsShowEverySectionAndNavigateWithoutHidingContent() {
+        setCard()
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_details_tab_info").assertIsSelected()
+        ModDetailsSection.entries.forEach { section ->
+            compose.onNodeWithTag("mod_details_tab_${section.key}").assertIsDisplayed()
+            compose.onNodeWithTag("mod_details_section_${section.key}").assertExists()
+            if (section != ModDetailsSection.INFO) {
+                compose.onNodeWithTag("mod_details_divider_${section.key}").assertExists()
+            }
+        }
+        listOf(ModDetailsSection.DESCRIPTION, ModDetailsSection.BADGES, ModDetailsSection.AI,
+            ModDetailsSection.ACTIONS, ModDetailsSection.INFO).forEach { section ->
+            compose.onNodeWithTag("mod_details_tab_${section.key}").performClick().assertIsSelected()
+            ModDetailsSection.entries.forEach {
+                compose.onNodeWithTag("mod_details_section_${it.key}").assertExists()
+            }
+        }
+    }
+
+    @Test fun manualScrollingUpdatesSelectedTab() {
+        setCard()
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_details_scroll").performSemanticsAction(SemanticsActions.ScrollBy) {
+            it(0f, 100_000f)
+        }
+        compose.onNodeWithTag("mod_details_tab_actions").assertIsSelected()
+        compose.onNodeWithTag("mod_details_scroll").performSemanticsAction(SemanticsActions.ScrollBy) {
+            it(0f, -100_000f)
+        }
+        compose.onNodeWithTag("mod_details_tab_info").assertIsSelected()
+    }
+
+    @Test fun installSummaryBelowDependenciesIsHidden() {
+        val summary = "Installed ${mod.name}"
+        setCard(item = mod.copy(workshop = WorkshopModUi(
+            appId = 646570u, publishedFileId = 1uL, state = WorkshopModState.ImportedPatched,
+            statusText = summary,
+        )))
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_details_tab_description").performClick()
+        compose.onNodeWithText(summary).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.main_mod_dependencies_format, "basemod")).assertIsDisplayed()
+    }
+
+    @Test fun cardActionsShortcutStartsAtActionsTab() {
+        setCard()
+        compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions)).performClick()
+        compose.onNodeWithTag("mod_details_tab_actions").assertIsSelected()
+        compose.onNodeWithText(context.getString(R.string.main_mod_actions_group_management)).assertIsDisplayed()
+    }
+
+    @Test fun tabsUseUpdatedPositionsAfterExpandingDescription() {
+        setCard(item = mod.copy(description = List(40) { "A long mod description." }.joinToString(" ")))
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_details_tab_description").performClick()
+        compose.onNodeWithText(context.getString(R.string.mod_details_expand)).performScrollTo().performClick()
+        compose.onNodeWithTag("mod_details_tab_actions").performClick().assertIsSelected()
+        compose.onNodeWithText(context.getString(R.string.main_mod_actions_group_management)).assertIsDisplayed()
+        compose.onNodeWithTag("mod_details_tab_badges").performClick().assertIsSelected()
+        compose.onNodeWithText(context.getString(R.string.mod_details_badge_suggestion)).assertIsDisplayed()
+    }
+}

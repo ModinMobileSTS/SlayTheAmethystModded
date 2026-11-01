@@ -1109,9 +1109,6 @@ internal fun ModFolderSection(
                             val suggestionReadKey = suggestionInfo?.readKey
                             val latestMod = rememberUpdatedState(mod)
                             val latestSuggestionText = rememberUpdatedState(suggestionText)
-                            val setCardExpanded: (Boolean) -> Unit = remember(mod.storagePath) {
-                                { expanded -> interactionState.expandedCards[mod.storagePath] = expanded }
-                            }
                             val onBatchSelectionChange: (Boolean) -> Unit = remember(mod.storagePath) {
                                 { selected ->
                                     val currentSelection = latestSelectedBatchStoragePaths.value
@@ -1207,10 +1204,8 @@ internal fun ModFolderSection(
                                     suggestionText = suggestionText,
                                     suggestionRead = suggestionReadKey == null ||
                                         uiState.readModSuggestionKeys.contains(suggestionReadKey),
-                                    isExpanded = interactionState.expandedCards[mod.storagePath] == true,
                                     isDraggedInOverlay = activeModDragSession?.mod?.storagePath == mod.storagePath,
                                     showModFileName = showModFileName,
-                                    setExpanded = setCardExpanded,
                                     selectionEnabled = organizationControlsEnabled && mod.canUseFolderSelection(),
                                     fileActionsEnabled = modFileActionsEnabled && mod.installed,
                                     dragEnabled = folderModItem != null && mod.canUseFolderSelection(),
@@ -1434,9 +1429,6 @@ private fun DependencyFolderListItem(
                         val suggestionReadKey = suggestionInfo?.readKey
                         val latestMod = rememberUpdatedState(mod)
                         val latestSuggestionText = rememberUpdatedState(suggestionText)
-                        val setCardExpanded: (Boolean) -> Unit = remember(mod.storagePath) {
-                            { expanded -> interactionState.expandedCards[mod.storagePath] = expanded }
-                        }
                         val onSuggestionRead: () -> Unit = remember(mod.storagePath) {
                             {
                                 val currentSuggestionText = latestSuggestionText.value
@@ -1453,10 +1445,8 @@ private fun DependencyFolderListItem(
                             suggestionText = suggestionText,
                             suggestionRead = suggestionReadKey == null ||
                                 readModSuggestionKeys.contains(suggestionReadKey),
-                            isExpanded = interactionState.expandedCards[mod.storagePath] == true,
                             isDraggedInOverlay = false,
                             showModFileName = showModFileName,
-                            setExpanded = setCardExpanded,
                             selectionEnabled = false,
                             fileActionsEnabled = false,
                             dragEnabled = false,

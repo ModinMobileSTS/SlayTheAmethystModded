@@ -7,7 +7,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -115,117 +114,22 @@ internal fun ModActionsDialog(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    ModActionDialogSection(title = stringResource(R.string.main_mod_actions_group_management)) {
-                        ModActionOptionItem(
-                            text = stringResource(
-                                if (favorite) R.string.main_mod_favorite_remove else R.string.main_mod_favorite_add
-                            ),
-                            description = stringResource(
-                                if (favorite) R.string.main_mod_action_desc_favorite_remove
-                                else R.string.main_mod_action_desc_favorite_add
-                            ),
-                            icon = R.drawable.ic_favorite_heart,
-                            enabled = controlsEnabled,
-                            onClick = {
-                                onDismiss()
-                                onFavoriteChange(!favorite)
-                            }
-                        )
-                        ModActionOptionItem(
-                            text = stringResource(R.string.main_mod_priority_adjust),
-                            description = stringResource(R.string.main_mod_action_desc_priority),
-                            icon = R.drawable.ic_speed,
-                            enabled = controlsEnabled,
-                            onClick = {
-                                onDismiss()
-                                onEditPriority()
-                            }
-                        )
-                        ModActionOptionItem(
-                            text = stringResource(R.string.main_mod_associate),
-                            description = stringResource(R.string.main_mod_action_desc_associate),
-                            icon = R.drawable.ic_link,
-                            enabled = controlsEnabled,
-                            onClick = {
-                                onDismiss()
-                                onAssociate()
-                            }
-                        )
-                        if (showOpenWorkshopDetails) {
-                            ModActionOptionItem(
-                                text = stringResource(R.string.main_mod_open_market_page),
-                                description = stringResource(R.string.main_mod_action_desc_market),
-                                icon = R.drawable.ic_settings_market,
-                                enabled = true,
-                                onClick = {
-                                    onDismiss()
-                                    onOpenWorkshopDetails()
-                                }
-                            )
-                        }
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-
-                    ModActionDialogSection(title = stringResource(R.string.main_mod_actions_group_tools)) {
-                        ModActionOptionItem(
-                            text = stringResource(R.string.main_mod_ai_edit),
-                            description = stringResource(R.string.main_mod_action_desc_ai_edit),
-                            icon = R.drawable.ic_code,
-                            badge = if (showAiEditorNewBadge) stringResource(R.string.main_mod_ai_edit_new_badge) else null,
-                            enabled = controlsEnabled,
-                            onClick = {
-                                onDismiss()
-                                onOpenAiEditor()
-                            }
-                        )
-                        ModActionOptionItem(
-                            text = stringResource(R.string.main_mod_export),
-                            description = stringResource(R.string.main_mod_action_desc_export),
-                            icon = R.drawable.ic_workshop_download,
-                            enabled = controlsEnabled,
-                            onClick = {
-                                onDismiss()
-                                onExport()
-                            }
-                        )
-                        ModActionOptionItem(
-                            text = stringResource(R.string.main_mod_share),
-                            description = stringResource(R.string.main_mod_action_desc_share),
-                            icon = R.drawable.ic_lan_room_share,
-                            enabled = controlsEnabled,
-                            onClick = {
-                                onDismiss()
-                                onShare()
-                            }
-                        )
-                        ModActionOptionItem(
-                            text = stringResource(R.string.main_mod_rename),
-                            description = stringResource(R.string.main_mod_action_desc_rename),
-                            icon = R.drawable.ic_edit,
-                            enabled = controlsEnabled,
-                            onClick = {
-                                onDismiss()
-                                onRename()
-                            }
-                        )
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-
-                    ModActionDialogSection(title = stringResource(R.string.main_mod_actions_group_remove)) {
-                        ModActionOptionItem(
-                            text = stringResource(R.string.main_mod_delete),
-                            description = stringResource(R.string.main_mod_action_desc_delete),
-                            icon = R.drawable.ic_delete,
-                            enabled = deleteEnabled,
-                            danger = true,
-                            onClick = {
-                                onDismiss()
-                                onDelete()
-                            }
-                        )
-                    }
+                    ModActionsList(
+                        controlsEnabled = controlsEnabled,
+                        favorite = favorite,
+                        deleteEnabled = deleteEnabled,
+                        onFavoriteChange = { onDismiss(); onFavoriteChange(it) },
+                        onEditPriority = { onDismiss(); onEditPriority() },
+                        showOpenWorkshopDetails = showOpenWorkshopDetails,
+                        onOpenWorkshopDetails = { onDismiss(); onOpenWorkshopDetails() },
+                        showAiEditorNewBadge = showAiEditorNewBadge,
+                        onOpenAiEditor = { onDismiss(); onOpenAiEditor() },
+                        onAssociate = { onDismiss(); onAssociate() },
+                        onExport = { onDismiss(); onExport() },
+                        onShare = { onDismiss(); onShare() },
+                        onRename = { onDismiss(); onRename() },
+                        onDelete = { onDismiss(); onDelete() },
+                    )
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -237,26 +141,6 @@ internal fun ModActionsDialog(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ModActionDialogSection(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 12.dp, bottom = 2.dp)
-        )
-        content()
     }
 }
 
