@@ -20,6 +20,11 @@ public class StsApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        // The isolated Godot process must not pre-load launcher/JRE native libraries or WebView.
+        if (String.valueOf(AppProcess.currentProcessName(this)).endsWith(":minigame")) {
+            LauncherCrashReporter.install(getApplicationContext());
+            return;
+        }
         WebViewDataDirectory.configure(getApplicationContext());
         LauncherCrashReporter.install(getApplicationContext());
         LauncherCrashReporter.recordLatestLauncherProcessExitIfNeeded(getApplicationContext());

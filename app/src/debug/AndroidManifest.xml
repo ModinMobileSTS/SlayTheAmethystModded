@@ -13,5 +13,8 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true" />
 
+        <activity android:name="io.stamethyst.godot.GodotPrototypeSetupActivity"
+            android:exported="true" android:label="Godot 双包原型"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
 </manifest>

@@ -414,6 +414,7 @@ internal class GameSessionCoordinator(
     }
 
     private fun resolveRuntimeVisible(): Boolean {
+        if (godotMinigameVisible && !activityStopped && !userLeaveHintReceived) return true
         if (userLeaveHintReceived) {
             return false
         }
@@ -422,6 +423,23 @@ internal class GameSessionCoordinator(
             activityResumed = activityResumed,
             inMultiWindowMode = isActivityInMultiWindowMode()
         )
+    }
+
+    private var godotMinigameVisible = false
+
+    /** Only a session-scoped debug Binder can keep the still-visible loading Surface active. */
+    fun onGodotMinigameVisibilityChanged(visible: Boolean) {
+        if (destroyed) return
+        godotMinigameVisible = visible
+        if (visible && !activityStopped) {
+            syncRuntimeForegroundState(true)
+            applyForegroundWindowState()
+            setRuntimeAudioMuted(true)
+            tryStartJvmWhenSurfaceReady()
+        } else if (!activityResumed) {
+            syncRuntimeForegroundState(false)
+            applyBackgroundWindowState()
+        }
     }
 
     private fun isActivityInMultiWindowMode(): Boolean {
@@ -1483,7 +1501,7 @@ internal class GameSessionCoordinator(
         return !destroyed && foregroundAudioPolicy.shouldRestoreForegroundAudio(
             runtimeLifecycleReady = jvmLaunchController.runtimeLifecycleReady,
             backExitRequested = backExitRequested,
-            runtimeAudioSuppressed = bootOverlayController.shouldPauseRuntimeUntilEntry
+            runtimeAudioSuppressed = godotMinigameVisible || bootOverlayController.shouldPauseRuntimeUntilEntry
         )
     }
 

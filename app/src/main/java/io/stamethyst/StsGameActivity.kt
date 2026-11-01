@@ -148,7 +148,13 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     private var gyroscopeForwardFailureLogged = false
     private var gyroscopeFirstForwardLogged = false
     private var swappyFramePacingInitialized = false
-    private var slingBreakBootActive = false
+
+    fun setGodotMinigameVisible(visible: Boolean) {
+        if (!::sessionCoordinator.isInitialized) return
+        sessionCoordinator.onGodotMinigameVisibilityChanged(visible)
+        renderSurfaceManager.onForegroundChanged(visible || activityForeground)
+        android.util.Log.i("GodotPrototype", "main_surface_visible=$visible")
+    }
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -166,7 +172,6 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         val startupBackground = StartupWindowBackground.gameColor(this)
         StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
-        slingBreakBootActive = LauncherConfig.readBootOverlayStyle(this) == BootOverlayStyle.SLING_BREAK
         StartupTraceEvents.append(
             this,
             "game_activity_on_create",
@@ -666,20 +671,9 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         renderSurfaceManager.renderView.requestFocus()
     }
 
-    internal fun finishSlingBreakBoot() {
-        if (!slingBreakBootActive) {
-            return
-        }
-        slingBreakBootActive = false
-        applyGameActivityOrientation()
-    }
-
     private fun applyGameActivityOrientation() {
-        if (slingBreakBootActive) {
-            GameOrientationPolicy.applyBootOverlayOrientation(this, isInMultiWindowMode)
-        } else {
-            GameOrientationPolicy.apply(this, isInMultiWindowMode)
-        }
+        // Godot owns portrait in :minigame; the main Surface always prepares in game orientation.
+        GameOrientationPolicy.apply(this, isInMultiWindowMode)
     }
 
     fun setBootOverlayKeepScreenOn(enabled: Boolean) {

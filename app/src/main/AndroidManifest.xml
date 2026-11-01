@@ -181,6 +181,13 @@
             android:exported="false"
             android:theme="@style/Theme.SlayTheAmethyst.Dialog" />
 
+        <activity android:name="io.stamethyst.godot.GodotMinigameActivity"
+            android:exported="false" android:process=":minigame"
+            android:enableOnBackInvokedCallback="false"
+            android:screenOrientation="portrait" android:hardwareAccelerated="true"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|uiMode|density"
+            android:theme="@style/GodotPrototypeWindow" />
+
         <activity
             android:name="io.stamethyst.LauncherActivity"
             android:exported="true"

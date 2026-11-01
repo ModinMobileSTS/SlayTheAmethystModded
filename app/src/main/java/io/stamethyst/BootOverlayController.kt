@@ -5,7 +5,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
-import android.view.ViewStub
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -67,7 +66,6 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
-import io.stamethyst.backend.diag.WebViewDiagnosticsLogStore
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.ui.loading.BootLoadingAnimation
@@ -221,11 +219,7 @@ class BootOverlayController(
     }
 
     private var bootOverlay: ComposeView? = null
-    private var slingBreakBootOverlay: View? = null
-    private var slingBreakBootGame: SlingBreakWebViewHost? = null
-    private var slingBreakLauncherPageReady = false
-    private var slingBreakPageReadyTimeoutScheduled = false
-    private var usesSlingBreakBootOverlay = false
+    private var godotSession: GodotBootSession? = null
     private var bootOverlayProgress = 0
     private var bootOverlayMessage = ""
     private var bootOverlayShownAtMs = -1L
@@ -284,84 +278,20 @@ class BootOverlayController(
     val isDismissed: Boolean get() = bootOverlayDismissed
 
     val shouldPauseRuntimeUntilEntry: Boolean
-        get() = usesSlingBreakBootOverlay && manualEnterGameReady && !bootOverlayDismissed
+        get() = godotSession != null && manualEnterGameReady && !bootOverlayDismissed
 
     private val requiresManualDismiss: Boolean
-        get() = usesSlingBreakBootOverlay || manualDismissBootOverlay
+        get() = godotSession != null || manualDismissBootOverlay
 
     fun init() {
         bootOverlay = activity.findViewById(R.id.bootOverlay)
-        val wantsSlingBreakOverlay =
-            LauncherConfig.readBootOverlayStyle(activity) == BootOverlayStyle.SLING_BREAK
-        if (wantsSlingBreakOverlay) {
-            // The Sling Break overlay is the only WebView hosted by the :game process, so its
-            // stub is inflated on demand. Inflating it eagerly would create a WebView in :game
-            // on every launch (whatever the overlay style) and kill the process whenever the
-            // default process already owns the shared WebView data directory.
-            val stub = activity.findViewById<ViewStub>(R.id.slingBreakBootOverlayStub)
-            runCatching { stub?.inflate() }
-        }
-        slingBreakBootOverlay = activity.findViewById(R.id.slingBreakBootOverlay)
-        val slingBreakBootGameContainer = activity.findViewById<android.widget.FrameLayout>(R.id.slingBreakBootGame)
-        usesSlingBreakBootOverlay = wantsSlingBreakOverlay &&
-            slingBreakBootOverlay != null && slingBreakBootGameContainer != null
-        if (bootOverlay == null && !usesSlingBreakBootOverlay) {
+        godotSession = GodotBootSession.create(activity, Runnable { dismiss() })
+        // No WebView fallback: missing/corrupt dependencies leave the normal native loading UI.
+        if (bootOverlay == null) {
             activity.setBootOverlayKeepScreenOn(false)
             return
         }
-        if (usesSlingBreakBootOverlay) {
-            bootOverlay?.visibility = View.GONE
-            slingBreakBootGame =
-                SlingBreakWebViewHost.create(activity).also { host ->
-                slingBreakBootGameContainer?.addView(
-                    host.view,
-                    android.widget.FrameLayout.LayoutParams(
-                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
-                    )
-                )
-                host.addJavascriptInterface(object {
-                    @android.webkit.JavascriptInterface
-                    fun onPageReady() {
-                        WebViewDiagnosticsLogStore.append(activity, "bridge_page_ready", "launcher=1")
-                        activity.runOnUiThread {
-                            slingBreakLauncherPageReady = true
-                            slingBreakPageReadyTimeoutScheduled = false
-                            pushSlingBreakProgress()
-                            if (manualEnterGameReady) {
-                                slingBreakBootGame?.evaluateJavascript(
-                                    "window.SlingBreakLauncher?.setReady?.()",
-                                    null
-                                )
-                            }
-                        }
-                    }
-
-                    @android.webkit.JavascriptInterface
-                    fun enterGame() {
-                        WebViewDiagnosticsLogStore.append(activity, "bridge_enter_game", "launcher=1")
-                        activity.runOnUiThread {
-                            if (manualEnterGameReady) {
-                                dismiss()
-                            }
-                        }
-                    }
-
-                    @android.webkit.JavascriptInterface
-                    fun scriptError(detail: String?) {
-                        WebViewDiagnosticsLogStore.append(
-                            activity,
-                            "bridge_script_error",
-                            "launcher=1 detail=${detail.orEmpty().take(MAX_STATUS_LINE_LENGTH)}"
-                        )
-                    }
-                }, "AndroidSlingBreakLauncher")
-                host.loadUrl(slingBreakGameUrl(activity, launcherMode = true))
-                scheduleSlingBreakPageReadyTimeout()
-            }
-            slingBreakBootOverlay?.visibility = View.VISIBLE
-        } else {
-            slingBreakBootOverlay?.visibility = View.GONE
+        run {
             bootOverlay?.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             val themeMode = LauncherConfig.readThemeMode(activity)
             val themeColor = LauncherConfig.readThemeColor(activity)
@@ -437,42 +367,22 @@ class BootOverlayController(
     }
 
     fun onDestroy() {
+        godotSession?.close()
+        godotSession = null
         stopJvmLogPolling()
         surfaceViewLateDismissScheduled = false
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
         bootOverlay?.disposeComposition()
         bootOverlay = null
-        slingBreakBootGame?.let {
-            it.closeAudio()
-            it.destroy()
-        }
-        slingBreakBootGame = null
-        slingBreakLauncherPageReady = false
-        slingBreakPageReadyTimeoutScheduled = false
-        slingBreakBootOverlay = null
         earlyOverlayDismissOnNextFrame = false
         earlyOverlayDismissRequestFrameTimestampNs = 0L
         textureViewDismissGate.reset()
         activity.setBootOverlayKeepScreenOn(false)
     }
 
-    fun onActivityResumed() {
-        if (usesSlingBreakBootOverlay && !bootOverlayDismissed) {
-            slingBreakBootGame?.let {
-                it.setActive(true)
-                it.onResume()
-            }
-        }
-    }
+    fun onActivityResumed() = Unit // Godot owns its isolated Activity lifecycle.
 
-    fun onActivityPaused() {
-        if (usesSlingBreakBootOverlay && !bootOverlayDismissed) {
-            slingBreakBootGame?.let {
-                it.setActive(false)
-                it.onPause()
-            }
-        }
-    }
+    fun onActivityPaused() = Unit
 
     fun updateProgress(percent: Int, message: String?) {
         val bounded = percent.coerceIn(0, 100)
@@ -485,11 +395,8 @@ class BootOverlayController(
         bootOverlayMessage = normalizedMessage
 
         activity.runOnUiThread {
-            if (bootOverlayDismissed || (!usesSlingBreakBootOverlay && bootOverlay == null)) return@runOnUiThread
-            if (usesSlingBreakBootOverlay) {
-                pushSlingBreakProgress()
-                return@runOnUiThread
-            }
+            godotSession?.publish(bootOverlayProgress, bootOverlayMessage, manualEnterGameReady)
+            if (bootOverlayDismissed || bootOverlay == null) return@runOnUiThread
             val nextStatus = if (normalizedMessage.isNotEmpty()) {
                 normalizedMessage
             } else {
@@ -528,7 +435,7 @@ class BootOverlayController(
     }
 
     fun signalSplashPhase(_message: String?) {
-        if (bootOverlayDismissed || (!usesSlingBreakBootOverlay && bootOverlay == null)) return
+        if (bootOverlayDismissed || bootOverlay == null) return
 
         val phaseMessage = text(R.string.boot_overlay_stage_starting_game_entry)
         updateProgress(
@@ -559,9 +466,11 @@ class BootOverlayController(
     }
 
     fun dismiss() {
-        if (bootOverlayDismissed || (!usesSlingBreakBootOverlay && bootOverlay == null)) return
+        if (bootOverlayDismissed || bootOverlay == null) return
 
         bootOverlayDismissed = true
+        godotSession?.close()
+        godotSession = null
         stopJvmLogPolling()
         surfaceViewLateDismissScheduled = false
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
@@ -569,33 +478,7 @@ class BootOverlayController(
         earlyOverlayDismissRequestFrameTimestampNs = 0L
         textureViewDismissGate.reset()
 
-        if (usesSlingBreakBootOverlay) {
-            slingBreakBootGame?.let { host ->
-                cleanupSlingBreakHost(
-                    stopLoading = host::stopLoading,
-                    pause = host::onPause,
-                    clearPage = { host.loadUrl("about:blank") },
-                    closeAudio = host::closeAudio,
-                    destroy = host::destroy,
-                    onFailure = { step, error ->
-                        WebViewDiagnosticsLogStore.append(
-                            activity,
-                            "overlay_cleanup_error",
-                            "engine=${host.engine} step=$step ${error.javaClass.simpleName}: ${error.message}",
-                        )
-                        Log.w(LOGCAT_TAG, "Sling Break overlay cleanup failed: $step", error)
-                    },
-                )
-            }
-            slingBreakBootGame = null
-            slingBreakLauncherPageReady = false
-            slingBreakPageReadyTimeoutScheduled = false
-            slingBreakBootOverlay?.visibility = View.GONE
-            slingBreakBootOverlay = null
-            activity.finishSlingBreakBoot()
-        } else {
-            bootOverlay?.visibility = View.GONE
-        }
+        bootOverlay?.visibility = View.GONE
         activity.setBootOverlayKeepScreenOn(false)
         Log.i(
             LOGCAT_TAG,
@@ -645,54 +528,15 @@ class BootOverlayController(
             return
         }
         manualEnterGameReady = true
-        if (usesSlingBreakBootOverlay) {
+        if (godotSession != null) {
             onRuntimePauseRequested()
         }
         activity.runOnUiThread {
-            if (bootOverlayDismissed || (!usesSlingBreakBootOverlay && bootOverlay == null)) return@runOnUiThread
-            if (usesSlingBreakBootOverlay) {
-                if (slingBreakLauncherPageReady) {
-                    slingBreakBootGame?.evaluateJavascript(
-                        "window.SlingBreakLauncher?.setReady?.()",
-                        null
-                    )
-                }
-                return@runOnUiThread
-            }
+            godotSession?.publish(bootOverlayProgress, bootOverlayMessage, true)
+            if (bootOverlayDismissed || bootOverlay == null) return@runOnUiThread
             if (overlayUiState.enterGameReady) return@runOnUiThread
             overlayUiState = overlayUiState.copy(enterGameReady = true)
         }
-    }
-
-    private fun pushSlingBreakProgress() {
-        if (!usesSlingBreakBootOverlay || !slingBreakLauncherPageReady) return
-        val progress = bootOverlayProgress
-        val escapedMessage = org.json.JSONObject.quote(bootOverlayMessage)
-        slingBreakBootGame?.evaluateJavascript(
-            "(() => { const fn = window.SlingBreakLauncher?.setProgress; " +
-                "if (!fn) return 'missing'; fn($progress, $escapedMessage); return 'ok'; })()"
-        ) { result ->
-            WebViewDiagnosticsLogStore.append(
-                activity,
-                "progress_push",
-                "percent=$progress result=$result"
-            )
-        }
-    }
-
-    private fun scheduleSlingBreakPageReadyTimeout() {
-        if (slingBreakPageReadyTimeoutScheduled) return
-        slingBreakPageReadyTimeoutScheduled = true
-        Handler(Looper.getMainLooper()).postDelayed({
-            slingBreakPageReadyTimeoutScheduled = false
-            if (usesSlingBreakBootOverlay && !slingBreakLauncherPageReady && !bootOverlayDismissed) {
-                WebViewDiagnosticsLogStore.append(
-                    activity,
-                    "bridge_page_ready_timeout",
-                    "launcher=1 progress=$bootOverlayProgress"
-                )
-            }
-        }, 5_000L)
     }
 
     private fun isOutOfMemoryFailure(detail: String?): Boolean {
