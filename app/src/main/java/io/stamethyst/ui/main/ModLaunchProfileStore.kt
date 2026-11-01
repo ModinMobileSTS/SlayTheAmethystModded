@@ -2,6 +2,7 @@ package io.stamethyst.ui.main
 
 import android.app.Activity
 import android.content.SharedPreferences
+import io.stamethyst.backend.mods.rebindReplacedModSelection
 import java.util.LinkedHashSet
 import java.util.UUID
 import org.json.JSONArray
@@ -119,9 +120,15 @@ internal class ModLaunchProfileStore {
         return State(profiles = profiles, activeProfileId = activeProfileId)
     }
 
-    fun sanitizeSelections(host: Activity, state: State, installedKeys: Set<String>): State {
+    fun sanitizeSelections(
+        host: Activity,
+        state: State,
+        installedKeys: Set<String>,
+        replacements: Map<String, String> = emptyMap(),
+    ): State {
         val profiles = state.profiles.map { profile ->
-            profile.copy(enabledModKeys = profile.enabledModKeys.filterTo(LinkedHashSet()) { installedKeys.contains(it) })
+            profile.copy(enabledModKeys = rebindReplacedModSelection(profile.enabledModKeys, installedKeys, replacements)
+                .filterTo(LinkedHashSet()) { installedKeys.contains(it) })
         }
         persist(host, profiles, state.activeProfileId)
         return State(profiles = profiles, activeProfileId = state.activeProfileId)

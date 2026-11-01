@@ -35,6 +35,8 @@ import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.backend.mods.ModSelectionReplacementStore
+import io.stamethyst.backend.mods.rebindReplacedModSelection
 import io.stamethyst.model.ModImportPatchUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.model.WorkshopModUi
@@ -197,6 +199,11 @@ internal class MainModManagementController(
             initializePendingSelection(optionalMods)
             pendingSelectionInitialized = true
         }
+        val selectionReplacements = ModSelectionReplacementStore(host).load()
+        val installedKeys = optionalMods.mapNotNull(::resolveStoredOptionalModId).toSet()
+        val reboundSelection = rebindReplacedModSelection(pendingEnabledOptionalModIds, installedKeys, selectionReplacements)
+        pendingEnabledOptionalModIds.clear()
+        pendingEnabledOptionalModIds.addAll(reboundSelection)
         optionalModsSnapshot.clear()
         optionalModsSnapshot.addAll(
             (optionalMods + workshopCards).map { mod ->
@@ -209,7 +216,7 @@ internal class MainModManagementController(
         markOptionalModsWithPendingSelectionDirty()
         prunePendingSelectionToInstalled()
         profileState = profileStore.load(host, pendingEnabledOptionalModIds)
-        profileState = profileStore.sanitizeSelections(host, profileState, collectInstalledOptionalModKeys())
+        profileState = profileStore.sanitizeSelections(host, profileState, collectInstalledOptionalModKeys(), selectionReplacements)
         MainFolderAssignmentHandoffStore.consumePendingAssignments(host, folderStateStore)
         sanitizeFolderAssignments(folderOrganizableMods)
         associationStore.sanitize(host, optionalMods)

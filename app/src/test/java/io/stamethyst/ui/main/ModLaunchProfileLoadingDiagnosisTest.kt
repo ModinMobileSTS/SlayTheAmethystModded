@@ -30,6 +30,32 @@ import org.json.JSONObject
 /** Characterization tests: exercise production refresh, not a simulated loading pipeline. */
 class ModLaunchProfileLoadingDiagnosisTest {
     @Test
+    fun updateRetainsEnabledStateInRunningControllerAndSavedProfiles() = withFixture { host, controller ->
+        seedMods(host, 2)
+        val library = RuntimePaths.optionalModsLibraryDir(host)
+        val oldJar = File(library, "Diagnosis000.jar")
+        val disabledJar = File(library, "Diagnosis001.jar")
+        ModManager.replaceEnabledOptionalModIds(host, listOf(oldJar.absolutePath))
+        host.getSharedPreferences("ModLaunchProfiles", Context.MODE_PRIVATE).edit()
+            .putString("profiles", """[{"id":"default","name":"Default","enabledModKeys":["${oldJar.absolutePath}"]},{"id":"saved","name":"Saved","enabledModKeys":["${oldJar.absolutePath}"]}]""")
+            .apply()
+        controller.refresh(host, storageAccessible = true)
+        assertTrue(controller.snapshot().optionalMods.single { it.storagePath == oldJar.absolutePath }.enabled)
+        val updatedJar = File(library, "Diagnosis000_1.jar")
+        oldJar.copyTo(updatedJar)
+        ModManager.removeExistingOptionalModsForImport(host, "diagnosis_0", "diagnosis_0", updatedJar.absolutePath)
+
+        controller.refresh(host, storageAccessible = true)
+
+        val snapshot = controller.snapshot()
+        assertTrue(snapshot.optionalMods.single { it.storagePath == updatedJar.absolutePath }.enabled)
+        assertFalse(snapshot.optionalMods.single { it.storagePath == disabledJar.absolutePath }.enabled)
+        assertTrue(snapshot.modLaunchProfiles.all { it.enabledModKeys == setOf(updatedJar.absolutePath) })
+        controller.applyPendingSelection(host)
+        assertEquals(setOf(updatedJar.absolutePath), RuntimePaths.enabledModsConfig(host).readLines().toSet())
+    }
+
+    @Test
     fun warmScan_skipsImportCleanupLockAndUnchangedProfileWrites() = withFixture { host, controller ->
         seedMods(host, 3)
         controller.refresh(host, storageAccessible = true)

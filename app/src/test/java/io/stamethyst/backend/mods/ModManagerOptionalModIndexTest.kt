@@ -22,6 +22,66 @@ import java.util.zip.ZipOutputStream
 
 class ModManagerOptionalModIndexTest {
     @Test
+    fun replacingEnabledMod_transfersSelectionToNewPathAndPreservesOtherSelections() {
+        val context = TestRoots.create("mod-manager-update-enabled").context
+        val library = RuntimePaths.optionalModsLibraryDir(context)
+        val oldJar = writeOptionalModJar(File(library, "Alpha.jar"), "alpha", "Alpha", lastModified = 1_000L)
+        val otherJar = writeOptionalModJar(File(library, "Beta.jar"), "beta", "Beta", lastModified = 1_000L)
+        ModManager.replaceEnabledOptionalModIds(context, listOf(oldJar.absolutePath, otherJar.absolutePath))
+        val replacement = writeOptionalModJar(File(library, "Alpha_1.jar"), "alpha", "Alpha", version = "2.0.0", lastModified = 2_000L)
+
+        ModManager.removeExistingOptionalModsForImport(context, "alpha", "alpha", replacement.absolutePath)
+
+        assertFalse(oldJar.exists())
+        val installed = ModManager.listInstalledMods(context).filterNot { it.required }
+        assertEquals(setOf(replacement.absolutePath, otherJar.absolutePath), installed.filter { it.enabled }.map { it.jarFile.absolutePath }.toSet())
+        assertEquals(setOf(replacement.absolutePath, otherJar.absolutePath), RuntimePaths.enabledModsConfig(context).readLines().toSet())
+        assertEquals(mapOf(oldJar.absolutePath to replacement.absolutePath), ModSelectionReplacementStore(context).load())
+        // A launcher action can still hold the old path until its next full scan.
+        ModManager.replaceEnabledOptionalModIds(context, listOf(oldJar.absolutePath, otherJar.absolutePath))
+        assertEquals(setOf(replacement.absolutePath, otherJar.absolutePath), RuntimePaths.enabledModsConfig(context).readLines().toSet())
+    }
+
+    @Test
+    fun selectionReplacementHistory_handlesSuccessiveUpdatesAndReusedFileNames() {
+        val context = TestRoots.create("mod-manager-update-history").context
+        val store = ModSelectionReplacementStore(context)
+        store.record("Alpha.jar", "Alpha_1.jar")
+        store.record("Alpha_1.jar", "Alpha_2.jar")
+        assertEquals(mapOf("Alpha.jar" to "Alpha_2.jar", "Alpha_1.jar" to "Alpha_2.jar"), store.load())
+        store.record("Alpha_2.jar", "Alpha.jar")
+        assertEquals(mapOf("Alpha_1.jar" to "Alpha.jar", "Alpha_2.jar" to "Alpha.jar"), store.load())
+    }
+
+    @Test
+    fun replacingDisabledMod_doesNotEnableIt() {
+        val context = TestRoots.create("mod-manager-update-disabled").context
+        val library = RuntimePaths.optionalModsLibraryDir(context)
+        val oldJar = writeOptionalModJar(File(library, "Alpha.jar"), "alpha", "Alpha", lastModified = 1_000L)
+        ModManager.replaceEnabledOptionalModIds(context, emptyList())
+        val replacement = writeOptionalModJar(File(library, "Alpha_1.jar"), "alpha", "Alpha", version = "2.0.0", lastModified = 2_000L)
+
+        ModManager.removeExistingOptionalModsForImport(context, "alpha", "alpha", replacement.absolutePath)
+
+        assertFalse(oldJar.exists())
+        assertFalse(ModManager.listInstalledMods(context).single { it.jarFile.absolutePath == replacement.absolutePath }.enabled)
+    }
+
+    @Test
+    fun removingEnabledModWithoutReplacement_doesNotEnableAnotherMod() {
+        val context = TestRoots.create("mod-manager-remove-enabled").context
+        val library = RuntimePaths.optionalModsLibraryDir(context)
+        val oldJar = writeOptionalModJar(File(library, "Alpha.jar"), "alpha", "Alpha", lastModified = 1_000L)
+        val otherJar = writeOptionalModJar(File(library, "Beta.jar"), "beta", "Beta", lastModified = 1_000L)
+        ModManager.replaceEnabledOptionalModIds(context, listOf(oldJar.absolutePath))
+
+        ModManager.removeExistingOptionalModsForImport(context, "alpha", "alpha")
+
+        assertFalse(oldJar.exists())
+        assertFalse(ModManager.listInstalledMods(context).single { it.jarFile.absolutePath == otherJar.absolutePath }.enabled)
+    }
+
+    @Test
     fun listInstalledMods_rewritesLegacySelectionConfigsToCurrentStorageRoot() {
         val roots = TestRoots.create("mod-manager-legacy-enabled")
         val context = roots.context

@@ -257,11 +257,21 @@ object ModManager {
                 return@forEach
             }
             val storageKey = resolveOptionalStorageKey(file)
-            if (normalizedSelection.remove(storageKey)) {
-                selectionChanged = true
+            // Publish the handoff before deletion so a concurrent launcher scan cannot prune
+            // the old selection in the gap. Live keys always take precedence over aliases.
+            excludedAbsolutePath.takeIf { it.isNotEmpty() && File(it).isFile }?.let {
+                ModSelectionReplacementStore(context).record(storageKey, resolveOptionalStorageKey(File(it)))
             }
             if (!file.delete()) {
                 throw IOException("Failed to delete mod file: ${file.absolutePath}")
+            }
+            if (normalizedSelection.remove(storageKey)) {
+                // Imports commit to a new, unique path before removing the old jar. Carry the
+                // selection to that replacement instead of silently disabling an updated mod.
+                excludedAbsolutePath.takeIf { it.isNotEmpty() && File(it).isFile }?.let {
+                    normalizedSelection.add(resolveOptionalStorageKey(File(it)))
+                }
+                selectionChanged = true
             }
             runCatching {
                 ImportedModPatchRegistry.remove(context, storageKey)
@@ -1341,11 +1351,17 @@ object ModManager {
             val trimmed = raw.trim()
             if (looksLikePathToken(trimmed)) normalizePath(trimmed).orEmpty() else normalizeModId(trimmed)
         }
+        val replacements by lazy { ModSelectionReplacementStore(context).load() }
         tokens.forEach { token ->
             if (token.isEmpty()) {
                 return@forEach
             }
-            val direct = keyMap[token]
+            val resolvedKey = if (token !in keyMap && looksLikePathToken(token)) {
+                rebindReplacedModSelection(listOf(token), keyMap.keys, replacements).single()
+            } else {
+                token
+            }
+            val direct = keyMap[resolvedKey]
             if (direct != null) {
                 normalized.add(direct.storageKey)
             }
