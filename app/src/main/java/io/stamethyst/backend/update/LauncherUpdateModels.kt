@@ -197,6 +197,10 @@ data class UpdateReleaseInfo(
     val releasePageUrl: String = "",
     val assetName: String,
     val assetDownloadUrl: String,
+    val assetSha256: String = "",
+    val assetSize: Long = 0,
+    val releaseId: Long = 0,
+    val assetId: Long = 0,
 )
 
 data class UpdateReleaseHistoryEntry(

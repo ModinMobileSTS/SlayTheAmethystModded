@@ -17,6 +17,19 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 object LauncherUpdateService {
+    /** Shared metadata transport/race, with product-specific release selection and identity rules. */
+    class ReleaseTarget(
+        val apiUrl: String,
+        val parse: (String) -> UpdateReleaseInfo?,
+        val hasUpdate: (String, UpdateReleaseInfo) -> Boolean = { current, release ->
+            LauncherUpdateVersioning.isRemoteNewer(current, release.normalizedVersion)
+        },
+        val compare: (UpdateReleaseInfo, UpdateReleaseInfo) -> Int = { left, right ->
+            LauncherUpdateVersioning.compareReleaseVersions(left.normalizedVersion, right.normalizedVersion) ?: 0
+        },
+    )
+
+    private val launcherTarget get() = ReleaseTarget(LATEST_RELEASE_API_URL, ::parseLatestRelease)
     private const val LATEST_RELEASE_API_URL =
         "https://api.github.com/repos/ModinMobileSTS/SlayTheAmethystModded/releases/latest"
     private const val RELEASE_HISTORY_API_URL =
@@ -32,6 +45,7 @@ object LauncherUpdateService {
         context: Context,
         currentVersion: String,
         preferredUserSource: UpdateSource,
+        target: ReleaseTarget = launcherTarget,
     ): UpdateCheckExecutionResult {
         val clients = createGithubClients(context)
         val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
@@ -40,6 +54,7 @@ object LauncherUpdateService {
             clients = clients,
             currentVersion = currentVersion,
             sources = UpdateSource.metadataCandidates(normalizedPreferredSource, bypassAcceleratedLinks),
+            target = target,
         )
     }
 
@@ -49,6 +64,7 @@ object LauncherUpdateService {
         currentVersion: String,
         sources: List<UpdateSource>,
         timeoutMillis: Long = UPDATE_CHECK_TIMEOUT_MS,
+        target: ReleaseTarget = launcherTarget,
     ): UpdateCheckExecutionResult {
         if (sources.isEmpty()) {
             return UpdateCheckExecutionResult.Failure("No update metadata sources configured.")
@@ -64,10 +80,10 @@ object LauncherUpdateService {
                     controls[index].checkActive()
                     val responseText = requestText(
                         clients.pick(source.usesGithubAcceleration),
-                        source.buildUrl(LATEST_RELEASE_API_URL),
+                        source.buildUrl(target.apiUrl),
                         controls[index],
                     )
-                    val release = parseLatestRelease(responseText)
+                    val release = target.parse(responseText)
                         ?: throw IOException("Invalid release payload.")
                     MetadataAttempt(source, release = release)
                 } catch (error: Exception) {
@@ -86,7 +102,7 @@ object LauncherUpdateService {
                 val release = attempt.release
                 if (release != null) {
                     GithubMirrorHealthStore.recordSuccess(attempt.source)
-                    if (LauncherUpdateVersioning.isRemoteNewer(currentVersion, release.normalizedVersion)) {
+                    if (target.hasUpdate(currentVersion, release)) {
                         return UpdateCheckExecutionResult.Success(
                             currentVersion = currentVersion,
                             release = release,
@@ -96,10 +112,7 @@ object LauncherUpdateService {
                     }
                     val previousRelease = latestSuccessfulResult?.value
                     if (previousRelease == null ||
-                        (LauncherUpdateVersioning.compareReleaseVersions(
-                            release.normalizedVersion,
-                            previousRelease.normalizedVersion,
-                        ) ?: 0) > 0
+                        target.compare(release, previousRelease) > 0
                     ) {
                         latestSuccessfulResult = GithubMirrorFallbackSuccess(attempt.source, release)
                     }

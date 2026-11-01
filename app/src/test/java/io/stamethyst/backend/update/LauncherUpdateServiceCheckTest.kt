@@ -31,6 +31,30 @@ class LauncherUpdateServiceCheckTest {
     }
 
     @Test
+    fun minigameReusesMetadataRaceAndWaitsPastStaleMirror() {
+        val installed = io.stamethyst.backend.minigame.SlingBreakReleasesTest.parse("v0.0.1", 1)
+        val staleReturned = CountDownLatch(1)
+        val clients = clients { request ->
+            assertTrue(request.url.encodedPath.endsWith("/repos/Apricityx/slingbreak/releases"))
+            assertEquals("100", request.url.queryParameter("per_page"))
+            if (request.url.host == "ghproxy.vip") {
+                staleReturned.countDown()
+                "[${io.stamethyst.backend.minigame.SlingBreakReleasesTest.release("v0.0.1", 1)}]"
+            } else {
+                assertTrue(staleReturned.await(2, TimeUnit.SECONDS))
+                "[${io.stamethyst.backend.minigame.SlingBreakReleasesTest.release("v0.0.2", 2)}]"
+            }
+        }
+        val result = LauncherUpdateService.checkForUpdates(clients, installed.rawTagName,
+            listOf(UpdateSource.GH_PROXY_VIP, UpdateSource.OFFICIAL),
+            target = io.stamethyst.backend.minigame.SlingBreakReleases.target(installed)) as UpdateCheckExecutionResult.Success
+        assertTrue(result.hasUpdate)
+        assertEquals("v0.0.2", result.release.rawTagName)
+        assertEquals(2, requests.size)
+        assertTrue(requests.all { it.header("Range") == null })
+    }
+
+    @Test
     fun newerSourceReturnsWithoutWaitingForSlowSourceOrProbingDownload() {
         val slowStarted = CountDownLatch(1)
         val slowStopped = CountDownLatch(1)
