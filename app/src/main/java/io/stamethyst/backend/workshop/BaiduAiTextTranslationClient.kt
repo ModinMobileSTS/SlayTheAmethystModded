@@ -1,6 +1,11 @@
 package io.stamethyst.backend.workshop
 
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -13,6 +18,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -23,6 +31,8 @@ import top.apricityx.workshop.steam.protocol.applyDefaultHttpTimeouts
 internal class BaiduAiTextTranslationClient(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .applyDefaultHttpTimeouts()
+        .readTimeout(90, TimeUnit.SECONDS)
+        .callTimeout(120, TimeUnit.SECONDS)
         .build(),
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val baseUrl: HttpUrl = "https://fanyi-api.baidu.com/".toHttpUrl(),
@@ -61,7 +71,20 @@ internal class BaiduAiTextTranslationClient(
             .post(requestBody)
             .build()
 
-        client.newCall(request).execute().use { response ->
+        val response = suspendCancellableCoroutine<Response> { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    continuation.resumeWithException(e)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    continuation.resume(response) { _, value, _ -> value.close() }
+                }
+            })
+        }
+        response.use { response ->
             val payload = response.body.string()
             val root = parsePayload(payload)
             val errorCode = root["error_code"]?.jsonPrimitive?.contentOrNull
