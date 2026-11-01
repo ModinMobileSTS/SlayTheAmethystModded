@@ -1,0 +1,16 @@
+<resources>
+    <string name="godot_settings_title">Godot minigame</string>
+    <string name="godot_standalone_summary">Play the downloaded Godot game independently. Dependencies are requested on first use; existing Web saves are kept separately.</string>
+    <string name="godot_not_installed">Not installed</string>
+    <string name="godot_check_updates">Check minigame updates</string>
+    <string name="godot_install_version">Download / update minigame %1$s</string>
+    <string name="godot_download_confirmation">The minigame requires a one-time download of the Godot engine and the latest game from GitHub (about 102 MiB). It needs Android 9+ and arm64, and additional storage for offline resources. The minigame will only be selected after installation succeeds. Existing Web saves will be kept, not automatically converted.</string>
+    <string name="godot_update_confirmation">Download and verify this GitHub release, then activate it for the next launch. Existing saves and the previous game files will be kept if installation fails. The engine is downloaded only if required.</string>
+    <string name="godot_preparing">Preparing Godot minigame dependencies</string>
+    <string name="godot_prepare_failed">Could not prepare minigame dependencies</string>
+    <string name="godot_unsupported">The Godot minigame requires Android 9+ and an arm64 device</string>
+    <string name="godot_fetching_version">Fetching Godot minigame release…</string>
+    <string name="godot_verifying">Verifying engine, game and offline resources…</string>
+    <string name="godot_installed_offline">Minigame %1$s is installed and available offline</string>
+    <string name="godot_update_available">Minigame update available: %1$s</string>
+</resources>

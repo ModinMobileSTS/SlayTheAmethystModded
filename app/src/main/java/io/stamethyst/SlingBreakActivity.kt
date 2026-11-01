@@ -17,6 +17,8 @@ import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
@@ -134,7 +136,7 @@ internal fun WebView.configureSlingBreakGame() {
     }
 }
 
-/** Hosts the untouched SlingBreak web bundle packaged under assets/slingbreak. */
+/** Consent/install gate. Gameplay runs only in the isolated, download-only Godot Activity. */
 class SlingBreakActivity : AppCompatActivity() {
     companion object {
         fun launch(context: Context) {
@@ -142,72 +144,35 @@ class SlingBreakActivity : AppCompatActivity() {
         }
     }
 
-    private var webView: SlingBreakWebViewHost? = null
+    private val preparation by viewModels<io.stamethyst.ui.settings.core.SlingBreakPreparationViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // Compatibility dependencies are downloaded and verified when the mode is selected.
-        showGame()
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() = finish()
-        })
-    }
-
-    override fun onResume() {
-        super.onResume()
-        webView?.let {
-            it.setActive(true)
-            it.onResume()
-            hideSystemBars()
+        setContent {
+            io.stamethyst.ui.theme.LauncherTheme(
+                io.stamethyst.config.LauncherConfig.readThemeMode(this),
+                io.stamethyst.config.LauncherConfig.readThemeColor(this),
+            ) {
+                val ready = preparation.installed || io.stamethyst.backend.minigame.SlingBreakInstallation.read(this) != null
+                androidx.compose.runtime.LaunchedEffect(ready) {
+                    if (ready) {
+                        startActivity(Intent(this@SlingBreakActivity, io.stamethyst.godot.GodotMinigameActivity::class.java))
+                        finish()
+                    }
+                }
+                if (!ready && preparation.progress == null && preparation.failure == null) {
+                    io.stamethyst.ui.settings.sections.SlingBreakDownloadConfirmation(
+                        onConfirm = { preparation.prepare(applicationContext) }, onDismiss = ::finish,
+                    )
+                }
+                io.stamethyst.ui.settings.sections.SlingBreakDependencyDialogs(
+                    preparation.progress, preparation.message, preparation.failure, preparation.slow,
+                    onRetry = { preparation.prepare(applicationContext) },
+                    onSwitchMirror = preparation::switchMirror, onDismissFailure = ::finish,
+                )
+            }
         }
-    }
-
-    override fun onPause() {
-        webView?.let {
-            it.setActive(false)
-            it.onPause()
-        }
-        super.onPause()
-    }
-
-    override fun onDestroy() {
-        webView?.let {
-            it.closeAudio()
-            it.destroy()
-        }
-        webView = null
-        super.onDestroy()
-    }
-
-    private fun hideSystemBars() {
-        val content = webView?.view ?: return
-        WindowInsetsControllerCompat(window, content).apply {
-            hide(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
-    }
-
-    private fun showGame() {
-        runCatching {
-            val host = SlingBreakWebViewHost.create(this, allowSystemFallback = false)
-            webView = host
-            host.loadUrl(slingBreakGameUrl(this))
-            setContentView(host.view)
-            hideSystemBars()
-        }.onFailure { failure ->
-            showEngineFailure(failure.message ?: failure.javaClass.simpleName)
-        }
-    }
-
-    private fun showEngineFailure(reason: String) {
-        WebViewDiagnosticsLogStore.append(this, "sling_break_engine_failure", "reason=$reason")
-        io.stamethyst.ui.LauncherLegacyAlertDialog.Builder(this)
-            .setTitle(R.string.settings_sling_break_compatibility_failed)
-            .setMessage(reason)
-            .setPositiveButton(R.string.common_action_close) { _, _ -> finish() }
-            .setOnDismissListener { finish() }
-            .show()
     }
 }

@@ -1,0 +1,16 @@
+<resources>
+    <string name="godot_settings_title">Godot 小遊戲</string>
+    <string name="godot_standalone_summary">獨立遊玩下載式 Godot 小遊戲，首次使用會詢問下載依賴；舊 Web 存檔單獨保留。</string>
+    <string name="godot_not_installed">未安裝</string>
+    <string name="godot_check_updates">檢查小遊戲更新</string>
+    <string name="godot_install_version">下載 / 更新小遊戲 %1$s</string>
+    <string name="godot_download_confirmation">小遊戲需要首次下載 Godot 引擎和 GitHub 最新遊戲（約 102 MiB），要求 Android 9 及以上、arm64 裝置，並需要額外空間準備離線資源。安裝成功後才會選中小遊戲。原 Web 存檔會保留，不會自動轉換。</string>
+    <string name="godot_update_confirmation">下載並校驗此 GitHub 版本，成功後在下次啟動時生效。安裝失敗會保留原遊戲檔案和已有存檔；僅在需要時下載引擎。</string>
+    <string name="godot_preparing">正在準備 Godot 小遊戲依賴</string>
+    <string name="godot_prepare_failed">小遊戲依賴準備失敗</string>
+    <string name="godot_unsupported">Godot 小遊戲需要 Android 9 或以上、arm64 裝置</string>
+    <string name="godot_fetching_version">正在取得 Godot 小遊戲版本…</string>
+    <string name="godot_verifying">正在校驗引擎、遊戲和離線資源…</string>
+    <string name="godot_installed_offline">小遊戲 %1$s 已安裝，可離線遊玩</string>
+    <string name="godot_update_available">小遊戲可更新至 %1$s</string>
+</resources>

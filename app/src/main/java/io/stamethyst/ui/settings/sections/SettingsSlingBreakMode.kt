@@ -9,69 +9,27 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.DialogProperties
 import io.stamethyst.R
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.backend.resources.ResourcePackSlowDownloadMirrorSwitch
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.ui.resources.ResourcePreparationContent
 import io.stamethyst.ui.settings.common.HapticTextButton
-import io.stamethyst.ui.settings.common.SettingsChoiceDialogItem
-import io.stamethyst.ui.settings.common.SettingsChoiceSpec
 
 @Composable
-internal fun SettingsSlingBreakModeItem(
-    mode: SlingBreakEngineMode,
-    enabled: Boolean,
-    onModeChanged: (SlingBreakEngineMode) -> Unit,
-) {
-    var showDownloadConfirmation by rememberSaveable { mutableStateOf(false) }
-    SettingsChoiceDialogItem(
-        SettingsChoiceSpec(
-            title = stringResource(R.string.settings_sling_break_mode_title),
-            valueText = slingBreakEngineModeLabel(mode),
-            enabled = enabled,
-            selectedValue = mode,
-            options = SlingBreakEngineMode.entries,
-            optionLabel = { slingBreakEngineModeLabel(it) },
-            onOptionSelected = { selected ->
-                if (selected == SlingBreakEngineMode.COMPATIBILITY) showDownloadConfirmation = true
-                else if (selected != mode) onModeChanged(selected)
-            },
-        )
+internal fun SlingBreakDownloadConfirmation(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.godot_settings_title)) },
+        text = { Text(stringResource(R.string.godot_download_confirmation)) },
+        confirmButton = { HapticTextButton(onClick = onConfirm) { Text(stringResource(R.string.settings_sling_break_download_yes)) } },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_sling_break_download_no)) } },
     )
-    if (showDownloadConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showDownloadConfirmation = false },
-            title = { Text(stringResource(R.string.settings_sling_break_mode_compatibility)) },
-            text = { Text(stringResource(R.string.settings_sling_break_download_confirmation)) },
-            confirmButton = {
-                HapticTextButton(enabled = enabled, onClick = {
-                    showDownloadConfirmation = false
-                    onModeChanged(SlingBreakEngineMode.COMPATIBILITY)
-                }) { Text(stringResource(R.string.settings_sling_break_download_yes)) }
-            },
-            dismissButton = {
-                HapticTextButton(onClick = { showDownloadConfirmation = false }) {
-                    Text(stringResource(R.string.settings_sling_break_download_no))
-                }
-            },
-        )
-    }
 }
-
-@Composable
-private fun slingBreakEngineModeLabel(mode: SlingBreakEngineMode): String = stringResource(
-    when (mode) {
-        SlingBreakEngineMode.WEBVIEW -> R.string.settings_sling_break_mode_webview
-        SlingBreakEngineMode.COMPATIBILITY -> R.string.settings_sling_break_mode_compatibility
-    }
-)
 
 @Composable
 internal fun SlingBreakDependencyDialogs(
@@ -95,8 +53,8 @@ internal fun SlingBreakDependencyDialogs(
             text = {
                 ResourcePreparationContent(
                     title = stringResource(
-                        if (failure == null) R.string.settings_sling_break_web_preparing_title
-                        else R.string.settings_sling_break_compatibility_failed,
+                        if (failure == null) R.string.godot_preparing
+                        else R.string.godot_prepare_failed,
                     ),
                     progress = progress,
                     message = message,

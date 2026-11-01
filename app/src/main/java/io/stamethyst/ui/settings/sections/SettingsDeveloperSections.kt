@@ -11,6 +11,7 @@ import io.stamethyst.ui.settings.services.*
 import io.stamethyst.ui.settings.steamcloud.*
 
 import android.content.Context
+import android.content.Intent
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
+import io.stamethyst.BuildConfig
 import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
@@ -389,7 +391,6 @@ internal fun LauncherDeveloperSettingsScreenContent(
 
         item {
             SettingsSectionCard(title = stringResource(R.string.settings_developer_experiments_title)) {
-                var showClearSlingBreakDialog by rememberSaveable { mutableStateOf(false) }
 
                 SettingsActionListItem(
                     title = stringResource(R.string.mod_config_developer_title),
@@ -398,51 +399,12 @@ internal fun LauncherDeveloperSettingsScreenContent(
                     onClick = { showModConfigDialog = true },
                 )
 
-                SettingsSwitchItem(
-                    SettingsSwitchSpec(
-                        checked = uiState.slingBreakAudioDebugModeEnabled,
-                        enabled = !uiState.busy,
-                        title = stringResource(R.string.settings_developer_slingbreak_audio_debug_title),
-                        description = stringResource(R.string.settings_developer_slingbreak_audio_debug_summary),
-                        onCheckedChange = onSlingBreakAudioDebugModeChanged,
-                    )
-                )
-
                 SettingsActionListItem(
                     title = stringResource(R.string.settings_developer_slingbreak_title),
-                    supportingText = stringResource(R.string.settings_developer_slingbreak_summary),
+                    supportingText = stringResource(R.string.godot_standalone_summary),
                     enabled = !uiState.busy,
                     onClick = onOpenSlingBreak,
                 )
-                SettingsActionListItem(
-                    title = stringResource(R.string.settings_developer_slingbreak_clear_title),
-                    supportingText = stringResource(R.string.settings_developer_slingbreak_clear_summary),
-                    enabled = !uiState.busy,
-                    onClick = { showClearSlingBreakDialog = true },
-                )
-
-                if (showClearSlingBreakDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showClearSlingBreakDialog = false },
-                        title = { Text(stringResource(R.string.settings_developer_slingbreak_clear_confirm_title)) },
-                        text = { Text(stringResource(R.string.settings_developer_slingbreak_clear_confirm_message)) },
-                        dismissButton = {
-                            HapticTextButton(onClick = { showClearSlingBreakDialog = false }) {
-                                Text(stringResource(R.string.main_folder_dialog_cancel))
-                            }
-                        },
-                        confirmButton = {
-                            HapticTextButton(
-                                onClick = {
-                                    showClearSlingBreakDialog = false
-                                    onClearSlingBreakData()
-                                }
-                            ) {
-                                Text(stringResource(R.string.settings_developer_slingbreak_clear_confirm_action))
-                            }
-                        },
-                    )
-                }
             }
         }
 

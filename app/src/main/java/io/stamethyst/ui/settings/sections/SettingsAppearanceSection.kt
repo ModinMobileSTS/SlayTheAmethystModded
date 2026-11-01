@@ -107,6 +107,7 @@ internal fun SettingsAppearanceSection(
     var showBootOverlayStyleDialog by rememberSaveable { mutableStateOf(false) }
     var showBootOverlayAnimationDialog by rememberSaveable { mutableStateOf(false) }
     var showBootOverlayCustomImageDialog by rememberSaveable { mutableStateOf(false) }
+    var showGodotDownloadConfirmation by rememberSaveable { mutableStateOf(false) }
     var chromeBackgroundOpacitySliderValue by remember(uiState.chromeBackgroundOpacity) {
         mutableFloatStateOf(uiState.chromeBackgroundOpacity)
     }
@@ -179,17 +180,10 @@ internal fun SettingsAppearanceSection(
         SettingsActionListItem(
             title = stringResource(R.string.settings_boot_overlay_style_title),
             supportingText = bootOverlayStyleDisplayName(uiState.bootOverlayStyle),
-            enabled = !uiState.busy,
+            enabled = !uiState.busy && uiState.slingBreakDependencyProgress == null,
             onClick = { showBootOverlayStyleDialog = true }
         )
 
-        if (uiState.bootOverlayStyle == BootOverlayStyle.SLING_BREAK) {
-            SettingsSlingBreakModeItem(
-                mode = uiState.slingBreakEngineMode,
-                enabled = !uiState.busy && uiState.slingBreakDependencyProgress == null,
-                onModeChanged = actions.onSlingBreakEngineModeChanged,
-            )
-        }
 
         if (uiState.bootOverlayStyle == BootOverlayStyle.MODERN) {
             SettingsActionListItem(
@@ -210,15 +204,15 @@ internal fun SettingsAppearanceSection(
         }
     }
 
-    SlingBreakDependencyDialogs(
-        progress = uiState.slingBreakDependencyProgress,
-        message = uiState.slingBreakDownloadMessage,
-        failure = uiState.slingBreakDependencyFailure,
-        slowDownloadSwitch = uiState.slingBreakSlowDownloadSwitch,
-        onRetry = { actions.onSlingBreakEngineModeChanged(SlingBreakEngineMode.COMPATIBILITY) },
-        onSwitchMirror = actions.onSwitchSlingBreakDownloadMirror,
-        onDismissFailure = actions.onDismissSlingBreakDependencyFailure,
-    )
+    if (showGodotDownloadConfirmation) {
+        SlingBreakDownloadConfirmation(
+            onConfirm = {
+                showGodotDownloadConfirmation = false
+                actions.onSlingBreakEngineModeChanged(uiState.slingBreakEngineMode)
+            },
+            onDismiss = { showGodotDownloadConfirmation = false },
+        )
+    }
 
     if (showBootOverlayStyleDialog) {
         AlertDialog(
@@ -231,7 +225,10 @@ internal fun SettingsAppearanceSection(
                     imageConfig = uiState.bootOverlayImageConfig,
                     loadingAnimation = uiState.bootOverlayAnimation,
                     onSelect = { style ->
-                        actions.onBootOverlayStyleChanged(style)
+                        if (style == BootOverlayStyle.SLING_BREAK &&
+                            io.stamethyst.backend.minigame.SlingBreakInstallation.read(view.context) == null) {
+                            showGodotDownloadConfirmation = true
+                        } else actions.onBootOverlayStyleChanged(style)
                         showBootOverlayStyleDialog = false
                     }
                 )

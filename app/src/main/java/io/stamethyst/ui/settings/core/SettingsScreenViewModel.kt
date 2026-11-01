@@ -26,7 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.clearSlingBreakWebViewData
-import io.stamethyst.web.GeckoDependencyLoader
+import io.stamethyst.backend.minigame.SlingBreakService
+import io.stamethyst.backend.minigame.SlingBreakInstallation
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.resources.ResourcePackDownloadMirrorSwitchController
 import io.stamethyst.backend.resources.ResourcePackSlowDownloadMirrorSwitch
@@ -404,6 +405,10 @@ class SettingsScreenViewModel : ViewModel() {
         val slingBreakDependencyFailure: String? = null,
         val slingBreakDownloadMessage: String = "",
         val slingBreakSlowDownloadSwitch: ResourcePackSlowDownloadMirrorSwitch? = null,
+        val slingBreakInstalledVersion: String = "",
+        val slingBreakUpdateChecking: Boolean = false,
+        val slingBreakUpdateStatus: String = "",
+        val slingBreakUpdateRelease: io.stamethyst.backend.update.UpdateReleaseInfo? = null,
         val bootOverlayAnimation: BootOverlayAnimation =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION,
         val bootOverlayImageConfig: BootOverlayImageConfig = BootOverlayImageConfig(
@@ -700,6 +705,8 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.keepScreenOnTimeoutMinuteOptions != keepScreenOnOptions) {
             uiState = uiState.copy(keepScreenOnTimeoutMinuteOptions = keepScreenOnOptions)
         }
+        // Standalone play can install/update while this launcher's ViewModel stays alive.
+        uiState = uiState.copy(slingBreakInstalledVersion = SlingBreakInstallation.read(activity)?.rawTagName.orEmpty())
         if (boundActivityReference?.get() === activity) {
             return
         }
@@ -757,6 +764,7 @@ class SettingsScreenViewModel : ViewModel() {
             chromeBackgroundOpacity = SettingsRepository.loadChromeBackgroundOpacity(host),
             bootOverlayStyle = SettingsRepository.loadBootOverlayStyle(host),
             slingBreakEngineMode = LauncherPreferences.readSlingBreakEngineMode(host),
+            slingBreakInstalledVersion = SlingBreakInstallation.read(host)?.rawTagName.orEmpty(),
             bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host),
             bootOverlayImageConfig = SettingsRepository.loadBootOverlayImageConfig(host)
         )
@@ -799,7 +807,11 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     fun onBootOverlayStyleChanged(host: Activity, style: BootOverlayStyle) {
-        if (uiState.busy || uiState.bootOverlayStyle == style) {
+        if (uiState.busy || uiState.slingBreakDependencyProgress != null || uiState.bootOverlayStyle == style) {
+            return
+        }
+        if (style == BootOverlayStyle.SLING_BREAK && SlingBreakInstallation.read(host) == null) {
+            onSlingBreakEngineModeChanged(host, uiState.slingBreakEngineMode)
             return
         }
         uiState = uiState.copy(bootOverlayStyle = style)
@@ -808,6 +820,42 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private val slingBreakMirrorSwitchController = ResourcePackDownloadMirrorSwitchController()
+    private var slingBreakSelectAfterInstall = false
+
+    fun checkSlingBreakUpdates(host: Activity) {
+        if (uiState.slingBreakUpdateChecking || uiState.slingBreakDependencyProgress != null) return
+        val context = host.applicationContext
+        uiState = uiState.copy(slingBreakUpdateChecking = true, slingBreakUpdateStatus = "", slingBreakUpdateRelease = null,
+            slingBreakInstalledVersion = SlingBreakInstallation.read(context)?.rawTagName.orEmpty())
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        Thread({
+            val result = runCatching { SlingBreakService.check(context) }.getOrElse {
+                io.stamethyst.backend.update.UpdateCheckExecutionResult.Failure(it.message.orEmpty())
+            }
+            main.post {
+                when (result) {
+                    is io.stamethyst.backend.update.UpdateCheckExecutionResult.Success -> uiState = uiState.copy(
+                        slingBreakUpdateChecking = false,
+                        slingBreakUpdateRelease = result.release.takeIf {
+                            val current = SlingBreakInstallation.read(context)
+                            current == null || io.stamethyst.backend.minigame.SlingBreakReleases.compare(it, current) >= 0
+                        },
+                        slingBreakUpdateStatus = if (result.hasUpdate) context.getString(R.string.godot_update_available, result.release.rawTagName)
+                            else context.getString(R.string.update_status_result_latest),
+                    )
+                    is io.stamethyst.backend.update.UpdateCheckExecutionResult.Failure -> uiState = uiState.copy(
+                        slingBreakUpdateChecking = false, slingBreakUpdateStatus = context.getString(R.string.update_check_result_failed, result.errorSummary),
+                    )
+                }
+            }
+        }, "slingbreak-update-check").start()
+    }
+
+    fun installSlingBreakUpdate(host: Activity) {
+        if (uiState.busy || uiState.slingBreakDependencyProgress != null) return
+        slingBreakSelectAfterInstall = false
+        prepareSlingBreak(host, uiState.slingBreakUpdateRelease)
+    }
 
     fun switchSlingBreakDownloadMirror() {
         if (uiState.slingBreakDependencyProgress != null) {
@@ -817,16 +865,17 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onSlingBreakEngineModeChanged(host: Activity, mode: SlingBreakEngineMode) {
         if (uiState.busy || uiState.slingBreakDependencyProgress != null) return
+        if (uiState.slingBreakDependencyFailure == null) slingBreakSelectAfterInstall = true
+        prepareSlingBreak(host, uiState.slingBreakUpdateRelease.takeUnless { slingBreakSelectAfterInstall })
+    }
+
+    private fun prepareSlingBreak(host: Activity, release: io.stamethyst.backend.update.UpdateReleaseInfo?) {
+        if (uiState.busy || uiState.slingBreakDependencyProgress != null) return
         val context = host.applicationContext
-        if (mode == SlingBreakEngineMode.WEBVIEW) {
-            LauncherPreferences.saveSlingBreakEngineMode(context, mode)
-            uiState = uiState.copy(slingBreakEngineMode = mode)
-            return
-        }
         uiState = uiState.copy(
             slingBreakDependencyProgress = -1,
             slingBreakDependencyFailure = null,
-            slingBreakDownloadMessage = context.getString(R.string.settings_sling_break_web_preparing),
+            slingBreakDownloadMessage = context.getString(R.string.godot_fetching_version),
             slingBreakSlowDownloadSwitch = null,
         )
         val main = android.os.Handler(android.os.Looper.getMainLooper())
@@ -838,16 +887,20 @@ class SettingsScreenViewModel : ViewModel() {
             }
         }
         slingBreakMirrorSwitchController.addSlowDownloadListener(listener)
-        GeckoDependencyLoader.ensureAsync(context, StartupProgressCallback { progress, message ->
+        SlingBreakService.ensureAsync(context, StartupProgressCallback { progress, message ->
             uiState = uiState.copy(slingBreakDependencyProgress = progress, slingBreakDownloadMessage = message)
-        }, slingBreakMirrorSwitchController, { failure ->
+        }, slingBreakMirrorSwitchController, release, { failure ->
             slingBreakMirrorSwitchController.removeSlowDownloadListener(listener)
-            if (failure == null) LauncherPreferences.saveSlingBreakEngineMode(context, mode)
+            if (failure == null && slingBreakSelectAfterInstall) LauncherPreferences.saveBootOverlayStyle(context, BootOverlayStyle.SLING_BREAK)
             uiState = uiState.copy(
                 slingBreakDependencyProgress = null,
                 slingBreakDependencyFailure = failure,
                 slingBreakSlowDownloadSwitch = null,
-                slingBreakEngineMode = if (failure == null) mode else uiState.slingBreakEngineMode,
+                bootOverlayStyle = if (failure == null && slingBreakSelectAfterInstall) BootOverlayStyle.SLING_BREAK else uiState.bootOverlayStyle,
+                slingBreakInstalledVersion = SlingBreakInstallation.read(context)?.rawTagName.orEmpty(),
+                slingBreakUpdateStatus = if (failure == null) context.getString(R.string.godot_installed_offline,
+                    SlingBreakInstallation.read(context)?.rawTagName.orEmpty()) else uiState.slingBreakUpdateStatus,
+                slingBreakUpdateRelease = if (failure == null) null else uiState.slingBreakUpdateRelease,
             )
         })
     }
@@ -855,6 +908,8 @@ class SettingsScreenViewModel : ViewModel() {
     fun dismissSlingBreakDependencyFailure() {
         uiState = uiState.copy(slingBreakDependencyFailure = null)
     }
+
+    fun retrySlingBreakInstallation(host: Activity) = prepareSlingBreak(host, uiState.slingBreakUpdateRelease)
 
     fun onBootOverlayImageModeChanged(host: Activity, mode: BootOverlayImageMode) {
         if (uiState.busy || uiState.bootOverlayImageConfig.mode == mode) {
@@ -4689,6 +4744,7 @@ class SettingsScreenViewModel : ViewModel() {
             chromeBackgroundOpacity = snapshot.chromeBackgroundOpacity,
             bootOverlayStyle = snapshot.bootOverlayStyle,
             slingBreakEngineMode = LauncherPreferences.readSlingBreakEngineMode(host),
+            slingBreakInstalledVersion = SlingBreakInstallation.read(host)?.rawTagName.orEmpty(),
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
             bootOverlayImageConfig = snapshot.bootOverlayImageConfig,
             playerName = snapshot.playerName,

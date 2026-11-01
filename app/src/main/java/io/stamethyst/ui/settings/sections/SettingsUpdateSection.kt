@@ -25,6 +25,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -39,6 +41,8 @@ internal data class UpdateSettingsActions(
     val onManualCheckUpdates: () -> Unit,
     val onOpenReleaseHistory: () -> Unit,
     val onDismissReleaseHistoryDialog: () -> Unit,
+    val onCheckSlingBreakUpdates: () -> Unit = {},
+    val onInstallSlingBreakUpdate: () -> Unit = {},
 )
 
 
@@ -117,6 +121,37 @@ internal fun SettingsUpdateSection(
                 style = MaterialTheme.typography.bodySmall
             )
         }
+        Text(stringResource(R.string.godot_settings_title), style = MaterialTheme.typography.titleMedium)
+        Text(
+            stringResource(R.string.update_current_version,
+                uiState.slingBreakInstalledVersion.ifBlank { stringResource(R.string.godot_not_installed) }),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        SettingsActionListItem(
+            title = stringResource(if (uiState.slingBreakUpdateChecking) R.string.update_manual_check_running else R.string.godot_check_updates),
+            enabled = !uiState.busy && !uiState.slingBreakUpdateChecking && uiState.slingBreakDependencyProgress == null,
+            onClick = actions.onCheckSlingBreakUpdates,
+        )
+        if (uiState.slingBreakUpdateChecking) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        uiState.slingBreakUpdateRelease?.let { release ->
+            var confirm by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            SettingsActionListItem(
+                title = stringResource(R.string.godot_install_version, release.rawTagName),
+                supportingText = release.notesText,
+                enabled = !uiState.busy && uiState.slingBreakDependencyProgress == null,
+                onClick = { confirm = true },
+            )
+            if (confirm) AlertDialog(
+                onDismissRequest = { confirm = false },
+                title = { Text(stringResource(R.string.godot_install_version, release.rawTagName)) },
+                text = { Text(stringResource(R.string.godot_update_confirmation)) },
+                confirmButton = { HapticTextButton(onClick = { confirm = false; actions.onInstallSlingBreakUpdate() }) {
+                    Text(stringResource(R.string.settings_sling_break_download_yes))
+                } },
+                dismissButton = { HapticTextButton(onClick = { confirm = false }) { Text(stringResource(R.string.common_action_close)) } },
+            )
+        }
+        if (uiState.slingBreakUpdateStatus.isNotBlank()) Text(uiState.slingBreakUpdateStatus, style = MaterialTheme.typography.bodySmall)
     }
 
     uiState.releaseHistoryDialogState?.let { dialogState ->

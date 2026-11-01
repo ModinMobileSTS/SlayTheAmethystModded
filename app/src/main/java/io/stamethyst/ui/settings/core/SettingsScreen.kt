@@ -110,6 +110,8 @@ fun LauncherSettingsLauncherScreen(
             viewModel.onPreferredUpdateMirrorChanged(activity, source)
         },
         onManualCheckUpdates = { viewModel.onManualCheckUpdates(activity) },
+        onCheckSlingBreakUpdates = { viewModel.checkSlingBreakUpdates(activity) },
+        onInstallSlingBreakUpdate = { viewModel.installSlingBreakUpdate(activity) },
         onOpenReleaseHistory = { viewModel.onOpenReleaseHistory(activity) },
         onDismissReleaseHistoryDialog = viewModel::dismissReleaseHistoryDialog,
         onOpenFirstRunSetup = { navigator.push(Route.FirstRunSetup) },

@@ -336,6 +336,8 @@ internal fun LauncherSettingsLauncherScreenContent(
     onAutoCheckUpdatesChanged: (Boolean) -> Unit = {},
     onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit = {},
     onManualCheckUpdates: () -> Unit = {},
+    onCheckSlingBreakUpdates: () -> Unit = {},
+    onInstallSlingBreakUpdate: () -> Unit = {},
     onOpenReleaseHistory: () -> Unit = {},
     onDismissReleaseHistoryDialog: () -> Unit = {},
     onOpenFirstRunSetup: () -> Unit = {},
@@ -389,6 +391,8 @@ internal fun LauncherSettingsLauncherScreenContent(
                         onAutoCheckUpdatesChanged = onAutoCheckUpdatesChanged,
                         onPreferredUpdateMirrorChanged = onPreferredUpdateMirrorChanged,
                         onManualCheckUpdates = onManualCheckUpdates,
+                        onCheckSlingBreakUpdates = onCheckSlingBreakUpdates,
+                        onInstallSlingBreakUpdate = onInstallSlingBreakUpdate,
                         onOpenReleaseHistory = onOpenReleaseHistory,
                         onDismissReleaseHistoryDialog = onDismissReleaseHistoryDialog,
                     ),
@@ -411,6 +415,16 @@ internal fun LauncherSettingsLauncherScreenContent(
             }
         }
     }
+
+    SlingBreakDependencyDialogs(
+        progress = uiState.slingBreakDependencyProgress,
+        message = uiState.slingBreakDownloadMessage,
+        failure = uiState.slingBreakDependencyFailure,
+        slowDownloadSwitch = uiState.slingBreakSlowDownloadSwitch,
+        onRetry = { onSlingBreakEngineModeChanged(uiState.slingBreakEngineMode) },
+        onSwitchMirror = onSwitchSlingBreakDownloadMirror,
+        onDismissFailure = onDismissSlingBreakDependencyFailure,
+    )
 
     if (showApplyModFileNameAliasesDialog) {
         AlertDialog(
