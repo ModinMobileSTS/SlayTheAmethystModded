@@ -56,10 +56,12 @@ function validateMetadata(metadata) {
   pathSegment(metadata.author.name, 'author.name');
   text(metadata.author.email, 'author.email', 254);
   requireValid(/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/u.test(metadata.author.email), 'Invalid author.email');
-  objectFields(metadata.target, ['modId', 'workshopId', 'versions']);
+  objectFields(metadata.target, ['modId', 'versions'], ['workshopId']);
   pathSegment(metadata.target.modId, 'target.modId');
   requireValid(metadata.target.modId.toLowerCase() !== 'index', "modId 'index' is reserved");
-  requireValid(typeof metadata.target.workshopId === 'string' && /^[1-9][0-9]{0,19}$/.test(metadata.target.workshopId), 'Invalid workshopId');
+  if (Object.hasOwn(metadata.target, 'workshopId')) {
+    requireValid(typeof metadata.target.workshopId === 'string' && /^[1-9][0-9]{0,19}$/.test(metadata.target.workshopId), 'Invalid workshopId');
+  }
   const versions = metadata.target.versions;
   requireValid(Array.isArray(versions) && versions.length >= 1 && versions.length <= 100, 'Invalid target.versions');
   versions.forEach((version) => text(version, 'target version'));

@@ -131,8 +131,24 @@ internal object ModJarManifestParser {
             name = resolvedName,
             version = sanitizeManifestText(version),
             description = sanitizeManifestText(description),
-            dependencies = dependencies
+            dependencies = dependencies,
+            authors = readManifestAuthors(obj),
         )
+    }
+
+    private fun readManifestAuthors(obj: JSONObject?): List<String> {
+        if (obj == null) return emptyList()
+        val authors = LinkedHashSet<String>()
+        for (key in arrayOf("author_list", "authors", "authorList", "author")) {
+            val matchedKey = findJsonKeyIgnoreCase(obj, key) ?: continue
+            val value = obj.opt(matchedKey)
+            val values = if (value is JSONArray) (0 until value.length()).map(value::opt) else listOf(value)
+            values.filterIsInstance<String>()
+                .map(::sanitizeManifestText)
+                .filter { it.isNotBlank() }
+                .forEach(authors::add)
+        }
+        return authors.toList()
     }
 
     private fun readManifestDependencies(obj: JSONObject?): List<String> {

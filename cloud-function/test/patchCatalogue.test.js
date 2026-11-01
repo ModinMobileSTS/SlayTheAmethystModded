@@ -79,6 +79,20 @@ test('one upload publishes one reachable commit with exact author/message and co
   assert.ok(fixture.calls.every((call) => !call.route.includes('/contents/')));
 });
 
+test('uploads without Workshop IDs coexist with known IDs and allow adding or omitting the ID on overwrite', async (t) => {
+  const fixture = githubFixture(t);
+  const data = metadata();
+  delete data.target.workshopId;
+  const local = await parse(data);
+  await publishPatchUpload(local, config());
+  assert.deepEqual(JSON.parse(fixture.read(`${local.path}/metadata.json`)), data);
+  await publishPatchUpload(await parse(metadata({ name: 'Known ID' })), config());
+  await publishPatchUpload(await parse(metadata()), config());
+  await publishPatchUpload(local, config());
+  const conflicting = metadata({ name: 'Conflicting', target: { ...data.target, workshopId: '123' } });
+  await assert.rejects(publishPatchUpload(await parse(conflicting), config()), /Workshop/);
+});
+
 test('identical uploads still produce one new commit each; JAR rename deletes old bytes and preserves omitted source', async (t) => {
   const fixture = githubFixture(t);
   const first = await parse(metadata(), { source: zip([{ name: 'old.java', content: 'old source' }]) });
@@ -219,6 +233,20 @@ test('HTTP multipart route accepts anonymous upload and returns async index stat
   assert.equal(body.commitSha, fixture.head());
   assert.equal(body.indexing, 'pending');
   assert.equal(fixture.read('mods/basemod/测试补丁-Player/src/Example.java'), 'source');
+});
+
+test('HTTP multipart route accepts a local mod without a Workshop ID', async (t) => {
+  const fixture = githubFixture(t);
+  const baseUrl = await listen(t, createApp(config()));
+  const data = metadata();
+  delete data.target.workshopId;
+  const response = await fetch(`${baseUrl}/api/mod-patches/upload`, { method: 'POST', body: form(data) });
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  const stored = JSON.parse(fixture.read(`${body.path}/metadata.json`));
+  assert.deepEqual(stored.target, data.target);
+  assert.ok(!Object.hasOwn(stored.target, 'workshopId'));
 });
 
 test('HTTP rejects unexpected/oversized fields and enforces anonymous per-IP quota', async (t) => {

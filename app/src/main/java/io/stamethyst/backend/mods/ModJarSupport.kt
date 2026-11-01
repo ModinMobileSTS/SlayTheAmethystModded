@@ -23,7 +23,8 @@ object ModJarSupport {
         @JvmField val name: String,
         @JvmField val version: String,
         @JvmField val description: String,
-        dependencies: List<String>?
+        dependencies: List<String>?,
+        @JvmField val authors: List<String> = emptyList(),
     ) {
         @JvmField
         val dependencies: List<String> = dependencies ?: ArrayList()

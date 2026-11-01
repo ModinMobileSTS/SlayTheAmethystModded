@@ -23,7 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun ModContributionBadge(mod: ModItemUi, enabled: Boolean, onClick: () -> Unit) {
+internal fun ModContributionBadge(mod: ModItemUi, enabled: Boolean, onClick: () -> Unit, showLabel: Boolean = false) {
     val context = LocalContext.current
     val active = contributionActive(mod)
     val parent = mod.manifestModId.ifBlank { mod.modId }
@@ -35,7 +35,16 @@ internal fun ModContributionBadge(mod: ModItemUi, enabled: Boolean, onClick: () 
     }
     // Catalogue downloads alone never earn a contribution badge. An upload receipt does.
     if (active || mod.agentPatchMods.any { it.patchModId !in indexedIds.orEmpty() }) {
-        AgentPatchContributionBadge(active, enabled, onClick)
+        if (showLabel) {
+            ModDetailsBadge(
+                R.drawable.ic_ai_patch_contribution,
+                stringResource(if (active) R.string.mod_details_badge_contributed else R.string.mod_details_badge_contribute),
+                enabled = enabled,
+                onClick = onClick,
+            )
+        } else {
+            AgentPatchContributionBadge(active, enabled, onClick)
+        }
     }
 }
 

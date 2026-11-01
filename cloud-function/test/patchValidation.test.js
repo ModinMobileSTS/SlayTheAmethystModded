@@ -26,6 +26,16 @@ test('metadata rejects unsafe paths, versions, identity and unsupported fields',
   for (const changes of invalid) assert.throws(() => validateMetadata(metadata(changes)), { statusCode: 400 });
 });
 
+test('metadata permits omitted Workshop IDs but rejects malformed supplied IDs', async () => {
+  const data = metadata();
+  delete data.target.workshopId;
+  assert.equal(validateMetadata(data), data);
+  assert.ok((await validateJar(jar(data), data)).patchModId);
+  for (const workshopId of [null, '', '0', 0, 123, '01', '-1', ' 123', 'invalid', '1'.repeat(21)]) {
+    assert.throws(() => validateMetadata(metadata({ target: { ...data.target, workshopId } })), /Invalid workshopId/);
+  }
+});
+
 test('JSON rejects duplicates (including escaped keys), invalid UTF-8 and oversized input', () => {
   for (const input of ['{"x":1,"x":2}', '{"x":1,"\\u0078":2}', Buffer.from([0xff]), ' '.repeat(65537)]) {
     assert.throws(() => parseJson(input, 'test'), { statusCode: 400 });

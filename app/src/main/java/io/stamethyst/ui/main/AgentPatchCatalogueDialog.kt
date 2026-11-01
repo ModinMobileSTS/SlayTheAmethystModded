@@ -108,6 +108,7 @@ internal fun AgentPatchCatalogueDialog(
     workshopId: ULong?,
     initialLocalActionPatchId: String? = null,
     initialLocalUploadPatchId: String? = null,
+    initialRemotePatchModId: String? = null,
     localOnly: Boolean = false,
     contributionsOnly: Boolean = false,
     actionsOnly: Boolean = false,
@@ -134,6 +135,7 @@ internal fun AgentPatchCatalogueDialog(
     var error by remember(parentModId) { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf(AgentPatchFilter.ALL) }
     var details by remember { mutableStateOf<RemoteAgentPatch?>(null) }
+    var initialRemoteOpened by remember(initialRemotePatchModId) { mutableStateOf(false) }
     var localDetails by remember { mutableStateOf<AgentPatchModUi?>(null) }
     var localActionsPatchId by remember(initialLocalActionPatchId) { mutableStateOf(initialLocalActionPatchId) }
     var showStandaloneActions by remember(initialLocalActionPatchId, actionsOnly) { mutableStateOf(actionsOnly) }
@@ -170,6 +172,15 @@ internal fun AgentPatchCatalogueDialog(
                 if (it is CancellationException) throw it
                 error = it.message ?: "Catalogue request failed."
             }
+    }
+
+    LaunchedEffect(initialRemotePatchModId, snapshot) {
+        if (!initialRemoteOpened && initialRemotePatchModId != null) {
+            snapshot?.patches?.firstOrNull { it.patchModId == initialRemotePatchModId }?.let {
+                initialRemoteOpened = true
+                details = it
+            }
+        }
     }
 
     LaunchedEffect(pendingUploadPatch?.patchId) {

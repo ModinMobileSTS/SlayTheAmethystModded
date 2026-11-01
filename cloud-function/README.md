@@ -175,6 +175,13 @@ Example `metadata`:
 }
 ```
 
+`target.workshopId` is optional: omit it for local/non-Workshop mods (do not send
+`null`, an empty string or `"0"`). When present it must be a positive decimal
+string of at most 20 digits. Patches are associated by `target.modId`; missing
+Workshop IDs may coexist with a known ID, but two different supplied IDs for
+the same modId are rejected. The catalogue repository's validator/index generator
+must support this optional field before deploying the relay change.
+
 `target.modId` is case-sensitive, versions are exact strings, and `["*"]` means
 all versions. `example` is an optional boolean, defaulting to false. Names and
 paths must be trimmed Unicode NFC and satisfy the catalogue's filename rules.

@@ -8,6 +8,26 @@ import org.json.JSONObject
 
 class AgentPatchCatalogueServiceTest {
     @Test
+    fun uploadTargetOmitsMissingOrZeroWorkshopId() {
+        for (id in listOf(null, 0uL)) {
+            val target = AgentPatchCatalogueService.uploadTarget("LocalMod", id, listOf(" "))
+            assertEquals("LocalMod", target.getString("modId"))
+            assertTrue(!target.has("workshopId"))
+            assertTrue(!JSONObject(target.toString()).has("workshopId"))
+            assertEquals("*", target.getJSONArray("versions").getString(0))
+        }
+    }
+
+    @Test
+    fun uploadTargetPreservesWorkshopIdAndNormalizesVersions() {
+        val target = AgentPatchCatalogueService.uploadTarget("BaseMod", 1605833019uL, listOf(" 1.0 ", "1.0", ""))
+        assertEquals("1605833019", target.getString("workshopId"))
+        assertEquals("BaseMod", target.getString("modId"))
+        assertEquals(1, target.getJSONArray("versions").length())
+        assertEquals("1.0", target.getJSONArray("versions").getString(0))
+    }
+
+    @Test
     fun parseForParentFiltersAndSortsValidPatches() {
         val json = index(
             patch("Later", "2.0.0", "amethyst_later", 20),
@@ -82,6 +102,8 @@ class AgentPatchCatalogueServiceTest {
         assertEquals(listOf("basemod"), result.map { it.modId })
         assertEquals("basemod", result.single().name)
         assertEquals(null, result.single().workshopId)
+        assertEquals("", result.single().patches.single().workshopId)
+        assertEquals(setOf("basemod"), AgentPatchCatalogueService.parseParentModIds(root.toString().toByteArray()))
     }
 
     @Test

@@ -124,7 +124,8 @@ async function publishPatchUpload(upload, config) {
       if (patchDirectory(existing) !== `mods/${modId}/${entry.path}`) {
         throw repositoryError('Existing metadata does not match its directory');
       }
-      if (existing.target.workshopId !== metadata.target.workshopId) {
+      if (existing.target.workshopId && metadata.target.workshopId &&
+          existing.target.workshopId !== metadata.target.workshopId) {
         throw repositoryError(`Conflicting Workshop IDs for ${modId}`);
       }
       if (entry.path === directoryName) previousMetadata = existing;

@@ -340,9 +340,6 @@ object AgentPatchCatalogueService {
         onProgress: (AgentPatchUploadProgress) -> Unit = {},
     ): AgentPatchUploadResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         onProgress(AgentPatchUploadProgress(AgentPatchUploadStage.PREPARING, 0f))
-        if (workshopId == null || workshopId == 0uL) {
-            throw IOException("This mod has no Workshop ID required by the public patch catalogue.")
-        }
         val cleanAuthor = author.name.trim()
         val cleanEmail = author.email.trim()
         if (cleanAuthor.isBlank() || cleanAuthor.length > 120 || cleanAuthor.any { it == '/' || it == '\\' }) {
@@ -365,10 +362,7 @@ object AgentPatchCatalogueService {
                 .put("author", JSONObject().put("name", cleanAuthor).put("email", cleanEmail))
                 .put(
                     "target",
-                    JSONObject()
-                        .put("modId", parentModId)
-                        .put("workshopId", workshopId.toString())
-                        .put("versions", JSONArray(targetVersions.map(String::trim).filter(String::isNotBlank).distinct().ifEmpty { listOf("*") })),
+                    uploadTarget(parentModId, workshopId, targetVersions),
                 )
                 .put("jar", patch.jarFile.name)
             val multipart = MultipartBody.Builder()
@@ -431,6 +425,14 @@ object AgentPatchCatalogueService {
             sourceZip?.delete()
         }
     }
+
+    internal fun uploadTarget(parentModId: String, workshopId: ULong?, targetVersions: List<String>): JSONObject =
+        JSONObject()
+            .put("modId", parentModId)
+            .apply {
+                workshopId?.takeIf { it > 0uL }?.let { put("workshopId", it.toString()) }
+            }
+            .put("versions", JSONArray(targetVersions.map(String::trim).filter(String::isNotBlank).distinct().ifEmpty { listOf("*") }))
 
     internal fun parseForParent(
         bytes: ByteArray,
