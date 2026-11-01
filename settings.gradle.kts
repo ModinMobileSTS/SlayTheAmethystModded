@@ -26,6 +26,8 @@ rootProject.name = "SlayTheAmethyst"
 include(":app")
 // Built independently for CDN; never an app dependency (including full variants).
 include(":web-runtime")
+// Download-only Godot engine container; never a launcher dependency.
+include(":godot-runtime")
 include(":macrobenchmark")
 include(":boot-bridge")
 include(":game-probe")

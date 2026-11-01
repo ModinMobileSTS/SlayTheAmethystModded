@@ -72,6 +72,9 @@ configurations.configureEach {
         check(resolutionResult.allComponents.none { it.moduleVersion?.group == "com.tencent.tbs" }) {
             "Tencent X5 has been removed and must not be linked into a launcher APK."
         }
+        check(resolutionResult.allComponents.none { it.moduleVersion?.group == "org.godotengine" }) {
+            "Godot must remain in the download-only :godot-runtime container."
+        }
     }
 }
 
@@ -86,7 +89,8 @@ androidComponents.onVariants { variant ->
                 ZipFile(apk).use { archive ->
                     val entries = archive.entries().asSequence().toList()
                     val forbidden = entries.filter {
-                        it.name.endsWith("/libxul.so") || it.name.endsWith("/libmozglue.so") ||
+                        it.name.endsWith("/libgodot_android.so") || it.name.endsWith(".pck") ||
+                            it.name.endsWith("/libxul.so") || it.name.endsWith("/libmozglue.so") ||
                             it.name.endsWith("/libgeckoview.so") || it.name.endsWith("/omni.ja") ||
                             it.name.endsWith("/runtime.apk") || it.name.contains("assets/web-runtime/") ||
                             it.name.startsWith("assets/tbs") || it.name.contains("/libtbs") ||
@@ -111,6 +115,9 @@ androidComponents.onVariants { variant ->
                             val name = String(bytes, start, offset - start, Charsets.UTF_8)
                             check(!name.startsWith("Lorg/mozilla/") && !name.startsWith("Lio/stamethyst/webruntime/")) {
                                 "Bundled Gecko class in $apk: $name"
+                            }
+                            check(!name.startsWith("Lorg/godotengine/") && !name.startsWith("Lio/stamethyst/godotruntime/")) {
+                                "Bundled Godot class in $apk: $name"
                             }
                             check(!name.startsWith("Lcom/tencent/smtt/") && !name.startsWith("Lcom/tencent/tbs/") &&
                                 !name.startsWith("Lio/stamethyst/SlingBreakX5")) {
@@ -298,6 +305,10 @@ android {
         buildConfigField("String", "RESOURCE_PACK_SHA256", resourcePackSha256.toBuildConfigStringLiteral())
         buildConfigField("String", "CLOUD_CONTROL_CONFIG_URL", cloudControlConfigUrl.toBuildConfigStringLiteral())
         buildConfigField("boolean", "SWAPPY_FRAME_PACING_ENABLED", swappyFramePacingEnabled.toString())
+        listOf("ENGINE_URL", "ENGINE_SHA256", "PCK_URL", "PCK_SHA256").forEach { field ->
+            buildConfigField("String", "GODOT_PROTOTYPE_$field",
+                providers.gradleProperty("godot.prototype.${field.lowercase()}").orElse("").get().toBuildConfigStringLiteral())
+        }
         val webRuntimeSpec = Properties().apply {
             rootProject.file("web-runtime/runtime.properties").inputStream().use(::load)
         }
