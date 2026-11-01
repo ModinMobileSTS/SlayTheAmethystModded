@@ -1111,11 +1111,14 @@ internal fun WorkshopItemCard(
     downloadState: WorkshopModDownloadState,
     onClick: () -> Unit,
     onDownload: () -> Unit,
+    localPreviewImagePath: String? = null,
+    downloadEnabled: Boolean = true,
 ) {
     WorkshopSummaryCard(
         modifier = modifier,
         publishedFileId = item.publishedFileId,
         previewUrl = item.previewUrl,
+        localPreviewImagePath = localPreviewImagePath,
         title = item.title,
         supportingText = item.authorName.ifBlank {
             item.description.ifBlank { stringResource(R.string.workshop_open_detail_hint) }
@@ -1141,6 +1144,7 @@ internal fun WorkshopItemCard(
                 state = downloadState,
                 onClick = onDownload,
                 iconOnly = true,
+                enabled = downloadEnabled && downloadState.canStartDownload,
             )
         },
     )
@@ -1156,6 +1160,7 @@ internal fun WorkshopSummaryCard(
     footerContent: @Composable () -> Unit,
     trailingContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    localPreviewImagePath: String? = null,
 ) {
     Card(
         onClick = onClick,
@@ -1172,6 +1177,7 @@ internal fun WorkshopSummaryCard(
             WorkshopPreviewImage(
                 publishedFileId = publishedFileId,
                 url = previewUrl,
+                localImagePath = localPreviewImagePath,
                 contentDescription = stringResource(R.string.workshop_preview_content_description, title),
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1404,8 +1410,8 @@ internal fun WorkshopDownloadActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     iconOnly: Boolean = false,
+    enabled: Boolean = state.canStartDownload,
 ) {
-    val enabled = state.canStartDownload
     if (iconOnly) {
         IconButton(
             modifier = modifier.size(48.dp),
@@ -1531,14 +1537,21 @@ internal fun WorkshopPreviewImage(
     url: String,
     contentDescription: String,
     modifier: Modifier = Modifier.size(72.dp),
+    localImagePath: String? = null,
 ) {
     val context = LocalContext.current
     val imageState by produceState<PreviewImageState>(
         initialValue = PreviewImageState.Loading,
         key1 = publishedFileId,
         key2 = url,
+        key3 = localImagePath,
     ) {
         value = when {
+            localImagePath != null -> withContext(Dispatchers.IO) {
+                WorkshopPreviewCacheStore.loadLocal(context.applicationContext, publishedFileId, localImagePath)
+                    ?.let(PreviewImageState::Loaded)
+                    ?: PreviewImageState.Failed
+            }
             url.isBlank() -> PreviewImageState.Failed
             else -> withContext(Dispatchers.IO) {
                 WorkshopPreviewCacheStore.load(context.applicationContext, publishedFileId, url)

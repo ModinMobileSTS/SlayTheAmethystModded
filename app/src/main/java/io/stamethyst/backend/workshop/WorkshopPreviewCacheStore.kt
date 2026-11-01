@@ -102,6 +102,12 @@ internal object WorkshopPreviewCacheStore {
         return decodeFile(file)?.also { memoryCache.put(cacheKey, it) }
     }
 
+    /** Installed update cards never need a network request for their cover. */
+    fun loadLocal(context: Context, publishedFileId: ULong, imagePath: String): Bitmap? =
+        imagePath.takeIf { it.isNotBlank() }?.let { path ->
+            runCatching { decodeFile(File(path)) }.getOrNull()
+        } ?: decodeCached(context, publishedFileId)
+
     fun clear(context: Context): Int {
         memoryCache.evictAll()
         val directory = cacheDirectory(context)

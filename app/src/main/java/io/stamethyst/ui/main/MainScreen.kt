@@ -203,6 +203,7 @@ import io.stamethyst.ui.workshop.WorkshopListSkeletonCard
 import io.stamethyst.ui.workshop.WorkshopModDownloadState
 import io.stamethyst.ui.workshop.WorkshopSummaryCard
 import io.stamethyst.ui.workshop.WorkshopViewModel
+import io.stamethyst.ui.workshop.WorkshopUpdatesAction
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -654,6 +655,7 @@ private fun GameLaunchActionBar(
 
 @Composable
 private fun ModsHeaderPinnedContent(
+    localMods: List<ModItemUi>,
     folderControlsEnabled: Boolean,
     dragLocked: Boolean,
     showEnabledModsOnly: Boolean,
@@ -679,6 +681,11 @@ private fun ModsHeaderPinnedContent(
         iconSize = 28.dp,
     ) {
         AgentWorkingIndicator()
+        WorkshopUpdatesAction(
+            localMods = localMods,
+            lastCheckedAtMs = workshopUpdateCheckState.lastCompletedAtMs,
+            enabled = folderControlsEnabled && hostAvailable,
+        )
         ModsActionsMenu(
             canEditFolders = folderControlsEnabled && hostAvailable,
             dragLocked = dragLocked,
@@ -5253,6 +5260,7 @@ private fun LauncherMainScreenContent(
                                 contentPadding = PaddingValues(0.dp),
                                 pinnedContent = {
                                     ModsHeaderPinnedContent(
+                                        localMods = uiState.optionalMods,
                                         folderControlsEnabled = uiState.controlsEnabled && !batchSelectionMode,
                                         dragLocked = uiState.dragLocked,
                                         showEnabledModsOnly = showEnabledModsOnly,

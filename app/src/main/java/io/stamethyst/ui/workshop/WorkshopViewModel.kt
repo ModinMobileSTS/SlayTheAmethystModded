@@ -11,6 +11,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.stamethyst.R
@@ -57,6 +58,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -80,14 +82,18 @@ internal class WorkshopViewModel : ViewModel() {
     private var activeProgressSessionId: Long = 0L
     private var activeDetailProgressSessionId: Long? = null
     private var refreshDownloadStateJob: Job? = null
+    private var updateAllJob: Job? = null
     private val detailsCache = mutableMapOf<String, WorkshopItemDetails>()
     private val detailLoadsInFlight = ConcurrentHashMap<String, Job>()
     private val commentTranslationsInFlight = mutableSetOf<String>()
+    private var commentTranslationJob: Job? = null
+    private var detailTranslationJob: Job? = null
+    private val translatedParts = mutableMapOf<List<String>, String>()
     private val translationClient = BaiduAiTextTranslationClient()
     private val downloadTaskPersistenceMutex = Mutex()
 
     override fun onCleared() {
-        WorkshopLoadProgressReporter.setListener(null)
+        if (progressListenerInstalled) WorkshopLoadProgressReporter.setListener(null)
         service?.close()
         service = null
         super.onCleared()
@@ -137,9 +143,9 @@ internal class WorkshopViewModel : ViewModel() {
         loaded = true
         activeListMode = initialListMode
         val serviceStartedAtMs = SystemClock.elapsedRealtime()
-        service = WorkshopService(context)
+        service = service ?: WorkshopService(context)
         val serviceCreateMs = SystemClock.elapsedRealtime() - serviceStartedAtMs
-        metadataStore = WorkshopMetadataStore(context)
+        metadataStore = metadataStore ?: WorkshopMetadataStore(context)
         metadataStore?.markMissingFiles()
         val steamLoggedIn = service?.hasSteamAuth() == true
         uiState = uiState.copy(
@@ -185,6 +191,12 @@ internal class WorkshopViewModel : ViewModel() {
         return uiState.installedMods.firstOrNull { record ->
             record.appId == appId && record.publishedFileId == publishedFileId
         }?.toWorkshopItemSummary()
+    }
+
+    /** Local-only entry point: opening updates must not fetch the market browse page. */
+    fun loadInstalledState(context: Context) {
+        if (metadataStore == null) metadataStore = WorkshopMetadataStore(context.applicationContext)
+        refreshDownloadState(context.applicationContext)
     }
 
     fun refreshDownloadState(context: Context) {
@@ -1679,7 +1691,8 @@ internal class WorkshopViewModel : ViewModel() {
         // The market page is lazy in the launcher pager. Initialize the service on a tutorial-card
         // click so deferring the hidden market page cannot turn the download action into a no-op.
         if (service == null) {
-            load(context)
+            service = WorkshopService(context.applicationContext)
+            loadInstalledState(context)
         }
         val existingTask = WorkshopDownloadCenterStore.find(item.publishedFileId)
         if (blockBlockedWorkshopDownload(context, item, existingTask)) return
@@ -1695,9 +1708,11 @@ internal class WorkshopViewModel : ViewModel() {
             item = item,
             installedMods = uiState.installedMods,
             downloadTasks = WorkshopDownloadCenterStore.tasks,
+            preparingDownloadIds = uiState.preparingDownloadIds,
         )
         if (!state.canStartDownload) return
-        val selectedDetails = findCachedDetails(item.appId, item.publishedFileId)
+        val selectedDetails = if (state == WorkshopModDownloadState.UpdateAvailable) null
+            else findCachedDetails(item.appId, item.publishedFileId)
         markPreparingDownload(item.publishedFileId)
         if (selectedDetails != null) {
             startDownloadAfterDependencyCheck(context, item, selectedDetails)
@@ -1720,6 +1735,26 @@ internal class WorkshopViewModel : ViewModel() {
                     downloadStatus = context.getString(R.string.workshop_status_dependency_check_failed, error.message ?: error.javaClass.simpleName),
                     preparingDownloadIds = uiState.preparingDownloadIds - item.publishedFileId,
                 )
+            }
+        }
+    }
+
+    fun updateAll(context: Context, items: List<WorkshopItemSummary>) {
+        if (updateAllJob?.isActive == true) return
+        updateAllJob = viewModelScope.launch {
+            uiState = uiState.copy(preparingAllUpdates = true)
+            try {
+                items.distinctBy { it.appId to it.publishedFileId }.forEach { item ->
+                    // Reuse the market's dependency confirmation without replacing an unanswered
+                    // prompt with the next item's prompt. Actual downloads use the existing queue.
+                    snapshotFlow { uiState.pendingDependencyDownload == null && uiState.preparingDownloadIds.isEmpty() }
+                        .first { it }
+                    download(context, item)
+                    snapshotFlow { uiState.pendingDependencyDownload == null && item.publishedFileId !in uiState.preparingDownloadIds }
+                        .first { it }
+                }
+            } finally {
+                uiState = uiState.copy(preparingAllUpdates = false)
             }
         }
     }
@@ -1796,7 +1831,12 @@ internal class WorkshopViewModel : ViewModel() {
             errorStackTrace = "",
             downloadLog = "",
         )
-        val queuedRecord = WorkshopInstalledModRecord(
+        val queuedRecord = uiState.installedMods.firstOrNull {
+            it.appId == summary.appId && it.publishedFileId == summary.publishedFileId
+        }?.copy(
+            cardState = WorkshopModCardState.Downloading,
+            statusText = context.getString(R.string.workshop_download_task_message_waiting),
+        ) ?: WorkshopInstalledModRecord(
             appId = summary.appId,
             publishedFileId = summary.publishedFileId,
             title = summary.title,
@@ -2041,6 +2081,7 @@ internal data class WorkshopUiState(
     val detailLoadingId: ULong? = null,
     val detailLoadProgress: WorkshopLoadProgress? = null,
     val downloadInProgress: Boolean = false,
+    val preparingAllUpdates: Boolean = false,
     val updateChecking: Boolean = false,
     val steamLoggedIn: Boolean = false,
     val items: List<WorkshopItemSummary> = emptyList(),
@@ -2202,7 +2243,7 @@ private fun WorkshopItemDetails.commentsNeedingTranslation(): List<WorkshopComme
 private fun WorkshopComment.translationContentKey(): String =
     "${id.ifBlank { "anonymous" }}:${content.hashCode()}"
 
-private fun WorkshopInstalledModRecord.toWorkshopItemSummary(): WorkshopItemSummary = WorkshopItemSummary(
+internal fun WorkshopInstalledModRecord.toWorkshopItemSummary(): WorkshopItemSummary = WorkshopItemSummary(
     publishedFileId = publishedFileId,
     appId = appId,
     title = title,

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workshop_updates_available">%1$d mod updates available</string>
+    <string name="workshop_updates_title">Mod updates</string>
+    <string name="workshop_updates_all">Update all</string>
+</resources>
