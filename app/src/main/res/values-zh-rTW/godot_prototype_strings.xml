@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_developer_godot_prototype_title">Godot 雙包原型測試</string>
+    <string name="settings_developer_godot_prototype_summary">下載並驗證引擎與遊戲 PCK，執行原生小遊戲並驗證主遊戲啟動遮罩。僅偵錯版本可用。</string>
+</resources>

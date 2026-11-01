@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_developer_godot_prototype_title">Godot split-package prototype test</string>
+    <string name="settings_developer_godot_prototype_summary">Download and verify the engine and game PCK, run the native minigame, and test the game-loading overlay. Debug builds only.</string>
+</resources>
