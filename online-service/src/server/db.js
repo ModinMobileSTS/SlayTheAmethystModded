@@ -138,6 +138,27 @@ async function initializeDatabase(database) {
       throw error;
     }
   });
+  // Keep historical device totals exact without counting the growing sessions
+  // index on every heartbeat. The seed runs only once on existing databases.
+  await database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_presence_last_seen_state
+      ON presence_sessions(last_seen_at_ms, state);
+    CREATE TABLE IF NOT EXISTS presence_totals (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      total_devices INTEGER NOT NULL
+    );
+    INSERT INTO presence_totals (id, total_devices)
+      SELECT 1, (SELECT COUNT(*) FROM presence_sessions)
+      WHERE NOT EXISTS (SELECT 1 FROM presence_totals WHERE id = 1);
+    CREATE TRIGGER IF NOT EXISTS presence_totals_insert
+      AFTER INSERT ON presence_sessions BEGIN
+        UPDATE presence_totals SET total_devices = total_devices + 1 WHERE id = 1;
+      END;
+    CREATE TRIGGER IF NOT EXISTS presence_totals_delete
+      AFTER DELETE ON presence_sessions BEGIN
+        UPDATE presence_totals SET total_devices = total_devices - 1 WHERE id = 1;
+      END;
+  `);
 }
 
 module.exports = {

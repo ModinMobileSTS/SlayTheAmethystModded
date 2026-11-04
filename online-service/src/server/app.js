@@ -44,7 +44,8 @@ async function buildServer(config = loadConfig()) {
   const panelSockets = new Map();
   const lanRateLimits = new Map();
   const timers = new Set();
-  let snapshotBroadcastTimer = null;
+  let snapshotBroadcastInFlight = null;
+  let closing = false;
 
   await fastify.register(websocket, {
     options: {
@@ -236,7 +237,6 @@ async function buildServer(config = loadConfig()) {
   fastify.post('/api/presence/heartbeat', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
     const result = await store.recordHeartbeat(request.body || {});
-    schedulePanelSnapshotBroadcast();
     return {
       ok: true,
       ...result
@@ -300,7 +300,6 @@ async function buildServer(config = loadConfig()) {
           ok: true,
           ...result
         });
-        schedulePanelSnapshotBroadcast();
       } catch (error) {
         sendJson(socket, {
           type: 'error',
@@ -460,6 +459,14 @@ async function buildServer(config = loadConfig()) {
   }, LAN_SESSION_SWEEP_INTERVAL_MS);
   timers.add(lanSessionSweepTimer);
 
+  // Sampling is independent of panel readers; stats requests are read-only.
+  await store.recordHourlySnapshot();
+  const currentHourSnapshotTimer = setInterval(() => {
+    store.recordHourlySnapshot(Date.now(), {
+      minUpdateIntervalMs: 5 * 60 * 1000
+    }).catch((error) => fastify.log.warn(error));
+  }, 5 * 60 * 1000);
+  timers.add(currentHourSnapshotTimer);
   const firstSnapshotDelayMs = (HOUR_MS - (Date.now() % HOUR_MS)) + 1000;
   const snapshotScheduleTimeout = setTimeout(() => {
     store.recordHourlySnapshot().catch((error) => fastify.log.warn(error));
@@ -471,10 +478,7 @@ async function buildServer(config = loadConfig()) {
   timers.add(snapshotScheduleTimeout);
 
   fastify.addHook('onClose', async () => {
-    if (snapshotBroadcastTimer) {
-      clearTimeout(snapshotBroadcastTimer);
-      snapshotBroadcastTimer = null;
-    }
+    closing = true;
     for (const timer of timers) {
       clearInterval(timer);
       clearTimeout(timer);
@@ -487,6 +491,9 @@ async function buildServer(config = loadConfig()) {
       }
     }
     panelSockets.clear();
+    if (snapshotBroadcastInFlight) {
+      await snapshotBroadcastInFlight.catch(() => {});
+    }
     await easyTierRuntime.stop();
     await database.close();
   });
@@ -494,16 +501,6 @@ async function buildServer(config = loadConfig()) {
   fastify.decorate('easyTierRuntimeManager', easyTierRuntime);
   fastify.decorate('startEasyTierRuntime', async () => easyTierRuntime.start());
   fastify.decorate('stopEasyTierRuntime', async () => easyTierRuntime.stop());
-
-  function schedulePanelSnapshotBroadcast() {
-    if (snapshotBroadcastTimer) {
-      return;
-    }
-    snapshotBroadcastTimer = setTimeout(() => {
-      snapshotBroadcastTimer = null;
-      broadcastPanelSnapshot().catch((error) => fastify.log.warn(error));
-    }, 250);
-  }
 
   async function sendPanelSnapshot(socket) {
     sendJson(socket, {
@@ -530,16 +527,26 @@ async function buildServer(config = loadConfig()) {
   }
 
   async function broadcastPanelSnapshot() {
-    if (panelSockets.size === 0) {
+    if (closing || panelSockets.size === 0) {
       return;
     }
-    const snapshot = await store.buildSnapshot();
-    for (const socket of Array.from(panelSockets.keys())) {
-      sendJson(socket, {
-        type: 'snapshot',
-        ok: true,
-        data: snapshot
-      });
+    if (snapshotBroadcastInFlight) {
+      return snapshotBroadcastInFlight;
+    }
+    snapshotBroadcastInFlight = (async () => {
+      const snapshot = await store.buildSnapshot();
+      for (const socket of Array.from(panelSockets.keys())) {
+        sendJson(socket, {
+          type: 'snapshot',
+          ok: true,
+          data: snapshot
+        });
+      }
+    })();
+    try {
+      await snapshotBroadcastInFlight;
+    } finally {
+      snapshotBroadcastInFlight = null;
     }
   }
 

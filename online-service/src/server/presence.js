@@ -17,7 +17,7 @@ const MAX_STATS_BUCKET_SECONDS = 60 * 60;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HONG_KONG_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
-const CURRENT_SNAPSHOT_MIN_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
+const DISTRIBUTION_CACHE_TTL_MS = 60 * 1000;
 const HEARTBEAT_WRITE_GRACE_SECONDS = 60;
 const MAX_CLIENT_ID_LENGTH = 128;
 const DISTRIBUTION_TOP_LIMIT = 5;
@@ -26,6 +26,7 @@ class PresenceStore {
   constructor(database, config) {
     this.database = database;
     this.config = config || {};
+    this.distributionCache = new Map();
   }
 
   runtimeOptions(query, body) {
@@ -119,7 +120,9 @@ class PresenceStore {
       online += count;
     }
 
-    const totalDevicesRow = await this.database.get('SELECT COUNT(*) AS count FROM presence_sessions');
+    const totalDevicesRow = await this.database.get(
+      'SELECT total_devices AS count FROM presence_totals WHERE id = 1'
+    );
     const totalOnlineUsers = Number(totalDevicesRow && totalDevicesRow.count) || 0;
 
     return {
@@ -161,27 +164,52 @@ class PresenceStore {
 
     return {
       ...summary,
-      historicalDistribution: await this.buildHistoricalDistribution(),
+      historicalDistribution: await this.buildHistoricalDistribution(nowMs),
       todayDistribution: await this.buildTodayDistribution(nowMs),
       sessions: rows.map((row) => serializeSession(row, runtimeOptions, nowMs))
     };
   }
 
-  async buildHistoricalDistribution() {
-    return this.buildDistributionScope('', []);
+  async buildHistoricalDistribution(nowMs = Date.now()) {
+    return this.cachedDistribution('historical', '', [], nowMs);
   }
 
   async buildTodayDistribution(nowMs = Date.now()) {
     const dayRange = resolveHongKongDayRange(nowMs);
-    return this.buildDistributionScope(
+    return this.cachedDistribution(
+      'today',
       'WHERE last_seen_at_ms >= ? AND last_seen_at_ms < ?',
-      [dayRange.startMs, dayRange.endMs]
+      [dayRange.startMs, dayRange.endMs],
+      nowMs,
+      dayRange.startMs
     );
+  }
+
+  async cachedDistribution(scope, whereClause, params, nowMs, dayStartMs = null) {
+    const cached = this.distributionCache.get(scope);
+    if (cached && cached.dayStartMs === dayStartMs &&
+      nowMs >= cached.createdAtMs && nowMs - cached.createdAtMs < DISTRIBUTION_CACHE_TTL_MS) {
+      return cached.promise;
+    }
+    // Cache the promise too: simultaneous HTTP/WS readers share one rebuild.
+    const entry = { dayStartMs, createdAtMs: nowMs };
+    entry.promise = this.buildDistributionScope(whereClause, params);
+    this.distributionCache.set(scope, entry);
+    try {
+      return await entry.promise;
+    } catch (error) {
+      if (this.distributionCache.get(scope) === entry) {
+        this.distributionCache.delete(scope);
+      }
+      throw error;
+    }
   }
 
   async buildDistributionScope(whereClause, params) {
     const totalRow = await this.database.get(
-      `SELECT COUNT(*) AS count FROM presence_sessions ${whereClause}`.trim(),
+      whereClause
+        ? `SELECT COUNT(*) AS count FROM presence_sessions ${whereClause}`
+        : 'SELECT total_devices AS count FROM presence_totals WHERE id = 1',
       params
     );
     return {
@@ -207,17 +235,13 @@ class PresenceStore {
   }
 
   async buildStats(query, nowMs = Date.now()) {
-    const runtimeOptions = this.runtimeOptions(query, null);
     const bucketSeconds = resolveStatsBucketSeconds(query);
     const windowSeconds = resolveStatsWindowSeconds(query);
     const bucketMs = bucketSeconds * 1000;
     const bucketCount = Math.ceil(windowSeconds / bucketSeconds);
     const untilBucketMs = floorToBucketMs(nowMs, bucketMs);
     const sinceBucketMs = untilBucketMs - ((bucketCount - 1) * bucketMs);
-    const summary = await this.recordHourlySnapshot(nowMs, {
-      runtimeOptions,
-      minUpdateIntervalMs: CURRENT_SNAPSHOT_MIN_UPDATE_INTERVAL_MS
-    });
+    const summary = await this.buildSummary(query, nowMs);
     const rows = await this.database.all(`
       SELECT
         snapshot_hour_ms,

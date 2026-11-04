@@ -42,6 +42,28 @@ server push for sessions and stats, so it no longer polls the HTTP endpoints.
 
 ## Run
 
+### Presence database performance
+
+- Startup automatically migrates existing SQLite databases: a covering index on
+  `(last_seen_at_ms, state)` bounds online queries to recent sessions and serves
+  the session list ordering. No separate `state` index is needed.
+- `presence_totals` is seeded once from existing sessions and maintained by
+  insert/delete triggers. Heartbeats read the exact historical device total in
+  constant time instead of repeatedly counting the entire sessions index.
+- Panel snapshots are broadcast only by the configured periodic timer (default
+  2 seconds), not by each heartbeat. With no panel subscribers no broadcast
+  snapshot is built; slow broadcasts cannot overlap.
+- Historical and Hong Kong current-day distributions are cached for 60 seconds.
+  Concurrent readers share a rebuild; failures are retried on the next request.
+  A Hong Kong day rollover immediately invalidates the current-day cache. Online
+  counts and session lists remain live; distribution charts may lag by a minute.
+- Stats endpoints are read-only. Hourly samples are written at startup, every
+  five minutes, and at the hour boundary, independently of panel traffic.
+- Historical sessions are deliberately retained: deleting old rows would change
+  cumulative device counts, historical distributions, and first-seen timestamps.
+  Back up the database before deploying; startup creates the index and seeds the
+  counter without discarding existing data.
+
 Windows 开发阶段推荐直接普通启动，不依赖 Docker：
 
 ```powershell
