@@ -26,10 +26,12 @@ import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.backend.workshop.WorkshopBrowseTimeFilter
 import io.stamethyst.backend.workshop.WorkshopChangeNotes
 import io.stamethyst.backend.workshop.WorkshopComment
+import io.stamethyst.backend.workshop.WorkshopCommentThreadContext
 import io.stamethyst.backend.workshop.WorkshopDownloadBlocklist
 import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStore
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
+import io.stamethyst.backend.workshop.WorkshopDetailUpdate
 import io.stamethyst.backend.workshop.WorkshopInstalledModRecord
 import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopItemSummary
@@ -87,6 +89,8 @@ internal class WorkshopViewModel : ViewModel() {
     private val detailLoadsInFlight = ConcurrentHashMap<String, Job>()
     private val commentTranslationsInFlight = mutableSetOf<String>()
     private var commentTranslationJob: Job? = null
+    private var commentLoadJob: Job? = null
+    private var commentDataGeneration = 0L
     private var detailTranslationJob: Job? = null
     private val translatedParts = mutableMapOf<List<String>, String>()
     private val translationClient = BaiduAiTextTranslationClient()
@@ -173,7 +177,8 @@ internal class WorkshopViewModel : ViewModel() {
 
     private fun findCachedDetails(appId: UInt, publishedFileId: ULong): WorkshopItemDetails? {
         return uiState.selected?.takeIf { selected ->
-            selected.summary.appId == appId && selected.summary.publishedFileId == publishedFileId
+            selected.summary.appId == appId && selected.summary.publishedFileId == publishedFileId &&
+                uiState.detailUpdate == null
         } ?: detailsCache[detailsCacheKey(appId, publishedFileId)]
     }
 
@@ -585,11 +590,17 @@ internal class WorkshopViewModel : ViewModel() {
         val currentService = service ?: return
         val detailKey = detailsCacheKey(appId, publishedFileId)
         if (uiState.selected?.cacheKey() != detailKey) {
+            commentLoadJob?.cancel()
             commentTranslationJob?.cancel()
             detailTranslationJob?.cancel()
             uiState = uiState.copy(detailTranslationLoadingId = null)
         }
         if (detailLoadsInFlight.containsKey(detailKey)) return
+        // A cache hit for another mod must supersede the old pipeline too.
+        detailLoadsInFlight.entries.filter { it.key != detailKey }.forEach { (key, job) ->
+            job.cancel()
+            detailLoadsInFlight.remove(key, job)
+        }
         if (!clearSelected && !ignoreCache) {
             findCachedDetails(appId, publishedFileId)?.let { cachedDetails ->
                 // Stale-while-revalidate: when the only reason the cache fails reuse is a newer
@@ -639,6 +650,7 @@ internal class WorkshopViewModel : ViewModel() {
         // requests stop consuming network and its narration cannot interleave with this one.
         detailLoadsInFlight.values.forEach { runningJob -> runningJob.cancel() }
         detailLoadsInFlight.clear()
+        commentLoadJob?.cancel()
         // Narrate the detail pipeline the same way the market header does: an open progress session
         // lets the acceleration layer's route events (node picks, failovers, official fallback) flow
         // into the bar while getDetails talks to Steam. The reporter tracks one active session, so a
@@ -653,10 +665,13 @@ internal class WorkshopViewModel : ViewModel() {
                 WORKSHOP_PERF_TAG,
                 "loadDetails start publishedFileId=$publishedFileId appId=$appId clearSelected=$clearSelected ignoreCache=$ignoreCache hasFallback=${fallbackSummary != null}",
             )
+            val cachedDetailsBeforeLoad = findCachedDetails(appId, publishedFileId)
+            val commentGenerationBeforeLoad = commentDataGeneration
             try {
                 uiState = uiState.copy(
                     selected = if (clearSelected) null else uiState.selected,
                     detailLoadingId = publishedFileId,
+                    detailUpdate = null,
                     detailLoadProgress = WorkshopLoadProgress(
                         sessionId = detailProgressSessionId,
                         phase = WorkshopLoadPhase.Preparing,
@@ -680,19 +695,51 @@ internal class WorkshopViewModel : ViewModel() {
                         WorkshopDetailSubscriptionStatus.Unknown
                     },
                 )
-                val cachedDetailsBeforeLoad = findCachedDetails(appId, publishedFileId)
                 val summaryFallback = cachedDetailsBeforeLoad?.summary
                     ?: fallbackSummary
                     ?: findSummaryFallback(appId, publishedFileId)
-                val loadedDetails =
-                    withContext(Dispatchers.IO) { currentService.getDetails(appId, publishedFileId, summaryFallback) }
-                val details = loadedDetails.mergeCachedCommunityData(findCachedDetails(appId, publishedFileId))
+                refreshDetailSubscriptionStatus(appId, publishedFileId)
+                var commentsStarted = false
+                var requestedCommentContext: WorkshopCommentThreadContext? = null
+                val loadedDetails = withContext(Dispatchers.IO) {
+                    currentService.getDetails(appId, publishedFileId, summaryFallback, onUpdate = { update ->
+                        withContext(Dispatchers.Main.immediate) {
+                            // Each network branch publishes independently. Keep comments that arrived
+                            // between snapshots instead of replacing them with an empty detail payload.
+                            val visibleUpdate = update.retainVisibleCache(cachedDetailsBeforeLoad)
+                            val details = visibleUpdate.details
+                                .mergeCachedCommunityData(cachedDetailsBeforeLoad)
+                                .retainLoadedCommentsFrom(uiState.selected, commentDataGeneration != commentGenerationBeforeLoad)
+                            uiState = uiState.copy(
+                                selected = details,
+                                detailUpdate = visibleUpdate.copy(details = details),
+                                errorMessage = update.metadataErrorMessage,
+                                commentErrorMessage = if (commentsStarted || update.commentContextLoading) {
+                                    uiState.commentErrorMessage
+                                } else {
+                                    details.commentUnavailableMessage(context)
+                                },
+                            )
+                            val improvedCommentContext = uiState.commentErrorMessage != null &&
+                                uiState.commentLoadingId == null && details.commentThreadContext != requestedCommentContext
+                            if ((!commentsStarted || improvedCommentContext) && details.shouldLoadInitialWorkshopComments()) {
+                                commentsStarted = true
+                                requestedCommentContext = details.commentThreadContext
+                                loadWorkshopCommentsPage(context, appId, publishedFileId, page = 1)
+                            }
+                        }
+                    })
+                }
+                val details = loadedDetails
+                    .mergeCachedCommunityData(cachedDetailsBeforeLoad)
+                    .retainLoadedCommentsFrom(uiState.selected, commentDataGeneration != commentGenerationBeforeLoad)
                 Log.i(
                     WORKSHOP_PERF_TAG,
                     "loadDetails success publishedFileId=$publishedFileId deps=${details.dependencies.size} commentsPending=${details.shouldLoadInitialWorkshopComments()} elapsedMs=${SystemClock.elapsedRealtime() - loadStartedAtMs}",
                 )
                 WorkshopLoadProgressReporter.report(detailProgressSessionId, WorkshopLoadPhase.Completed)
-                showLoadedDetails(context, currentService, details)
+                detailsCache[detailKey] = details
+                uiState = uiState.copy(selected = details, detailLoadingId = null, detailUpdate = null)
             } catch (error: CancellationException) {
                 // Superseded by a newer detail load; never surface this as a user-facing failure.
                 throw error
@@ -708,6 +755,11 @@ internal class WorkshopViewModel : ViewModel() {
                 )
                 uiState = uiState.copy(
                     detailLoadingId = null,
+                    detailUpdate = uiState.detailUpdate?.copy(
+                        metadataLoading = false,
+                        communityLoading = false,
+                        dependenciesLoading = false,
+                    ),
                     detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
                     errorMessage = error.message ?: error.javaClass.simpleName,
                 )
@@ -774,6 +826,7 @@ internal class WorkshopViewModel : ViewModel() {
         refreshSubscriptionStatus: Boolean = true,
     ) {
         if (uiState.selected?.cacheKey() != details.cacheKey()) {
+            commentLoadJob?.cancel()
             commentTranslationJob?.cancel()
             detailTranslationJob?.cancel()
             uiState = uiState.copy(detailTranslationLoadingId = null)
@@ -785,6 +838,7 @@ internal class WorkshopViewModel : ViewModel() {
         uiState = uiState.copy(
             selected = details,
             detailLoadingId = null,
+            detailUpdate = null,
             errorMessage = null,
             commentLoadingId = if (shouldLoadComments) summary.publishedFileId else null,
             commentErrorMessage = details.commentUnavailableMessage(context),
@@ -854,7 +908,7 @@ internal class WorkshopViewModel : ViewModel() {
                     changeNotes = changeNotes.markdown,
                     changeNotesUrl = changeNotes.url,
                 )
-                if (updatedDetails != null) {
+                if (updatedDetails != null && uiState.detailUpdate == null) {
                     detailsCache[changeNotesKey] = updatedDetails
                 }
                 uiState = uiState.copy(
@@ -886,7 +940,7 @@ internal class WorkshopViewModel : ViewModel() {
 
     fun retryWorkshopCommentsPage(context: Context) {
         val details = uiState.selected ?: return
-        if (uiState.detailLoadingId != null || uiState.commentLoadingId != null) return
+        if (uiState.commentLoadingId != null) return
         if (details.commentCount == 0L) {
             uiState = uiState.copy(commentErrorMessage = null)
             return
@@ -913,7 +967,8 @@ internal class WorkshopViewModel : ViewModel() {
             commentLoadingId = summary.publishedFileId,
             commentErrorMessage = null,
         )
-        viewModelScope.launch {
+        commentLoadJob?.cancel()
+        commentLoadJob = viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     currentService.getDetails(
@@ -929,7 +984,7 @@ internal class WorkshopViewModel : ViewModel() {
                     current.summary.appId == summary.appId && current.summary.publishedFileId == summary.publishedFileId
                 } ?: return@onSuccess
                 val refreshedDetails = loadedDetails.retainDetailStateFrom(currentDetails)
-                detailsCache[refreshedDetails.cacheKey()] = refreshedDetails
+                if (uiState.detailUpdate == null) detailsCache[refreshedDetails.cacheKey()] = refreshedDetails
                 val shouldLoadComments = refreshedDetails.shouldLoadWorkshopComments()
                 uiState = uiState.copy(
                     selected = refreshedDetails,
@@ -937,6 +992,7 @@ internal class WorkshopViewModel : ViewModel() {
                     commentErrorMessage = refreshedDetails.commentUnavailableMessage(context),
                 )
                 if (shouldLoadComments) {
+                    commentLoadJob = null
                     loadWorkshopCommentsPage(
                         context = context,
                         appId = summary.appId,
@@ -945,16 +1001,14 @@ internal class WorkshopViewModel : ViewModel() {
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) throw error
                 val stillSelected = uiState.selected?.let { current ->
                     current.summary.appId == summary.appId && current.summary.publishedFileId == summary.publishedFileId
                 } == true
+                if (!stillSelected) return@onFailure
                 uiState = uiState.copy(
                     commentLoadingId = null,
-                    commentErrorMessage = if (stillSelected) {
-                        error.message ?: context.getString(R.string.workshop_error_load_comments_failed)
-                    } else {
-                        uiState.commentErrorMessage
-                    },
+                    commentErrorMessage = error.message ?: context.getString(R.string.workshop_error_load_comments_failed),
                 )
             }
         }
@@ -962,7 +1016,7 @@ internal class WorkshopViewModel : ViewModel() {
 
     private fun shiftWorkshopCommentsPage(context: Context, delta: Int) {
         val details = uiState.selected ?: return
-        if (uiState.detailLoadingId != null || uiState.commentLoadingId != null) return
+        if (uiState.commentLoadingId != null) return
         val targetPage = (details.commentPage + delta).coerceAtLeast(1)
         if (targetPage == details.commentPage) return
         if (delta < 0 && !details.hasPreviousCommentPage) return
@@ -1001,10 +1055,12 @@ internal class WorkshopViewModel : ViewModel() {
             commentTranslationLoadingKey = null,
             commentTranslationErrorMessage = null,
         )
-        viewModelScope.launch {
+        commentLoadJob?.cancel()
+        commentLoadJob = viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { currentService.getCommentsPage(detailSnapshot, page) }
             }.onSuccess { commentPage ->
+                commentDataGeneration += 1
                 val updatedDetails = uiState.selected?.takeIf { current ->
                     current.summary.appId == appId && current.summary.publishedFileId == publishedFileId
                 }?.copy(
@@ -1016,7 +1072,7 @@ internal class WorkshopViewModel : ViewModel() {
                     hasNextCommentPage = commentPage.hasNextPage,
                     comments = commentPage.comments,
                 )
-                if (updatedDetails != null) {
+                if (updatedDetails != null && uiState.detailUpdate == null) {
                     detailsCache[updatedDetails.cacheKey()] = updatedDetails
                 }
                 uiState = uiState.copy(
@@ -1029,6 +1085,20 @@ internal class WorkshopViewModel : ViewModel() {
                     ?.takeIf { updated -> uiState.detailTranslationModeKey == updated.cacheKey() }
                     ?.let { updated -> translateWorkshopCommentsIfNeeded(context, updated) }
             }.onFailure { error ->
+                if (error is CancellationException) throw error
+                if (uiState.selected?.summary?.let { it.appId == appId && it.publishedFileId == publishedFileId } != true) {
+                    return@onFailure
+                }
+                val currentDetails = uiState.selected
+                if (currentDetails?.commentThreadContext != null &&
+                    currentDetails.commentThreadContext != detailSnapshot.commentThreadContext
+                ) {
+                    // The community page may have supplied a richer context while the early
+                    // API-derived comment request was running. Retry against that context once.
+                    commentLoadJob = null
+                    loadWorkshopCommentsPage(context, appId, publishedFileId, page)
+                    return@onFailure
+                }
                 uiState = uiState.copy(
                     commentLoadingId = null,
                     commentErrorMessage = error.message ?: context.getString(R.string.workshop_error_load_comments_failed),
@@ -1039,6 +1109,8 @@ internal class WorkshopViewModel : ViewModel() {
 
     fun downloadSelected(context: Context) {
         val details = uiState.selected ?: return
+        // A partial dependency list must never bypass the missing-dependency confirmation.
+        if (uiState.detailLoadingId == details.summary.publishedFileId) return
         markPreparingDownload(details.summary.publishedFileId)
         startDownloadAfterDependencyCheck(context, details.summary, details)
     }
@@ -1505,7 +1577,7 @@ internal class WorkshopViewModel : ViewModel() {
                                         it.copy(translatedContent = text)
                                     } ?: it
                                 })
-                                detailsCache[detailKey] = updated
+                                if (uiState.detailUpdate == null) detailsCache[detailKey] = updated
                                 uiState = uiState.copy(selected = updated)
                             }
                         } catch (error: CancellationException) {
@@ -1536,7 +1608,7 @@ internal class WorkshopViewModel : ViewModel() {
                         }
                     }
                     val updatedDetails = current.copy(comments = translatedComments)
-                    detailsCache[updatedDetails.cacheKey()] = updatedDetails
+                    if (uiState.detailUpdate == null) detailsCache[updatedDetails.cacheKey()] = updatedDetails
                     uiState = uiState.copy(
                         selected = updatedDetails,
                         commentTranslationLoadingKey = if (uiState.commentTranslationLoadingKey == translationKey) {
@@ -2080,6 +2152,7 @@ internal data class WorkshopUiState(
     val listMode: WorkshopListMode = WorkshopListMode.Browse,
     val detailLoadingId: ULong? = null,
     val detailLoadProgress: WorkshopLoadProgress? = null,
+    val detailUpdate: WorkshopDetailUpdate? = null,
     val downloadInProgress: Boolean = false,
     val preparingAllUpdates: Boolean = false,
     val updateChecking: Boolean = false,
@@ -2145,6 +2218,26 @@ private fun WorkshopItemDetails.shouldLoadWorkshopComments(): Boolean =
 
 private fun WorkshopItemDetails.shouldLoadInitialWorkshopComments(): Boolean =
     shouldLoadWorkshopComments() && comments.isEmpty()
+
+internal fun WorkshopItemDetails.retainLoadedCommentsFrom(
+    current: WorkshopItemDetails?,
+    hasNewCommentResponse: Boolean = false,
+): WorkshopItemDetails {
+    if (current == null || current.cacheKey() != cacheKey() ||
+        (current.comments.isEmpty() && !(hasNewCommentResponse && current.commentCount == 0L)) ||
+        (commentCount == 0L && !hasNewCommentResponse)
+    ) return this
+    return copy(
+        commentsUrl = current.commentsUrl,
+        commentThreadContext = commentThreadContext ?: current.commentThreadContext,
+        commentCount = current.commentCount,
+        commentPage = current.commentPage,
+        commentTotalPages = current.commentTotalPages,
+        hasPreviousCommentPage = current.hasPreviousCommentPage,
+        hasNextCommentPage = current.hasNextCommentPage,
+        comments = current.comments,
+    )
+}
 
 private fun WorkshopItemDetails.canReuseForDetailOpen(fallbackSummary: WorkshopItemSummary?): Boolean {
     if (!hasReusableCommunityData()) return false

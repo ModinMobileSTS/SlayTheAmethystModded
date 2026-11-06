@@ -28,6 +28,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -489,10 +491,40 @@ internal class WorkshopService(
         fallbackSummary: WorkshopItemSummary? = null,
         includeCommunityData: Boolean = true,
         includeDependencyData: Boolean = true,
+        onUpdate: (suspend (WorkshopDetailUpdate) -> Unit)? = null,
     ): WorkshopItemDetails = withContext(Dispatchers.IO) {
         val getDetailsStartedAtMs = SystemClock.elapsedRealtime()
         val languagePreference = steamLanguagePreference
         coroutineScope {
+            val updateMutex = Mutex()
+            var partialApiDetail: PublishedFileDetailsDto? = null
+            var metadataLoading = true
+            var metadataErrorMessage: String? = null
+            var partialPayload = ""
+            var partialCommunityDetail: LocalizedWorkshopDetail? = null
+            var communityLoading = includeCommunityData
+            val partialDependencies = linkedMapOf<ULong?, PublishedFileDetailsDto>()
+            suspend fun publishUpdate(update: () -> Unit = {}) {
+                updateMutex.withLock {
+                    update()
+                    onUpdate?.invoke(
+                        WorkshopDetailUpdate(
+                            details = buildItemDetails(
+                                appId, publishedFileId, fallbackSummary, languagePreference.requestValue,
+                                partialApiDetail ?: PublishedFileDetailsDto(), partialPayload,
+                                partialCommunityDetail, includeDependencyData, partialDependencies,
+                            ),
+                            metadataLoading = metadataLoading,
+                            communityLoading = communityLoading,
+                            dependenciesLoading = includeDependencyData,
+                            resolvedDependencyIds = partialDependencies.keys.filterNotNull().toSet(),
+                            metadataErrorMessage = metadataErrorMessage,
+                        ),
+                    )
+                }
+            }
+            // Cached card text/images can already be rendered while the independent requests run.
+            publishUpdate()
             // These requests use independent Steam endpoints. Fetch them together so a
             // slow API or community response does not add its full latency to the other.
             val apiDetail = async(Dispatchers.IO) {
@@ -507,18 +539,28 @@ internal class WorkshopService(
                     .post(requestBody)
                     .tag(HttpRetrySafety::class.java, HttpRetrySafety.READ_ONLY)
                     .build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) error("Steam workshop details failed: ${response.code}")
-                    val payload = response.body?.string().orEmpty()
-                    val envelope = json.decodeFromString<PublishedFileDetailsEnvelope>(payload)
-                    val detail = envelope.response.publishedFileDetails.firstOrNull()
-                        ?: error("No workshop detail returned")
-                    Log.i(
-                        TAG,
-                        "perf getDetails apiDetail publishedFileId=$publishedFileId code=${response.code} payloadBytes=${payload.length} children=${detail.children.size} elapsedMs=${SystemClock.elapsedRealtime() - apiStartedAtMs}",
-                    )
-                    detail to payload
+                val result = runCatching {
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) error("Steam workshop details failed: ${response.code}")
+                        val payload = response.body?.string().orEmpty()
+                        val envelope = json.decodeFromString<PublishedFileDetailsEnvelope>(payload)
+                        val detail = envelope.response.publishedFileDetails.firstOrNull()
+                            ?: error("No workshop detail returned")
+                        Log.i(
+                            TAG,
+                            "perf getDetails apiDetail publishedFileId=$publishedFileId code=${response.code} payloadBytes=${payload.length} children=${detail.children.size} elapsedMs=${SystemClock.elapsedRealtime() - apiStartedAtMs}",
+                        )
+                        detail to payload
+                    }
                 }
+                result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+                publishUpdate {
+                    metadataLoading = false
+                    partialApiDetail = result.getOrNull()?.first
+                    partialPayload = result.getOrNull()?.second.orEmpty()
+                    metadataErrorMessage = result.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName }
+                }
+                result
             }
             val localizedDetail = if (includeCommunityData) {
                 async(Dispatchers.IO) {
@@ -531,11 +573,12 @@ internal class WorkshopService(
                                 // A retry costs a full second page download. Only pay it when the
                                 // API payload cannot cover the description gap; missing comment
                                 // context degrades gracefully and stays retriable from the UI.
-                                runCatching { apiDetail.await().first.description.isNullOrBlank() }
+                                runCatching { apiDetail.await().getOrNull()?.first?.description.isNullOrBlank() }
                                     .getOrDefault(true)
                             },
                         )
                     }.onFailure { error ->
+                        if (error is CancellationException) throw error
                         Log.w(
                             TAG,
                             "perf getDetails communityDetail failed publishedFileId=$publishedFileId elapsedMs=${SystemClock.elapsedRealtime() - communityStartedAtMs} error=${error.message ?: error.javaClass.simpleName}",
@@ -549,12 +592,19 @@ internal class WorkshopService(
                             TAG,
                             "perf getDetails communityDetail ok publishedFileId=$publishedFileId descChars=${detail.description.length} previews=${detail.previewMedia.size} required=${detail.requiredItemIds.size} comments=${detail.commentCount} elapsedMs=${SystemClock.elapsedRealtime() - communityStartedAtMs}",
                         )
-                    }.getOrNull()
+                    }.getOrNull().also { detail ->
+                        publishUpdate {
+                            partialCommunityDetail = detail
+                            communityLoading = false
+                        }
+                    }
                 }
             } else {
                 null
             }
-            val (detail, payload) = apiDetail.await()
+            val apiResult = apiDetail.await()
+            if (onUpdate == null) apiResult.getOrThrow()
+            val (detail, payload) = apiResult.getOrNull() ?: (PublishedFileDetailsDto() to "")
             // The API metadata is in hand; the community HTML page (description, preview media,
             // comment thread) is still downloading. Narrate that wait explicitly so the bar does
             // not sit on "Parsing" while the biggest request is still in flight.
@@ -577,7 +627,7 @@ internal class WorkshopService(
                 async(Dispatchers.IO) {
                     loadDependencyDetails(appId, primaryDependencyIds).associateBy { childDetail ->
                         childDetail.publishedFileId.toULongOrNull()
-                    }
+                    }.also { dependencies -> publishUpdate { partialDependencies.putAll(dependencies) } }
                 }
             } else {
                 null
@@ -593,55 +643,19 @@ internal class WorkshopService(
                     .distinct()
                     .takeIf { extraIds -> extraIds.isNotEmpty() }
                     ?.let { extraIds ->
-                        async(Dispatchers.IO) { loadDependencyDetails(appId, extraIds) }
+                        async(Dispatchers.IO) {
+                            loadDependencyDetails(appId, extraIds).also { dependencies ->
+                                publishUpdate {
+                                    dependencies.forEach { child ->
+                                        partialDependencies[child.publishedFileId.toULongOrNull()] = child
+                                    }
+                                }
+                            }
+                        }
                     }
             } else {
                 null
             }
-            val cardSummary = fallbackSummary?.takeIf { summary ->
-                summary.appId == appId && summary.publishedFileId == publishedFileId
-            }
-            val apiUpdatedAtMillis = detail.timeUpdated?.let { it * 1000L }
-            val fallbackMatchesApiVersion = cardSummary?.let { summary ->
-                apiUpdatedAtMillis == null ||
-                    summary.updatedAtMillis <= 0L ||
-                    summary.updatedAtMillis == apiUpdatedAtMillis
-            } == true
-            val localizedDescription = communityDetail?.description.orEmpty()
-            val fallbackDescription = cardSummary?.description.orEmpty()
-                .takeIf { fallbackMatchesApiVersion }
-                .orEmpty()
-            val apiDescription = detail.description.orEmpty()
-            val description = localizedDescription
-                .ifBlank { apiDescription }
-                .ifBlank { fallbackDescription }
-            val fullDescriptionUnavailable = localizedDescription.isBlank() &&
-                apiDescription.isBlank() &&
-                fallbackDescription.isNotBlank() &&
-                description == fallbackDescription
-            val summary = WorkshopItemSummary(
-                publishedFileId = publishedFileId,
-                appId = appId,
-                title = detail.title.ifBlank { cardSummary?.title.orEmpty().ifBlank { "Workshop $publishedFileId" } },
-                previewUrl = detail.previewUrl.orEmpty().ifBlank { cardSummary?.previewUrl.orEmpty() },
-                description = description,
-                authorName = detail.creatorName.orEmpty()
-                    .ifBlank { communityDetail?.authorName.orEmpty() }
-                    .ifBlank { cardSummary?.authorName.orEmpty() },
-                fileSizeBytes = detail.fileSize ?: cardSummary?.fileSizeBytes ?: 0L,
-                updatedAtMillis = apiUpdatedAtMillis ?: cardSummary?.updatedAtMillis ?: 0L,
-                downloadCount = detail.subscriptions ?: cardSummary?.downloadCount ?: 0L,
-                rating = normalizedWorkshopRating(detail.voteData?.score) ?: cardSummary?.rating,
-            )
-            val dependencyIds = if (includeDependencyData) {
-                (
-                    detail.children.mapNotNull { child -> child.publishedFileId.toULongOrNull() } +
-                        communityDetail?.requiredItemIds.orEmpty()
-                    ).distinct()
-            } else {
-                emptyList()
-            }
-            val depsMs = SystemClock.elapsedRealtime() - depsStartedAtMs
             if (includeDependencyData && (primaryDependencyDetailsDeferred != null || extraDependencyDetailsDeferred != null)) {
                 progressSessionId?.let { sessionId ->
                     WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.LoadingDependencies)
@@ -657,45 +671,95 @@ internal class WorkshopService(
                     }
                 }
             }
-            val commentThreadContext = communityDetail?.commentThreadContext
-                ?: detail.toCommentThreadContext(publishedFileId)
-            val commentCount = communityDetail?.commentCount
-            val previewMedia = buildWorkshopPreviewMedia(
-                summary.previewUrl,
-                communityDetail?.previewMedia.orEmpty(),
+            val result = buildItemDetails(
+                appId, publishedFileId, fallbackSummary, languagePreference.requestValue,
+                detail, payload, communityDetail, includeDependencyData, dependencyDetailsById,
             )
-            val result = WorkshopItemDetails(
-                summary = summary,
-                fileUrl = detail.fileUrl,
-                hcontentFile = detail.hcontentFile?.takeIf { it > 0L }?.toULong(),
-                depotId = detail.consumerAppId?.takeIf { it > 0 }?.toUInt(),
-                jsonMetadata = payload,
-                previewMedia = previewMedia,
-                previewImageUrls = buildWorkshopPreviewImageUrls(previewMedia),
-                fullDescriptionUnavailable = fullDescriptionUnavailable,
-                changeNotesUrl = buildWorkshopChangeNotesUrl(publishedFileId, languagePreference.requestValue),
-                dependencies = dependencyIds.map { dependencyId ->
-                    dependencyDetailsById[dependencyId]?.toSummary(appId, dependencyId)
-                        ?: WorkshopItemSummary(
-                            publishedFileId = dependencyId,
-                            appId = appId,
-                            title = knownWorkshopDependencyTitle(dependencyId) ?: "Workshop ID $dependencyId",
-                            previewUrl = "",
-                            description = "",
-                        )
-                },
-                commentsUrl = buildWorkshopCommentsUrl(publishedFileId, languagePreference.requestValue, page = 1),
-                commentThreadContext = commentThreadContext,
-                commentCount = commentCount,
-                commentTotalPages = commentCount?.let(::resolveCommentTotalPages),
-                hasNextCommentPage = commentCount?.let { count -> count > COMMENT_PAGE_SIZE } == true,
-            )
+            onUpdate?.invoke(WorkshopDetailUpdate(result, false, false, false, metadataErrorMessage = metadataErrorMessage))
+            apiResult.getOrThrow()
             Log.i(
                 TAG,
-                "perf getDetails total publishedFileId=$publishedFileId parallelAwaitMs=${awaitDoneAtMs - getDetailsStartedAtMs} depsMs=$depsMs deps=${dependencyIds.size} community=${communityDetail != null} totalMs=${SystemClock.elapsedRealtime() - getDetailsStartedAtMs}",
+                "perf getDetails total publishedFileId=$publishedFileId parallelAwaitMs=${awaitDoneAtMs - getDetailsStartedAtMs} depsMs=${SystemClock.elapsedRealtime() - depsStartedAtMs} deps=${result.dependencies.size} community=${communityDetail != null} totalMs=${SystemClock.elapsedRealtime() - getDetailsStartedAtMs}",
             )
             result
         }
+    }
+
+    private fun buildItemDetails(
+        appId: UInt,
+        publishedFileId: ULong,
+        fallbackSummary: WorkshopItemSummary?,
+        languageRequestValue: String,
+        detail: PublishedFileDetailsDto,
+        payload: String,
+        communityDetail: LocalizedWorkshopDetail?,
+        includeDependencyData: Boolean,
+        dependencyDetailsById: Map<ULong?, PublishedFileDetailsDto>,
+    ): WorkshopItemDetails {
+        val cardSummary = fallbackSummary?.takeIf { summary ->
+            summary.appId == appId && summary.publishedFileId == publishedFileId
+        }
+        val apiUpdatedAtMillis = detail.timeUpdated?.let { it * 1000L }
+        val fallbackMatchesApiVersion = cardSummary?.let { summary ->
+            apiUpdatedAtMillis == null ||
+                summary.updatedAtMillis <= 0L ||
+                summary.updatedAtMillis == apiUpdatedAtMillis
+        } == true
+        val localizedDescription = communityDetail?.description.orEmpty()
+        val fallbackDescription = cardSummary?.description.orEmpty()
+            .takeIf { fallbackMatchesApiVersion }
+            .orEmpty()
+        val apiDescription = detail.description.orEmpty()
+        val description = localizedDescription.ifBlank { apiDescription }.ifBlank { fallbackDescription }
+        val fullDescriptionUnavailable = localizedDescription.isBlank() &&
+            apiDescription.isBlank() && fallbackDescription.isNotBlank() && description == fallbackDescription
+        val summary = WorkshopItemSummary(
+            publishedFileId = publishedFileId,
+            appId = appId,
+            title = detail.title.ifBlank { cardSummary?.title.orEmpty().ifBlank { "Workshop $publishedFileId" } },
+            previewUrl = detail.previewUrl.orEmpty().ifBlank { cardSummary?.previewUrl.orEmpty() },
+            description = description,
+            authorName = detail.creatorName.orEmpty()
+                .ifBlank { communityDetail?.authorName.orEmpty() }
+                .ifBlank { cardSummary?.authorName.orEmpty() },
+            fileSizeBytes = detail.fileSize ?: cardSummary?.fileSizeBytes ?: 0L,
+            updatedAtMillis = apiUpdatedAtMillis ?: cardSummary?.updatedAtMillis ?: 0L,
+            downloadCount = detail.subscriptions ?: cardSummary?.downloadCount ?: 0L,
+            rating = normalizedWorkshopRating(detail.voteData?.score) ?: cardSummary?.rating,
+        )
+        val dependencyIds = if (includeDependencyData) {
+            (detail.children.mapNotNull { it.publishedFileId.toULongOrNull() } + communityDetail?.requiredItemIds.orEmpty()).distinct()
+        } else {
+            emptyList()
+        }
+        val commentThreadContext = communityDetail?.commentThreadContext ?: detail.toCommentThreadContext(publishedFileId)
+        val commentCount = communityDetail?.commentCount
+        val previewMedia = buildWorkshopPreviewMedia(summary.previewUrl, communityDetail?.previewMedia.orEmpty())
+        return WorkshopItemDetails(
+            summary = summary,
+            fileUrl = detail.fileUrl,
+            hcontentFile = detail.hcontentFile?.takeIf { it > 0L }?.toULong(),
+            depotId = detail.consumerAppId?.takeIf { it > 0 }?.toUInt(),
+            jsonMetadata = payload,
+            previewMedia = previewMedia,
+            previewImageUrls = buildWorkshopPreviewImageUrls(previewMedia),
+            fullDescriptionUnavailable = fullDescriptionUnavailable,
+            changeNotesUrl = buildWorkshopChangeNotesUrl(publishedFileId, languageRequestValue),
+            dependencies = dependencyIds.map { dependencyId ->
+                dependencyDetailsById[dependencyId]?.toSummary(appId, dependencyId) ?: WorkshopItemSummary(
+                    publishedFileId = dependencyId,
+                    appId = appId,
+                    title = knownWorkshopDependencyTitle(dependencyId) ?: "Workshop ID $dependencyId",
+                    previewUrl = "",
+                    description = "",
+                )
+            },
+            commentsUrl = buildWorkshopCommentsUrl(publishedFileId, languageRequestValue, page = 1),
+            commentThreadContext = commentThreadContext,
+            commentCount = commentCount,
+            commentTotalPages = commentCount?.let(::resolveCommentTotalPages),
+            hasNextCommentPage = commentCount?.let { count -> count > COMMENT_PAGE_SIZE } == true,
+        )
     }
 
     /** Loads the lightweight data needed by list cards without community-page requests. */

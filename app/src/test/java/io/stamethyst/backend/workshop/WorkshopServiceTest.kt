@@ -7,6 +7,10 @@ import java.io.File
 import java.lang.reflect.Proxy
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import mockwebserver3.Dispatcher
+import mockwebserver3.RecordedRequest
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
@@ -164,6 +168,145 @@ class WorkshopServiceTest {
         assertEquals(1, detailsServer.requestCount)
         assertEquals("/ISteamRemoteStorage/GetPublishedFileDetails/v1/", detailsServer.takeRequest().url.encodedPath)
     }
+
+    @Test
+    fun detailUpdatesShowApiContentBeforeCommunityRequestCompletes() = runBlocking {
+        val apiShown = CountDownLatch(1)
+        var communityWasReleasedByUpdate = false
+        detailsServer.enqueue(detailApiResponse(description = "API description"))
+        browseServer.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                communityWasReleasedByUpdate = apiShown.await(5, TimeUnit.SECONDS)
+                return MockResponse.Builder().body(
+                    """<div class="workshopItemDescription" id="highlightContent">Community description</div>""",
+                ).build()
+            }
+        }
+        val snapshots = mutableListOf<WorkshopDetailUpdate>()
+
+        val details = newService().getDetails(646570u, 123456uL, onUpdate = { update ->
+            snapshots += update
+            if (!update.metadataLoading && update.communityLoading) {
+                assertEquals("API description", update.details.summary.description)
+                assertFalse(update.descriptionLoading)
+                assertTrue(update.galleryLoading)
+                apiShown.countDown()
+            }
+        })
+
+        assertTrue("API content must be visible without waiting for community HTML", communityWasReleasedByUpdate)
+        assertEquals("Community description", details.summary.description)
+        assertTrue(snapshots.first().metadataLoading)
+        assertTrue(snapshots.first().descriptionLoading)
+        assertFalse(snapshots.last().dependenciesLoading)
+    }
+
+    @Test
+    fun detailUpdatesShowCommunityContentBeforeApiRequestCompletes() = runBlocking {
+        val communityShown = CountDownLatch(1)
+        var apiWasReleasedByUpdate = false
+        detailsServer.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                apiWasReleasedByUpdate = communityShown.await(5, TimeUnit.SECONDS)
+                return detailApiResponse(description = "API description")
+            }
+        }
+        browseServer.enqueue(MockResponse.Builder().body(
+            """
+            <div class="workshopItemDescription" id="highlightContent">Community first</div>
+            <script>InitializeCommentThread("PublishedFile_Public", "0", {"owner":"123","feature":"456"});</script>
+            <span id="commentthread_123_totalcount">7</span>
+            """.trimIndent(),
+        ).build())
+
+        val details = newService().getDetails(646570u, 123456uL, onUpdate = { update ->
+            if (update.metadataLoading && !update.communityLoading) {
+                assertEquals("Community first", update.details.summary.description)
+                assertFalse(update.descriptionLoading)
+                assertFalse(update.commentContextLoading)
+                assertEquals(7L, update.details.commentCount)
+                communityShown.countDown()
+            }
+        })
+
+        assertTrue("Description and comment context must not wait for API metadata", apiWasReleasedByUpdate)
+        assertEquals("Detailed Mod", details.summary.title)
+        assertEquals("Community first", details.summary.description)
+    }
+
+    @Test
+    fun detailUpdatesShowDescriptionAndCommentContextWhileDependenciesArePending() = runBlocking {
+        val contentShown = CountDownLatch(1)
+        var dependencyWasReleasedByUpdate = false
+        detailsServer.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.body?.utf8().orEmpty().contains("1605833019")) {
+                    dependencyWasReleasedByUpdate = contentShown.await(5, TimeUnit.SECONDS)
+                    return MockResponse.Builder().body(
+                        """{"response":{"publishedfiledetails":[{"publishedfileid":"1605833019","title":"BaseMod"}]}}""",
+                    ).build()
+                }
+                return detailApiResponse(children = """, "children":[{"publishedfileid":"1605833019"}]""")
+            }
+        }
+        browseServer.enqueue(MockResponse.Builder().body(
+            """<div class="workshopItemDescription" id="highlightContent">Loaded description</div><span id="commentthread_123_totalcount">0</span>""",
+        ).build())
+
+        val details = newService().getDetails(646570u, 123456uL, onUpdate = { update ->
+            if (!update.metadataLoading && !update.communityLoading && update.dependenciesLoading) {
+                assertFalse(update.descriptionLoading)
+                assertFalse(update.commentContextLoading)
+                contentShown.countDown()
+            }
+        })
+
+        assertTrue("Dependency lookup must not hold back other sections", dependencyWasReleasedByUpdate)
+        assertEquals("BaseMod", details.dependencies.single().title)
+    }
+
+    @Test
+    fun detailUpdatesKeepCommunityContentWhenApiFails() = runBlocking {
+        detailsServer.enqueue(MockResponse.Builder().code(500).build())
+        browseServer.enqueue(MockResponse.Builder().body(
+            """<div class="workshopItemDescription" id="highlightContent">Available despite API failure</div>""",
+        ).build())
+        val snapshots = mutableListOf<WorkshopDetailUpdate>()
+
+        val result = runCatching {
+            newService().getDetails(646570u, 123456uL, onUpdate = { snapshots += it })
+        }
+
+        assertTrue(result.isFailure)
+        val last = snapshots.last()
+        assertFalse(last.metadataLoading)
+        assertFalse(last.communityLoading)
+        assertFalse(last.descriptionLoading)
+        assertEquals("Available despite API failure", last.details.summary.description)
+        assertTrue(last.metadataErrorMessage.orEmpty().contains("500"))
+    }
+
+    @Test
+    fun detailUpdatesSettleSkeletonsWhenCommunityFails() = runBlocking {
+        detailsServer.enqueue(detailApiResponse())
+        browseServer.enqueue(MockResponse.Builder().code(429).build())
+        val snapshots = mutableListOf<WorkshopDetailUpdate>()
+
+        newService().getDetails(646570u, 123456uL, onUpdate = { snapshots += it })
+
+        val last = snapshots.last()
+        assertFalse(last.metadataLoading)
+        assertFalse(last.communityLoading)
+        assertFalse(last.descriptionLoading)
+        assertFalse(last.galleryLoading)
+        assertFalse(last.commentContextLoading)
+        assertFalse(last.dependenciesLoading)
+    }
+
+    private fun detailApiResponse(description: String = "", children: String = ""): MockResponse =
+        MockResponse.Builder().body(
+            """{"response":{"publishedfiledetails":[{"publishedfileid":"123456","title":"Detailed Mod","description":"$description"$children}]}}""",
+        ).build()
 
     @Test
     fun getDetailsParsesPublishedFileDetails() {

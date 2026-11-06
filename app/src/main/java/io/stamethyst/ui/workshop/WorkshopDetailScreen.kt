@@ -172,6 +172,7 @@ internal fun WorkshopDetailScreen(
     }
 
     val selectedDetails = state.selected?.takeIf { it.summary.publishedFileId == publishedFileId }
+    val detailUpdate = state.detailUpdate?.takeIf { it.details.summary.publishedFileId == publishedFileId }
     val isTranslatingDetails = state.detailTranslationLoadingId == publishedFileId
     val selectedDetailsKey = selectedDetails?.summary?.let { summary ->
         "${summary.appId}:${summary.publishedFileId}"
@@ -195,7 +196,7 @@ internal fun WorkshopDetailScreen(
     val isLoadingChangeNotes = state.detailChangeNotesLoadingId == publishedFileId
     val detailTopBarProgress = state.detailLoadProgress
         ?.takeIf { state.detailLoadingId == publishedFileId }
-    val canTranslateDetails = selectedDetails?.let { details ->
+    val canTranslateDetails = detailUpdate?.metadataLoading != true && detailUpdate?.communityLoading != true && selectedDetails?.let { details ->
         details.summary.title.isNotBlank() ||
             details.summary.description.isNotBlank() ||
             details.comments.any { comment -> comment.content.isNotBlank() }
@@ -207,8 +208,7 @@ internal fun WorkshopDetailScreen(
     var fullscreenGalleryStartIndex by rememberSaveable(publishedFileId.toString()) { mutableIntStateOf(-1) }
     var fullscreenGalleryVisible by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     val primaryContentState = when {
-        state.detailLoadingId == publishedFileId && selectedDetails == null -> DetailPrimaryContentState.Loading
-        state.errorMessage != null && selectedDetails == null -> DetailPrimaryContentState.Error
+        state.errorMessage != null && selectedDetails?.jsonMetadata.isNullOrBlank() -> DetailPrimaryContentState.Error
         selectedDetails != null -> DetailPrimaryContentState.Content
         else -> DetailPrimaryContentState.Loading
     }
@@ -358,6 +358,9 @@ internal fun WorkshopDetailScreen(
                                 }
                                 DetailModCard(
                                     details = details,
+                                    metadataLoading = detailUpdate?.metadataLoading == true,
+                                    communityLoading = detailUpdate?.communityLoading == true,
+                                    downloadLoading = state.detailLoadingId == publishedFileId,
                                     downloadState = resolveWorkshopModDownloadState(
                                         item = details.summary,
                                         installedMods = state.installedMods,
@@ -393,7 +396,7 @@ internal fun WorkshopDetailScreen(
                     }
                 }
 
-                if (primaryContentState == DetailPrimaryContentState.Loading) {
+                if (selectedDetails == null && primaryContentState == DetailPrimaryContentState.Loading) {
                     item(key = "workshop-detail-preview-gallery") {
                         WorkshopDetailGallerySkeletonCard(skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_gallery_skeleton"))
                     }
@@ -407,13 +410,21 @@ internal fun WorkshopDetailScreen(
 
                 selectedDetails?.let { details ->
                     val visibleDependencyItems = filterVisibleWorkshopDetailDependencies(details.dependencies)
+                        .filter { dependency ->
+                            detailUpdate?.dependenciesLoading != true ||
+                                dependency.publishedFileId in detailUpdate.resolvedDependencyIds
+                        }
                     val dependencies = resolveWorkshopDependencyUiStates(
                         dependencies = visibleDependencyItems,
                         installedMods = state.installedMods,
                         downloadTasks = WorkshopDownloadCenterStore.tasks,
                         preparingDownloadIds = state.preparingDownloadIds,
                     )
-                    if (selectedGalleryMediaItems.isNotEmpty()) {
+                    if (detailUpdate?.galleryLoading == true) {
+                        item(key = "workshop-detail-preview-gallery") {
+                            WorkshopDetailGallerySkeletonCard(skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_gallery_skeleton"))
+                        }
+                    } else if (selectedGalleryMediaItems.isNotEmpty()) {
                         item(key = "workshop-detail-preview-gallery") {
                             DetailPreviewGalleryCard(
                                 title = details.summary.title,
@@ -442,39 +453,54 @@ internal fun WorkshopDetailScreen(
                             )
                         }
                     }
+                    if (detailUpdate?.dependenciesLoading == true) {
+                        item(key = "workshop-detail-dependencies-loading") {
+                            WorkshopDetailDependenciesSkeletonCard()
+                        }
+                    }
                     item(key = "workshop-detail-description") {
-                        DetailDescriptionCard(
-                            publishedFileId = details.summary.publishedFileId,
-                            text = if (isTranslationMode) {
-                                selectedTranslation?.description ?: details.summary.description
-                            } else {
-                                details.summary.description
-                            },
-                            fullDescriptionUnavailable = details.fullDescriptionUnavailable,
-                            isTranslating = isTranslatingDetails,
-                            isReloading = state.detailLoadingId == details.summary.publishedFileId,
-                            translationErrorMessage = state.detailTranslationErrorMessage,
-                            onRetryFullDescription = {
-                                viewModel.retryDetailsLoad(
-                                    context = context.applicationContext,
-                                    appId = appId,
-                                    publishedFileId = publishedFileId,
-                                )
-                            },
-                        )
+                        if (detailUpdate?.descriptionLoading == true) {
+                            WorkshopDetailDescriptionSkeletonCard(skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_description_skeleton"))
+                        } else {
+                            DetailDescriptionCard(
+                                publishedFileId = details.summary.publishedFileId,
+                                text = if (isTranslationMode) {
+                                    selectedTranslation?.description ?: details.summary.description
+                                } else {
+                                    details.summary.description
+                                },
+                                fullDescriptionUnavailable = details.fullDescriptionUnavailable,
+                                isTranslating = isTranslatingDetails,
+                                isReloading = state.detailLoadingId == details.summary.publishedFileId,
+                                translationErrorMessage = state.detailTranslationErrorMessage,
+                                onRetryFullDescription = {
+                                    viewModel.retryDetailsLoad(
+                                        context = context.applicationContext,
+                                        appId = appId,
+                                        publishedFileId = publishedFileId,
+                                    )
+                                },
+                            )
+                        }
                     }
                     item(key = "workshop-detail-comments") {
-                        DetailCommentsCard(
-                            details = details,
-                            isLoading = state.commentLoadingId == publishedFileId,
-                            errorMessage = state.commentErrorMessage,
-                            isTranslationMode = isTranslationMode,
-                            isTranslatingComments = isTranslatingComments,
-                            translationErrorMessage = state.commentTranslationErrorMessage.takeIf { isTranslationMode },
-                            onRetry = { viewModel.retryWorkshopCommentsPage(context.applicationContext) },
-                            onPreviousPage = { viewModel.loadPreviousWorkshopCommentsPage(context.applicationContext) },
-                            onNextPage = { viewModel.loadNextWorkshopCommentsPage(context.applicationContext) },
-                        )
+                        if (detailUpdate?.commentContextLoading == true ||
+                            (state.commentLoadingId == publishedFileId && details.comments.isEmpty() && details.commentCount != 0L)
+                        ) {
+                            WorkshopDetailCommentsSkeletonCard(skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_comments_skeleton"))
+                        } else {
+                            DetailCommentsCard(
+                                details = details,
+                                isLoading = state.commentLoadingId == publishedFileId,
+                                errorMessage = state.commentErrorMessage,
+                                isTranslationMode = isTranslationMode,
+                                isTranslatingComments = isTranslatingComments,
+                                translationErrorMessage = state.commentTranslationErrorMessage.takeIf { isTranslationMode },
+                                onRetry = { viewModel.retryWorkshopCommentsPage(context.applicationContext) },
+                                onPreviousPage = { viewModel.loadPreviousWorkshopCommentsPage(context.applicationContext) },
+                                onNextPage = { viewModel.loadNextWorkshopCommentsPage(context.applicationContext) },
+                            )
+                        }
                     }
                 }
             }
@@ -1602,6 +1628,9 @@ private fun WorkshopChangeNotesDialog(
 @Composable
 private fun DetailModCard(
     details: WorkshopItemDetails,
+    metadataLoading: Boolean,
+    communityLoading: Boolean,
+    downloadLoading: Boolean,
     downloadState: WorkshopModDownloadState,
     subscriptionLoading: Boolean,
     subscribed: Boolean,
@@ -1609,13 +1638,16 @@ private fun DetailModCard(
     onViewChangeNotes: () -> Unit,
     onSubscriptionClick: () -> Unit,
 ) {
+    val skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_metadata_skeleton")
     Card(
         colors = workshopDetailCardColors(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                WorkshopPreviewImage(
+                if (details.summary.previewUrl.isBlank() && metadataLoading) {
+                    LoadingSkeletonBlock(Modifier.size(112.dp), style = skeletonStyle, shape = RoundedCornerShape(18.dp))
+                } else WorkshopPreviewImage(
                     publishedFileId = details.summary.publishedFileId,
                     url = details.summary.previewUrl,
                     contentDescription = stringResource(R.string.workshop_preview_content_description, details.summary.title),
@@ -1624,14 +1656,18 @@ private fun DetailModCard(
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SelectionContainer {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
+                            if (metadataLoading && details.summary.title == "Workshop ${details.summary.publishedFileId}") {
+                                LoadingSkeletonBlock(Modifier.fillMaxWidth(0.85f).height(26.dp), style = skeletonStyle)
+                            } else Text(
                                 text = details.summary.title.ifBlank { stringResource(R.string.workshop_unnamed_mod) },
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 3,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text(
+                            if (details.summary.authorName.isBlank() && (metadataLoading || communityLoading)) {
+                                LoadingSkeletonBlock(Modifier.fillMaxWidth(0.5f).height(16.dp), style = skeletonStyle)
+                            } else Text(
                                 text = details.summary.authorName.ifBlank { stringResource(R.string.workshop_unknown_author) },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1640,7 +1676,13 @@ private fun DetailModCard(
                             )
                         }
                     }
-                    WorkshopDownloadActionButton(
+                    if (downloadLoading) {
+                        LoadingSkeletonBlock(
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            style = skeletonStyle,
+                            shape = RoundedCornerShape(999.dp),
+                        )
+                    } else WorkshopDownloadActionButton(
                         state = downloadState,
                         onClick = onDownload,
                         modifier = Modifier
@@ -1649,7 +1691,17 @@ private fun DetailModCard(
                     )
                 }
             }
-            DetailMetaGrid(details = details)
+            if (metadataLoading) {
+                repeat(2) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        repeat(2) {
+                            DetailMetricSkeleton(skeletonStyle, Modifier.weight(1f), valueWidthFraction = 0.65f)
+                        }
+                    }
+                }
+            } else {
+                DetailMetaGrid(details = details)
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -2323,6 +2375,27 @@ private fun WorkshopDetailGallerySkeletonCard(skeletonStyle: LoadingSkeletonStyl
                         style = skeletonStyle,
                         shape = RoundedCornerShape(999.dp),
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkshopDetailDependenciesSkeletonCard() {
+    val skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_dependencies_skeleton")
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = workshopDetailCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LoadingSkeletonBlock(Modifier.width(92.dp).height(20.dp), style = skeletonStyle)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LoadingSkeletonBlock(Modifier.size(56.dp), style = skeletonStyle, shape = RoundedCornerShape(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LoadingSkeletonBlock(Modifier.fillMaxWidth(0.7f).height(16.dp), style = skeletonStyle)
+                    LoadingSkeletonBlock(Modifier.fillMaxWidth(0.45f).height(14.dp), style = skeletonStyle)
                 }
             }
         }
