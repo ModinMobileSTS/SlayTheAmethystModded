@@ -1,9 +1,14 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+mod member_window;
+mod peer_status;
+
+use peer_status::{MemberView, PeerConnection, RoomMember};
+
 use std::{
     env,
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::mpsc::{self, Receiver},
@@ -44,13 +49,15 @@ use windows_sys::Win32::{
 };
 
 const APP_NAME: &str = "Slay the Amethyst Online";
-const APP_VERSION: &str = "desktop-0.1.0";
+const APP_VERSION: &str = "desktop-0.1.1";
 // The Room API parses this field as a semantic app version (x.y.z[-suffix]).
 const CLIENT_VERSION: &str = "1.5.7-dev1";
 const TOGETHER_IN_SPIRE_PORT: u16 = 33455;
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
+const PEER_POLL_INTERVAL: Duration = Duration::from_secs(5);
 const CLOUD_CONTROL_URL: &str = "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/cloud-control.json";
 const EMBEDDED_EASYTIER_CORE: &[u8] = include_bytes!("../assets/easytier-core.exe");
+const EMBEDDED_EASYTIER_CLI: &[u8] = include_bytes!("../assets/easytier-cli.exe");
 const EMBEDDED_APP_ICON: &[u8] = include_bytes!("../assets/ic_launcher_amethyst.png");
 const EMBEDDED_CLOUD_CONTROL: &[u8] = include_bytes!("../assets/cloud-control.json");
 const EMBEDDED_EASYTIER_CORE_SHA256: &str =
@@ -241,6 +248,11 @@ fn ensure_embedded_easytier(paths: &AppPaths) -> Result<PathBuf, String> {
         EMBEDDED_EASYTIER_CORE,
         Some(EMBEDDED_EASYTIER_CORE_SHA256),
     )?;
+    write_embedded_asset(
+        &paths.runtime_dir().join("easytier-cli.exe"),
+        EMBEDDED_EASYTIER_CLI,
+        Some("d8783e851e944b44a9b71b39fd02f227ec0a2a82b3165c55ead5dd32dcde53a1"),
+    )?;
     for (name, bytes) in EMBEDDED_EASYTIER_RUNTIME {
         write_embedded_asset(&parent.join(name), bytes, None)?;
     }
@@ -317,6 +329,8 @@ struct ConnectionState {
     last_session_state: String,
     last_room_state: String,
     user_initiated: bool,
+    peer_connections: Vec<PeerConnection>,
+    peer_connections_valid_until_ms: u64,
 }
 
 impl ConnectionState {
@@ -348,6 +362,8 @@ impl ConnectionState {
             last_session_state: String::new(),
             last_room_state: String::new(),
             user_initiated: true,
+            peer_connections: Vec::new(),
+            peer_connections_valid_until_ms: 0,
         }
     }
 }
@@ -381,14 +397,6 @@ struct RoomInfo {
     owner_player_id: String,
     #[serde(default)]
     members: Vec<RoomMember>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RoomMember {
-    player_id: String,
-    #[serde(default)]
-    assigned_ipv4_cidr: String,
 }
 
 #[derive(Deserialize)]
@@ -657,6 +665,8 @@ struct ActiveConnection {
     process: Child,
     state: ConnectionState,
     next_heartbeat: std::time::Instant,
+    next_peer_poll: std::time::Instant,
+    rpc_portal: String,
 }
 
 struct Worker {
@@ -664,6 +674,7 @@ struct Worker {
     config: AppConfig,
     active: Option<ActiveConnection>,
     proxy: EventLoopProxy<AppEvent>,
+    members: member_window::SharedMembers,
 }
 
 impl Worker {
@@ -676,6 +687,7 @@ impl Worker {
                 .map(|active| {
                     active
                         .next_heartbeat
+                        .min(active.next_peer_poll)
                         .saturating_duration_since(std::time::Instant::now())
                 })
                 .unwrap_or(Duration::from_secs(60));
@@ -742,7 +754,13 @@ impl Worker {
                 let _ = api.stop_session(&session);
                 return Err(error);
             }
-            let process = match self.start_easytier(executable, &session) {
+            // Each session gets an isolated loopback-only management endpoint. Never
+            // inspect the default port, which may belong to a different EasyTier user.
+            let rpc_portal = std::net::TcpListener::bind("127.0.0.1:0")
+                .and_then(|listener| listener.local_addr())
+                .map_err(io_error)?
+                .to_string();
+            let process = match self.start_easytier(executable, &session, &rpc_portal) {
                 Ok(process) => process,
                 Err(error) => {
                     let _ = api.stop_session(&session);
@@ -806,13 +824,15 @@ impl Worker {
                     runtime.assigned_ipv4_cidr.clone()
                 },
                 current_player_id: self.config.player_id.clone(),
-                room_owner_player_id: room_info.owner_player_id,
+                room_owner_player_id: room_info.owner_player_id.clone(),
                 room_owner_ipv4_cidr: owner_cidr,
                 peer_count: runtime.peer_count,
                 relay_server_description: runtime.relay_server_description,
                 last_session_state: runtime.session_state,
                 last_room_state: runtime.room_state,
                 user_initiated: true,
+                peer_connections: Vec::new(),
+                peer_connections_valid_until_ms: 0,
             };
             if let Err(error) = write_state(&self.paths, &state) {
                 let mut process = process;
@@ -822,11 +842,19 @@ impl Worker {
                 self.remove_runtime_config();
                 return Err(error);
             }
+            *self.members.lock().unwrap_or_else(|e| e.into_inner()) = MemberView {
+                room_id: session.room_id.clone(),
+                current_player_id: self.config.player_id.clone(),
+                members: room_info.members,
+                ..Default::default()
+            };
             self.active = Some(ActiveConnection {
                 session,
                 process,
                 state,
                 next_heartbeat: std::time::Instant::now() + HEARTBEAT_INTERVAL,
+                next_peer_poll: std::time::Instant::now(),
+                rpc_portal,
             });
             Ok((
                 room_id.to_owned(),
@@ -847,6 +875,7 @@ impl Worker {
             return;
         };
         if active.process.try_wait().ok().flatten().is_some() {
+            *self.members.lock().unwrap_or_else(|e| e.into_inner()) = MemberView::default();
             let error = format!(
                 "EasyTier stopped unexpectedly. See {}",
                 self.paths.log_file().display()
@@ -857,34 +886,67 @@ impl Worker {
             self.emit(WorkerEvent::Error(error));
             return;
         }
-        let result = self.api().and_then(|api| {
-            api.report_runtime(&active.session, &active.state.relay_server_description)
-        });
-        match result {
-            Ok(runtime) => {
-                active.state.peer_count = runtime.peer_count;
-                active.state.last_session_state = runtime.session_state;
-                active.state.last_room_state = runtime.room_state;
-                active.state.relay_server_description = runtime.relay_server_description;
-                if !runtime.assigned_ipv4_cidr.is_empty() {
-                    active.state.assigned_ipv4_cidr = runtime.assigned_ipv4_cidr;
+        if std::time::Instant::now() >= active.next_heartbeat {
+            let result = self.api().and_then(|api| {
+                api.report_runtime(&active.session, &active.state.relay_server_description)
+            });
+            match result {
+                Ok(runtime) => {
+                    active.state.peer_count = runtime.peer_count;
+                    active.state.last_session_state = runtime.session_state;
+                    active.state.last_room_state = runtime.room_state;
+                    active.state.relay_server_description = runtime.relay_server_description;
+                    if !runtime.assigned_ipv4_cidr.is_empty() {
+                        active.state.assigned_ipv4_cidr = runtime.assigned_ipv4_cidr;
+                    }
+                    active.state.last_updated_at_ms = now_ms();
+                    active.state.last_error_summary.clear();
+                    if let Err(error) = write_state(&self.paths, &active.state) {
+                        self.emit(WorkerEvent::Error(error));
+                    }
                 }
-                active.state.last_updated_at_ms = now_ms();
-                if let Err(error) = write_state(&self.paths, &active.state) {
-                    self.emit(WorkerEvent::Error(error));
+                Err(error) => {
+                    active.state.last_error_summary = format!("Room update failed: {error}");
+                    active.state.last_updated_at_ms = now_ms();
+                    let _ = write_state(&self.paths, &active.state);
                 }
             }
-            Err(error) => {
-                active.state.last_error_summary = format!("Room update failed: {error}");
-                active.state.last_updated_at_ms = now_ms();
-                let _ = write_state(&self.paths, &active.state);
-            }
+            active.next_heartbeat = std::time::Instant::now() + HEARTBEAT_INTERVAL;
         }
-        active.next_heartbeat = std::time::Instant::now() + HEARTBEAT_INTERVAL;
+        if std::time::Instant::now() >= active.next_peer_poll {
+            let room = self
+                .api()
+                .and_then(|api| api.room_info(&active.session.room_id));
+            let routes = collect_peer_routes(&self.paths, &active);
+            let mut view = self.members.lock().unwrap_or_else(|e| e.into_inner());
+            // If room membership is unavailable, do not present old per-player routes.
+            match (room, routes) {
+                (Ok(room), Ok(connections)) => {
+                    view.members = room.members;
+                    view.connections = connections.clone();
+                    view.valid_until_ms = now_ms() + 30_000;
+                    active.state.peer_connections = connections;
+                    active.state.peer_connections_valid_until_ms = view.valid_until_ms;
+                }
+                (room, _) => {
+                    if let Ok(room) = room {
+                        view.members = room.members;
+                    }
+                    view.connections.clear();
+                    view.valid_until_ms = 0;
+                    active.state.peer_connections.clear();
+                    active.state.peer_connections_valid_until_ms = 0;
+                }
+            }
+            drop(view);
+            let _ = write_state(&self.paths, &active.state);
+            active.next_peer_poll = std::time::Instant::now() + PEER_POLL_INTERVAL;
+        }
         self.active = Some(active);
     }
 
     fn disconnect(&mut self) {
+        *self.members.lock().unwrap_or_else(|e| e.into_inner()) = MemberView::default();
         let Some(mut active) = self.active.take() else {
             let _ = write_state(&self.paths, &ConnectionState::disconnected(&self.config));
             return;
@@ -935,7 +997,12 @@ impl Worker {
         let _ = write_state(&self.paths, &state);
     }
 
-    fn start_easytier(&self, executable: &Path, session: &Session) -> Result<Child, String> {
+    fn start_easytier(
+        &self,
+        executable: &Path,
+        session: &Session,
+        rpc_portal: &str,
+    ) -> Result<Child, String> {
         let config = easytier_config(session, &self.config.player_id);
         fs::create_dir_all(self.paths.runtime_dir()).map_err(io_error)?;
         write_config(&self.paths.config_file(), &config)?;
@@ -944,9 +1011,13 @@ impl Worker {
             .append(true)
             .open(self.paths.log_file())
             .map_err(io_error)?;
-        let mut process = Command::new(executable)
+        let mut command = Command::new(executable);
+        hide_console(&mut command);
+        let mut process = command
             .arg("-c")
             .arg(self.paths.config_file())
+            .arg("--rpc-portal")
+            .arg(rpc_portal)
             .current_dir(self.paths.runtime_dir())
             .stdout(Stdio::from(log.try_clone().map_err(io_error)?))
             .stderr(Stdio::from(log))
@@ -992,6 +1063,7 @@ struct TrayMenu {
     rooms: Submenu,
     refresh: MenuItem,
     create_room: MenuItem,
+    members: MenuItem,
     disconnect: MenuItem,
     quit: MenuItem,
     room_items: Vec<(MenuItem, String, bool)>,
@@ -1015,6 +1087,7 @@ impl TrayMenu {
         let rooms = Submenu::new("房间", true);
         let refresh = MenuItem::new("刷新房间", true, None);
         let create_room = MenuItem::new("创建房间", true, None);
+        let members = MenuItem::new("房间成员 / 连接状态", true, None);
         let disconnect = MenuItem::new("断开连接", false, None);
         let quit = MenuItem::new("退出", true, None);
         menu.append(&status)?;
@@ -1022,6 +1095,7 @@ impl TrayMenu {
         menu.append(&rooms)?;
         menu.append(&refresh)?;
         menu.append(&create_room)?;
+        menu.append(&members)?;
         menu.append(&disconnect)?;
         menu.append(&PredefinedMenuItem::separator())?;
         menu.append(&quit)?;
@@ -1031,6 +1105,7 @@ impl TrayMenu {
                 rooms,
                 refresh,
                 create_room,
+                members,
                 disconnect,
                 quit,
                 room_items: Vec::new(),
@@ -1127,11 +1202,13 @@ fn run(paths: &AppPaths) -> Result<(), Box<dyn std::error::Error>> {
     let event_loop: EventLoop<AppEvent> = EventLoop::with_user_event().build()?;
     let proxy = event_loop.create_proxy();
     let (command_sender, command_receiver) = mpsc::channel();
+    let shared_members = std::sync::Arc::new(std::sync::Mutex::new(MemberView::default()));
     let worker = Worker {
         paths: paths.clone(),
         config,
         active: None,
         proxy,
+        members: shared_members.clone(),
     };
     thread::Builder::new()
         .name("sts-easytier-worker".to_owned())
@@ -1186,6 +1263,8 @@ fn run(paths: &AppPaths) -> Result<(), Box<dyn std::error::Error>> {
                 while let Ok(event) = MenuEvent::receiver().try_recv() {
                     if event.id == menu.refresh.id() {
                         let _ = command_sender.send(WorkerCommand::Refresh);
+                    } else if event.id == menu.members.id() {
+                        member_window::show(shared_members.clone());
                     } else if event.id == menu.disconnect.id() {
                         let _ = command_sender.send(WorkerCommand::Disconnect);
                     } else if event.id == menu.create_room.id() {
@@ -1436,6 +1515,75 @@ fn wide(value: &str) -> Vec<u16> {
 
 fn write_state(paths: &AppPaths, state: &ConnectionState) -> Result<(), String> {
     write_json(&paths.state_file(), state, true)
+}
+
+fn hide_console(command: &mut Command) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = command;
+}
+
+fn collect_peer_routes(
+    paths: &AppPaths,
+    active: &ActiveConnection,
+) -> Result<Vec<PeerConnection>, String> {
+    let mut command = Command::new(paths.runtime_dir().join("easytier-cli.exe"));
+    hide_console(&mut command);
+    let instance = stable_name("sts-pc", &active.session.session_id, "session", 96, 12);
+    let mut child = command
+        .args([
+            "-p",
+            &active.rpc_portal,
+            "-n",
+            &instance,
+            "-v",
+            "-o",
+            "json",
+            "peer",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(io_error)?;
+    let stdout = child.stdout.take().ok_or("Missing EasyTier CLI output")?;
+    // Drain while the child runs, so a large room cannot fill the pipe and deadlock.
+    let reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout
+            .take(4 * 1024 * 1024)
+            .read_to_end(&mut bytes)
+            .map(|_| bytes)
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(40))
+            }
+            other => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break Err(match other {
+                    Err(e) => io_error(e),
+                    _ => "EasyTier peer read timed out".into(),
+                });
+            }
+        }
+    };
+    let bytes = reader
+        .join()
+        .map_err(|_| "EasyTier output reader failed")?
+        .map_err(io_error)?;
+    if !status?.success() {
+        return Err("EasyTier CLI failed".into());
+    }
+    let json = std::str::from_utf8(&bytes).map_err(|e| e.to_string())?;
+    peer_status::parse_peer_routes(json, &active.state.assigned_ipv4_cidr)
 }
 
 fn write_config(path: &Path, contents: &str) -> Result<(), String> {

@@ -94,6 +94,40 @@ connections but cannot guarantee traversal of every public NAT or firewall.
 
 Run the configuration regression test with `cargo test easytier_config`.
 
+### Member connection capsules (desktop-0.1.1)
+
+Right-click the tray icon and choose `房间成员 / 连接状态` to open the member
+window. Each player has a capsule: `本机`, `直连 · UDP/TCP`, `中转`, `连接中`,
+`未知`, or `离线`. This is the connection **from this PC to that player**, not
+a room-wide connectivity matrix. Scroll the window to view larger rooms.
+
+Every five seconds the worker reads room membership and the local EasyTier raw
+peer routes. A one-hop route with an open connection is direct; a route with
+cost greater than one is relayed. Matching uses the destination virtual IPv4,
+not proxy subnets or the shared relay's connection. Closed connections, local
+routes, and public-server routes are excluded. Missing routes are connecting;
+failed reads are unknown and clear old routes. Observations expire after 30
+seconds even if the worker stalls. Disconnecting or changing rooms clears them.
+No peer connectivity or credentials are uploaded to the server.
+
+The executable additionally embeds the matching official v2.6.4 `easytier-cli.exe`
+(SHA-256 `d8783e851e944b44a9b71b39fd02f227ec0a2a82b3165c55ead5dd32dcde53a1`).
+It is extracted with the runtime and only connects to this session's dedicated
+loopback RPC endpoint and instance name, never the default port of another
+EasyTier installation. CLI reads have a four-second timeout; runtime and CLI
+children do not open console windows. Credential-free peer observations are
+also saved in `connection-state.json` with the Android-compatible field names.
+
+Cross-compile a Windows x64 executable on Linux with MinGW installed:
+
+```sh
+WINDRES=/usr/bin/x86_64-w64-mingw32-windres AR=/usr/bin/x86_64-w64-mingw32-ar \
+  CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
+  cargo build --locked --release --target x86_64-pc-windows-gnu
+```
+
+The output is `target/x86_64-pc-windows-gnu/release/slay-the-amethyst-online.exe`.
+
 ## Required Setup
 
 1. Start an `online-service` instance with EasyTier room support enabled.
