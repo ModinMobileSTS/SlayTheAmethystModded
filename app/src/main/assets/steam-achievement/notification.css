@@ -1,0 +1,128 @@
+/* Desktop Steam reference: SteamDatabase/SteamTracking modules 84572, 75883, 48248, 33175.
+ * Keep these measured CSS values independent of Android MaterialTheme and font scaling.
+ * Provenance, version and platform limitations: docs/steam-achievement-notification.md. */
+@font-face {
+    font-family: "Motiva Sans";
+    font-style: normal;
+    font-weight: 400;
+    src: url("motiva-sans-regular.ttf") format("truetype");
+}
+@font-face {
+    font-family: "Motiva Sans";
+    font-style: normal;
+    font-weight: 300;
+    src: url("motiva-sans-light.ttf") format("truetype");
+}
+html, body {
+    margin: 0;
+    width: 283px;
+    height: 210px;
+    overflow: hidden;
+    background: transparent;
+    color: #969696;
+    font-family: "Motiva Sans", "Noto Sans", Helvetica, sans-serif;
+    -webkit-text-size-adjust: none;
+    user-select: none;
+    pointer-events: none;
+}
+.DesktopToastPopup {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 283px;
+    height: 70px;
+    overflow: hidden;
+    visibility: hidden;
+    background: radial-gradient(155.42% 100% at 0% 0%, #23262e 0%, #0e141b 100%);
+}
+.DesktopToastBackground {
+    position: absolute;
+    top: -77px;
+    right: -75px;
+    width: 80%;
+    opacity: 0.05;
+    transition: top 0.3s ease-in-out;
+}
+.DesktopToastPopup.Top .DesktopToastBackground { top: -10px; }
+.DesktopToastPopup.Bottom .DesktopToastBackground { top: -148px; }
+.DesktopToastBackground svg { display: block; width: 100%; }
+.DesktopToastTemplate {
+    padding: 10px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 50px;
+    position: relative;
+}
+.StandardLogoDimensions { height: 44px; width: 44px; flex-shrink: 0; }
+.Content {
+    margin-left: 12px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1;
+}
+.AchievementTextSection {
+    box-sizing: border-box;
+    margin-left: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    align-content: center;
+    height: fit-content;
+}
+.Name { color: #fff; font-weight: 400; font-size: 12px; min-width: 0; line-height: 16px; }
+.Desc { font-weight: 300; color: #8b929a; font-size: 12px; line-height: 16px; }
+.NameAndDesc { min-width: 0; overflow-wrap: anywhere; }
+.NameAndDesc .Name, .NameAndDesc .Desc {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+}
+.AchievementIconWrapper { display: inline-block; position: relative; width: 44px; height: 44px; }
+.Icon {
+    height: 100%;
+    width: 100%;
+    position: relative;
+    vertical-align: top;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.3333333333);
+}
+.Icon.IconGlow {
+    box-shadow: 0 0 2px 1px rgba(255, 184, 78, 0.6), 0 0 16px 1px rgba(255, 184, 78, 0.4);
+}
+.RareAchievementIconGlowContainerRoot, .RareAchievementIconGlowContainer {
+    position: absolute;
+    top: -20%; right: -20%; bottom: -20%; left: -20%;
+    -webkit-mask-image: url("glow-mask-outer.png");
+    mask-image: url("glow-mask-outer.png");
+    -webkit-mask-repeat: repeat;
+    mask-repeat: repeat;
+    -webkit-mask-size: 100%;
+    mask-size: 100%;
+    overflow: hidden;
+}
+.RareAchievementIconGlowContainer {
+    animation: rotate 18s linear infinite reverse;
+    -webkit-mask-image: url("glow-mask-inner.png");
+    mask-image: url("glow-mask-inner.png");
+}
+.RareAchievementIconGlow {
+    position: absolute;
+    top: -10px; right: -10px; bottom: -10px; left: -10px;
+    animation: rotate 6s linear infinite;
+    mix-blend-mode: overlay;
+    background: repeating-conic-gradient(
+        rgba(255, 217, 0, 0.178) 0%, rgba(255, 184, 78, 0) 6%,
+        rgba(255, 217, 0, 0.178) 10%, rgb(255, 184, 78) 26%,
+        rgba(255, 217, 0, 0.178) 35%, rgb(255, 184, 78) 40%,
+        rgba(255, 217, 0, 0.178) 60%, rgb(255, 184, 78) 82%,
+        rgba(255, 217, 0, 0.178) 100%
+    );
+    overflow: hidden;
+}
+@keyframes rotate { to { transform: rotate(1turn); } }

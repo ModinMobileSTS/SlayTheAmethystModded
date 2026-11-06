@@ -69,6 +69,22 @@ python3 -m unittest discover -s scripts/build/tests -v
 ./gradlew -p gradle/build-logic test
 ```
 
+## Steam Achievement Notification Browser Regression
+
+```bash
+python3 scripts/tests/steam_achievement/main.py
+```
+
+Requires Python 3, Node.js, the `playwright` Node package, and its Chromium browser.
+The Python entrypoint and orchestration live under `steam_achievement/main.py` and
+`steam_achievement/lib/runner.py`; `lib/browser.test.cjs` contains browser-only
+DOM/animation assertions using Playwright's JavaScript API. No network or Android
+device is used. The production HTML/CSS/fonts/masks are served from bundled files
+with a controllable frame clock. Covers the original Steam 300/5000/300ms timeline,
+three-toast stacking, independent lifetimes, rare-only glow, original font loading,
+and Chinese line clamping. Screenshots stay under
+`agent-tmp/steam-achievement-reference/`. See `docs/steam-achievement-notification.md`.
+
 ## JNI Host Regression Tests
 
 ```bash
