@@ -597,6 +597,7 @@ open class StsGameActivity : AppCompatActivity(), SensorEventListener {
             virtualResolutionMode = sessionConfig.virtualResolutionMode,
             avoidDisplayCutout = sessionConfig.avoidDisplayCutout,
             cropScreenBottom = sessionConfig.cropScreenBottom,
+            gameDisplayRegion = sessionConfig.gameDisplayRegion,
             isSoftKeyboardSessionActive = { inputHandler.isSoftKeyboardSessionActive() },
             onSurfaceReady = {
                 sessionCoordinator.onSurfaceReady()

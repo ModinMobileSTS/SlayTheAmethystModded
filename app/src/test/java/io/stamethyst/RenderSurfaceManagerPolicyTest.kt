@@ -11,6 +11,25 @@ import org.junit.Test
 
 class RenderSurfaceManagerPolicyTest {
     @Test
+    fun customFourCornerRegionMatchesPhysicalViewportWithoutAnExtraCrop() {
+        val bounds = io.stamethyst.backend.render.GameDisplayRegion(.05f, .1f, .95f, .9f)
+            .toPixels(2400, 1080)
+        val layout = RenderSurfaceManager.resolveFixedVirtualViewportLayout(
+            rootWidth = 2400,
+            rootHeight = 1080,
+            cropInsets = RenderViewportInsets(bounds.left, bounds.top, 2400 - bounds.right, 1080 - bounds.bottom),
+            virtualWidth = bounds.width,
+            virtualHeight = bounds.height,
+        )!!
+        assertEquals(2160, layout.width)
+        assertEquals(864, layout.height)
+        assertEquals(120, layout.leftMargin)
+        assertEquals(108, layout.topMargin)
+        assertEquals(120, layout.rightMargin)
+        assertEquals(108, layout.bottomMargin)
+    }
+
+    @Test
     fun resolveForegroundResyncDelayMs_debouncesSurfaceViewLayoutAndForegroundReasons() {
         assertEquals(
             48L,

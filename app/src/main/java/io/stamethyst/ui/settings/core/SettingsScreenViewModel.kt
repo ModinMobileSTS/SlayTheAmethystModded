@@ -456,6 +456,7 @@ class SettingsScreenViewModel : ViewModel() {
         val localTestEntryNodeUrl: String = "tcp://10.126.126.2:11010",
         val avoidDisplayCutout: Boolean = LauncherPreferences.DEFAULT_AVOID_DISPLAY_CUTOUT,
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
+        val gameDisplayRegion: io.stamethyst.backend.render.GameDisplayRegion? = null,
         val ramSaverEnabled: Boolean = LauncherPreferences.DEFAULT_RAM_SAVER_ENABLED,
         val mtsPatchCacheEnabled: Boolean = LauncherPreferences.DEFAULT_MTS_PATCH_CACHE_ENABLED,
         val mtsCacheStartupOptimizations: Map<io.stamethyst.config.MtsCacheStartupOptimization, Boolean> =
@@ -4130,21 +4131,15 @@ class SettingsScreenViewModel : ViewModel() {
         return saved
     }
 
-    fun onDisplayCutoutAvoidanceChanged(host: Activity, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        uiState = uiState.copy(avoidDisplayCutout = enabled)
-        saveDisplayCutoutAvoidanceSelection(host, enabled)
-        refreshStatus(host)
-    }
-
-    fun onScreenBottomCropChanged(host: Activity, enabled: Boolean) {
-        if (uiState.busy) {
-            return
-        }
-        uiState = uiState.copy(cropScreenBottom = enabled)
-        saveScreenBottomCropSelection(host, enabled)
+    fun onGameDisplayRegionChanged(host: Activity, region: io.stamethyst.backend.render.GameDisplayRegion) {
+        if (uiState.busy) return
+        val normalized = region.normalized()
+        uiState = uiState.copy(
+            gameDisplayRegion = normalized,
+            avoidDisplayCutout = false,
+            cropScreenBottom = false,
+        )
+        LauncherPreferences.saveGameDisplayRegion(host, normalized)
         refreshStatus(host)
     }
 
@@ -4805,6 +4800,7 @@ class SettingsScreenViewModel : ViewModel() {
             localTestEntryNodeUrl = LauncherPreferences.readLocalTestEntryNodeUrl(host),
             avoidDisplayCutout = input.avoidDisplayCutout,
             cropScreenBottom = input.cropScreenBottom,
+            gameDisplayRegion = input.gameDisplayRegion,
             ramSaverEnabled = input.ramSaverEnabled,
             mtsPatchCacheEnabled = input.mtsPatchCacheEnabled,
             mtsCacheStartupOptimizations = input.mtsCacheStartupOptimizations,
@@ -5614,14 +5610,9 @@ class SettingsScreenViewModel : ViewModel() {
             R.string.settings_status_compendium_touch_fix,
             toggleStateText(host, input.compendiumUpgradeTouchFixEnabled)
         )
-        lines += host.getString(
-            R.string.settings_status_avoid_display_cutout,
-            toggleStateText(host, input.avoidDisplayCutout)
-        )
-        lines += host.getString(
-            R.string.settings_status_crop_screen_bottom,
-            toggleStateText(host, input.cropScreenBottom)
-        )
+        lines += host.getString(R.string.settings_game_display_size_title) + ": " +
+            (input.gameDisplayRegion?.persistedValue()
+                ?: host.getString(R.string.settings_game_display_legacy))
         lines += host.getString(
             R.string.settings_status_keep_screen_on_timeout,
             keepScreenOnTimeoutLabel(host, input.keepScreenOnTimeoutMinutes)
@@ -6229,14 +6220,6 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveCompendiumUpgradeTouchFixSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveCompendiumUpgradeTouchFixEnabled(host, enabled)
-    }
-
-    private fun saveDisplayCutoutAvoidanceSelection(host: Activity, enabled: Boolean) {
-        LauncherPreferences.setDisplayCutoutAvoidanceEnabled(host, enabled)
-    }
-
-    private fun saveScreenBottomCropSelection(host: Activity, enabled: Boolean) {
-        LauncherPreferences.setScreenBottomCropEnabled(host, enabled)
     }
 
     private fun saveRamSaverEnabledSelection(host: Activity, enabled: Boolean) {

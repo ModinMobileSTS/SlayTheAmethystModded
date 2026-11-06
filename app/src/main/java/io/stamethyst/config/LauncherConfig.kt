@@ -109,6 +109,7 @@ object LauncherConfig {
     private const val PREF_KEY_VIRTUAL_RESOLUTION_MODE = "virtual_resolution_mode"
     private const val PREF_KEY_AVOID_DISPLAY_CUTOUT = "avoid_display_cutout"
     private const val PREF_KEY_CROP_SCREEN_BOTTOM = "crop_screen_bottom"
+    private const val PREF_KEY_GAME_DISPLAY_REGION = "game_display_region"
     private const val PREF_KEY_RAM_SAVER_ENABLED = "ram_saver_enabled"
     private const val PREF_KEY_MTS_PATCH_CACHE_ENABLED = "mts_patch_cache_enabled"
     private const val PREF_KEY_SWAPPY_FRAME_PACING_ENABLED = "swappy_frame_pacing_enabled"
@@ -1269,6 +1270,20 @@ object LauncherConfig {
     fun setScreenBottomCropEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_CROP_SCREEN_BOTTOM, enabled)
+        }
+    }
+
+    fun readGameDisplayRegion(context: Context): io.stamethyst.backend.render.GameDisplayRegion? =
+        io.stamethyst.backend.render.GameDisplayRegion.fromPersistedValue(
+            prefs(context).getString(PREF_KEY_GAME_DISPLAY_REGION, null)
+        )
+
+    fun saveGameDisplayRegion(context: Context, region: io.stamethyst.backend.render.GameDisplayRegion) {
+        prefs(context).edit {
+            putString(PREF_KEY_GAME_DISPLAY_REGION, region.persistedValue())
+            // Once a region is explicit, no hidden automatic crop may change its boundaries.
+            putBoolean(PREF_KEY_AVOID_DISPLAY_CUTOUT, false)
+            putBoolean(PREF_KEY_CROP_SCREEN_BOTTOM, false)
         }
     }
 

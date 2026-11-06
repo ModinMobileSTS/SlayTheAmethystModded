@@ -116,6 +116,7 @@ internal object SettingsRepository {
         val togetherInSpireEasyTierAutofillEnabled: Boolean,
         val avoidDisplayCutout: Boolean,
         val cropScreenBottom: Boolean,
+        val gameDisplayRegion: io.stamethyst.backend.render.GameDisplayRegion?,
         val ramSaverEnabled: Boolean,
         val mtsPatchCacheEnabled: Boolean,
         val mtsCacheStartupOptimizations: Map<io.stamethyst.config.MtsCacheStartupOptimization, Boolean>,
@@ -272,6 +273,7 @@ internal object SettingsRepository {
                     LauncherPreferences.isTogetherInSpireEasyTierAutofillEnabled(context),
                 avoidDisplayCutout = LauncherPreferences.isDisplayCutoutAvoidanceEnabled(context),
                 cropScreenBottom = LauncherPreferences.isScreenBottomCropEnabled(context),
+                gameDisplayRegion = LauncherPreferences.readGameDisplayRegion(context),
                 ramSaverEnabled = LauncherPreferences.isRamSaverEnabled(context),
                 mtsPatchCacheEnabled = LauncherPreferences.isMtsPatchCacheEnabled(context),
                 mtsCacheStartupOptimizations = io.stamethyst.config.LauncherConfig.readMtsCacheStartupOptimizations(context),
@@ -450,6 +452,10 @@ internal object SettingsRepository {
         LauncherPreferences.setScreenBottomCropEnabled(
             context,
             LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM
+        )
+        LauncherPreferences.saveGameDisplayRegion(
+            context,
+            io.stamethyst.backend.render.GameDisplayRegion.FULLSCREEN
         )
         LauncherPreferences.setRamSaverEnabled(
             context,

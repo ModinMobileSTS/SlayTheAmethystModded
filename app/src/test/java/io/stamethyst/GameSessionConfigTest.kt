@@ -106,6 +106,7 @@ class GameSessionConfigTest {
             virtualResolutionMode = VirtualResolutionMode.FULLSCREEN_FILL,
             avoidDisplayCutout = false,
             cropScreenBottom = false,
+            gameDisplayRegion = null,
             sustainedPerformanceModeEnabled = false,
             keepScreenOnTimeoutMs = null,
             systemGameMode = AndroidGameModeSnapshot(

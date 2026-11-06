@@ -474,8 +474,7 @@ internal fun LauncherSettingsGameScreenContent(
     onFloatingToolButtonChanged: (String, Boolean) -> Unit = { _, _ -> },
     onHapticFeedbackChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
-    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
-    onScreenBottomCropChanged: (Boolean) -> Unit = {},
+    onGameDisplayRegionChanged: (io.stamethyst.backend.render.GameDisplayRegion) -> Unit = {},
     onGameplayFontScaleChanged: (Float) -> Unit = {},
     onGameplayLargerUiChanged: (Boolean) -> Unit = {},
     onHideEnemyPanelWhileTargetingChanged: (Boolean) -> Unit = {},
@@ -523,8 +522,7 @@ internal fun LauncherSettingsGameScreenContent(
                 SettingsGameplayDisplaySection(
                     uiState = uiState,
                     actions = GameplayDisplaySettingsActions(
-                        onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
-                        onScreenBottomCropChanged = onScreenBottomCropChanged,
+                        onGameDisplayRegionChanged = onGameDisplayRegionChanged,
                         onGameplayFontScaleChanged = onGameplayFontScaleChanged,
                         onGameplayLargerUiChanged = onGameplayLargerUiChanged,
                         onHideEnemyPanelWhileTargetingChanged = onHideEnemyPanelWhileTargetingChanged,

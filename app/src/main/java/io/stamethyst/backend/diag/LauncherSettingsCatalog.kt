@@ -325,16 +325,12 @@ private fun renderingSection(
                 LauncherConfig.readHideEnemyPanelWhileTargeting(context),
                 zh,
             ),
-            boolField(
-                "avoidDisplayCutout",
-                R.string.settings_display_cutout_enabled,
-                LauncherConfig.isDisplayCutoutAvoidanceEnabled(context),
-                zh,
-            ),
-            boolField(
-                "cropScreenBottom",
-                R.string.settings_crop_screen_bottom_enabled,
-                LauncherConfig.isScreenBottomCropEnabled(context),
+            textField(
+                "gameDisplayRegion",
+                R.string.settings_game_display_size_title,
+                LauncherConfig.readGameDisplayRegion(context)?.persistedValue() ?: "legacy",
+                LauncherConfig.readGameDisplayRegion(context)?.persistedValue()
+                    ?: zh.getString(R.string.settings_game_display_legacy),
                 zh,
             ),
             boolField(

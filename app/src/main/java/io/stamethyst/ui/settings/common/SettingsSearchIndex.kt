@@ -160,12 +160,8 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsGame,
     ),
     entry(
-        titleResId = R.string.settings_display_cutout_enabled,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
-        titleResId = R.string.settings_crop_screen_bottom_enabled,
+        titleResId = R.string.settings_game_display_size_title,
+        subtitleResId = R.string.settings_game_display_size_desc,
         categoryTitleResId = R.string.settings_category_game_title,
         route = Route.SettingsGame,
     ),

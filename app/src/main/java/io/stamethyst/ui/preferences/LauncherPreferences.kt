@@ -638,6 +638,13 @@ object LauncherPreferences {
         LauncherConfig.setScreenBottomCropEnabled(context, enabled)
     }
 
+    fun readGameDisplayRegion(context: Context): io.stamethyst.backend.render.GameDisplayRegion? =
+        LauncherConfig.readGameDisplayRegion(context)
+
+    fun saveGameDisplayRegion(context: Context, region: io.stamethyst.backend.render.GameDisplayRegion) {
+        LauncherConfig.saveGameDisplayRegion(context, region)
+    }
+
     fun isRamSaverEnabled(context: Context): Boolean {
         return LauncherConfig.isRamSaverEnabled(context)
     }

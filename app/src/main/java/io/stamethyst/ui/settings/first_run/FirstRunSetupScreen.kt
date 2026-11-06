@@ -363,11 +363,8 @@ fun LauncherFirstRunSetupScreen(
                         FirstRunSetupStep.RENDER -> {
                         FirstRunRenderStep(
                             uiState = uiState,
-                            onDisplayCutoutAvoidanceChanged = { enabled ->
-                                viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
-                            },
-                            onScreenBottomCropChanged = { enabled ->
-                                viewModel.onScreenBottomCropChanged(activity, enabled)
+                            onGameDisplayRegionChanged = { region ->
+                                viewModel.onGameDisplayRegionChanged(activity, region)
                             },
                             onGameplayFontScaleChanged = { value ->
                                 viewModel.onGameplayFontScaleChanged(activity, value)
@@ -565,8 +562,7 @@ private fun FirstRunThemeColorOption(
 @Composable
 private fun FirstRunRenderStep(
     uiState: SettingsScreenViewModel.UiState,
-    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
-    onScreenBottomCropChanged: (Boolean) -> Unit,
+    onGameDisplayRegionChanged: (io.stamethyst.backend.render.GameDisplayRegion) -> Unit,
     onGameplayFontScaleChanged: (Float) -> Unit,
     onGameplayLargerUiChanged: (Boolean) -> Unit,
 ) {
@@ -581,25 +577,7 @@ private fun FirstRunRenderStep(
     SettingsSectionCard(
         title = stringResource(R.string.settings_section_render)
     ) {
-        SettingsSwitchItem(
-            SettingsSwitchSpec(
-                checked = uiState.avoidDisplayCutout,
-                enabled = !uiState.busy,
-                title = stringResource(R.string.settings_display_cutout_enabled),
-                description = stringResource(R.string.settings_first_run_render_display_cutout_desc),
-                onCheckedChange = onDisplayCutoutAvoidanceChanged,
-            )
-        )
-
-        SettingsSwitchItem(
-            SettingsSwitchSpec(
-                checked = uiState.cropScreenBottom,
-                enabled = !uiState.busy,
-                title = stringResource(R.string.settings_crop_screen_bottom_enabled),
-                description = stringResource(R.string.settings_first_run_render_crop_screen_bottom_desc),
-                onCheckedChange = onScreenBottomCropChanged,
-            )
-        )
+        GameDisplayRegionSetting(uiState, onGameDisplayRegionChanged)
 
         SettingsSwitchItem(
             SettingsSwitchSpec(

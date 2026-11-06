@@ -469,9 +469,11 @@ object StsLaunchSpec {
         val physicalWidth = Math.max(1, CallbackBridge.physicalWidth)
         val physicalHeight = Math.max(1, CallbackBridge.physicalHeight)
         val fullscreenCanvas = FullscreenCanvasResolution.resolve(context)
+        val displayRegion = LauncherConfig.readGameDisplayRegion(context)
+            ?.toPixels(fullscreenCanvas.width, fullscreenCanvas.height)
         val virtualResolution = VirtualResolutionPolicy.resolve(
-            physicalWidth = fullscreenCanvas.width,
-            physicalHeight = fullscreenCanvas.height,
+            physicalWidth = displayRegion?.width ?: fullscreenCanvas.width,
+            physicalHeight = displayRegion?.height ?: fullscreenCanvas.height,
             renderScale = renderScale,
             mode = virtualResolutionMode
         )

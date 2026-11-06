@@ -52,6 +52,7 @@ internal data class GameSessionConfig(
     val virtualResolutionMode: VirtualResolutionMode,
     val avoidDisplayCutout: Boolean,
     val cropScreenBottom: Boolean,
+    val gameDisplayRegion: io.stamethyst.backend.render.GameDisplayRegion?,
     val sustainedPerformanceModeEnabled: Boolean,
     val keepScreenOnTimeoutMs: Long?,
     val systemGameMode: AndroidGameModeSnapshot
@@ -150,6 +151,7 @@ internal data class GameSessionConfig(
                 virtualResolutionMode = LauncherConfig.readVirtualResolutionMode(context),
                 avoidDisplayCutout = LauncherConfig.isDisplayCutoutAvoidanceEnabled(context),
                 cropScreenBottom = LauncherConfig.isScreenBottomCropEnabled(context),
+                gameDisplayRegion = LauncherConfig.readGameDisplayRegion(context),
                 sustainedPerformanceModeEnabled =
                     LauncherConfig.isSustainedPerformanceModeEnabled(context),
                 keepScreenOnTimeoutMs = LauncherConfig.keepScreenOnTimeoutMs(

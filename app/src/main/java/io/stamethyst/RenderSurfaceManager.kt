@@ -61,12 +61,15 @@ class RenderSurfaceManager(
     private val targetFpsLimit: Float,
     useTextureViewSurface: Boolean,
     private val virtualResolutionMode: VirtualResolutionMode,
-    private val avoidDisplayCutout: Boolean,
-    private val cropScreenBottom: Boolean,
+    avoidDisplayCutout: Boolean,
+    cropScreenBottom: Boolean,
+    private val gameDisplayRegion: io.stamethyst.backend.render.GameDisplayRegion?,
     private val isSoftKeyboardSessionActive: () -> Boolean,
     private val onSurfaceReady: () -> Unit,
     private val onTextureFrameUpdate: (Long) -> Unit
 ) {
+    private val avoidDisplayCutout = gameDisplayRegion == null && avoidDisplayCutout
+    private val cropScreenBottom = gameDisplayRegion == null && cropScreenBottom
     private val state = RenderSurfaceState()
     private val resyncScheduler = ForegroundResyncScheduler()
     private val renderHost: RenderSurfaceHost = if (useTextureViewSurface) {
@@ -780,9 +783,10 @@ class RenderSurfaceManager(
     private fun resolveFullscreenVirtualResolution(): io.stamethyst.backend.render.VirtualResolution {
         fullscreenVirtualResolution?.let { return it }
         val fullscreenCanvas = FullscreenCanvasResolution.resolve(activity)
+        val canvas = gameDisplayRegion?.toPixels(fullscreenCanvas.width, fullscreenCanvas.height)
         return VirtualResolutionPolicy.resolve(
-            physicalWidth = fullscreenCanvas.width,
-            physicalHeight = fullscreenCanvas.height,
+            physicalWidth = canvas?.width ?: fullscreenCanvas.width,
+            physicalHeight = canvas?.height ?: fullscreenCanvas.height,
             renderScale = renderScale,
             mode = virtualResolutionMode
         ).also { fullscreenVirtualResolution = it }
@@ -812,7 +816,7 @@ class RenderSurfaceManager(
             }
             return resolution
         }
-        if (!avoidDisplayCutout && !cropScreenBottom) {
+        if (!avoidDisplayCutout && !cropScreenBottom && gameDisplayRegion == null) {
             return resolveFullscreenVirtualResolution().also { startupVirtualResolution = it }
         }
         val canvasSize = resolveViewportCanvasSize(rootWidth, rootHeight, cropInsets)
@@ -1059,6 +1063,25 @@ class RenderSurfaceManager(
         insets: WindowInsetsCompat?,
         windowCropHint: RenderViewportCropHint? = null
     ): RenderViewportInsets {
+        gameDisplayRegion?.let { canonicalRegion ->
+            val root = renderRoot ?: return RenderViewportInsets()
+            if (root.width <= 0 || root.height <= 0) return RenderViewportInsets()
+            // Keep the saved selection attached to the physical panel when landscape flips.
+            val metrics = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            activity.windowManager.defaultDisplay.getRealMetrics(metrics)
+            val rotation = resolveDisplayRotation()
+            val canonicalRotation = io.stamethyst.backend.render.DisplayGeometryRotation
+                .canonicalLandscapeRotation(metrics.widthPixels, metrics.heightPixels, rotation)
+            val region = if ((rotation - canonicalRotation + 4) % 4 == 2) {
+                canonicalRegion.rotated180()
+            } else canonicalRegion
+            val rect = region.toPixels(root.width, root.height)
+            return RenderViewportInsets(
+                left = rect.left, top = rect.top,
+                right = root.width - rect.right, bottom = root.height - rect.bottom,
+            )
+        }
         val screenBottomCropInsets = resolveScreenBottomCropInsets(insets, windowCropHint)
         val displayCutoutAvoidanceInsets = if (
             insets != null &&

@@ -69,8 +69,7 @@ internal data class PerformanceSettingsActions(
 
 internal data class GameplayDisplaySettingsActions(
     val onHideEnemyPanelWhileTargetingChanged: (Boolean) -> Unit = {},
-    val onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
-    val onScreenBottomCropChanged: (Boolean) -> Unit,
+    val onGameDisplayRegionChanged: (io.stamethyst.backend.render.GameDisplayRegion) -> Unit = {},
     val onGameplayFontScaleChanged: (Float) -> Unit,
     val onGameplayLargerUiChanged: (Boolean) -> Unit,
     val onKeepScreenOnTimeoutSelected: (Int) -> Unit,
@@ -370,25 +369,7 @@ internal fun SettingsGameplayDisplaySection(
         )
     )
 
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.avoidDisplayCutout,
-            enabled = !uiState.busy,
-            title = stringResource(R.string.settings_display_cutout_enabled),
-            description = stringResource(R.string.settings_display_cutout_desc),
-            onCheckedChange = actions.onDisplayCutoutAvoidanceChanged,
-        )
-    )
-
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.cropScreenBottom,
-            enabled = !uiState.busy,
-            title = stringResource(R.string.settings_crop_screen_bottom_enabled),
-            description = stringResource(R.string.settings_crop_screen_bottom_desc),
-            onCheckedChange = actions.onScreenBottomCropChanged,
-        )
-    )
+    GameDisplayRegionSetting(uiState, actions.onGameDisplayRegionChanged)
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
@@ -439,7 +420,6 @@ internal fun SettingsGameplayDisplaySection(
         onOptionSelected = actions.onKeepScreenOnTimeoutSelected,
     )
 }
-
 
 @Composable
 internal fun SettingsPlayerNameAction(

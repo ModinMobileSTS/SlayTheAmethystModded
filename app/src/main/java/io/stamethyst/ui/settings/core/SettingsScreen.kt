@@ -175,11 +175,8 @@ fun LauncherSettingsGameScreen(
         onAutoSwitchLeftAfterRightClickChanged = { enabled ->
             viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled)
         },
-        onDisplayCutoutAvoidanceChanged = { enabled ->
-            viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
-        },
-        onScreenBottomCropChanged = { enabled ->
-            viewModel.onScreenBottomCropChanged(activity, enabled)
+        onGameDisplayRegionChanged = { region ->
+            viewModel.onGameDisplayRegionChanged(activity, region)
         },
         onGameplayFontScaleChanged = { value ->
             viewModel.onGameplayFontScaleChanged(activity, value)
