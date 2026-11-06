@@ -668,8 +668,7 @@
       let resizeObserver = null;
       let distributionResizeObserver = null;
       let themeMediaQuery = null;
-      let distributionHoverState = null;
-      let distributionChartEventsBound = false;
+      let distributionRenderKey = '';
       const vuetifyTheme = Vuetify.useTheme ? Vuetify.useTheme() : null;
 
       const state = reactive({
@@ -998,15 +997,26 @@
           distributionChart = echarts.init(distributionChartEl.value, null, {
             renderer: 'canvas'
           });
-          bindDistributionChartEvents();
+          distributionRenderKey = '';
+        }
+        // Heartbeats replace the snapshot even when only ages/timestamps change.
+        // Do not touch the pie views (or their hover state) unless the rings change.
+        const renderKey = JSON.stringify([
+          selectedDistributionSource.value,
+          selectedDistribution.value,
+          getPreferredThemeName()
+        ]);
+        if (renderKey === distributionRenderKey) {
+          return;
         }
         const option = buildDistributionChartOption(
           selectedDistribution.value,
           selectedDistributionMeta.value
         );
-        const preservedHoverState = distributionHoverState;
-        distributionChart.setOption(option, true);
-        restoreDistributionChartHover(option, preservedHoverState);
+        // Keep the existing series and let ECharts diff slices by name. A full
+        // reset replays the entry animation and discards native hover handling.
+        distributionChart.setOption(option, { notMerge: false });
+        distributionRenderKey = renderKey;
       }
 
       function resizeChart() {
@@ -1102,80 +1112,8 @@
           distributionChart.dispose();
           distributionChart = null;
         }
-        distributionHoverState = null;
-        distributionChartEventsBound = false;
+        distributionRenderKey = '';
       });
-
-      function bindDistributionChartEvents() {
-        if (!distributionChart || distributionChartEventsBound) {
-          return;
-        }
-        distributionChart.on('mouseover', (params) => {
-          if (!params || params.componentType !== 'series' || params.seriesType !== 'pie') {
-            return;
-          }
-          if (params.data && params.data.empty) {
-            return;
-          }
-          distributionHoverState = {
-            seriesName: String(params.seriesName || ''),
-            itemName: String(params.name || ''),
-            dataIndex: Math.max(0, Number(params.dataIndex) || 0)
-          };
-        });
-        distributionChart.on('globalout', () => {
-          distributionHoverState = null;
-        });
-        distributionChartEventsBound = true;
-      }
-
-      function restoreDistributionChartHover(option, hoverState) {
-        if (!distributionChart || !hoverState) {
-          return;
-        }
-        const target = findDistributionHoverTarget(option, hoverState);
-        if (!target) {
-          distributionHoverState = null;
-          return;
-        }
-        distributionChart.dispatchAction({
-          type: 'highlight',
-          seriesIndex: target.seriesIndex,
-          dataIndex: target.dataIndex
-        });
-        distributionChart.dispatchAction({
-          type: 'showTip',
-          seriesIndex: target.seriesIndex,
-          dataIndex: target.dataIndex
-        });
-      }
-
-      function findDistributionHoverTarget(option, hoverState) {
-        const seriesList = Array.isArray(option && option.series) ? option.series : [];
-        for (let seriesIndex = 0; seriesIndex < seriesList.length; seriesIndex += 1) {
-          const series = seriesList[seriesIndex];
-          if (String(series && series.name || '') !== hoverState.seriesName) {
-            continue;
-          }
-          const dataList = Array.isArray(series && series.data) ? series.data : [];
-          const matchedIndex = dataList.findIndex((item, index) => {
-            if (item && item.empty) {
-              return false;
-            }
-            if (String(item && item.name || '') === hoverState.itemName) {
-              return true;
-            }
-            return index === hoverState.dataIndex;
-          });
-          if (matchedIndex >= 0) {
-            return {
-              seriesIndex,
-              dataIndex: matchedIndex
-            };
-          }
-        }
-        return null;
-      }
 
       return {
         chartEl,
