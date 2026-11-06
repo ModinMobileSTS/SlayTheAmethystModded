@@ -46,7 +46,10 @@ internal object LauncherJunkFileCleaner {
             add(File(externalCacheDir, MOD_IMPORT_PREVIEW_DIR_NAME))
         }
         add(RuntimePaths.workshopImportSessionsRoot(context))
+        // Downloaded quick-start sources, never sts/desktop-1.0.jar. Also cover leftovers
+        // from the old internal location when external app storage is now available.
         add(RuntimePaths.workshopQuickStartSteamRoot(context))
+        add(File(context.filesDir, "workshop/quickstart-steam"))
         add(RuntimePaths.workshopStsJarImportRoot(context))
         add(RuntimePaths.nativeMarketStagingRoot(context))
         add(RuntimePaths.runtimeStagingDir(context))

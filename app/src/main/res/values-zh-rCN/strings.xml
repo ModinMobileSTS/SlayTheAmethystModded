@@ -2119,7 +2119,7 @@
     <string name="settings_log_paths_title">日志路径</string>
     <string name="settings_log_paths_empty">暂无日志路径</string>
     <string name="settings_developer_clear_junk_files_title">清除垃圾文件</string>
-    <string name="settings_developer_clear_junk_files_desc">删除可安全清理的启动补丁缓存、旧版缓存残留和模组导入临时文件，不会删除模组、存档或已导入资源。</string>
+    <string name="settings_developer_clear_junk_files_desc">删除可安全清理的启动补丁缓存、旧版缓存残留、模组导入临时文件及快速导入遗留的源文件，不会删除模组、存档或已安装的游戏。</string>
     <string name="settings_developer_clear_junk_files_done">垃圾文件清理完成：已释放 %1$s，清理 %2$d 处位置。</string>
     <string name="settings_developer_clear_junk_files_partial">垃圾文件清理完成：已释放 %1$s，清理 %2$d 处位置，但仍有 %3$d 处未能删除。</string>
     <string name="settings_developer_clear_junk_files_empty">没有发现可清理的垃圾文件。</string>

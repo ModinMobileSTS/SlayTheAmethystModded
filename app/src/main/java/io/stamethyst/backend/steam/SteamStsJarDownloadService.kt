@@ -1,6 +1,7 @@
 package io.stamethyst.backend.steam
 
 import android.content.Context
+import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.workshop.SharedSteamCmSessions
@@ -369,7 +370,7 @@ internal class SteamStsJarDownloadService(
 
         fun clearQuickStartSteamCache(context: Context): Boolean {
             val cacheDir = quickStartSteamCacheDir(context)
-            return !cacheDir.exists() || cacheDir.deleteRecursively()
+            return FileTreeCleaner.deleteRecursively(cacheDir)
         }
 
         private fun quickStartSteamCacheDir(context: Context): File =

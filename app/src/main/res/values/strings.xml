@@ -2122,7 +2122,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_log_paths_title">Log paths</string>
     <string name="settings_log_paths_empty">No log paths yet</string>
     <string name="settings_developer_clear_junk_files_title">Clear junk files</string>
-    <string name="settings_developer_clear_junk_files_desc">Delete safe-to-remove launcher patch caches, legacy cache leftovers, and temporary mod import files. Mods, saves, and imported resources are kept.</string>
+    <string name="settings_developer_clear_junk_files_desc">Delete safe-to-remove launcher patch caches, legacy cache leftovers, temporary mod import files, and leftover quick-start import source files. Mods, saves, and the installed game are kept.</string>
     <string name="settings_developer_clear_junk_files_done">Junk cleanup finished: freed %1$s from %2$d location(s).</string>
     <string name="settings_developer_clear_junk_files_partial">Junk cleanup finished: freed %1$s from %2$d location(s), but %3$d location(s) could not be removed.</string>
     <string name="settings_developer_clear_junk_files_empty">No junk files were found.</string>

@@ -4595,12 +4595,15 @@ class SettingsScreenViewModel : ViewModel() {
                 downloadedJar.delete()
                 throw CancellationException("Quick start Steam import was cancelled")
             }
-            SettingsFileService.importFileToFileAtomically(
-                sourceFile = downloadedJar,
-                targetFile = RuntimePaths.importedStsJar(host),
-                validator = StsJarValidator::validate
+            val sourceCleaned = QuickStartSteamImport.importDownloadedJar(
+                context = host.applicationContext,
+                source = downloadedJar,
             )
             StsJarImportLogStore.append(importLog, "import=success source=${downloadedJar.absolutePath} target=${RuntimePaths.importedStsJar(host).absolutePath}")
+            StsJarImportLogStore.append(importLog, "quick_start_source_cleanup=$sourceCleaned")
+            if (!sourceCleaned) {
+                android.util.Log.w("StsJarImport", "Imported game successfully; source cleanup will be retried by Clear junk files")
+            }
             MtsStartupCacheCoordinator.invalidate(host)
             val warmupWarning = prewarmMtsClasspathAfterImport(host)
             val pullResult = if (mode == QuickStartSteamImportMode.AUTHENTICATED) {
