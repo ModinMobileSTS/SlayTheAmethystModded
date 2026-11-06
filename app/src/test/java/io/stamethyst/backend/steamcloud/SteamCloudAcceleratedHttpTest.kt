@@ -1,7 +1,7 @@
 package io.stamethyst.backend.steamcloud
 
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessRuntime
-import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
+import io.stamethyst.backend.github.TestRouting
 import io.stamethyst.backend.github.CredentialSafeRedirectInterceptor
 import io.stamethyst.backend.github.GithubDirectHostnameVerifier
 import io.stamethyst.backend.github.PersistedWattToolkitGithubRoute
@@ -12,12 +12,12 @@ import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitGithubRouteStore
 import io.stamethyst.backend.github.WattToolkitRouteProfile
 import io.stamethyst.backend.github.addHttpsOnlyTransport
-import io.stamethyst.backend.github.addExperimentalGithubDirectAccess
-import io.stamethyst.backend.github.withAcceleratedCookieJar
+import io.stamethyst.backend.github.routing
 import java.net.InetAddress
 import java.net.ProtocolException
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.Call
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.Dns
@@ -276,8 +276,8 @@ class SteamCloudAcceleratedHttpTest {
             .build()
         val client = OkHttpClient.Builder()
             .callTimeout(10, TimeUnit.SECONDS)
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
+            .routing(
+                TestRouting(
                     routeResolvers = listOf(resolver),
                     directCallFactory = directClient,
                 ),
@@ -534,8 +534,8 @@ class SteamCloudAcceleratedHttpTest {
             .followSslRedirects(false)
             .build()
         val client = OkHttpClient.Builder()
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
+            .routing(
+                TestRouting(
                     routeResolvers = listOf(resolver),
                     directCallFactory = directClient,
                     forwardDns = routeDns,
@@ -966,8 +966,8 @@ class SteamCloudAcceleratedHttpTest {
         )
         val client = OkHttpClient.Builder()
             .dns(dns)
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
+            .routing(
+                TestRouting(
                     routeResolvers = runtime.resolvers,
                     directCallFactory = runtime.directHttpClient,
                 ),
@@ -1052,8 +1052,8 @@ class SteamCloudAcceleratedHttpTest {
         )
         val client = OkHttpClient.Builder()
             .dns(dns)
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
+            .routing(
+                TestRouting(
                     routeResolvers = runtime.resolvers,
                     directCallFactory = runtime.directHttpClient,
                 ),
@@ -1152,8 +1152,8 @@ class SteamCloudAcceleratedHttpTest {
             val client = OkHttpClient.Builder()
                 .dns(dns)
                 .retryOnConnectionFailure(false)
-                .addInterceptor(
-                    ExperimentalGithubDirectAccessInterceptor(
+                .routing(
+                    TestRouting(
                         routeResolvers = listOf(resolver),
                         directCallFactory = directClient,
                     ),
@@ -1293,8 +1293,8 @@ class SteamCloudAcceleratedHttpTest {
                         maxRequestsPerHost = 8
                     },
                 )
-                .addInterceptor(
-                    ExperimentalGithubDirectAccessInterceptor(
+                .routing(
+                    TestRouting(
                         routeResolvers = listOf(resolver),
                         directCallFactory = directClient,
                     ),
@@ -1402,8 +1402,8 @@ class SteamCloudAcceleratedHttpTest {
         )
         val client = OkHttpClient.Builder()
             .dns(dns)
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
+            .routing(
+                TestRouting(
                     routeResolvers = runtime.resolvers,
                     directCallFactory = runtime.directHttpClient,
                 ),
@@ -1553,8 +1553,8 @@ class SteamCloudAcceleratedHttpTest {
             val client = OkHttpClient.Builder()
                 .dns(dns)
                 .retryOnConnectionFailure(false)
-                .addInterceptor(
-                    ExperimentalGithubDirectAccessInterceptor(
+                .routing(
+                    TestRouting(
                         routeResolvers = listOf(resolver),
                         directCallFactory = directClient,
                     ),
@@ -1636,8 +1636,8 @@ class SteamCloudAcceleratedHttpTest {
         )
         val client = OkHttpClient.Builder()
             .dns(dns)
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
+            .routing(
+                TestRouting(
                     routeResolvers = runtime.resolvers,
                     directCallFactory = runtime.directHttpClient,
                 ),
@@ -1745,8 +1745,8 @@ class SteamCloudAcceleratedHttpTest {
         )
         val client = OkHttpClient.Builder()
             .dns(dns)
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
+            .routing(
+                TestRouting(
                     routeResolvers = listOf(resolver),
                     directCallFactory = OkHttpClient.Builder()
                         .dns(dns)
@@ -1793,7 +1793,7 @@ class SteamCloudAcceleratedHttpTest {
         )
     }
 
-    private fun acceleratedClientWithCookieJar(jar: CookieJar): OkHttpClient {
+    private fun acceleratedClientWithCookieJar(jar: CookieJar): Call.Factory {
         val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
         val resolver = WattToolkitGithubRouteResolver(
             routeProfile = SteamStoreWattToolkitRouteProfile,
@@ -1813,8 +1813,8 @@ class SteamCloudAcceleratedHttpTest {
         )
         return OkHttpClient.Builder()
             .dns(dns)
-            .addExperimentalGithubDirectAccess(runtime)
-            .withAcceleratedCookieJar(jar)
+            .routing(runtime)
+            .cookieJar(jar)
             .build()
     }
 

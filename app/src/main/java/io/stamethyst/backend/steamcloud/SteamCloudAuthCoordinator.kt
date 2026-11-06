@@ -217,7 +217,7 @@ internal object SteamCloudAuthCoordinator {
         val authenticationClient = SteamAuthenticationClient(
             directoryClient = SteamDirectoryClient(httpClient),
             sessionFactory = {
-                OkHttpSteamCmSession(httpClient, sessionValidator = {
+                OkHttpSteamCmSession(httpClient.client, sessionValidator = {
                     cmEpoch == SteamCmAccountEpoch.read(context)
                 })
             },

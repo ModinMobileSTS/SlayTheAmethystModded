@@ -7,6 +7,7 @@ import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.github.GithubRequestClients
+import io.stamethyst.backend.github.withHttpOptions
 import io.stamethyst.backend.github.HttpRequestControl
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.StartupTraceEvents
@@ -32,7 +33,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import okhttp3.Call
-import okhttp3.OkHttpClient
 import okhttp3.Request
 
 data class ResourcePackSlowDownloadMirrorSwitch(
@@ -756,12 +756,12 @@ object ExternalResourcePackService {
         return ordered
     }
 
-    private fun resourcePackProbeClient(client: OkHttpClient): OkHttpClient = client.newBuilder()
-        .connectTimeout(PROBE_CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-        .readTimeout(PROBE_READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-        .writeTimeout(PROBE_READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-        .callTimeout(ResourcePackLinkSelector.PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .build()
+    private fun resourcePackProbeClient(client: Call.Factory): Call.Factory = client.withHttpOptions {
+        connectTimeout(PROBE_CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        readTimeout(PROBE_READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        writeTimeout(PROBE_READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+        callTimeout(ResourcePackLinkSelector.PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+    }
 
     /**
      * Dispatches to chunked parallel download when the server supports Range requests and the
@@ -769,7 +769,7 @@ object ExternalResourcePackService {
      */
     @Throws(IOException::class)
     private fun downloadFile(
-        client: OkHttpClient,
+        client: Call.Factory,
         requestUrl: String,
         targetFile: File,
         progressCallback: StartupProgressCallback?,
@@ -820,7 +820,7 @@ object ExternalResourcePackService {
      * or null if Range is unsupported or the length is unknown.
      */
     internal fun fetchRangeSupportedContentLength(
-        client: OkHttpClient,
+        client: Call.Factory,
         requestUrl: String,
         probeCandidate: ResourcePackDownloadCandidate? = null,
     ): Long? {
@@ -867,7 +867,7 @@ object ExternalResourcePackService {
      */
     @Throws(IOException::class)
     private fun downloadFileChunked(
-        client: OkHttpClient,
+        client: Call.Factory,
         requestUrl: String,
         targetFile: File,
         contentLength: Long,
@@ -962,7 +962,7 @@ object ExternalResourcePackService {
     /** Downloads a single byte-range chunk of [requestUrl] and writes it to [tempFile]. */
     @Throws(IOException::class)
     private fun downloadChunk(
-        client: OkHttpClient,
+        client: Call.Factory,
         requestUrl: String,
         tempFile: File,
         rangeStart: Long,
@@ -1067,7 +1067,7 @@ object ExternalResourcePackService {
 
     @Throws(IOException::class)
     private fun downloadFileSingleStream(
-        client: OkHttpClient,
+        client: Call.Factory,
         requestUrl: String,
         targetFile: File,
         progressCallback: StartupProgressCallback?,

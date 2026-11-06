@@ -1,6 +1,7 @@
 package io.stamethyst.backend.steamcloud
 
-import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
+import io.stamethyst.backend.github.TestRouting
+import io.stamethyst.backend.github.routing
 import io.stamethyst.backend.github.GithubDirectHostnameVerifier
 import io.stamethyst.backend.github.NoOpWattToolkitGithubRouteStore
 import io.stamethyst.backend.github.WattToolkitForwardDns
@@ -184,8 +185,8 @@ class SteamCommunityMarketNetworkAcceptanceTest {
             // consumes its own timeout.
             .callTimeout(ACCEPTANCE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(false)
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
+            .routing(
+                TestRouting(
                     routeResolvers = listOf(resolver),
                     directCallFactory = directClient,
                     forwardDns = forwardDns,
@@ -275,8 +276,8 @@ class SteamCommunityMarketNetworkAcceptanceTest {
                 .writeTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .callTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .retryOnConnectionFailure(false)
-                .addInterceptor(
-                    ExperimentalGithubDirectAccessInterceptor(
+                .routing(
+                    TestRouting(
                         routeResolvers = listOf(resolver),
                         directCallFactory = directClient,
                         forwardDns = forwardDns,

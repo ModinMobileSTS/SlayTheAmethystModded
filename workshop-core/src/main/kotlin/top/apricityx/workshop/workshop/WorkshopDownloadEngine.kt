@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
+import okhttp3.Call
 import top.apricityx.workshop.steam.protocol.newDefaultOkHttpClient
 import java.io.File
 import java.time.Instant
@@ -85,8 +86,10 @@ class WorkshopDownloadEngine(
 
     companion object {
         fun createDefault(
-            client: OkHttpClient = newDefaultOkHttpClient(),
-            sessionFactory: () -> SteamCmSession = { OkHttpSteamCmSession(client) },
+            client: Call.Factory = newDefaultOkHttpClient(),
+            sessionFactory: () -> SteamCmSession = {
+                OkHttpSteamCmSession(requireNotNull(client as? OkHttpClient) { "A routed HTTP transport requires an explicit CM sessionFactory" })
+            },
             sessionConnector: suspend (SteamCmSession, List<CmServer>) -> SessionContext = { session, servers ->
                 session.connectAnonymous(servers)
             },

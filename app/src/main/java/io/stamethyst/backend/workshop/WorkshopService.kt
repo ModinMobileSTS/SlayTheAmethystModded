@@ -3,7 +3,10 @@ package io.stamethyst.backend.workshop
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
-import io.stamethyst.backend.github.withAcceleratedCookieJar
+import io.stamethyst.backend.github.withHttpOptions
+import io.stamethyst.backend.github.preparingHttpRequests
+import io.stamethyst.backend.github.cancelAllHttpCalls
+import io.stamethyst.backend.github.HttpRetrySafety
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
@@ -35,7 +38,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Protocol
 import okhttp3.Request
 import top.apricityx.workshop.steam.protocol.STEAM_PUBLISHED_FILE_QUERY_TYPE_RANKED_BY_TEXT_SEARCH
@@ -48,13 +51,12 @@ import top.apricityx.workshop.workshop.WorkshopDownloadEngine
 
 internal class WorkshopService(
     private val context: Context,
-    private val client: OkHttpClient = SteamCloudAcceleratedHttp.createClient(
+    private val client: Call.Factory = SteamCloudAcceleratedHttp.createClient(
         context = context,
         connectTimeoutMs = 15_000L,
         readTimeoutMs = 60_000L,
         callTimeoutMs = 120_000L,
-        // Keep the interceptor installed so a long-lived service can resume acceleration
-        // after a VPN/region state change; enabledProvider gates each request dynamically.
+        // Keep routing available for this long-lived service; read the acceleration switch per call.
         enabled = true,
         enabledProvider = { LauncherPreferences.isWorkshopWattAccelerationEnabled(context) },
     ),
@@ -83,21 +85,17 @@ internal class WorkshopService(
     private val steamLanguagePreference: SteamLanguagePreference
         get() = runCatching { LauncherPreferences.readWorkshopSteamLanguage(context) }
             .getOrDefault(SteamLanguagePreference.SimplifiedChinese)
-    // The cookie jar must be bound through withAcceleratedCookieJar: a plain cookieJar(...) call is
-    // invisible to the acceleration interceptor, which re-issues routed requests on its own call
-    // factory and so bypasses OkHttp's cookie bridge entirely. That left every accelerated Steam
-    // workshop browse without steamLoginSecure, and Steam answered with the logged-out view.
-    private val workshopClient = client.newBuilder()
-        .withAcceleratedCookieJar(steamWebSession.cookieJar)
-        .addInterceptor(SteamLanguageInterceptor(::steamLanguagePreference))
-        .build()
-    private val browseDetailClient = client.newBuilder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
-        .writeTimeout(8, TimeUnit.SECONDS)
-        .callTimeout(8, TimeUnit.SECONDS)
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .build()
+    private val workshopClient = client.withHttpOptions { cookieJar(steamWebSession.cookieJar) }
+        .preparingHttpRequests { request ->
+            request.newBuilder().header("Accept-Language", steamLanguagePreference.acceptLanguageValue).build()
+        }
+    private val browseDetailClient = client.withHttpOptions {
+        connectTimeout(5, TimeUnit.SECONDS)
+        readTimeout(8, TimeUnit.SECONDS)
+        writeTimeout(8, TimeUnit.SECONDS)
+        callTimeout(8, TimeUnit.SECONDS)
+        protocols(listOf(Protocol.HTTP_1_1))
+    }
     private val communityDetailCacheLock = Any()
     private val communityDetailCache = LinkedHashMap<CommunityDetailCacheKey, CachedCommunityDetail>(16, 0.75f, true)
     private val communityDetailInFlight = mutableMapOf<CommunityDetailCacheKey, CompletableDeferred<LocalizedWorkshopDetail>>()
@@ -106,8 +104,7 @@ internal class WorkshopService(
 
     fun cancelActiveCalls() {
         listOf(client, workshopClient, browseDetailClient).forEach { httpClient ->
-            httpClient.dispatcher.queuedCalls().forEach { it.cancel() }
-            httpClient.dispatcher.runningCalls().forEach { it.cancel() }
+            httpClient.cancelAllHttpCalls()
         }
     }
 
@@ -508,6 +505,7 @@ internal class WorkshopService(
                 val request = Request.Builder()
                     .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())
                     .post(requestBody)
+                    .tag(HttpRetrySafety::class.java, HttpRetrySafety.READ_ONLY)
                     .build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) error("Steam workshop details failed: ${response.code}")
@@ -774,6 +772,7 @@ internal class WorkshopService(
         val request = Request.Builder()
             .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())
             .post(requestBody)
+            .tag(HttpRetrySafety::class.java, HttpRetrySafety.READ_ONLY)
             .build()
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("Steam workshop details failed: ${response.code}")
@@ -1363,6 +1362,7 @@ internal class WorkshopService(
         val request = Request.Builder()
             .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())
             .post(requestBody)
+            .tag(HttpRetrySafety::class.java, HttpRetrySafety.READ_ONLY)
             .build()
         val httpStartedAtMs = SystemClock.elapsedRealtime()
         return browseDetailClient.newCall(request).execute().use { response ->

@@ -14,7 +14,7 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.Locale
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import org.json.JSONArray
@@ -317,7 +317,7 @@ object FeedbackIssueSyncService {
     }
 
     private fun fetchIssuePageFromSource(
-        client: OkHttpClient,
+        client: Call.Factory,
         source: UpdateSource,
         page: Int,
         pageSize: Int,
@@ -333,7 +333,7 @@ object FeedbackIssueSyncService {
     }
 
     private fun fetchListedIssuePageFromSource(
-        client: OkHttpClient,
+        client: Call.Factory,
         source: UpdateSource,
         page: Int,
         pageSize: Int,
@@ -352,7 +352,7 @@ object FeedbackIssueSyncService {
     }
 
     private fun fetchSearchedIssuePageFromSource(
-        client: OkHttpClient,
+        client: Call.Factory,
         source: UpdateSource,
         page: Int,
         pageSize: Int,
@@ -453,7 +453,7 @@ object FeedbackIssueSyncService {
 
     private fun fetchIssueSummaryFromSource(
         context: Context,
-        client: OkHttpClient,
+        client: Call.Factory,
         source: UpdateSource,
         issueNumber: Long,
         existingCache: FeedbackIssueThreadCache?
@@ -472,7 +472,7 @@ object FeedbackIssueSyncService {
 
     private fun fetchIssueDetailsFromSource(
         context: Context,
-        client: OkHttpClient,
+        client: Call.Factory,
         source: UpdateSource,
         issueNumber: Long,
         existingCache: FeedbackIssueThreadCache?
@@ -699,19 +699,19 @@ object FeedbackIssueSyncService {
         )
     }
 
-    private fun requestJsonObject(client: OkHttpClient, requestUrl: String): JSONObject {
+    private fun requestJsonObject(client: Call.Factory, requestUrl: String): JSONObject {
         val text = requestText(client, requestUrl)
         val parsed = JSONTokener(text).nextValue()
         return parsed as? JSONObject ?: throw IOException("Invalid JSON object response.")
     }
 
-    private fun requestJsonArray(client: OkHttpClient, requestUrl: String): JSONArray {
+    private fun requestJsonArray(client: Call.Factory, requestUrl: String): JSONArray {
         val text = requestText(client, requestUrl)
         val parsed = JSONTokener(text).nextValue()
         return parsed as? JSONArray ?: throw IOException("Invalid JSON array response.")
     }
 
-    private fun requestText(client: OkHttpClient, requestUrl: String): String {
+    private fun requestText(client: Call.Factory, requestUrl: String): String {
         val request = Request.Builder()
             .url(requestUrl)
             .get()

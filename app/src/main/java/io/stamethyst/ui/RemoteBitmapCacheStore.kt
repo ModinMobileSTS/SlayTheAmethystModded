@@ -14,7 +14,7 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -30,7 +30,7 @@ internal object RemoteBitmapCacheStore {
     }
 
     /** One client per host family so keep-alive connections survive across images. */
-    private val sharedClients = ConcurrentHashMap<String, OkHttpClient>()
+    private val sharedClients = ConcurrentHashMap<String, Call.Factory>()
     private val githubClients = ConcurrentHashMap<String, GithubRequestClients>()
 
     fun load(context: Context, imageUrl: String): Bitmap? {
@@ -62,7 +62,7 @@ internal object RemoteBitmapCacheStore {
             val directory = cacheDirectory(context).apply { mkdirs() }
             val outputFile = cacheFile(context, cacheKey)
             val tempFile = File(directory, "$cacheKey.tmp")
-            val download: (OkHttpClient, String) -> Bitmap = { client, requestUrl ->
+            val download: (Call.Factory, String) -> Bitmap = { client, requestUrl ->
                 val request = Request.Builder()
                     .url(requestUrl)
                     .header("User-Agent", "SlayTheAmethyst-MarkdownImage")
@@ -106,7 +106,7 @@ internal object RemoteBitmapCacheStore {
     private fun cacheDirectory(context: Context): File =
         File(RuntimePaths.transientFilesRoot(context.applicationContext), DIRECTORY_NAME)
 
-    private fun createSteamClient(context: Context): OkHttpClient {
+    private fun createSteamClient(context: Context): Call.Factory {
         val appContext = context.applicationContext
         val key = "${RuntimePaths.transientFilesRoot(appContext).absolutePath}:$CLIENT_KEY_STEAM"
         return sharedClients.getOrPut(key) {

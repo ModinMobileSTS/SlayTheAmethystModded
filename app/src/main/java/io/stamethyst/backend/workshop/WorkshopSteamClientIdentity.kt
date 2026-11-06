@@ -1,10 +1,11 @@
 package io.stamethyst.backend.workshop
 
 import android.content.Context
+import io.stamethyst.backend.github.webSocketClient
 import android.os.Build
 import android.provider.Settings
 import java.util.UUID
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import top.apricityx.workshop.steam.protocol.DEFAULT_MACHINE_NAME
 import top.apricityx.workshop.steam.protocol.OkHttpSteamCmSession
 import top.apricityx.workshop.steam.protocol.SteamAccountSession
@@ -39,19 +40,19 @@ internal class WorkshopSteamClientIdentity(context: Context) {
     }
 
     fun createSession(
-        client: OkHttpClient,
+        client: Call.Factory,
         accountValidator: (SteamAccountSession) -> Boolean = { true },
         onAccountLogonFailure: (SteamAccountSession, Throwable) -> Unit = { _, _ -> },
         sessionValidator: () -> Boolean = { true },
     ): OkHttpSteamCmSession = OkHttpSteamCmSession(
-        client = client,
+        client = client.webSocketClient(),
         machineName = machineName,
         machineId = machineId,
         accountValidator = accountValidator,
         onAccountLogonFailure = onAccountLogonFailure,
         sessionValidator = sessionValidator,
         serverSelector = SteamCmSelectionPolicy.create(
-            appContext, SteamWebSocketFactory { request, listener -> client.newWebSocket(request, listener) },
+            appContext, SteamWebSocketFactory { request, listener -> client.webSocketClient().newWebSocket(request, listener) },
         ),
     )
 

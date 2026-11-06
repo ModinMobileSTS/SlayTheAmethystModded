@@ -1,8 +1,9 @@
 package io.stamethyst.backend.steamcloud
 
 import kotlinx.coroutines.runBlocking
+import io.stamethyst.backend.github.webSocketClient
 import kotlinx.coroutines.withTimeout
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import top.apricityx.workshop.steam.protocol.OkHttpSteamCmSession
 import top.apricityx.workshop.steam.protocol.SteamAccountSession
 import top.apricityx.workshop.steam.protocol.SteamDirectoryClient
@@ -17,14 +18,14 @@ import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver2
 
 /** Synchronous app facade over the proxy-capable protocol session. */
 internal class SteamCloudProtocolClient(
-    private val httpClient: OkHttpClient,
+    private val httpClient: Call.Factory,
     webSocketFactory: SteamWebSocketFactory,
     externalSession: SteamCmSession? = null,
 ) : AutoCloseable {
     private val ownsSession = externalSession == null
     private val session: SteamCmSession =
         externalSession ?: OkHttpSteamCmSession(
-            httpClient,
+            httpClient.webSocketClient(),
             webSocketFactory = webSocketFactory,
             serverSelector = top.apricityx.workshop.steam.protocol.SteamCmServerSelector(webSocketFactory),
         )

@@ -23,7 +23,7 @@ import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 
 private const val DEFAULT_QQ_GROUP_NUMBER_VALUE = "675545914"
@@ -771,7 +771,7 @@ object CloudControlConfig {
     }
 
     private fun requestText(
-        client: OkHttpClient,
+        client: Call.Factory,
         requestUrl: String
     ): String {
         val request = Request.Builder()

@@ -17,10 +17,8 @@ import kotlinx.serialization.json.longOrNull
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
-import okhttp3.Interceptor
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
-import okhttp3.Response
 import top.apricityx.workshop.steam.protocol.STEAM_LANGUAGE_ENGLISH
 import top.apricityx.workshop.steam.protocol.STEAM_LANGUAGE_SIMPLIFIED_CHINESE
 import top.apricityx.workshop.steam.protocol.SteamAccountSession
@@ -65,9 +63,9 @@ internal class WorkshopSteamWebSession(
      * so it must keep acceleration. Passing the bare protocol client here left the
      * request that gates every logged-in market load unaccelerated.
      */
-    private val directoryClient: OkHttpClient,
+    private val directoryClient: Call.Factory,
     /** Accelerated client for CM websocket sessions, including steamserver.net routes. */
-    private val cmHttpClient: OkHttpClient,
+    private val cmHttpClient: Call.Factory,
     private val identity: WorkshopSteamClientIdentity,
 ) {
     private val appContext = context.applicationContext
@@ -128,7 +126,7 @@ internal class WorkshopSteamWebSession(
 
     suspend fun ensurePrimed(
         account: SteamAccountSession?,
-        client: OkHttpClient,
+        client: Call.Factory,
         languagePreference: SteamLanguagePreference,
     ) {
         val primeStartedAtMs = SystemClock.elapsedRealtime()
@@ -165,7 +163,7 @@ internal class WorkshopSteamWebSession(
     private suspend fun primeLocked(
         account: SteamAccountSession,
         scope: String,
-        client: OkHttpClient,
+        client: Call.Factory,
         languagePreference: SteamLanguagePreference,
         primeStartedAtMs: Long,
     ) {
@@ -276,7 +274,7 @@ internal class WorkshopSteamWebSession(
     }
 
     private fun primeUrl(
-        client: OkHttpClient,
+        client: Call.Factory,
         url: String,
         languagePreference: SteamLanguagePreference,
     ) {
@@ -355,20 +353,6 @@ internal class SteamWebSessionCookieJar(
                 isScopeInitialized = true
             }
         }
-    }
-}
-
-internal class SteamLanguageInterceptor(
-    private val languagePreferenceProvider: () -> SteamLanguagePreference,
-) : Interceptor {
-    override fun intercept(chain: Interceptor.Chain): Response {
-        val request = chain.request()
-        if (!request.url.host.isSteamDomain()) return chain.proceed(request)
-        return chain.proceed(
-            request.newBuilder()
-                .header("Accept-Language", languagePreferenceProvider().acceptLanguageValue)
-                .build()
-        )
     }
 }
 

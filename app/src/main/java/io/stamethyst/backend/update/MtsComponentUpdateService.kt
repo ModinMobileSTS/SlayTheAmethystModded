@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.zip.ZipFile
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 
 object MtsComponentUpdateService {
@@ -100,7 +100,7 @@ object MtsComponentUpdateService {
     }
 
     private fun downloadToFile(
-        client: OkHttpClient,
+        client: Call.Factory,
         requestUrl: String,
         targetFile: File,
         source: UpdateSource,

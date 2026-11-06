@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Call
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -27,10 +28,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
 
 class UgcWorkshopDownloader(
-    private val client: OkHttpClient,
+    private val client: Call.Factory,
     private val directoryClient: SteamDirectoryClient,
     private val maxConcurrentChunks: Int = DEFAULT_MAX_CONCURRENT_CHUNKS,
-    private val sessionFactory: () -> SteamCmSession = { OkHttpSteamCmSession(client) },
+    private val sessionFactory: () -> SteamCmSession = {
+        OkHttpSteamCmSession(requireNotNull(client as? OkHttpClient) { "A routed HTTP transport requires an explicit CM sessionFactory" })
+    },
     private val sessionConnector: suspend (SteamCmSession, List<top.apricityx.workshop.steam.protocol.CmServer>) -> top.apricityx.workshop.steam.protocol.SessionContext =
         { session, servers -> session.connectAnonymous(servers) },
     private val allowPublicCdnFallbackOnSessionFailure: Boolean = true,

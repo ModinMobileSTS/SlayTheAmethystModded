@@ -8,6 +8,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -61,13 +62,12 @@ internal object WorkshopPreviewCacheStore {
      *
      * One client per acceleration state instead of one per download, so the
      * keep-alive connection pool is reused across the preview grid instead of
-     * paying a fresh TCP+TLS handshake for every card. The [enabledProvider]
-     * keeps per-request acceleration decisions live; the boolean key only
-     * selects the builder shape (interceptors installed or not).
+     * paying a fresh TCP+TLS handshake for every card. The enablement provider
+     * keeps acceleration decisions live for long-lived transports.
      */
-    private val sharedClients = ConcurrentHashMap<Boolean, OkHttpClient>()
+    private val sharedClients = ConcurrentHashMap<Boolean, Call.Factory>()
 
-    private fun sharedClient(context: Context): OkHttpClient {
+    private fun sharedClient(context: Context): Call.Factory {
         val appContext = context.applicationContext
         val enabled = SteamCloudAcceleratedHttp.isEnabled(appContext)
         return sharedClients.getOrPut(enabled) {

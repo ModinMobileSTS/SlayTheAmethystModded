@@ -5,7 +5,7 @@ import io.stamethyst.backend.github.FileBackedWattToolkitGithubRouteStore
 import io.stamethyst.backend.github.GithubUserContentWattToolkitRouteProfile
 import io.stamethyst.backend.github.WattToolkitForwardTargetProbe
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
-import io.stamethyst.backend.github.addExperimentalGithubDirectAccess
+import io.stamethyst.backend.github.routing
 import io.stamethyst.backend.network.AccelerationStrategy
 import java.io.File
 import java.io.IOException
@@ -16,6 +16,7 @@ import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
+import okhttp3.Call
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import org.json.JSONArray
@@ -69,7 +70,7 @@ class AgentPatchCatalogueNetworkTest {
         listOf(rules, official, first, second).forEach { it.close() }
     }
 
-    private fun client(strategy: AccelerationStrategy = AccelerationStrategy.RMBGAME_FIRST): OkHttpClient {
+    private fun client(strategy: AccelerationStrategy = AccelerationStrategy.RMBGAME_FIRST): Call.Factory {
         val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
         val transport = OkHttpClient.Builder().dns(dns).retryOnConnectionFailure(false)
             .connectTimeout(300, TimeUnit.MILLISECONDS).readTimeout(300, TimeUnit.MILLISECONDS).build()
@@ -88,12 +89,12 @@ class AgentPatchCatalogueNetworkTest {
             // Production default: raw has no bundled hop and must still discover rules.
             accelerationStrategyProvider = { strategy },
         )
-        return transport.newBuilder().addExperimentalGithubDirectAccess(
+        return transport.newBuilder().routing(
             ExperimentalGithubDirectAccessRuntime(listOf(resolver), transport.hostnameVerifier, transport),
         ).build()
     }
 
-    private fun fetch(client: OkHttpClient = client()) = AgentPatchCatalogueService.fetchCatalogue(
+    private fun fetch(client: Call.Factory = client()) = AgentPatchCatalogueService.fetchCatalogue(
         client, cache, "http://raw.githubusercontent.com:${official.port}$path",
     )
 

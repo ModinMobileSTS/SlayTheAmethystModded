@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -274,7 +274,7 @@ object LauncherUpdateService {
     }
 
     private fun requestText(
-        client: OkHttpClient,
+        client: Call.Factory,
         requestUrl: String,
         control: HttpRequestControl? = null,
     ): String {

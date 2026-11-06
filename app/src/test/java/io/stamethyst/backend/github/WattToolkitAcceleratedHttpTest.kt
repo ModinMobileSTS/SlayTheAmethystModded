@@ -313,7 +313,7 @@ class WattToolkitAcceleratedHttpTest {
         val resolver = officialPreferredResolver(dns)
         val client = OkHttpClient.Builder()
             .dns(dns)
-            .addExperimentalGithubDirectAccess(
+            .routing(
                 ExperimentalGithubDirectAccessRuntime(
                     resolvers = listOf(resolver),
                     hostnameVerifier = GithubDirectHostnameVerifier { false },
@@ -346,7 +346,7 @@ class WattToolkitAcceleratedHttpTest {
         val client = OkHttpClient.Builder()
             .dns(dns)
             .retryOnConnectionFailure(false)
-            .addExperimentalGithubDirectAccess(
+            .routing(
                 ExperimentalGithubDirectAccessRuntime(
                     resolvers = listOf(resolver),
                     hostnameVerifier = GithubDirectHostnameVerifier { false },
@@ -381,7 +381,7 @@ class WattToolkitAcceleratedHttpTest {
         val client = OkHttpClient.Builder()
             .dns(dns)
             .retryOnConnectionFailure(false)
-            .addExperimentalGithubDirectAccess(
+            .routing(
                 ExperimentalGithubDirectAccessRuntime(
                     resolvers = listOf(resolver),
                     hostnameVerifier = GithubDirectHostnameVerifier { false },
@@ -514,7 +514,7 @@ class WattToolkitAcceleratedHttpTest {
         )
         val client = OkHttpClient.Builder()
             .dns(dns)
-            .addExperimentalGithubDirectAccess(runtime)
+            .routing(runtime)
             .build()
 
         client.newCall(

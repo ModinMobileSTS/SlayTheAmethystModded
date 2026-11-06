@@ -19,7 +19,7 @@ import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONTokener
@@ -652,7 +652,7 @@ object NativeLibraryMarketService {
     }
 
     @Throws(IOException::class)
-    private fun requestText(client: OkHttpClient, requestUrl: String): String {
+    private fun requestText(client: Call.Factory, requestUrl: String): String {
         val request = Request.Builder()
             .url(requestUrl)
             .get()
@@ -669,7 +669,7 @@ object NativeLibraryMarketService {
 
     @Throws(IOException::class)
     private fun downloadFile(
-        client: OkHttpClient,
+        client: Call.Factory,
         requestUrl: String,
         targetFile: File,
         fileName: String,

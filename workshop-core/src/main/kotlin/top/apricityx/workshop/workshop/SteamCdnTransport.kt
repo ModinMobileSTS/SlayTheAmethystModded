@@ -12,7 +12,7 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import okhttp3.HttpUrl
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 
 internal data class SteamCdnServerPool(
@@ -21,7 +21,7 @@ internal data class SteamCdnServerPool(
 )
 
 internal class SteamCdnTransport(
-    private val client: OkHttpClient,
+    private val client: Call.Factory,
 ) {
     /**
      * Builds the ordered download pool for a depot request.

@@ -14,7 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import top.apricityx.workshop.steam.protocol.CmServer
 import top.apricityx.workshop.steam.protocol.SessionContext
 import top.apricityx.workshop.steam.protocol.SteamAccountSession
@@ -60,7 +60,7 @@ internal class SteamAnonymousDepotAccessException(
 
 internal class SteamStsJarDownloadService(
     private val context: Context,
-    private val client: OkHttpClient = SteamCloudAcceleratedHttp.createClient(
+    private val client: Call.Factory = SteamCloudAcceleratedHttp.createClient(
         context = context,
         connectTimeoutMs = 15_000L,
         readTimeoutMs = 60_000L,

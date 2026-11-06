@@ -3,6 +3,7 @@ package io.stamethyst.backend.mods
 import android.content.Context
 import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.github.GithubRequestClients
+import io.stamethyst.backend.github.withHttpOptions
 import io.stamethyst.backend.github.GithubResourceRequests
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.update.toGithubMirrorHttpException
@@ -22,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -257,7 +259,7 @@ object AgentPatchCatalogueService {
     }
 
     internal fun fetchCatalogue(
-        client: okhttp3.OkHttpClient,
+        client: Call.Factory,
         cacheFile: File,
         url: String = CATALOGUE_URL,
         onResponseReceived: () -> Unit = {},
@@ -398,11 +400,11 @@ object AgentPatchCatalogueService {
                 .header("User-Agent", USER_AGENT)
                 .post(requestBody)
                 .build()
-            val uploadClient = sharedClients(context).plainClient.newBuilder()
-                .readTimeout(UPLOAD_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .writeTimeout(UPLOAD_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .callTimeout(UPLOAD_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .build()
+            val uploadClient = sharedClients(context).plainClient.withHttpOptions {
+                readTimeout(UPLOAD_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                writeTimeout(UPLOAD_WRITE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                callTimeout(UPLOAD_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            }
             val responseBytes = uploadClient.newCall(request).execute().use { response ->
                 val bytes = response.body?.byteStream()?.let { readBounded(it, 128 * 1024) } ?: ByteArray(0)
                 if (!response.isSuccessful) {
@@ -592,7 +594,7 @@ object AgentPatchCatalogueService {
         return temp
     }
 
-    private fun fetchBytes(client: okhttp3.OkHttpClient, url: String, maximum: Long): ByteArray {
+    private fun fetchBytes(client: Call.Factory, url: String, maximum: Long): ByteArray {
         val request = Request.Builder().url(url).get()
             .header("User-Agent", USER_AGENT)
             .header("Accept", "application/json")

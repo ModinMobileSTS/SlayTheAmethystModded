@@ -3,7 +3,8 @@ package io.stamethyst.backend.workshop
 import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
-import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
+import io.stamethyst.backend.github.TestRouting
+import io.stamethyst.backend.github.routing
 import io.stamethyst.backend.github.NoOpWattToolkitGithubRouteStore
 import io.stamethyst.backend.github.PersistedWattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitForwardTargetProbe
@@ -43,7 +44,7 @@ import org.junit.Test
  * Steam happen to do on the current machine. These fixtures instead inject deterministic
  * failures at the same production seams the market uses:
  *
- * `WorkshopService.browse()` reads the HTML through [ExperimentalGithubDirectAccessInterceptor],
+ * `WorkshopService.browse()` reads the HTML through [io.stamethyst.backend.github.RoutedHttpTransport],
  * which chooses Watt forward targets with [WattToolkitGithubRouteResolver]. Every fault below is a
  * local MockWebServer behaviour, so the matrix needs no device, account, proxy or internet.
  *
@@ -540,7 +541,7 @@ class WorkshopMarketNetworkSimulationTest {
         private fun createService(): WorkshopService =
             WorkshopService(context, createClient())
 
-        private fun createClient(): OkHttpClient {
+        private fun createClient(): io.stamethyst.backend.github.RoutedHttpTransport {
             val routeClient = OkHttpClient.Builder()
                 .dns(loopbackDns)
                 .callTimeout(2, TimeUnit.SECONDS)
@@ -596,8 +597,8 @@ class WorkshopMarketNetworkSimulationTest {
                 .retryOnConnectionFailure(false)
                 .followRedirects(false)
                 .followSslRedirects(false)
-                .addInterceptor(
-                    ExperimentalGithubDirectAccessInterceptor(
+                .routing(
+                    TestRouting(
                         routeResolvers = listOf(resolver),
                         directCallFactory = directClient,
                         // Mirrors SteamCloudAcceleratedHttp: VPN/policy is read per request.
@@ -628,7 +629,7 @@ class WorkshopMarketNetworkSimulationTest {
                 .build()
             httpClients += routeClient
             httpClients += directClient
-            httpClients += client
+            httpClients += client.client
             return client
         }
 

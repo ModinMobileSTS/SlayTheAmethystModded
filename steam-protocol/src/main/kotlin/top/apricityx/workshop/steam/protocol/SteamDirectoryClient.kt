@@ -7,11 +7,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 
 class SteamDirectoryClient(
-    private val client: OkHttpClient = newDefaultOkHttpClient(),
+    private val client: Call.Factory = newDefaultOkHttpClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val apiBaseUrl: HttpUrl = "https://api.steampowered.com/".toHttpUrl(),
 ) {

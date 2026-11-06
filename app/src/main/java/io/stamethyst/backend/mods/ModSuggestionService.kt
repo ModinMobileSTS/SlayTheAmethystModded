@@ -13,7 +13,7 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util.LinkedHashMap
 import java.util.Locale
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONTokener
@@ -191,7 +191,7 @@ object ModSuggestionService {
     }
 
     @Throws(IOException::class)
-    private fun requestText(client: OkHttpClient, requestUrl: String): String {
+    private fun requestText(client: Call.Factory, requestUrl: String): String {
         val request = Request.Builder()
             .url(requestUrl)
             .get()

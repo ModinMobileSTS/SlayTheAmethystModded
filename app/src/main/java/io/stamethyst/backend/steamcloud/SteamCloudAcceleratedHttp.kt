@@ -2,14 +2,14 @@ package io.stamethyst.backend.steamcloud
 
 import android.content.Context
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessRuntime
-import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
+import io.stamethyst.backend.github.RoutedHttpTransport
+import io.stamethyst.backend.github.webSocketClient
 import io.stamethyst.backend.github.WATT_PROXY_TYPE_DIRECT
 import io.stamethyst.backend.github.WATT_PROXY_TYPE_REVERSE_PROXY
 import io.stamethyst.backend.github.WattToolkitForwardDns
 import io.stamethyst.backend.github.WattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitRouteProfile
-import io.stamethyst.backend.github.CredentialSafeRedirectInterceptor
 import io.stamethyst.backend.github.addHttpsOnlyTransport
 import io.stamethyst.backend.github.createWattToolkitRuntime
 import io.stamethyst.config.RuntimePaths
@@ -21,6 +21,7 @@ import java.io.File
 import java.net.ProtocolException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import okhttp3.Call
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -175,17 +176,13 @@ object SteamCloudAcceleratedHttp {
         callTimeoutMs: Long,
         enabled: Boolean = isEnabled(context),
         enabledProvider: (() -> Boolean)? = null,
-    ): OkHttpClient {
+    ): RoutedHttpTransport {
         val builder = OkHttpClient.Builder()
             .connectTimeout(connectTimeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(readTimeoutMs, TimeUnit.MILLISECONDS)
             .writeTimeout(readTimeoutMs, TimeUnit.MILLISECONDS)
             .callTimeout(callTimeoutMs, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
-
-        if (!enabled) {
-            return builder.build()
-        }
 
         val accelerationEnabledProvider = {
             NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
@@ -205,38 +202,30 @@ object SteamCloudAcceleratedHttp {
         }
         return builder
             .hostnameVerifier(runtime.hostnameVerifier)
-            .followRedirects(false)
+            .followRedirects(true)
             .followSslRedirects(false)
             .addHttpsOnlyTransport(::allowsSteamContentCdnHttp)
-            .addInterceptor(
-                CredentialSafeRedirectInterceptor(
-                    requireHttps = true,
-                    allowInsecureUrl = ::allowsSteamContentCdnHttp,
-                ),
-            )
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
-                    routeResolvers = runtime.resolvers,
-                    directCallFactory = runtime.directHttpClient,
-                    forwardDns = runtime.forwardDns,
-                    enabledProvider = accelerationEnabledProvider,
-                    requireHttps = runtime.requireHttps,
-                    allowInsecureUrl = ::allowsSteamContentCdnHttp,
-                ),
-            )
             .build()
+            .let { client ->
+                RoutedHttpTransport(
+                    client = client,
+                    runtime = runtime,
+                    enabledProvider = accelerationEnabledProvider,
+                    allowInsecureUrl = ::allowsSteamContentCdnHttp,
+                    prepareRequest = ::prepareSteamHttpRequest,
+                )
+            }
     }
 
     /**
-     * CM traffic uses a WebSocket and therefore does not pass through OkHttp's
-     * application interceptor forwarding path. Keep the CM route selection here so
+     * CM traffic uses a WebSocket instead of the HTTP transport. Keep its route selection here so
      * cloud batch completion and manifest refresh RPCs use the same Watt route as
      * their HTTP setup calls.
      */
     @JvmStatic
     fun createWebSocketFactory(
         context: Context,
-        client: OkHttpClient,
+        client: Call.Factory,
     ): SteamWebSocketFactory {
         val filesDir = RuntimePaths.transientFilesRoot(context)
         val applicationContext = context.applicationContext
@@ -248,11 +237,7 @@ object SteamCloudAcceleratedHttp {
                 },
             )
         }
-        val officialClient = client.newBuilder().apply {
-            interceptors().removeAll { interceptor ->
-                interceptor is ExperimentalGithubDirectAccessInterceptor
-            }
-        }
+        val officialClient = client.webSocketClient().newBuilder()
             .hostnameVerifier(runtime.hostnameVerifier)
             .build()
         val forwardClient = officialClient.newBuilder()

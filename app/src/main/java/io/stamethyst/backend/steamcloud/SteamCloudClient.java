@@ -135,8 +135,8 @@ public final class SteamCloudClient implements AutoCloseable {
     private final SteamFriends steamFriends;
     private final SteamCloud steamCloud;
     private final Cloud cloudService;
-    private final OkHttpClient httpClient;
-    private final OkHttpClient protocolHttpClient;
+    private final okhttp3.Call.Factory httpClient;
+    private final okhttp3.Call.Factory protocolHttpClient;
     private final SteamCloudProtocolClient protocolClient;
     private final File lastCmEndpointFile;
     private final File uploadSnapshotDir;

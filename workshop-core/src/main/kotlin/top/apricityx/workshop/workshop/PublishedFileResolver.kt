@@ -8,11 +8,11 @@ import kotlinx.serialization.json.Json
 import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 
 class PublishedFileResolver(
-    private val client: OkHttpClient,
+    private val client: Call.Factory,
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val baseUrl: HttpUrl = "https://api.steampowered.com/".toHttpUrl(),
     private val language: String? = null,

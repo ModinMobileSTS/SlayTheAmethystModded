@@ -95,7 +95,7 @@ class HttpRequestControlTest {
         server: MockWebServer,
         directClient: OkHttpClient,
         officialAttempts: AtomicInteger,
-    ): OkHttpClient {
+    ): RoutedHttpTransport {
         val profile = WattToolkitRouteProfile(
             name = "resource-test",
             cacheFileName = "unused.json",
@@ -120,7 +120,7 @@ class HttpRequestControlTest {
             backgroundExecutor = Executor { },
         )
         return OkHttpClient.Builder()
-            .addInterceptor(ExperimentalGithubDirectAccessInterceptor(listOf(resolver), directClient))
+            .routing(TestRouting(listOf(resolver), directClient))
             .addInterceptor {
                 officialAttempts.incrementAndGet()
                 throw IOException("Unexpected official retry")

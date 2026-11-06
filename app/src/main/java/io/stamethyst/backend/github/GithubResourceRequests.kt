@@ -6,7 +6,7 @@ import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
-import okhttp3.OkHttpClient
+import okhttp3.Call
 
 /** Shared update-source policy for GitHub resources; unrelated URLs always use plain transport. */
 internal object GithubResourceRequests {
@@ -16,7 +16,7 @@ internal object GithubResourceRequests {
         url: String,
         onAttempt: (UpdateSource) -> Unit = {},
         onFailure: (UpdateSource, Throwable) -> Unit = { _, _ -> },
-        block: (OkHttpClient, String) -> T,
+        block: (Call.Factory, String) -> T,
     ): T = run(
         clients = clients,
         url = url,
@@ -51,7 +51,7 @@ internal object GithubResourceRequests {
         bypassAcceleratedLinks: Boolean = false,
         onAttempt: (UpdateSource) -> Unit = {},
         onFailure: (UpdateSource, Throwable) -> Unit = { _, _ -> },
-        block: (OkHttpClient, String) -> T,
+        block: (Call.Factory, String) -> T,
     ): T {
         if (!UpdateSource.isMirrorableGithubUrl(url)) return block(clients.plainClient, url)
         return GithubMirrorFallback.run(preferredSource, bypassAcceleratedLinks) { source ->

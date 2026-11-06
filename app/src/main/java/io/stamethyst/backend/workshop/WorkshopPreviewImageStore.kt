@@ -3,12 +3,12 @@ package io.stamethyst.backend.workshop
 import android.content.Context
 import io.stamethyst.config.RuntimePaths
 import java.io.File
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 
 internal class WorkshopPreviewImageStore(
     context: Context,
-    private val client: OkHttpClient,
+    private val client: Call.Factory,
 ) {
     private val context = context.applicationContext
 

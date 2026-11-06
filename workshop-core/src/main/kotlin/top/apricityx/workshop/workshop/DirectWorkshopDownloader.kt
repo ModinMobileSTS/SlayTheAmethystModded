@@ -5,13 +5,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 
 class DirectWorkshopDownloader(
-    private val client: OkHttpClient,
+    private val client: Call.Factory,
 ) {
     suspend fun download(
         request: WorkshopDownloadRequest,

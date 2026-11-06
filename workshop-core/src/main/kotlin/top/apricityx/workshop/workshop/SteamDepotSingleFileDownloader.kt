@@ -23,7 +23,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
+import okhttp3.Call
 import top.apricityx.workshop.steam.protocol.CdnServer
 import top.apricityx.workshop.steam.protocol.CmServer
 import top.apricityx.workshop.steam.protocol.SessionContext
@@ -56,7 +56,7 @@ data class SteamDepotFileDownloadProgress(
 }
 
 class SteamDepotSingleFileDownloader(
-    private val client: OkHttpClient,
+    private val client: Call.Factory,
     private val directoryClient: SteamDirectoryClient,
     private val sessionFactory: () -> SteamCmSession,
     private val sessionConnector: suspend (SteamCmSession, List<CmServer>) -> SessionContext,
