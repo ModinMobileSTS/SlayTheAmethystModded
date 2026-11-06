@@ -357,6 +357,7 @@ internal fun SettingsActionListItem(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
+    val actionGate = LocalSettingsActionGate.current
     ListItem(
         headlineContent = {
             Text(text = title)
@@ -385,7 +386,7 @@ internal fun SettingsActionListItem(
             .clip(RoundedCornerShape(12.dp))
             .hapticClickable(
                 enabled = enabled,
-                onClick = onClick
+                onClick = { if (actionGate != null) actionGate(onClick) else onClick() }
             )
     )
 }
@@ -398,6 +399,7 @@ internal fun SettingsDangerActionListItem(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
+    val actionGate = LocalSettingsActionGate.current
     ListItem(
         headlineContent = {
             Text(
@@ -430,7 +432,7 @@ internal fun SettingsDangerActionListItem(
             .clip(RoundedCornerShape(12.dp))
             .hapticClickable(
                 enabled = enabled,
-                onClick = onClick
+                onClick = { if (actionGate != null) actionGate(onClick) else onClick() }
             )
     )
 }

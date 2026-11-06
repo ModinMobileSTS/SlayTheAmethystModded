@@ -659,15 +659,7 @@ internal fun SettingsMarketSection(
         onValueChange = actions.onWorkshopDownloadThreadsChanged,
     )
     Spacer(modifier = Modifier.size(8.dp))
-    SettingsDropdownField(
-        label = stringResource(R.string.settings_market_workshop_language_title),
-        valueText = uiState.workshopSteamLanguage.displayName,
-        enabled = !uiState.busy,
-        supportingText = stringResource(R.string.settings_market_workshop_language_desc),
-        options = SteamLanguagePreference.entries,
-        optionLabel = { it.displayName },
-        onOptionSelected = actions.onWorkshopSteamLanguageChanged,
-    )
+    SettingsWorkshopLanguageSetting(uiState, actions)
     Spacer(modifier = Modifier.size(8.dp))
     SettingsDropdownField(
         label = stringResource(R.string.settings_market_workshop_default_sort_title),
@@ -726,6 +718,22 @@ internal fun SettingsMarketSection(
 }
 
 
+
+@Composable
+internal fun SettingsWorkshopLanguageSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: MarketSettingsActions,
+) {
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_market_workshop_language_title),
+        valueText = uiState.workshopSteamLanguage.displayName,
+        enabled = !uiState.busy,
+        supportingText = stringResource(R.string.settings_market_workshop_language_desc),
+        options = SteamLanguagePreference.entries,
+        optionLabel = { it.displayName },
+        onOptionSelected = actions.onWorkshopSteamLanguageChanged,
+    )
+}
 
 @Composable
 private fun workshopBrowseSortDisplayName(sort: WorkshopBrowseSort): String = when (sort) {

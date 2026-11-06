@@ -25,6 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -139,6 +140,7 @@ internal fun LauncherSettingsScreenContent(
     onGoBack: () -> Unit = {},
     showBackButton: Boolean = true,
     onOpenSettingsRoute: (Route) -> Unit = {},
+    searchActions: SettingsSearchActions? = null,
     feedbackSubmissionNotice: FeedbackSubmissionNotice? = null,
     onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
@@ -268,12 +270,14 @@ internal fun LauncherSettingsScreenContent(
                             )
                         }
                         section.entries.forEach { item ->
-                            SettingsActionListItem(
-                                title = item.title,
-                                supportingText = item.subtitle,
-                                enabled = !blockingInteractionLocked,
-                                onClick = { onOpenSettingsRoute(item.entry.route) },
-                            )
+                            key(item.entry.titleResId) {
+                                SettingsSearchResultItem(
+                                    entry = item.entry,
+                                    uiState = uiState,
+                                    actions = searchActions,
+                                    onOpenSettingsRoute = onOpenSettingsRoute,
+                                )
+                            }
                         }
                     }
                 }
@@ -343,8 +347,6 @@ internal fun LauncherSettingsLauncherScreenContent(
     onOpenFirstRunSetup: () -> Unit = {},
     onApplyModFileNameAliases: () -> Unit = {},
 ) {
-    var showApplyModFileNameAliasesDialog by rememberSaveable { mutableStateOf(false) }
-
     SettingsRouteScaffold(
         modifier = modifier,
         uiState = uiState,
@@ -406,12 +408,7 @@ internal fun LauncherSettingsLauncherScreenContent(
                     enabled = !uiState.busy,
                     onClick = onOpenFirstRunSetup,
                 )
-                SettingsDangerActionListItem(
-                    title = stringResource(R.string.settings_mod_alias_apply_file_names_action),
-                    supportingText = stringResource(R.string.settings_mod_alias_apply_file_names_desc),
-                    enabled = !uiState.busy,
-                    onClick = { showApplyModFileNameAliasesDialog = true },
-                )
+                SettingsApplyModFileNameAliasesAction(uiState.busy, onApplyModFileNameAliases)
             }
         }
     }
@@ -424,6 +421,21 @@ internal fun LauncherSettingsLauncherScreenContent(
         onRetry = { onSlingBreakEngineModeChanged(uiState.slingBreakEngineMode) },
         onSwitchMirror = onSwitchSlingBreakDownloadMirror,
         onDismissFailure = onDismissSlingBreakDependencyFailure,
+    )
+}
+
+@Composable
+internal fun SettingsApplyModFileNameAliasesAction(
+    busy: Boolean,
+    onApplyModFileNameAliases: () -> Unit,
+) {
+    var showApplyModFileNameAliasesDialog by rememberSaveable { mutableStateOf(false) }
+
+    SettingsDangerActionListItem(
+        title = stringResource(R.string.settings_mod_alias_apply_file_names_action),
+        supportingText = stringResource(R.string.settings_mod_alias_apply_file_names_desc),
+        enabled = !busy,
+        onClick = { showApplyModFileNameAliasesDialog = true },
     )
 
     if (showApplyModFileNameAliasesDialog) {

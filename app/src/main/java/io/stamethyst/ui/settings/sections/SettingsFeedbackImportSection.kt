@@ -125,6 +125,7 @@ internal fun SettingsImportSection(
     onExportSaves: () -> Unit,
     onExportLogs: () -> Unit,
     onExportLogsToFile: () -> Unit,
+    settingTitleResId: Int? = null,
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -162,36 +163,44 @@ internal fun SettingsImportSection(
     )
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_mod_operations),
-            supportingText = stringResource(R.string.settings_mod_operations_desc),
-            enabled = !busy,
-            onClick = { visibleOperationGroup = SettingsResourceOperationGroup.MODS }
-        )
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_save_operations),
-            supportingText = stringResource(R.string.settings_save_operations_desc),
-            enabled = !busy,
-            onClick = { visibleOperationGroup = SettingsResourceOperationGroup.SAVES }
-        )
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_log_operations),
-            supportingText = stringResource(R.string.settings_log_operations_desc),
-            enabled = !busy,
-            onClick = { visibleOperationGroup = SettingsResourceOperationGroup.LOGS }
-        )
-         SettingsActionListItem(
-             title = stringResource(R.string.settings_reinstall_resource_pack_title),
-             supportingText = stringResource(R.string.settings_reinstall_resource_pack_desc),
-             enabled = !busy,
-             onClick = onReinstallResourcePack
-         )
-         SettingsActionListItem(
-             title = stringResource(R.string.settings_reimport_sts_jar_title),
-            supportingText = stringResource(R.string.settings_reimport_sts_jar_desc),
-            enabled = !busy,
-            onClick = onImportJar
-        )
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_mod_operations) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_mod_operations),
+                supportingText = stringResource(R.string.settings_mod_operations_desc),
+                enabled = !busy,
+                onClick = { visibleOperationGroup = SettingsResourceOperationGroup.MODS }
+            )
+        }
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_save_operations) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_save_operations),
+                supportingText = stringResource(R.string.settings_save_operations_desc),
+                enabled = !busy,
+                onClick = { visibleOperationGroup = SettingsResourceOperationGroup.SAVES }
+            )
+        }
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_log_operations) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_log_operations),
+                supportingText = stringResource(R.string.settings_log_operations_desc),
+                enabled = !busy,
+                onClick = { visibleOperationGroup = SettingsResourceOperationGroup.LOGS }
+            )
+        }
+        if (settingTitleResId == null) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_reinstall_resource_pack_title),
+                supportingText = stringResource(R.string.settings_reinstall_resource_pack_desc),
+                enabled = !busy,
+                onClick = onReinstallResourcePack
+            )
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_reimport_sts_jar_title),
+                supportingText = stringResource(R.string.settings_reimport_sts_jar_desc),
+                enabled = !busy,
+                onClick = onImportJar
+            )
+        }
     }
 }
 

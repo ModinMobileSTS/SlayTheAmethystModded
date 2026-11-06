@@ -47,8 +47,19 @@ fun LauncherSettingsScreen(
         onGoBack = navigator::goBack,
         showBackButton = showBackButton,
         onOpenSettingsRoute = navigator::push,
+        searchActions = settingsSearchActions(viewModel, activity),
         feedbackSubmissionNotice = feedbackSubmissionNotice,
         onDismissFeedbackSubmissionNotice = onDismissFeedbackSubmissionNotice,
+    )
+
+    SlingBreakDependencyDialogs(
+        progress = uiState.slingBreakDependencyProgress,
+        message = uiState.slingBreakDownloadMessage,
+        failure = uiState.slingBreakDependencyFailure,
+        slowDownloadSwitch = uiState.slingBreakSlowDownloadSwitch,
+        onRetry = { viewModel.onSlingBreakEngineModeChanged(activity, uiState.slingBreakEngineMode) },
+        onSwitchMirror = viewModel::switchSlingBreakDownloadMirror,
+        onDismissFailure = viewModel::dismissSlingBreakDependencyFailure,
     )
 }
 

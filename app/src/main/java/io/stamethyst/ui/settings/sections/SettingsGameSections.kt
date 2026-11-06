@@ -286,19 +286,7 @@ internal fun SettingsPerformanceSection(
         )
     }
 
-    SettingsChoiceDialogItem(
-        SettingsChoiceSpec(
-            title = stringResource(R.string.settings_virtual_resolution_mode_title),
-            valueText = virtualResolutionModeDisplayName(uiState.virtualResolutionMode),
-            enabled = !uiState.busy,
-            selectedValue = uiState.virtualResolutionMode,
-            options = VirtualResolutionMode.entries,
-            optionLabel = { mode -> virtualResolutionModeDisplayName(mode) },
-            onOptionSelected = actions.onVirtualResolutionModeChanged,
-            description = null,
-            dialogDescription = virtualResolutionModeDescription(uiState.virtualResolutionMode),
-        )
-    )
+    SettingsVirtualResolutionModeSetting(uiState, actions)
 
     SettingsChoiceDialogItem(
         SettingsChoiceSpec(
@@ -314,6 +302,126 @@ internal fun SettingsPerformanceSection(
         )
     )
 
+}
+
+@Composable
+internal fun SettingsVirtualResolutionModeSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: PerformanceSettingsActions,
+) {
+    SettingsChoiceDialogItem(
+        SettingsChoiceSpec(
+            title = stringResource(R.string.settings_virtual_resolution_mode_title),
+            valueText = virtualResolutionModeDisplayName(uiState.virtualResolutionMode),
+            enabled = !uiState.busy,
+            selectedValue = uiState.virtualResolutionMode,
+            options = VirtualResolutionMode.entries,
+            optionLabel = { mode -> virtualResolutionModeDisplayName(mode) },
+            onOptionSelected = actions.onVirtualResolutionModeChanged,
+            description = null,
+            dialogDescription = virtualResolutionModeDescription(uiState.virtualResolutionMode),
+        )
+    )
+}
+
+@Composable
+internal fun SettingsKeepScreenOnTimeoutSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: GameplayDisplaySettingsActions,
+) {
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_keep_screen_on_timeout_title),
+        valueText = keepScreenOnTimeoutDisplayName(uiState.keepScreenOnTimeoutMinutes),
+        enabled = !uiState.busy,
+        options = uiState.keepScreenOnTimeoutMinuteOptions,
+        optionLabel = { timeoutMinutes -> keepScreenOnTimeoutDisplayName(timeoutMinutes) },
+        onOptionSelected = actions.onKeepScreenOnTimeoutSelected,
+    )
+}
+
+@Composable
+internal fun SettingsCardPlayOptimizationSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: InputSettingsActions,
+) {
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_card_play_optimization_title),
+        valueText = uiState.cardPlayOptimizationMode.displayName(),
+        enabled = !uiState.busy && uiState.touchscreenInputMode.touchscreenEnabled,
+        options = CardPlayOptimizationMode.entries,
+        optionLabel = { mode -> mode.displayName() },
+        optionDescription = { mode -> mode.description() },
+        onOptionSelected = actions.onCardPlayOptimizationModeChanged,
+    )
+}
+
+@Composable
+internal fun SettingsBackBehaviorSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    onChanged: (BackBehavior) -> Unit,
+) {
+    SettingsChoiceDialogItem(
+        SettingsChoiceSpec(
+            title = stringResource(R.string.settings_back_behavior_title),
+            valueText = backBehaviorDisplayName(uiState.backBehavior),
+            enabled = !uiState.busy,
+            selectedValue = uiState.backBehavior,
+            options = BackBehavior.entries,
+            optionLabel = { behavior -> backBehaviorDisplayName(behavior) },
+            onOptionSelected = onChanged,
+            dialogDescription = stringResource(R.string.settings_back_behavior_desc),
+        )
+    )
+}
+
+@Composable
+internal fun SettingsTouchscreenInputModeSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    onChanged: (TouchscreenInputMode) -> Unit,
+) {
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_touchscreen_mode_title),
+        valueText = uiState.touchscreenInputMode.displayName(),
+        enabled = !uiState.busy,
+        options = TouchscreenInputMode.entries,
+        optionLabel = { mode -> mode.displayName() },
+        optionDescription = { mode -> mode.description() },
+        onOptionSelected = onChanged,
+    )
+}
+
+@Composable
+internal fun SettingsSpecialKeyInputModeSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    onChanged: (SpecialKeyInputMode) -> Unit,
+) {
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_special_key_input_mode_title),
+        valueText = uiState.specialKeyInputMode.displayName(),
+        enabled = !uiState.busy,
+        supportingText = stringResource(R.string.settings_special_key_input_mode_desc),
+        options = SpecialKeyInputMode.entries,
+        optionLabel = { mode -> mode.displayName() },
+        optionDescription = { mode -> mode.description() },
+        onOptionSelected = onChanged,
+    )
+}
+
+@Composable
+internal fun SettingsTouchMouseInteractionSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    onChanged: (TouchMouseInteractionMode) -> Unit,
+) {
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_touch_mouse_interaction_label),
+        valueText = uiState.touchMouseInteractionMode.displayName(),
+        enabled = !uiState.busy,
+        supportingText = stringResource(R.string.settings_touch_mouse_interaction_desc),
+        options = TouchMouseInteractionMode.entries,
+        optionLabel = { mode -> mode.displayName() },
+        optionDescription = { mode -> mode.description() },
+        onOptionSelected = onChanged,
+    )
 }
 
 internal fun targetFpsToSliderValue(targetFps: Float): Float {
@@ -368,7 +476,6 @@ internal fun SettingsGameplayDisplaySection(
             onCheckedChange = actions.onHideEnemyPanelWhileTargetingChanged,
         )
     )
-
     GameDisplayRegionSetting(uiState, actions.onGameDisplayRegionChanged)
 
     SettingsSwitchItem(
@@ -410,15 +517,7 @@ internal fun SettingsGameplayDisplaySection(
         enabled = !uiState.busy,
         modifier = Modifier.fillMaxWidth(),
     )
-
-    SettingsDropdownField(
-        label = stringResource(R.string.settings_keep_screen_on_timeout_title),
-        valueText = keepScreenOnTimeoutDisplayName(uiState.keepScreenOnTimeoutMinutes),
-        enabled = !uiState.busy,
-        options = uiState.keepScreenOnTimeoutMinuteOptions,
-        optionLabel = { timeoutMinutes -> keepScreenOnTimeoutDisplayName(timeoutMinutes) },
-        onOptionSelected = actions.onKeepScreenOnTimeoutSelected,
-    )
+    SettingsKeepScreenOnTimeoutSetting(uiState, actions)
 }
 
 @Composable
@@ -489,15 +588,7 @@ internal fun SettingsInputSection(
             text = stringResource(R.string.settings_input_basic_title),
             style = MaterialTheme.typography.titleSmall
         )
-        SettingsDropdownField(
-            label = stringResource(R.string.settings_card_play_optimization_title),
-            valueText = uiState.cardPlayOptimizationMode.displayName(),
-            enabled = !uiState.busy && uiState.touchscreenInputMode.touchscreenEnabled,
-            options = CardPlayOptimizationMode.entries,
-            optionLabel = { mode -> mode.displayName() },
-            optionDescription = { mode -> mode.description() },
-            onOptionSelected = actions.onCardPlayOptimizationModeChanged,
-        )
+        SettingsCardPlayOptimizationSetting(uiState, actions)
         SettingsSwitchItem(
             SettingsSwitchSpec(
                 checked = uiState.touchDoubleClickAsRightClick,
@@ -550,28 +641,9 @@ internal fun SettingsInputBasicsSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: InputBasicsSettingsActions,
 ) {
-    SettingsChoiceDialogItem(
-        SettingsChoiceSpec(
-            title = stringResource(R.string.settings_back_behavior_title),
-            valueText = backBehaviorDisplayName(uiState.backBehavior),
-            enabled = !uiState.busy,
-            selectedValue = uiState.backBehavior,
-            options = BackBehavior.entries,
-            optionLabel = { behavior -> backBehaviorDisplayName(behavior) },
-            onOptionSelected = actions.onBackBehaviorChanged,
-            dialogDescription = stringResource(R.string.settings_back_behavior_desc),
-        )
-    )
+    SettingsBackBehaviorSetting(uiState, actions.onBackBehaviorChanged)
 
-    SettingsDropdownField(
-        label = stringResource(R.string.settings_touchscreen_mode_title),
-        valueText = uiState.touchscreenInputMode.displayName(),
-        enabled = !uiState.busy,
-        options = TouchscreenInputMode.entries,
-        optionLabel = { mode -> mode.displayName() },
-        optionDescription = { mode -> mode.description() },
-        onOptionSelected = actions.onTouchscreenInputModeChanged
-    )
+    SettingsTouchscreenInputModeSetting(uiState, actions.onTouchscreenInputModeChanged)
 
 
     SettingsSwitchItem(
@@ -602,16 +674,7 @@ internal fun SettingsFloatingMouseSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: FloatingMouseSettingsActions,
 ) {
-    SettingsDropdownField(
-        label = stringResource(R.string.settings_special_key_input_mode_title),
-        valueText = uiState.specialKeyInputMode.displayName(),
-        enabled = !uiState.busy,
-        supportingText = stringResource(R.string.settings_special_key_input_mode_desc),
-        options = SpecialKeyInputMode.entries,
-        optionLabel = { mode -> mode.displayName() },
-        optionDescription = { mode -> mode.description() },
-        onOptionSelected = actions.onSpecialKeyInputModeChanged
-    )
+    SettingsSpecialKeyInputModeSetting(uiState, actions.onSpecialKeyInputModeChanged)
 
     val useLegacyFloatingWindow =
         uiState.specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW
@@ -619,16 +682,7 @@ internal fun SettingsFloatingMouseSection(
         uiState.specialKeyInputMode == SpecialKeyInputMode.BUILT_IN_MOD
 
     if (useLegacyFloatingWindow) {
-        SettingsDropdownField(
-            label = stringResource(R.string.settings_touch_mouse_interaction_label),
-            valueText = uiState.touchMouseInteractionMode.displayName(),
-            enabled = !uiState.busy,
-            supportingText = stringResource(R.string.settings_touch_mouse_interaction_desc),
-            options = TouchMouseInteractionMode.entries,
-            optionLabel = { mode -> mode.displayName() },
-            optionDescription = { mode -> mode.description() },
-            onOptionSelected = actions.onTouchMouseInteractionModeChanged
-        )
+        SettingsTouchMouseInteractionSetting(uiState, actions.onTouchMouseInteractionModeChanged)
     }
 
     if (useLegacyFloatingWindow || useBuiltInTools) {

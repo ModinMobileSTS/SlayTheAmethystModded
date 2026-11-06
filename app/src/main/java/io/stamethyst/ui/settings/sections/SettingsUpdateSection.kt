@@ -63,21 +63,7 @@ internal fun SettingsUpdateSection(
                 onCheckedChange = actions.onAutoCheckUpdatesChanged
             )
         )
-
-        SettingsChoiceDialogItem(
-            SettingsChoiceSpec(
-                title = stringResource(R.string.update_mirror_title),
-                valueText = uiState.preferredUpdateMirror.displayName,
-                enabled = controlsEnabled,
-                selectedValue = uiState.preferredUpdateMirror,
-                options = uiState.availableUpdateMirrors,
-                optionLabel = { source -> source.displayName },
-                onOptionSelected = actions.onPreferredUpdateMirrorChanged,
-                description = stringResource(R.string.update_mirror_desc),
-                dialogDescription = stringResource(R.string.update_mirror_desc),
-            )
-        )
-
+        SettingsUpdateMirrorSetting(uiState, actions)
         if (uiState.updateCheckInProgress || uiState.releaseHistoryLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
@@ -228,4 +214,24 @@ internal fun UpdateHistoryEntryCard(
             )
         }
     }
+}
+
+@Composable
+internal fun SettingsUpdateMirrorSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: UpdateSettingsActions,
+) {
+    SettingsChoiceDialogItem(
+        SettingsChoiceSpec(
+            title = stringResource(R.string.update_mirror_title),
+            valueText = uiState.preferredUpdateMirror.displayName,
+            enabled = !uiState.busy && !uiState.updateCheckInProgress && !uiState.releaseHistoryLoading,
+            selectedValue = uiState.preferredUpdateMirror,
+            options = uiState.availableUpdateMirrors,
+            optionLabel = { source -> source.displayName },
+            onOptionSelected = actions.onPreferredUpdateMirrorChanged,
+            description = stringResource(R.string.update_mirror_desc),
+            dialogDescription = stringResource(R.string.update_mirror_desc),
+        )
+    )
 }

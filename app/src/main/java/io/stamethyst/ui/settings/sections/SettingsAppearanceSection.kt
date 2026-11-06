@@ -101,6 +101,7 @@ internal data class AppearanceSettingsActions(
 internal fun SettingsAppearanceSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: AppearanceSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
     val view = LocalView.current
     var showThemeColorDialog by rememberSaveable { mutableStateOf(false) }
@@ -116,76 +117,87 @@ internal fun SettingsAppearanceSection(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SettingsChoiceDialogItem(
-            SettingsChoiceSpec(
-                title = stringResource(R.string.settings_theme_mode_title),
-                valueText = themeModeDisplayName(uiState.themeMode),
-                enabled = !uiState.busy,
-                selectedValue = uiState.themeMode,
-                options = LauncherThemeMode.entries,
-                optionLabel = { themeMode -> themeModeDisplayName(themeMode) },
-                onOptionSelected = actions.onThemeModeChanged,
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_theme_mode_title) {
+            SettingsChoiceDialogItem(
+                SettingsChoiceSpec(
+                    title = stringResource(R.string.settings_theme_mode_title),
+                    valueText = themeModeDisplayName(uiState.themeMode),
+                    enabled = !uiState.busy,
+                    selectedValue = uiState.themeMode,
+                    options = LauncherThemeMode.entries,
+                    optionLabel = { themeMode -> themeModeDisplayName(themeMode) },
+                    onOptionSelected = actions.onThemeModeChanged,
+                )
             )
-        )
+        }
 
-        SettingsChoiceDialogItem(
-            SettingsChoiceSpec(
-                title = stringResource(R.string.settings_app_icon_title),
-                valueText = launcherIconModeDisplayName(uiState.launcherIconMode),
-                enabled = !uiState.busy,
-                selectedValue = uiState.launcherIconMode,
-                options = LauncherIconMode.entries,
-                optionLabel = { iconMode -> launcherIconModeDisplayName(iconMode) },
-                onOptionSelected = actions.onLauncherIconModeChanged,
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_app_icon_title) {
+            SettingsChoiceDialogItem(
+                SettingsChoiceSpec(
+                    title = stringResource(R.string.settings_app_icon_title),
+                    valueText = launcherIconModeDisplayName(uiState.launcherIconMode),
+                    enabled = !uiState.busy,
+                    selectedValue = uiState.launcherIconMode,
+                    options = LauncherIconMode.entries,
+                    optionLabel = { iconMode -> launcherIconModeDisplayName(iconMode) },
+                    onOptionSelected = actions.onLauncherIconModeChanged,
+                )
             )
-        )
+        }
 
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_theme_color_title),
-            supportingText = themeColorDisplayName(uiState.themeColor),
-            enabled = !uiState.busy,
-            onClick = { showThemeColorDialog = true }
-        )
-        ThemeColorPreviewRow(selectedThemeColor = uiState.themeColor)
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_theme_color_title) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_theme_color_title),
+                supportingText = themeColorDisplayName(uiState.themeColor),
+                enabled = !uiState.busy,
+                onClick = { showThemeColorDialog = true }
+            )
+            ThemeColorPreviewRow(selectedThemeColor = uiState.themeColor)
+        }
 
-        Text(
-            text = stringResource(R.string.settings_chrome_background_opacity_title),
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Slider(
-            value = chromeBackgroundOpacitySliderValue,
-            onValueChange = { value ->
-                val normalized = LauncherPreferences.normalizeChromeBackgroundOpacity(value)
-                chromeBackgroundOpacitySliderValue = normalized
-                val step = chromeBackgroundOpacityToStep(normalized)
-                if (step != lastChromeBackgroundOpacityStep) {
-                    lastChromeBackgroundOpacityStep = step
-                    performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
-                }
-            },
-            onValueChangeFinished = {
-                actions.onChromeBackgroundOpacityChanged(chromeBackgroundOpacitySliderValue)
-            },
-            valueRange = LauncherPreferences.MIN_CHROME_BACKGROUND_OPACITY..
-                LauncherPreferences.MAX_CHROME_BACKGROUND_OPACITY,
-            steps = (
-                ((LauncherPreferences.MAX_CHROME_BACKGROUND_OPACITY -
-                    LauncherPreferences.MIN_CHROME_BACKGROUND_OPACITY) / 0.05f)
-                    .roundToInt() - 1
-                ).coerceAtLeast(0),
-            enabled = !uiState.busy,
-            modifier = Modifier.fillMaxWidth()
-        )
+        if (settingTitleResId == null) {
+            Text(
+                text = stringResource(R.string.settings_chrome_background_opacity_title),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Slider(
+                value = chromeBackgroundOpacitySliderValue,
+                onValueChange = { value ->
+                    val normalized = LauncherPreferences.normalizeChromeBackgroundOpacity(value)
+                    chromeBackgroundOpacitySliderValue = normalized
+                    val step = chromeBackgroundOpacityToStep(normalized)
+                    if (step != lastChromeBackgroundOpacityStep) {
+                        lastChromeBackgroundOpacityStep = step
+                        performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
+                    }
+                },
+                onValueChangeFinished = {
+                    actions.onChromeBackgroundOpacityChanged(chromeBackgroundOpacitySliderValue)
+                },
+                valueRange = LauncherPreferences.MIN_CHROME_BACKGROUND_OPACITY..
+                    LauncherPreferences.MAX_CHROME_BACKGROUND_OPACITY,
+                steps = (
+                    ((LauncherPreferences.MAX_CHROME_BACKGROUND_OPACITY -
+                        LauncherPreferences.MIN_CHROME_BACKGROUND_OPACITY) / 0.05f)
+                        .roundToInt() - 1
+                    ).coerceAtLeast(0),
+                enabled = !uiState.busy,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_boot_overlay_style_title),
-            supportingText = bootOverlayStyleDisplayName(uiState.bootOverlayStyle),
-            enabled = !uiState.busy && uiState.slingBreakDependencyProgress == null,
-            onClick = { showBootOverlayStyleDialog = true }
-        )
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_boot_overlay_style_title) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_boot_overlay_style_title),
+                supportingText = bootOverlayStyleDisplayName(uiState.bootOverlayStyle),
+                enabled = !uiState.busy && uiState.slingBreakDependencyProgress == null,
+                onClick = { showBootOverlayStyleDialog = true }
+            )
+        }
 
 
-        if (uiState.bootOverlayStyle == BootOverlayStyle.MODERN) {
+        if ((settingTitleResId == null || settingTitleResId == R.string.settings_boot_overlay_custom_image_title) &&
+            uiState.bootOverlayStyle == BootOverlayStyle.MODERN) {
             SettingsActionListItem(
                 title = stringResource(R.string.settings_boot_overlay_custom_image_title),
                 supportingText = bootOverlayCustomImageSummary(uiState.bootOverlayImageConfig),
@@ -194,7 +206,8 @@ internal fun SettingsAppearanceSection(
             )
         }
 
-        if (uiState.bootOverlayStyle.supportsLoadingAnimation) {
+        if ((settingTitleResId == null || settingTitleResId == R.string.settings_loading_animation_title) &&
+            uiState.bootOverlayStyle.supportsLoadingAnimation) {
             SettingsActionListItem(
                 title = stringResource(R.string.settings_loading_animation_title),
                 supportingText = loadingAnimationDisplayName(uiState.bootOverlayAnimation),

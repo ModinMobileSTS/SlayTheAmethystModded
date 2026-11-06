@@ -40,7 +40,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -606,7 +605,6 @@ internal fun SettingsDeveloperRuntimeSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: DeveloperRuntimeSettingsActions,
 ) {
-    var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
     var showPerformanceLogsDialog by rememberSaveable { mutableStateOf(false) }
 
     SettingsActionListItem(
@@ -673,15 +671,8 @@ internal fun SettingsDeveloperRuntimeSection(
         )
     )
 
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_system_game_mode_title),
-        supportingText = stringResource(
-            R.string.settings_system_game_mode_summary,
-            uiState.systemGameModeDisplayName
-        ),
-        enabled = !uiState.busy,
-        onClick = { showGameModeDialog = true }
-    )
+    SettingsSystemGameModeSetting(uiState)
+
     Text(
         text = uiState.systemGameModeDescription,
         style = MaterialTheme.typography.bodySmall
@@ -706,32 +697,6 @@ internal fun SettingsDeveloperRuntimeSection(
             onCheckedChange = actions.onCompendiumUpgradeTouchFixEnabledChanged
         )
     )
-
-    if (showGameModeDialog) {
-        AlertDialog(
-            onDismissRequest = { showGameModeDialog = false },
-            title = { Text(stringResource(R.string.settings_system_game_mode_title)) },
-            text = {
-                Text(
-                    text = listOf(
-                        stringResource(
-                            R.string.settings_system_game_mode_dialog_current,
-                            uiState.systemGameModeDisplayName
-                        ),
-                        uiState.systemGameModeDescription,
-                        stringResource(R.string.settings_system_game_mode_dialog_control),
-                        stringResource(R.string.settings_system_game_mode_dialog_panel),
-                        stringResource(R.string.settings_system_game_mode_dialog_support)
-                    ).joinToString("\n\n")
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showGameModeDialog = false }) {
-                    Text(stringResource(R.string.settings_system_game_mode_acknowledge))
-                }
-            }
-        )
-    }
 
     if (showPerformanceLogsDialog) {
         AlertDialog(
@@ -829,26 +794,7 @@ internal fun SettingsAdvancedRenderSection(
         )
     }
     if (uiState.rendererSelectionMode == RendererSelectionMode.MANUAL) {
-        SettingsDropdownField(
-            label = stringResource(R.string.settings_renderer_manual_label),
-            valueText = uiState.manualRendererBackend.displayName,
-            enabled = !uiState.busy,
-            supportingText = stringResource(
-                R.string.settings_renderer_manual_supporting,
-                uiState.manualRendererBackend.displayName,
-                uiState.manualRendererBackend.briefProsCons(context)
-            ),
-            options = uiState.rendererBackendOptions,
-            optionEnabled = { option -> option.available },
-            optionLabel = { option -> option.backend.displayName },
-            optionDescription = { option ->
-                buildList {
-                    add(option.backend.briefProsCons(context))
-                    option.reasonText?.let(::add)
-                }.joinToString("  ")
-            },
-            onOptionSelected = { option -> actions.onManualRendererBackendChanged(option.backend) }
-        )
+        SettingsManualRendererSetting(uiState, actions)
     }
 
     if (uiState.effectiveRendererBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
@@ -869,42 +815,9 @@ internal fun SettingsAdvancedRenderSection(
         text = stringResource(R.string.settings_render_surface_backend_title),
         style = MaterialTheme.typography.bodyMedium
     )
-    SettingsDropdownField(
-        label = stringResource(R.string.settings_render_surface_backend_title),
-        valueText = uiState.renderSurfaceBackend.displayName(context),
-        enabled = !uiState.busy,
-        supportingText = if (uiState.surfaceBackendForcedByRenderer) {
-            stringResource(
-                R.string.settings_renderer_surface_forced,
-                uiState.effectiveRenderSurfaceBackend.displayName(context)
-            )
-        } else {
-            stringResource(R.string.settings_render_surface_backend_desc)
-        },
-        supportingTextColor = if (uiState.surfaceBackendForcedByRenderer) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        options = RenderSurfaceBackend.entries,
-        optionLabel = { backend -> backend.displayName(context) },
-        onOptionSelected = actions.onRenderSurfaceBackendChanged
-    )
+    SettingsRenderSurfaceBackendSetting(uiState, actions)
 
-    SettingsChoiceDialogItem(
-        SettingsChoiceSpec(
-            title = stringResource(R.string.settings_gpu_resource_guardian_title),
-            valueText = gpuResourceGuardianModeDisplayName(uiState.gpuResourceGuardianMode),
-            enabled = !uiState.busy,
-            selectedValue = uiState.gpuResourceGuardianMode,
-            options = GpuResourceGuardianMode.entries,
-            optionLabel = { mode -> gpuResourceGuardianModeDisplayName(mode) },
-            optionDescription = { mode -> gpuResourceGuardianModeDescription(mode) },
-            onOptionSelected = actions.onGpuResourceGuardianModeChanged,
-            description = stringResource(R.string.settings_gpu_resource_guardian_desc),
-            dialogDescription = null,
-        )
-    )
+    SettingsGpuResourceGuardianSetting(uiState, actions)
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
@@ -956,32 +869,7 @@ internal fun SettingsAdvancedRenderSection(
         style = MaterialTheme.typography.bodySmall
     )
 
-    SettingsChoiceDialogItem(
-        SettingsChoiceSpec(
-            title = stringResource(R.string.settings_jvm_tiered_stop_at_level_title),
-            valueText = if (uiState.jvmTieredStopAtLevel == 4) {
-                stringResource(R.string.settings_jvm_tiered_stop_at_level_default, 4)
-            } else {
-                stringResource(
-                    R.string.settings_jvm_tiered_stop_at_level_value,
-                    uiState.jvmTieredStopAtLevel
-                )
-            },
-            enabled = !uiState.busy,
-            selectedValue = uiState.jvmTieredStopAtLevel,
-            options = listOf(1, 2, 3, 4),
-            optionLabel = { level ->
-                if (level == 4) {
-                    stringResource(R.string.settings_jvm_tiered_stop_at_level_default, level)
-                } else {
-                    stringResource(R.string.settings_jvm_tiered_stop_at_level_value, level)
-                }
-            },
-            onOptionSelected = actions.onJvmTieredStopAtLevelChanged,
-            description = stringResource(R.string.settings_jvm_tiered_stop_at_level_desc),
-            dialogDescription = null,
-        )
-    )
+    SettingsJvmTieredStopAtLevelSetting(uiState, actions)
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
@@ -1004,6 +892,149 @@ internal fun SettingsAdvancedRenderSection(
     )
 }
 
+
+@Composable
+internal fun SettingsManualRendererSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: AdvancedRenderSettingsActions,
+) {
+    val context = LocalContext.current
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_renderer_manual_label),
+        valueText = uiState.manualRendererBackend.displayName,
+        enabled = !uiState.busy,
+        supportingText = stringResource(
+            R.string.settings_renderer_manual_supporting,
+            uiState.manualRendererBackend.displayName,
+            uiState.manualRendererBackend.briefProsCons(context)
+        ),
+        options = uiState.rendererBackendOptions,
+        optionEnabled = { option -> option.available },
+        optionLabel = { option -> option.backend.displayName },
+        optionDescription = { option ->
+            buildList {
+                add(option.backend.briefProsCons(context))
+                option.reasonText?.let(::add)
+            }.joinToString("  ")
+        },
+        onOptionSelected = { option -> actions.onManualRendererBackendChanged(option.backend) }
+    )
+}
+
+@Composable
+internal fun SettingsRenderSurfaceBackendSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: AdvancedRenderSettingsActions,
+) {
+    val context = LocalContext.current
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_render_surface_backend_title),
+        valueText = uiState.renderSurfaceBackend.displayName(context),
+        enabled = !uiState.busy,
+        supportingText = if (uiState.surfaceBackendForcedByRenderer) {
+            stringResource(
+                R.string.settings_renderer_surface_forced,
+                uiState.effectiveRenderSurfaceBackend.displayName(context)
+            )
+        } else {
+            stringResource(R.string.settings_render_surface_backend_desc)
+        },
+        supportingTextColor = if (uiState.surfaceBackendForcedByRenderer) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        options = RenderSurfaceBackend.entries,
+        optionLabel = { backend -> backend.displayName(context) },
+        onOptionSelected = actions.onRenderSurfaceBackendChanged
+    )
+}
+
+@Composable
+internal fun SettingsGpuResourceGuardianSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: AdvancedRenderSettingsActions,
+) {
+    SettingsChoiceDialogItem(
+        SettingsChoiceSpec(
+            title = stringResource(R.string.settings_gpu_resource_guardian_title),
+            valueText = gpuResourceGuardianModeDisplayName(uiState.gpuResourceGuardianMode),
+            enabled = !uiState.busy,
+            selectedValue = uiState.gpuResourceGuardianMode,
+            options = GpuResourceGuardianMode.entries,
+            optionLabel = { mode -> gpuResourceGuardianModeDisplayName(mode) },
+            optionDescription = { mode -> gpuResourceGuardianModeDescription(mode) },
+            onOptionSelected = actions.onGpuResourceGuardianModeChanged,
+            description = stringResource(R.string.settings_gpu_resource_guardian_desc),
+            dialogDescription = null,
+        )
+    )
+}
+
+@Composable
+internal fun SettingsJvmTieredStopAtLevelSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: AdvancedRenderSettingsActions,
+) {
+    SettingsChoiceDialogItem(
+        SettingsChoiceSpec(
+            title = stringResource(R.string.settings_jvm_tiered_stop_at_level_title),
+            valueText = if (uiState.jvmTieredStopAtLevel == 4) {
+                stringResource(R.string.settings_jvm_tiered_stop_at_level_default, 4)
+            } else {
+                stringResource(R.string.settings_jvm_tiered_stop_at_level_value, uiState.jvmTieredStopAtLevel)
+            },
+            enabled = !uiState.busy,
+            selectedValue = uiState.jvmTieredStopAtLevel,
+            options = listOf(1, 2, 3, 4),
+            optionLabel = { level ->
+                if (level == 4) {
+                    stringResource(R.string.settings_jvm_tiered_stop_at_level_default, level)
+                } else {
+                    stringResource(R.string.settings_jvm_tiered_stop_at_level_value, level)
+                }
+            },
+            onOptionSelected = actions.onJvmTieredStopAtLevelChanged,
+            description = stringResource(R.string.settings_jvm_tiered_stop_at_level_desc),
+            dialogDescription = null,
+        )
+    )
+}
+
+@Composable
+internal fun SettingsSystemGameModeSetting(uiState: SettingsScreenViewModel.UiState) {
+    var showDialog by rememberSaveable { mutableStateOf(false) }
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_system_game_mode_title),
+        supportingText = stringResource(
+            R.string.settings_system_game_mode_summary, uiState.systemGameModeDisplayName,
+        ),
+        enabled = !uiState.busy,
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(stringResource(R.string.settings_system_game_mode_title)) },
+            text = {
+                Text(
+                    listOf(
+                        stringResource(R.string.settings_system_game_mode_dialog_current, uiState.systemGameModeDisplayName),
+                        uiState.systemGameModeDescription,
+                        stringResource(R.string.settings_system_game_mode_dialog_control),
+                        stringResource(R.string.settings_system_game_mode_dialog_panel),
+                        stringResource(R.string.settings_system_game_mode_dialog_support),
+                    ).joinToString("\n\n")
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text(stringResource(R.string.settings_system_game_mode_acknowledge))
+                }
+            },
+        )
+    }
+}
 
 internal fun heapSliderToStep(value: Float, min: Int, step: Int): Int {
     val safeStep = step.coerceAtLeast(1)
@@ -1029,11 +1060,6 @@ internal fun SettingsStatusSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: StatusSettingsActions,
 ) {
-    val uriHandler = LocalUriHandler.current
-    val unplayableModsSheetUrl = stringResource(R.string.settings_unplayable_mods_sheet_url)
-    var showStatusDialog by rememberSaveable { mutableStateOf(false) }
-    var showLogDialog by rememberSaveable { mutableStateOf(false) }
-    var showUnplayableModsDialog by rememberSaveable { mutableStateOf(false) }
     val statusPreview = remember(uiState.statusText) {
         uiState.statusText
             .lineSequence()
@@ -1114,21 +1140,8 @@ internal fun SettingsStatusSection(
 
     HorizontalDivider()
 
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_view_full_status),
-        enabled = uiState.statusText.isNotBlank(),
-        onClick = { showStatusDialog = true }
-    )
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_view_log_paths),
-        enabled = uiState.logPathText.isNotBlank(),
-        onClick = { showLogDialog = true }
-    )
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_unplayable_mods_entry_title),
-        enabled = true,
-        onClick = { showUnplayableModsDialog = true }
-    )
+    SettingsStatusDialogActions(uiState)
+
     SettingsActionListItem(
         title = stringResource(R.string.settings_agent_workspace_export_title),
         supportingText = stringResource(R.string.settings_agent_workspace_export_desc),
@@ -1141,6 +1154,38 @@ internal fun SettingsStatusSection(
         enabled = !uiState.busy,
         onClick = actions.onClearJunkFiles,
     )
+}
+
+@Composable
+internal fun SettingsStatusDialogActions(
+    uiState: SettingsScreenViewModel.UiState,
+    settingTitleResId: Int? = null,
+) {
+    var showStatusDialog by rememberSaveable { mutableStateOf(false) }
+    var showLogDialog by rememberSaveable { mutableStateOf(false) }
+    var showUnplayableModsDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_view_full_status) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_view_full_status),
+            enabled = uiState.statusText.isNotBlank(),
+            onClick = { showStatusDialog = true }
+        )
+    }
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_view_log_paths) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_view_log_paths),
+            enabled = uiState.logPathText.isNotBlank(),
+            onClick = { showLogDialog = true }
+        )
+    }
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_unplayable_mods_entry_title) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_unplayable_mods_entry_title),
+            enabled = true,
+            onClick = { showUnplayableModsDialog = true }
+        )
+    }
 
     if (showStatusDialog) {
         val emptyStatusInfo = stringResource(R.string.settings_status_info_empty)
