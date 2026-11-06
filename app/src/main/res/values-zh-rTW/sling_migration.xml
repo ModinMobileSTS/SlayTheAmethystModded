@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sling_migration_title">遷移 SlingBreak 存檔？</string>
+    <string name="sling_migration_message">偵測到舊版 WebView 小遊戲存檔，是否遷移到新版小遊戲？如果列出了多份存檔，請選擇其中一份。舊存檔會保留，遷移成功後不再顯示此提示。</string>
+    <string name="sling_migration_replace">偵測到舊版 WebView 小遊戲存檔。遷移將取代目前新版小遊戲進度，取代前會備份目前進度及舊版存檔。如果列出了多份存檔，請選擇其中一份。遷移成功後不再顯示此提示。</string>
+    <string name="sling_migration_source_standalone">獨立小遊戲 · 第 %1$d 關</string>
+    <string name="sling_migration_source_boot">啟動載入小遊戲 · 第 %1$d 關</string>
+    <string name="sling_migration_source_gecko">相容模式小遊戲 · 第 %1$d 關</string>
+    <string name="sling_migration_confirm">遷移存檔</string>
+    <string name="sling_migration_later">暫不遷移</string>
+    <string name="sling_migration_working">正在遷移存檔…</string>
+    <string name="sling_migration_success">存檔遷移成功</string>
+    <string name="sling_migration_failed">未能完成遷移，舊版 WebView 存檔和已產生的備份均已保留。可能是存檔損壞、格式暫不支援或儲存空間無法使用。可以重試，也可以先繼續遊戲，下次啟動時再遷移。</string>
+    <string name="sling_migration_retry">重試</string>
+</resources>

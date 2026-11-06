@@ -122,7 +122,7 @@ adb shell am start -n io.stamethyst/io.stamethyst.godot.GodotPrototypeSetupActiv
 4. 下载后断网再打开，必须可用；取消 `adb reverse` 不应影响已安装组件。
 5. Home→返回、锁屏→解锁、前后台切换后检查触控和音频。退出后 `:minigame` 应结束，`:game`/启动器不应被杀。
 
-小游戏存档位于启动器私有 `files/godot-prototype-user/` 下，由 Godot 自身处理 `user://`。目录不随组件 hash 变化，也不读写旧 Web 存档。完整 PCK 中的保存调用复用上游 `session.save()`；最小 PCK 保存测试时间戳。
+小游戏存档位于启动器私有 `files/godot-prototype-user/` 下，由 Godot 自身处理 `user://`。目录不随组件 hash 变化。当前正式宿主在引擎启动前支持经用户确认迁移旧 Web 存档，原始浏览器存档始终保留，详见 [旧存档迁移](slingbreak-save-migration.md)。完整 PCK 中的保存调用复用上游 `session.save()`；最小 PCK 保存测试时间戳。
 
 ### 原型 2：主游戏加载期间游玩
 
@@ -155,7 +155,7 @@ adb shell dumpsys meminfo io.stamethyst:game > agent-tmp/godot-spike/device-game
 ## 原型尚未覆盖
 
 - 正式启动器入口/下载 UI、生产镜像、断点续传、坏缓存一键修复、旧版本回收、远程签名版本协议。
-- 自动迁移 Web 存档、Godot 预览独立应用存档；现有存档均保持不动。
+- Web 存档确认迁移的完整真机矩阵（实现见 [旧存档迁移](slingbreak-save-migration.md)）、Godot 预览独立应用存档迁移；现有浏览器存档均保持不动。
 - 正式包移除旧小游戏、精确净体积收益。
 - Android 文件选择器、Godot FileProvider/ProcessPhoenix 等非原型入口（不声明或不调用这些组件）。
 - 远程代码下载的商店政策适配。

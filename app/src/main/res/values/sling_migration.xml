@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sling_migration_title">Migrate SlingBreak progress?</string>
+    <string name="sling_migration_message">Progress from the old WebView minigame was found. Import it into the new minigame? If multiple saves are listed, choose one. The old save will be kept. After a successful migration, this prompt will not appear again.</string>
+    <string name="sling_migration_replace">Progress from the old WebView minigame was found. Importing it will replace your current minigame progress. Both the current progress and the old save will be backed up. If multiple saves are listed, choose one. After a successful migration, this prompt will not appear again.</string>
+    <string name="sling_migration_source_standalone">Standalone minigame · Level %1$d</string>
+    <string name="sling_migration_source_boot">Loading-screen minigame · Level %1$d</string>
+    <string name="sling_migration_source_gecko">Compatibility mode · Level %1$d</string>
+    <string name="sling_migration_confirm">Migrate</string>
+    <string name="sling_migration_later">Not now</string>
+    <string name="sling_migration_working">Migrating progress…</string>
+    <string name="sling_migration_success">Progress migrated</string>
+    <string name="sling_migration_failed">Migration could not be completed. The old WebView save and any backups have been kept. The save may be damaged or contain an unsupported format, or storage may be unavailable. You can retry, or continue and try again next launch.</string>
+    <string name="sling_migration_retry">Try again</string>
+</resources>

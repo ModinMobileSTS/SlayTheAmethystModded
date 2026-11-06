@@ -181,6 +181,12 @@
             android:exported="false"
             android:theme="@style/Theme.SlayTheAmethyst.Dialog" />
 
+        <!-- Read legacy browser storage only in the process that owns that WebView profile. -->
+        <service android:name="io.stamethyst.godot.LegacySlingBreakSaveService"
+            android:exported="false" />
+        <service android:name="io.stamethyst.godot.LegacySlingBreakSaveService$GameProcess"
+            android:exported="false" android:process=":game" />
+
         <activity android:name="io.stamethyst.godot.GodotMinigameActivity"
             android:exported="false" android:process=":minigame"
             android:enableOnBackInvokedCallback="false"
