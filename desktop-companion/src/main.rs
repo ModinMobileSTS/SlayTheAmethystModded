@@ -1500,8 +1500,10 @@ fn easytier_config(session: &Session, player_id: &str) -> String {
     } else {
         config.push_str("dhcp = true\n");
     }
+    // Keep a UDP listener for LAN/reachable-peer direct connections. Port zero
+    // avoids fixed-port conflicts without disabling automatic NAT hole punching.
     config.push_str(&format!(
-        "listeners = []\n\n[network_identity]\nnetwork_name = {}\nnetwork_secret = {}\n\n[[peer]]\nuri = {}\n",
+        "listeners = [\"udp://0.0.0.0:0\"]\n\n[network_identity]\nnetwork_name = {}\nnetwork_secret = {}\n\n[[peer]]\nuri = {}\n",
         toml_string(&stable_name("sts", &session.room_id, "default-room", 96, 12)),
         toml_string(&session.network_secret),
         toml_string(&session.entry_node_url),
@@ -1637,4 +1639,58 @@ fn tray_icon() -> Icon {
         .resize_exact(32, 32, image::imageops::FilterType::Lanczos3)
         .to_rgba8();
     Icon::from_rgba(image.into_raw(), 32, 32).expect("embedded tray icon must be valid")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn easytier_config_advertises_ephemeral_udp_listener_without_changing_bootstrap_peer() {
+        for cidr in ["", "10.126.42.17/24"] {
+            let session: Session = serde_json::from_value(serde_json::json!({
+                "sessionId": "lan_udp_test",
+                "roomId": "UDP Test",
+                "entryNodeUrl": "tcp://online.example.com:55550",
+                "configServerUrl": "udp://config.example.com:22020",
+                "networkSecret": "test-secret",
+                "assignedIpv4Cidr": cidr,
+                "sessionToken": "test-session-token"
+            }))
+            .unwrap();
+
+            let config = easytier_config(&session, "player-test");
+
+            assert_eq!(
+                config
+                    .lines()
+                    .filter(|line| line.starts_with("listeners ="))
+                    .collect::<Vec<_>>(),
+                vec!["listeners = [\"udp://0.0.0.0:0\"]"]
+            );
+            assert!(
+                config.find("listeners =").unwrap() < config.find("[network_identity]").unwrap()
+            );
+            assert!(config.contains("uri = \"tcp://online.example.com:55550\""));
+            assert_eq!(config.matches("[[peer]]").count(), 1);
+            assert!(!config.contains(&session.config_server_url));
+            assert!(config.contains("network_secret = \"test-secret\""));
+            assert!(config.contains(&format!(
+                "network_name = {}",
+                toml_string(&stable_name(
+                    "sts",
+                    &session.room_id,
+                    "default-room",
+                    96,
+                    12
+                ))
+            )));
+            assert!(config.contains(&format!("dhcp = {}", cidr.is_empty())));
+            if !cidr.is_empty() {
+                assert!(config.contains(&format!("ipv4 = {}", toml_string(cidr))));
+            }
+            assert!(!config.contains("disable_p2p"));
+            assert!(!config.contains("disable_udp_hole_punching"));
+        }
+    }
 }

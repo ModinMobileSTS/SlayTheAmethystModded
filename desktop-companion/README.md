@@ -76,6 +76,24 @@ Runtime files are stored in `%APPDATA%\SlayTheAmethystOnline\runtime`:
 Room API session and owner bearer tokens remain memory-only. They are never
 written to disk or `connection-state.json`.
 
+### Direct UDP connections
+
+The Android launcher and desktop companion configure
+`listeners = ["udp://0.0.0.0:0"]`: EasyTier binds an available UDP port and
+advertises it to peers in the room. Previously, `listeners = []` removed normal
+direct-connection candidates, so even players on the same LAN could fall back
+to the shared relay when public-address hole punching failed. The random port
+avoids fixed-port conflicts; no per-player port number needs to be configured.
+Allow the extracted `easytier-core.exe` through Windows Firewall for the network
+where direct connections are intended.
+
+The Room API's `entryNodeUrl` remains the bootstrap peer (including TCP entries).
+This does not repurpose `configServerUrl`, disable NAT hole punching, or remove
+relay fallback. An available UDP listener restores LAN/reachable-peer direct
+connections but cannot guarantee traversal of every public NAT or firewall.
+
+Run the configuration regression test with `cargo test easytier_config`.
+
 ## Required Setup
 
 1. Start an `online-service` instance with EasyTier room support enabled.

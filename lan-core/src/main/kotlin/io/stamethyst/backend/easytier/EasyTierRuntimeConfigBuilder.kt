@@ -28,7 +28,9 @@ object EasyTierRuntimeConfigBuilder {
                 append("ipv4 = ").toml(assignedCidr).append('\n')
                 append("dhcp = false\n")
             }
-            append("listeners = []\n\n[network_identity]\n")
+            // Advertise a real UDP listener so LAN/reachable peers can connect directly
+            // instead of relying exclusively on NAT hole punching through the shared node.
+            append("listeners = [\"udp://0.0.0.0:0\"]\n\n[network_identity]\n")
             append("network_name = ").toml(networkName).append('\n')
             append("network_secret = ").toml(sessionConfig.networkSecret).append("\n\n")
             peers.forEach { append("[[peer]]\nuri = ").toml(it).append("\n\n") }

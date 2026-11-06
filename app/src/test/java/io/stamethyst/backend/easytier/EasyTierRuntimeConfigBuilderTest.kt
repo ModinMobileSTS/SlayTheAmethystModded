@@ -24,7 +24,7 @@ class EasyTierRuntimeConfigBuilderTest {
         assertTrue(config.toml.contains("instance_name = \"sts-android-lan-abc123-"))
         assertTrue(config.toml.contains("hostname = \"sts-player-1-"))
         assertTrue(config.toml.contains("dhcp = true"))
-        assertTrue(config.toml.contains("listeners = []"))
+        assertTrue(config.toml.contains("listeners = [\"udp://0.0.0.0:0\"]"))
         assertTrue(config.toml.contains("[network_identity]"))
         assertTrue(config.toml.contains("network_name = \"${config.networkName}\""))
         assertTrue(config.toml.contains("network_secret = \"secret-value\""))
