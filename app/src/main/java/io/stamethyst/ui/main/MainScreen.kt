@@ -2128,17 +2128,32 @@ private fun EasyTierRoomMembersSection(
     room: EasyTierRoomInfo,
     currentPlayerId: String,
     localIpv4Cidr: String,
+    indicator: MainScreenViewModel.EasyTierIndicatorUi,
     canKickMembers: Boolean,
     mutating: Boolean,
     onKickMember: (EasyTierRoomMember) -> Unit,
     onViewMemberMods: (EasyTierRoomMember) -> Unit,
 ) {
     val view = LocalView.current
+    var connectionNowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(indicator.peerConnectionsValidUntilMs) {
+        connectionNowMs = System.currentTimeMillis()
+        val remaining = indicator.peerConnectionsValidUntilMs - connectionNowMs
+        if (remaining > 0L) {
+            kotlinx.coroutines.delay(remaining)
+            connectionNowMs = System.currentTimeMillis()
+        }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = stringResource(R.string.main_easytier_room_members_title),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = stringResource(R.string.main_easytier_link_perspective),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         room.description.trim().takeIf(String::isNotEmpty)?.let { description ->
             Text(
@@ -2174,16 +2189,24 @@ private fun EasyTierRoomMembersSection(
                             .padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text(
-                            text = member.displayName.ifBlank { member.playerId },
+                        FlowRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(end = if (canKickMember) 76.dp else 40.dp),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = member.displayName.ifBlank { member.playerId },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            EasyTierMemberConnectionCapsule(
+                                resolveEasyTierMemberLink(member, currentPlayerId, room.roomId, indicator, connectionNowMs),
+                            )
+                        }
                         AnimatedContent(
                             targetState = Triple(member.online, assignedIpv4Cidr, member.gameState),
                             transitionSpec = {
@@ -3236,175 +3259,188 @@ internal fun EasyTierBottomSheetContent(
             },
             label = "easyTierRoomHeader",
         ) { targetPage ->
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (targetPage != EasyTierRoomSheetPage.Rooms) {
-                    IconButton(
-                        onClick = { page = EasyTierRoomSheetPage.Rooms },
-                        enabled = !roomBrowser.creating,
-                    ) {
-                        Icon(
-                            imageVector = Icons.ArrowBack,
-                            contentDescription = stringResource(R.string.common_content_desc_back),
-                        )
-                    }
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = when (targetPage) {
-                            EasyTierRoomSheetPage.Rooms -> stringResource(R.string.main_easytier_sheet_title)
-                            EasyTierRoomSheetPage.Create -> stringResource(R.string.main_easytier_create_room_title)
-                            EasyTierRoomSheetPage.Tutorial -> stringResource(R.string.main_easytier_tutorial_title)
-                            EasyTierRoomSheetPage.MemberMods -> stringResource(
-                                R.string.main_easytier_member_mods_title,
-                                displayedMemberMods?.let { member ->
-                                    member.displayName.ifBlank { member.playerId }
-                                }.orEmpty(),
-                            )
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    val summary = when (targetPage) {
-                        // The overview card already owns the connection status, so the header
-                        // reports room-browser context instead of repeating the same sentence.
-                        EasyTierRoomSheetPage.Rooms -> when (
-                            easyTierRoomsHeaderSummary(roomBrowser.preferredRoomId)
+                    if (targetPage != EasyTierRoomSheetPage.Rooms) {
+                        IconButton(
+                            onClick = { page = EasyTierRoomSheetPage.Rooms },
+                            enabled = !roomBrowser.creating,
                         ) {
-                            EasyTierRoomsHeaderSummary.SelectedRoom -> stringResource(
-                                R.string.main_easytier_sheet_summary_selected,
-                                roomBrowser.preferredRoomId,
+                            Icon(
+                                imageVector = Icons.ArrowBack,
+                                contentDescription = stringResource(R.string.common_content_desc_back),
                             )
-                            EasyTierRoomsHeaderSummary.RoomCount -> stringResource(
-                                R.string.main_easytier_sheet_summary_room_count,
-                                visibleRooms.size,
-                            )
-                        }
-                        EasyTierRoomSheetPage.Create -> stringResource(R.string.main_easytier_create_room_summary)
-                        EasyTierRoomSheetPage.Tutorial -> stringResource(R.string.main_easytier_tutorial_summary)
-                        EasyTierRoomSheetPage.MemberMods -> {
-                            stringResource(R.string.main_easytier_member_mods_summary)
                         }
                     }
-                    AnimatedContent(
-                        targetState = summary,
-                        transitionSpec = {
-                            (fadeIn(animationSpec = tween(durationMillis = 160)) +
-                                slideInVertically(
-                                    initialOffsetY = { height -> height / 3 },
-                                    animationSpec = tween(durationMillis = 200),
-                                )) togetherWith fadeOut(animationSpec = tween(durationMillis = 100))
-                        },
-                        label = "easyTierRoomHeaderSummary",
-                    ) { targetSummary ->
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
                         Text(
-                            text = targetSummary,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = when (targetPage) {
+                                EasyTierRoomSheetPage.Rooms -> stringResource(R.string.main_easytier_sheet_title)
+                                EasyTierRoomSheetPage.Create -> stringResource(R.string.main_easytier_create_room_title)
+                                EasyTierRoomSheetPage.Tutorial -> stringResource(R.string.main_easytier_tutorial_title)
+                                EasyTierRoomSheetPage.MemberMods -> stringResource(
+                                    R.string.main_easytier_member_mods_title,
+                                    displayedMemberMods?.let { member ->
+                                        member.displayName.ifBlank { member.playerId }
+                                    }.orEmpty(),
+                                )
+                            },
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
                         )
+                        val summary = when (targetPage) {
+                            // The overview card already owns the connection status, so the header
+                            // reports room-browser context instead of repeating the same sentence.
+                            EasyTierRoomSheetPage.Rooms -> when (
+                                easyTierRoomsHeaderSummary(roomBrowser.preferredRoomId)
+                            ) {
+                                EasyTierRoomsHeaderSummary.SelectedRoom -> stringResource(
+                                    R.string.main_easytier_sheet_summary_selected,
+                                    roomBrowser.preferredRoomId,
+                                )
+                                EasyTierRoomsHeaderSummary.RoomCount -> stringResource(
+                                    R.string.main_easytier_sheet_summary_room_count,
+                                    visibleRooms.size,
+                                )
+                            }
+                            EasyTierRoomSheetPage.Create -> stringResource(R.string.main_easytier_create_room_summary)
+                            EasyTierRoomSheetPage.Tutorial -> stringResource(R.string.main_easytier_tutorial_summary)
+                            EasyTierRoomSheetPage.MemberMods -> {
+                                stringResource(R.string.main_easytier_member_mods_summary)
+                            }
+                        }
+                        AnimatedContent(
+                            targetState = summary,
+                            transitionSpec = {
+                                (fadeIn(animationSpec = tween(durationMillis = 160)) +
+                                    slideInVertically(
+                                        initialOffsetY = { height -> height / 3 },
+                                        animationSpec = tween(durationMillis = 200),
+                                    )) togetherWith fadeOut(animationSpec = tween(durationMillis = 100))
+                            },
+                            label = "easyTierRoomHeaderSummary",
+                        ) { targetSummary ->
+                            Text(
+                                text = targetSummary,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
                 if (targetPage == EasyTierRoomSheetPage.Rooms) {
-                    OutlinedButton(
-                        onClick = { uriHandler.openUri(cloudControlSettings.onlineGroupUrl) },
-                        modifier = Modifier.heightIn(min = 40.dp),
-                        shape = CircleShape,
-                        border = BorderStroke(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
-                        ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                    // Joined-room actions must not consume the title's width. Keep them on a
+                    // separate line that can wrap on narrow screens and at larger font scales.
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(
-                            text = stringResource(R.string.main_easytier_create_room_join_group),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                        )
-                    }
-                }
-                if (targetPage == EasyTierRoomSheetPage.Rooms && joinedSelectedRoom) {
-                    selectedRoom?.let { joinedRoom ->
-                        EasyTierRoomHeaderBadge(
-                            iconRes = R.drawable.ic_lan_room_key,
-                            label = stringResource(R.string.main_easytier_badge_password),
-                            onClick = {
-                                LauncherHaptics.perform(
-                                    sheetView,
-                                    HapticFeedbackConstants.KEYBOARD_TAP,
-                                )
-                                val password = EasyTierCredentialStore
-                                    .roomPassword(context, joinedRoom.roomId)
-                                sheetNotice = if (password.isEmpty()) {
-                                    LauncherTransientNoticeRequest(
-                                        message = UiText.StringResource(
-                                            R.string.main_easytier_room_password_unavailable,
-                                        ),
-                                    )
-                                } else {
-                                    LauncherTransientNoticeRequest(
-                                        message = UiText.StringResource(
-                                            R.string.main_easytier_room_password_reveal,
-                                            password,
-                                        ),
-                                        duration = LauncherTransientNoticeDuration.LONG,
-                                        actionLabel = UiText.StringResource(
-                                            R.string.main_easytier_room_password_copy,
-                                        ),
-                                        onAction = {
-                                            copyEasyTierRoomTextToClipboard(
-                                                context = context,
-                                                label = "stamethyst-room-password",
-                                                value = password,
-                                            )
-                                            sheetNotice = LauncherTransientNoticeRequest(
+                        OutlinedButton(
+                            onClick = { uriHandler.openUri(cloudControlSettings.onlineGroupUrl) },
+                            modifier = Modifier.heightIn(min = 40.dp),
+                            shape = CircleShape,
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                            ),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary,
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.main_easytier_create_room_join_group),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                            )
+                        }
+                        if (joinedSelectedRoom) {
+                            selectedRoom?.let { joinedRoom ->
+                                EasyTierRoomHeaderBadge(
+                                    iconRes = R.drawable.ic_lan_room_key,
+                                    label = stringResource(R.string.main_easytier_badge_password),
+                                    onClick = {
+                                        LauncherHaptics.perform(
+                                            sheetView,
+                                            HapticFeedbackConstants.KEYBOARD_TAP,
+                                        )
+                                        val password = EasyTierCredentialStore
+                                            .roomPassword(context, joinedRoom.roomId)
+                                        sheetNotice = if (password.isEmpty()) {
+                                            LauncherTransientNoticeRequest(
                                                 message = UiText.StringResource(
-                                                    R.string.main_easytier_room_password_copied,
+                                                    R.string.main_easytier_room_password_unavailable,
                                                 ),
                                             )
-                                        },
-                                    )
-                                }
-                            },
-                        )
-                        EasyTierRoomHeaderBadge(
-                            iconRes = R.drawable.ic_lan_room_share,
-                            label = stringResource(R.string.main_easytier_badge_share),
-                            onClick = {
-                                LauncherHaptics.perform(
-                                    sheetView,
-                                    HapticFeedbackConstants.KEYBOARD_TAP,
+                                        } else {
+                                            LauncherTransientNoticeRequest(
+                                                message = UiText.StringResource(
+                                                    R.string.main_easytier_room_password_reveal,
+                                                    password,
+                                                ),
+                                                duration = LauncherTransientNoticeDuration.LONG,
+                                                actionLabel = UiText.StringResource(
+                                                    R.string.main_easytier_room_password_copy,
+                                                ),
+                                                onAction = {
+                                                    copyEasyTierRoomTextToClipboard(
+                                                        context = context,
+                                                        label = "stamethyst-room-password",
+                                                        value = password,
+                                                    )
+                                                    sheetNotice = LauncherTransientNoticeRequest(
+                                                        message = UiText.StringResource(
+                                                            R.string.main_easytier_room_password_copied,
+                                                        ),
+                                                    )
+                                                },
+                                            )
+                                        }
+                                    },
                                 )
-                                val password = EasyTierCredentialStore
-                                    .roomPassword(context, joinedRoom.roomId)
-                                val shareText = buildEasyTierRoomShareText(
-                                    context = context,
-                                    room = joinedRoom,
-                                    password = password,
+                                EasyTierRoomHeaderBadge(
+                                    iconRes = R.drawable.ic_lan_room_share,
+                                    label = stringResource(R.string.main_easytier_badge_share),
+                                    onClick = {
+                                        LauncherHaptics.perform(
+                                            sheetView,
+                                            HapticFeedbackConstants.KEYBOARD_TAP,
+                                        )
+                                        val password = EasyTierCredentialStore
+                                            .roomPassword(context, joinedRoom.roomId)
+                                        val shareText = buildEasyTierRoomShareText(
+                                            context = context,
+                                            room = joinedRoom,
+                                            password = password,
+                                        )
+                                        copyEasyTierRoomTextToClipboard(
+                                            context = context,
+                                            label = "stamethyst-easytier-room-invite",
+                                            value = shareText,
+                                        )
+                                        onRoomInviteShared(shareText)
+                                        sheetNotice = LauncherTransientNoticeRequest(
+                                            message = UiText.StringResource(
+                                                R.string.main_easytier_share_room_copied,
+                                            ),
+                                            duration = LauncherTransientNoticeDuration.LONG,
+                                        )
+                                    },
                                 )
-                                copyEasyTierRoomTextToClipboard(
-                                    context = context,
-                                    label = "stamethyst-easytier-room-invite",
-                                    value = shareText,
-                                )
-                                onRoomInviteShared(shareText)
-                                sheetNotice = LauncherTransientNoticeRequest(
-                                    message = UiText.StringResource(
-                                        R.string.main_easytier_share_room_copied,
-                                    ),
-                                    duration = LauncherTransientNoticeDuration.LONG,
-                                )
-                            },
-                        )
+                            }
+                        }
                     }
                 }
             }
@@ -3604,6 +3640,7 @@ internal fun EasyTierBottomSheetContent(
                             room = selectedRoom,
                             currentPlayerId = roomBrowser.currentPlayerId,
                             localIpv4Cidr = indicator.assignedIpv4Cidr,
+                            indicator = indicator,
                             canKickMembers = contentPanelMode == EasyTierRoomPanelMode.JoinedOwner,
                             mutating = roomBrowser.mutating,
                             onKickMember = { member ->

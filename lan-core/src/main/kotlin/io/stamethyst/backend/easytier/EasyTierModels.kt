@@ -141,6 +141,17 @@ enum class EasyTierConnectionStatus {
         get() = this == CONNECTING || this == SESSION_READY || this == CONNECTED || this == RECONNECTING
 }
 
+@Serializable
+enum class EasyTierPeerConnectionKind { Direct, Relay }
+
+/** A route observed by this client, keyed by the destination's virtual host address. */
+@Serializable
+data class EasyTierPeerConnection(
+    val virtualIpv4: String,
+    val kind: EasyTierPeerConnectionKind,
+    val protocol: String = "",
+) : JavaSerializable
+
 /** Public, credential-free runtime state shared with the game JVM on Android and desktop. */
 @Serializable
 data class EasyTierConnectionSnapshot(
@@ -169,6 +180,8 @@ data class EasyTierConnectionSnapshot(
     val lastSessionState: String = "",
     val lastRoomState: String = "",
     val userInitiated: Boolean = false,
+    val peerConnections: List<EasyTierPeerConnection> = emptyList(),
+    val peerConnectionsValidUntilMs: Long = 0L,
 ) : JavaSerializable {
     val operationInFlight: Boolean get() = status.operationInFlight
     val isConnectionActive: Boolean get() = status.isActive

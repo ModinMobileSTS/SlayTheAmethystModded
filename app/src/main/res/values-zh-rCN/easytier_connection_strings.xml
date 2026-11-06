@@ -1,0 +1,9 @@
+<resources>
+    <string name="main_easytier_link_self">本机</string>
+    <string name="main_easytier_link_direct">直连</string>
+    <string name="main_easytier_link_relay">中转</string>
+    <string name="main_easytier_link_connecting">连接中</string>
+    <string name="main_easytier_link_unknown">未知</string>
+    <string name="main_easytier_link_disconnected">未连接</string>
+    <string name="main_easytier_link_perspective">显示你到各玩家的连接方式</string>
+</resources>

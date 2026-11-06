@@ -1,0 +1,9 @@
+<resources>
+    <string name="main_easytier_link_self">You</string>
+    <string name="main_easytier_link_direct">Direct</string>
+    <string name="main_easytier_link_relay">Relayed</string>
+    <string name="main_easytier_link_connecting">Connecting</string>
+    <string name="main_easytier_link_unknown">Unknown</string>
+    <string name="main_easytier_link_disconnected">Disconnected</string>
+    <string name="main_easytier_link_perspective">Connection from you to each player</string>
+</resources>

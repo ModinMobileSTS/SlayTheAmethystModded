@@ -166,6 +166,8 @@ object EasyTierSessionController {
             assignedIpv4Cidr = sessionStatus?.assignedIpv4Cidr.orEmpty(),
             currentPlayerId = currentPlayerId,
             peerCount = sessionStatus?.peerCount,
+            peerConnections = emptyList(),
+            peerConnectionsValidUntilMs = 0L,
             relayServerDescription = sessionStatus?.relayServerDescription.orEmpty(),
             lastSessionState = sessionStatus?.sessionState.orEmpty(),
             lastRoomState = sessionStatus?.roomState.orEmpty(),
@@ -190,6 +192,8 @@ object EasyTierSessionController {
             ),
             assignedIpv4Cidr = "",
             peerCount = null,
+            peerConnections = emptyList(),
+            peerConnectionsValidUntilMs = 0L,
             relayServerDescription = "",
             lastSessionState = previous.lastSessionState,
             lastRoomState = previous.lastRoomState,
@@ -213,6 +217,8 @@ object EasyTierSessionController {
             ),
             assignedIpv4Cidr = "",
             peerCount = null,
+            peerConnections = emptyList(),
+            peerConnectionsValidUntilMs = 0L,
             relayServerDescription = "",
             lastSessionState = previous.lastSessionState,
             lastRoomState = previous.lastRoomState,
@@ -238,6 +244,8 @@ object EasyTierSessionController {
             roomOwnerPlayerId = "",
             roomOwnerIpv4Cidr = "",
             peerCount = null,
+            peerConnections = emptyList(),
+            peerConnectionsValidUntilMs = 0L,
             relayServerDescription = "",
             aclGroup = "",
             expiresAtEpochSeconds = null,
@@ -274,6 +282,8 @@ object EasyTierSessionController {
             lastUpdatedAtMs = nowMs,
             lastErrorSummary = summary,
             peerCount = null,
+            peerConnections = emptyList(),
+            peerConnectionsValidUntilMs = 0L,
             relayServerDescription = "",
         )
     }
@@ -284,7 +294,15 @@ object EasyTierSessionController {
         extraLines: List<String> = emptyList(),
         error: Throwable? = null,
     ): EasyTierConnectionSnapshot {
-        val persisted = snapshot.copy(
+        val current = if (
+            snapshot.status == EasyTierConnectionStatus.CONNECTED ||
+            snapshot.status == EasyTierConnectionStatus.SESSION_READY
+        ) {
+            snapshot
+        } else {
+            snapshot.copy(peerConnections = emptyList(), peerConnectionsValidUntilMs = 0L)
+        }
+        val persisted = current.copy(
             diagnosticsSummaryPath = EasyTierDiagnosticsStore.summaryFile(context).absolutePath,
         )
         runCatching {

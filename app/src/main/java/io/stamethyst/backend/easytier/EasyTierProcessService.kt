@@ -877,9 +877,11 @@ class EasyTierProcessService : Service() {
     ) {
         val instanceName = currentRuntimeInstanceName
         if (instanceName.isBlank()) {
+            clearPeerConnections(baseSnapshot, receiver)
             return
         }
         val runtimeResult = EasyTierJniBridge.collectNetworkInfo(applicationContext, instanceName)
+        val runtimeObservedAtMs = System.currentTimeMillis()
         runtimeResult.exceptionOrNull()?.let { error ->
             // The lease must outlive a transient runtime fault. Dropping it here is what turned a
             // brief JNI hiccup into a permanent disconnect: the server swept the session after its
@@ -907,6 +909,7 @@ class EasyTierProcessService : Service() {
         val runtimeInfo = runtimeResult.getOrNull() ?: run {
             // A success result with no payload still means the session is in use, so hold the lease
             // rather than letting it lapse on an empty read.
+            clearPeerConnections(baseSnapshot, receiver)
             renewSessionLease(baseSnapshot)
             return
         }
@@ -942,6 +945,7 @@ class EasyTierProcessService : Service() {
         if (runtimeInfo.virtualIpv4Cidr.isBlank()) {
             // No virtual IP yet. The session is still legitimately in use, so hold the lease while
             // the runtime finishes negotiating an address.
+            clearPeerConnections(baseSnapshot, receiver)
             renewSessionLease(baseSnapshot)
             if (hasEasyTierConnectionTimedOut(baseSnapshot, EasyTierConfigRepository.current())) {
                 handleConnectionTimeout(baseSnapshot, receiver)
@@ -980,6 +984,11 @@ class EasyTierProcessService : Service() {
                 snapshotBeforePersist.copy(
                     assignedIpv4Cidr = runtimeStatus?.assignedIpv4Cidr ?: runtimeInfo.virtualIpv4Cidr,
                     peerCount = runtimeInfo.peerCount ?: runtimeStatus?.peerCount ?: snapshotBeforePersist.peerCount,
+                    peerConnections = runtimeInfo.peerConnections,
+                    peerConnectionsValidUntilMs = runtimeObservedAtMs + maxOf(
+                        30_000L,
+                        EasyTierConfigRepository.current().statusPollIntervalSeconds.toLong() * 3_000L,
+                    ),
                     relayServerDescription = runtimeStatus?.relayServerDescription
                         ?: snapshotBeforePersist.relayServerDescription,
                     lastSessionState = runtimeStatus?.sessionState?.trim()
@@ -1000,6 +1009,19 @@ class EasyTierProcessService : Service() {
         )
         deliverSnapshot(applicationContext, receiver, resultCodeFor(updatedSnapshot), updatedSnapshot)
         notificationMessageForSnapshot(updatedSnapshot)?.let(::updateNotification)
+    }
+
+    private fun clearPeerConnections(baseSnapshot: EasyTierConnectionSnapshot, receiver: ResultReceiver?) {
+        val latest = selectRuntimePollBaseSnapshot(
+            polledSnapshot = baseSnapshot,
+            latestSnapshot = EasyTierSessionController.currentSnapshot(applicationContext),
+        )
+        if (latest.peerConnectionsValidUntilMs == 0L && latest.peerConnections.isEmpty()) return
+        val cleared = EasyTierSessionController.persistSnapshot(
+            applicationContext,
+            latest.copy(peerConnections = emptyList(), peerConnectionsValidUntilMs = 0L),
+        )
+        deliverSnapshot(applicationContext, receiver, resultCodeFor(cleared), cleared)
     }
 
     private fun fetchRoomInfoOrNull(roomId: String): EasyTierRoomInfo? {

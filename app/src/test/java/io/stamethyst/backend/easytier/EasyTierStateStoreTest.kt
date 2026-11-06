@@ -7,6 +7,21 @@ import org.junit.Test
 
 class EasyTierStateStoreTest {
     @Test
+    fun readSnapshot_acceptsOldStateWithoutPeerObservations() {
+        val roots = EasyTierTestRoots.create("easytier-old-state")
+        try {
+            val file = EasyTierStateStore.stateFile(roots.context)
+            file.parentFile!!.mkdirs()
+            file.writeText("""{"enabled":true,"canConnect":true,"status":"CONNECTED","mode":"Room"}""")
+            val restored = requireNotNull(EasyTierStateStore.readSnapshot(roots.context))
+            assertEquals(emptyList<EasyTierPeerConnection>(), restored.peerConnections)
+            assertEquals(0L, restored.peerConnectionsValidUntilMs)
+        } finally {
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun writeSnapshot_roundTripsSerializedState() {
         val roots = EasyTierTestRoots.create("easytier-state-store-round-trip")
         try {
@@ -35,6 +50,8 @@ class EasyTierStateStoreTest {
                 lastSessionState = "connected",
                 lastRoomState = "active",
                 userInitiated = true,
+                peerConnections = listOf(EasyTierPeerConnection("10.144.144.7", EasyTierPeerConnectionKind.Direct, "udp")),
+                peerConnectionsValidUntilMs = 30_000L,
             )
 
             EasyTierStateStore.writeSnapshot(roots.context, snapshot)

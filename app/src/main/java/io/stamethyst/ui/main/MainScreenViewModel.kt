@@ -50,6 +50,7 @@ import io.stamethyst.backend.easytier.EasyTierRoomApiHttpException
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import io.stamethyst.backend.easytier.EasyTierRoomMember
+import io.stamethyst.backend.easytier.EasyTierPeerConnection
 import io.stamethyst.backend.easytier.EasyTierNetworkMode
 import io.stamethyst.backend.easytier.EasyTierPermissionCoordinator
 import io.stamethyst.backend.easytier.EasyTierProcessService
@@ -291,6 +292,8 @@ class MainScreenViewModel : ViewModel() {
         val aclGroup: String = "",
         val assignedIpv4Cidr: String = "",
         val peerCount: Int? = null,
+        val peerConnections: List<EasyTierPeerConnection> = emptyList(),
+        val peerConnectionsValidUntilMs: Long = 0L,
         val relayServerDescription: String = "",
         val lastSessionState: String = "",
         val lastRoomState: String = "",
@@ -5848,6 +5851,8 @@ class MainScreenViewModel : ViewModel() {
             aclGroup = snapshot.aclGroup,
             assignedIpv4Cidr = snapshot.assignedIpv4Cidr,
             peerCount = snapshot.peerCount,
+            peerConnections = snapshot.peerConnections,
+            peerConnectionsValidUntilMs = snapshot.peerConnectionsValidUntilMs,
             relayServerDescription = snapshot.relayServerDescription,
             lastSessionState = snapshot.lastSessionState,
             lastRoomState = snapshot.lastRoomState,
@@ -5941,6 +5946,8 @@ class MainScreenViewModel : ViewModel() {
                 aclGroup = snapshot.aclGroup,
                 assignedIpv4Cidr = snapshot.assignedIpv4Cidr,
                 peerCount = snapshot.peerCount,
+                peerConnections = snapshot.peerConnections,
+                peerConnectionsValidUntilMs = snapshot.peerConnectionsValidUntilMs,
                 relayServerDescription = snapshot.relayServerDescription,
                 lastSessionState = snapshot.lastSessionState,
                 lastRoomState = snapshot.lastRoomState,

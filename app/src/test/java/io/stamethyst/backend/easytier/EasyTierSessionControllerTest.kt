@@ -7,6 +7,36 @@ import org.junit.Test
 
 class EasyTierSessionControllerTest {
     @Test
+    fun runtimeRoutesAreClearedOnFailureDisconnectPermissionChangeAndNewSession() {
+        val connected = EasyTierConnectionSnapshot(
+            enabled = true, canConnect = true, status = EasyTierConnectionStatus.CONNECTED,
+            mode = EasyTierNetworkMode.Room, sessionId = "old-session", roomId = "old-room",
+            peerConnections = listOf(EasyTierPeerConnection("10.0.0.2", EasyTierPeerConnectionKind.Direct, "udp")),
+            peerConnectionsValidUntilMs = 30_000L,
+        )
+        val roots = EasyTierTestRoots.create("easytier-peer-lifecycle")
+        try {
+            val changed = listOf(
+                EasyTierSessionController.buildFailureSnapshot(connected, "runtime failed"),
+                EasyTierSessionController.buildDisconnectedSnapshot(connected),
+                EasyTierSessionController.buildPermissionRequiredSnapshot(roots.context, connected),
+                EasyTierSessionController.buildPermissionRevokedSnapshot(roots.context, connected),
+                EasyTierSessionController.buildSessionReadySnapshot(connected, EasyTierRoomSessionConfig(
+                    sessionId = "new-session", roomId = "new-room", mode = EasyTierNetworkMode.Room,
+                    entryNodeUrl = "udp://example.com:55550",
+                )),
+                EasyTierSessionController.persistSnapshot(roots.context, connected.copy(status = EasyTierConnectionStatus.RECONNECTING)),
+            )
+            changed.forEach { snapshot ->
+                assertTrue(snapshot.peerConnections.isEmpty())
+                assertEquals(0L, snapshot.peerConnectionsValidUntilMs)
+            }
+        } finally {
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun resolveRequestedRoomId_fallsBackToSharedLobbyWhenBlank() {
         assertEquals(
             DEFAULT_EASYTIER_SHARED_ROOM_ID,

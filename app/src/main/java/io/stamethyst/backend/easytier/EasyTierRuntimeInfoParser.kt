@@ -10,6 +10,7 @@ internal data class EasyTierRuntimeInfo(
     val virtualIpv4Cidr: String,
     val routeCidrs: List<String>,
     val peerCount: Int?,
+    val peerConnections: List<EasyTierPeerConnection> = emptyList(),
 )
 
 internal object EasyTierRuntimeInfoParser {
@@ -20,11 +21,8 @@ internal object EasyTierRuntimeInfoParser {
         val root = rawJson?.trim()?.takeIf(String::isNotEmpty) ?: return null
         val mapObject = runCatching { JSONObject(root).optJSONObjectCompat("map") }.getOrNull()
             ?: return null
-        val instanceObject = mapObject.optJSONObjectCompat(instanceName)
-            ?: mapObject.keys().asSequence()
-                .mapNotNull { key -> mapObject.optJSONObjectCompat(key) }
-                .firstOrNull()
-            ?: return null
+        // Never reuse another instance's routes during a room/session change.
+        val instanceObject = mapObject.optJSONObjectCompat(instanceName) ?: return null
 
         val myNodeInfo = instanceObject.optJSONObjectCompat("my_node_info", "myNodeInfo")
         val virtualIpv4Cidr = parseIpv4Inet(
@@ -56,7 +54,46 @@ internal object EasyTierRuntimeInfoParser {
             routeCidrs = routeCidrs,
             peerCount = instanceObject.optJSONArrayCompat("peers")?.length()
                 ?: instanceObject.optJSONArrayCompat("routes")?.length(),
+            peerConnections = parsePeerConnections(instanceObject, virtualIpv4Cidr),
         )
+    }
+
+    private fun parsePeerConnections(instance: JSONObject, localCidr: String): List<EasyTierPeerConnection> {
+        val peers = mutableMapOf<Long, List<JSONObject>>()
+        instance.optJSONArrayCompat("peers")?.forEachObject { peer ->
+            val id = peer.optLongCompat("peer_id", "peerId") ?: return@forEachObject
+            peers[id] = buildList {
+                peer.optJSONArrayCompat("conns")?.forEachObject { conn ->
+                    if (!conn.optBooleanCompat("is_closed") && !conn.optBooleanCompat("isClosed")) add(conn)
+                }
+            }
+        }
+        return buildList {
+            instance.optJSONArrayCompat("routes")?.forEachObject { route ->
+                val cidr = parseIpv4Inet(route.optAny("ipv4_addr", "ipv4Addr")) ?: return@forEachObject
+                val host = cidr.substringBefore('/')
+                if (host == localCidr.substringBefore('/') || host == "0.0.0.0") return@forEachObject
+                val flags = route.optJSONObjectCompat("feature_flag", "featureFlag")
+                if (flags?.optBooleanCompat("is_public_server") == true ||
+                    flags?.optBooleanCompat("isPublicServer") == true) return@forEachObject
+                val cost = route.optIntCompat("cost") ?: return@forEachObject
+                val id = route.optLongCompat("peer_id", "peerId") ?: return@forEachObject
+                val conns = peers[id].orEmpty()
+                val kind = when {
+                    cost > 1 -> EasyTierPeerConnectionKind.Relay
+                    cost == 1 && conns.isNotEmpty() -> EasyTierPeerConnectionKind.Direct
+                    else -> return@forEachObject
+                }
+                val protocols = if (kind == EasyTierPeerConnectionKind.Direct) {
+                    conns.mapNotNull { conn ->
+                        conn.optJSONObjectCompat("tunnel")
+                            ?.optStringCompat("tunnel_type", "tunnelType")
+                            ?.lowercase()?.takeIf { it in setOf("udp", "tcp", "quic", "ws", "wss", "wg") }
+                    }.distinct().sorted().joinToString("/")
+                } else ""
+                add(EasyTierPeerConnection(host, kind, protocols))
+            }
+        }.distinctBy { it.virtualIpv4 }
     }
 
     private fun parseIpv4Inet(value: Any?): String? {
