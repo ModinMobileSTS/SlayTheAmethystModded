@@ -38,10 +38,11 @@ game.pck  79820504 bytes
 ## 安装、激活和存档
 
 - `SlingBreakReleases`：选择发布，比较已安装 release/asset 的 ID、hash、tag 和发布时间。同一 tag 替换 PCK 可以被发现，旧镜像不能使当前游戏降级。
-- `SlingBreakService`：后台下载并校验 hash/大小/PCK 4.7.2 头；校验引擎和提取出的 SO。进程内串行，加跨进程文件锁。每次安装使用独立 UUID 暂存目录。
+- `SlingBreakService`：后台下载并校验 hash/大小/PCK 4.7.2 头；校验引擎和提取出的 SO。进程内串行，加跨进程安装锁和组件独占锁。小游戏仍运行（含后台）时拒绝安装并提示先退出；安装期间也不允许新小游戏进程加载组件。每次安装使用独立 UUID 暂存目录。
 - `GodotFiles`：已验证的引擎提取 SO、创建只读动态代码；从 PCK 派生仅含 STORED `assets/game.pck` 的无代码 ZIP，校验后供私有 AssetManager 挂载。仍然只有两个下载，离线准备需要额外约一份 PCK 空间。
-- `SlingBreakInstallation`：所有准备完成后，用同文件系统的原子 rename 更新 `no_backup/godot-prototype/installed-release.json`。记录 GitHub tag、release/asset ID、发布时间、下载 URL、hash 和大小。下载、解压、资源挂载准备失败都不写新版本；旧 PCK 和挂载包不删除。进程中断会留下旧记录或完整新记录，不出现半条记录。
-- 已运行的 Godot Activity 持有同一 release 快照；后台更新只影响下一次启动。
+- `SlingBreakInstallation`：所有准备完成后，用同文件系统的原子 rename 更新 `no_backup/godot-prototype/installed-release.json`。记录 GitHub tag、release/asset ID、发布时间、下载 URL、hash 和大小。下载、解压、资源挂载准备或激活失败时不清理旧组件；版本记录不会出现半条记录。
+- 激活成功后由 `SlingBreakStorage` 定向清理旧 `game-<sha>.pck`、`assets-<sha>.zip`、`engine-<sha>/` 和修复过程中退役的 `engine-retired-<uuid>/`，**只保留当前游戏的一份 PCK、一份 ZIP 挂载包和当前固定引擎的一套 APK/SO**。重复安装当前版本也执行清理，回收旧启动器累积的历史版本。当前 PCK 和 ZIP 仍是加载流程必需的两种形式，本次不修改该格式。清理不跟随符号链接、不处理未知名称或存档目录。清理失败记录警告，不把已经激活成功的版本报成安装失败；下次成功安装重试。
+- Godot Activity 在读取 release 快照前取得 `components.lock`，持有至 `:minigame` 进程退出，由系统释放锁；Home、暂停、停止不释放。安装从下载前到激活/清理结束持同一独占锁，避免旧进程延迟读取已删除的组件。进程异常终止不会留下永久占用的文件锁。
 - 保留原型的 `files/godot-prototype-user` 存档位置，不改动 WebView/Gecko 的历史存档，不清理应用数据。**Web 存档未自动转换成 Godot 存档**。
 
 ## 运行边界
@@ -73,6 +74,6 @@ game.pck  79820504 bytes
 
 `:app:assembleDebugAndroidTest` 也已成功，测试 APK 位于 `app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk`，日志 `agent-tmp/godot-production-ui-apk.log`。这是编译打包结果，尚未在设备上执行 UI 测试。
 
-测试覆盖发布选择、固定资源排除、无效 digest/URL/资源大小/格式、替换 asset、旧镜像不能降级、共享更新竞速、版本记录重读、准备失败保留旧版本/存档、STORED 派生挂载及 PCK 格式拒绝。构建还有启动器不携带 Godot payload 的 APK 边界检查。
+测试覆盖发布选择、固定资源排除、无效 digest/URL/资源大小/格式、替换 asset、旧镜像不能降级、共享更新竞速、版本记录重读、准备/激活失败不清旧组件、升级后仅保留当前游戏与一套引擎、重复安装回收历史版本、符号链接不越界删除、组件文件锁互斥、存档/未知文件保护、STORED 派生挂载及 PCK 格式拒绝。构建还有启动器不携带 Godot payload 的 APK 边界检查。
 
 旧原型真机验证不等于本次公网安装/更新验收。正式版仍需实测：取消确认、首次双组件下载、镜像切换、失败重试、重启后当前版本、同 tag 替换/新 release 更新、离线启动和主游戏进入/保存返回。音频、完整断网、低内存和其它 renderer/Surface 组合也不应从单台旧原型结果外推。

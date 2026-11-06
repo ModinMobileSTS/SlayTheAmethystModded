@@ -5,7 +5,7 @@ import io.stamethyst.backend.update.UpdateReleaseInfo
 import org.json.JSONObject
 import java.io.File
 
-/** One atomic activation record; immutable payloads and old generations are retained. */
+/** Atomically activate a verified release before pruning previous component generations. */
 object SlingBreakInstallation {
     @JvmStatic fun root(context: Context) = File(context.noBackupFilesDir, "godot-prototype")
 
@@ -18,9 +18,10 @@ object SlingBreakInstallation {
         release
     }.getOrNull()
 
-    internal fun activateWhenReady(context: Context, release: UpdateReleaseInfo, prepare: () -> Unit) {
+    internal fun activateWhenReady(context: Context, release: UpdateReleaseInfo, prepare: () -> Unit): List<File> {
         prepare()
         activate(context, release)
+        return SlingBreakStorage.prune(root(context), release.assetSha256, SlingBreakReleases.ENGINE_SHA256)
     }
 
     internal fun activate(context: Context, release: UpdateReleaseInfo) {

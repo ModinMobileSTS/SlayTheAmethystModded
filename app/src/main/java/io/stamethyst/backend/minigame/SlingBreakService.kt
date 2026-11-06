@@ -3,6 +3,7 @@ package io.stamethyst.backend.minigame
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import android.util.Log
 import io.stamethyst.R
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.resources.DownloadedResourceArchiveValidator
@@ -56,7 +57,7 @@ object SlingBreakService {
         )
     }
 
-    /** Worker-thread only. No activation or save deletion until every component has been validated. */
+    /** Worker-thread only. Prune old components only after activation; never delete user saves. */
     @Synchronized fun install(
         context: Context,
         release: UpdateReleaseInfo,
@@ -70,51 +71,68 @@ object SlingBreakService {
         check(root.isDirectory || root.mkdirs()) { "Cannot create minigame directory" }
         RandomAccessFile(File(root, "install.lock"), "rw").use { lockFile ->
             lockFile.channel.lock().use {
-                val installed = SlingBreakInstallation.read(context)
-                if (installed != null && SlingBreakReleases.compare(release, installed) < 0) {
-                    throw IOException("小游戏版本已变化，请重新检查更新，不能降级到旧镜像版本")
-                }
-                val stage = File(root, "stage-${UUID.randomUUID()}")
-                check(stage.mkdir())
-                try { SlingBreakInstallation.activateWhenReady(context, release) {
-                    val engine = GodotFiles.engine(context)
-                    val engineApk = File(engine, "engine.apk")
-                    if (runCatching { GodotFiles.verifyEngine(engine) }.isFailure) {
-                        val downloaded = File(stage, "engine.download")
-                        if (runCatching { GodotFiles.verify(engineApk, SlingBreakReleases.ENGINE_SHA256) }.isSuccess) {
-                            engineApk.copyTo(downloaded)
-                        } else download(context, SlingBreakReleases.ENGINE_URL, downloaded,
-                            SlingBreakReleases.ENGINE_SHA256, 0, "引擎", progress, mirrors)
-                        val engineStage = File(stage, "engine").apply { check(mkdir()) }
-                        val apk = File(engineStage, "engine.apk")
-                        apk.outputStream().use { output ->
-                            check(apk.setReadOnly()) { "Cannot protect dynamic code" }
-                            downloaded.inputStream().use { it.copyTo(output) }
-                        }
-                        GodotFiles.extractEngine(apk, engineStage)
-                        // Keep old inodes alive if an already-running engine owns them.
-                        if (engine.exists()) check(engine.renameTo(File(root, "engine-retired-${UUID.randomUUID()}")))
-                        check(engineStage.renameTo(engine)) { "Cannot publish engine" }
-                    }
-                    val files = GodotFiles(context, release)
-                    if (runCatching { GodotFiles.verify(files.pck(), release.assetSha256) }.isFailure) {
-                        val pck = File(stage, "game.pck")
-                        download(context, release.assetDownloadUrl, pck, release.assetSha256,
-                            release.assetSize, "游戏 ${release.rawTagName}", progress, mirrors)
-                        validatePck(pck)
-                        replace(pck, files.pck())
-                    }
-                    validatePck(files.pck())
-                    progress.onProgress(-1, context.getString(R.string.godot_verifying))
-                    // This builds/validates the code-free asset mount and compares SOs to the pinned APK.
-                    files.prepare()
-                }
-                    progress.onProgress(100, context.getString(R.string.godot_installed_offline, release.rawTagName))
-                } finally {
-                    // Only this install's UUID staging directory, never saves or active generations.
-                    stage.deleteRecursively()
-                }
+                val lease = SlingBreakStorage.tryAcquireComponents(context)
+                    ?: throw IOException(context.getString(R.string.godot_components_busy))
+                lease.use { installWithComponentsLocked(context, release, progress, mirrors, root) }
             }
+        }
+    }
+
+    private fun installWithComponentsLocked(
+        context: Context,
+        release: UpdateReleaseInfo,
+        progress: StartupProgressCallback,
+        mirrors: ResourcePackDownloadMirrorSwitchController,
+        root: File,
+    ) {
+        val installed = SlingBreakInstallation.read(context)
+        if (installed != null && SlingBreakReleases.compare(release, installed) < 0) {
+            throw IOException("小游戏版本已变化，请重新检查更新，不能降级到旧镜像版本")
+        }
+        val stage = File(root, "stage-${UUID.randomUUID()}")
+        check(stage.mkdir())
+        try {
+            val cleanupFailures = SlingBreakInstallation.activateWhenReady(context, release) {
+                val engine = GodotFiles.engine(context)
+                val engineApk = File(engine, "engine.apk")
+                if (runCatching { GodotFiles.verifyEngine(engine) }.isFailure) {
+                    val downloaded = File(stage, "engine.download")
+                    if (runCatching { GodotFiles.verify(engineApk, SlingBreakReleases.ENGINE_SHA256) }.isSuccess) {
+                        engineApk.copyTo(downloaded)
+                    } else download(context, SlingBreakReleases.ENGINE_URL, downloaded,
+                        SlingBreakReleases.ENGINE_SHA256, 0, "引擎", progress, mirrors)
+                    val engineStage = File(stage, "engine").apply { check(mkdir()) }
+                    val apk = File(engineStage, "engine.apk")
+                    apk.outputStream().use { output ->
+                        check(apk.setReadOnly()) { "Cannot protect dynamic code" }
+                        downloaded.inputStream().use { it.copyTo(output) }
+                    }
+                    GodotFiles.extractEngine(apk, engineStage)
+                    // Keep the replaced directory until the new release is activated.
+                    // The component lease excludes running engines throughout this update.
+                    if (engine.exists()) check(engine.renameTo(File(root, "engine-retired-${UUID.randomUUID()}")))
+                    check(engineStage.renameTo(engine)) { "Cannot publish engine" }
+                }
+                val files = GodotFiles(context, release)
+                if (runCatching { GodotFiles.verify(files.pck(), release.assetSha256) }.isFailure) {
+                    val pck = File(stage, "game.pck")
+                    download(context, release.assetDownloadUrl, pck, release.assetSha256,
+                        release.assetSize, "游戏 ${release.rawTagName}", progress, mirrors)
+                    validatePck(pck)
+                    replace(pck, files.pck())
+                }
+                validatePck(files.pck())
+                progress.onProgress(-1, context.getString(R.string.godot_verifying))
+                // This builds/validates the code-free asset mount and compares SOs to the pinned APK.
+                files.prepare()
+            }
+            if (cleanupFailures.isNotEmpty()) {
+                Log.w("SlingBreakInstall", "Could not remove old components: ${cleanupFailures.joinToString { it.name }}")
+            }
+            progress.onProgress(100, context.getString(R.string.godot_installed_offline, release.rawTagName))
+        } finally {
+            // Only this install's UUID staging directory, never user saves.
+            stage.deleteRecursively()
         }
     }
 
