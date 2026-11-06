@@ -35,8 +35,6 @@ JRE8_URL = (
     "https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/download/"
     "pojav-jre8/jre8-pojav.zip"
 )
-SLING_BREAK_DEFAULT_REPOSITORY = "https://github.com/Apricityx/slingbreak"
-SLING_BREAK_DEFAULT_REF = "master"
 NETWORK_TIMEOUT = 15
 
 
@@ -514,115 +512,6 @@ def check_debug_signing() -> Check:
     return Check("Debug signing", OK, "build-deps/debug-signature", findings)
 
 
-def _sling_break_source_url(values: dict[str, str]) -> str:
-    explicit = values.get("slingBreak.sourceUrl", "").strip()
-    if explicit:
-        return explicit
-    repository = (
-        values.get("slingBreak.repository", "").strip() or SLING_BREAK_DEFAULT_REPOSITORY
-    ).rstrip("/")
-    ref = values.get("slingBreak.ref", "").strip() or SLING_BREAK_DEFAULT_REF
-    if re.fullmatch(r"[0-9a-fA-F]{7,40}", ref) or ref.startswith("refs/"):
-        return f"{repository}/archive/{ref}.tar.gz"
-    return f"{repository}/archive/refs/heads/{ref}.tar.gz"
-
-
-def _sling_break_bundle_dir(path: Path) -> Path | None:
-    # Keep in sync with SlingBreakBundle in gradle/build-logic: current upstream
-    # puts the standalone web runtime in game/, while older refs were flat.
-    for root in (path / "game", path):
-        if (root / "index.html").is_file() and any(
-            (root / script).is_file()
-            for script in ("src/ui/launcher-mode.js", "launcher-mode.js")
-        ):
-            return root
-    return None
-
-
-def _sling_break_cache_dir() -> Path:
-    # Matches the FetchSlingBreakSourceTask output directory.
-    return repo_root() / "app" / "build" / "generated" / "slingbreak-source"
-
-
-@dataclass
-class SlingBreakState:
-    mode: str  # "local" | "cached" | "remote"
-    detail: str
-    findings: list[Finding]
-    url: str
-    valid: bool = True
-
-
-def _sling_break_state() -> SlingBreakState:
-    """Mirror the build's resolution order exactly: an explicit slingBreak.sourceDir wins,
-    otherwise the bundle is fetched from the resolved remote archive and a previous
-    extraction is reused only when the network fetch fails."""
-    values = _parse_gradle_properties()
-    override = values.get("slingBreak.sourceDir", "").strip()
-    url = _sling_break_source_url(values)
-
-    if override:
-        path = (repo_root() / override).resolve()
-        bundle = _sling_break_bundle_dir(path)
-        if bundle is not None:
-            return SlingBreakState(
-                "local",
-                f"local override ({bundle})",
-                [Finding("slingBreak.sourceDir is set; no network fetch for Sling Break.")],
-                url,
-            )
-        return SlingBreakState(
-            "local",
-            f"local override is missing the bundle ({path})",
-            [
-                Finding(
-                    "slingBreak.sourceDir needs index.html and src/ui/launcher-mode.js "
-                    "(or legacy launcher-mode.js) in game/ or the source root.",
-                    "Fix the path or unset slingBreak.sourceDir to fetch from the remote archive.",
-                )
-            ],
-            url,
-            valid=False,
-        )
-
-    cache = _sling_break_cache_dir()
-    if _sling_break_bundle_dir(cache) is not None:
-        return SlingBreakState(
-            "cached",
-            f"cached extraction ({cache})",
-            [
-                Finding(
-                    "A previous extraction is cached; if the upstream is unreachable the build "
-                    "reuses it instead of failing.",
-                )
-            ],
-            url,
-        )
-
-    return SlingBreakState(
-        "remote",
-        f"fetched from the remote archive at build time ({url})",
-        [
-            Finding(
-                "This is a hard build input: the build fails if the archive cannot be downloaded.",
-                "Reachability is verified by the Network check; set slingBreak.sourceDir for offline builds.",
-            )
-        ],
-        url,
-    )
-
-
-def check_slingbreak() -> Check:
-    state = _sling_break_state()
-    return Check(
-        "Sling Break source",
-        OK if state.valid else FAIL,
-        state.detail,
-        state.findings,
-    )
-
-
-
 def check_gradle_wrapper() -> Check:
     root = repo_root()
     unix = root / "gradlew"
@@ -695,8 +584,7 @@ class NetworkEndpoint:
     # A blocking endpoint is one the build cannot proceed without when it is unreachable.
     blocking: bool = False
     # Archive downloads are verified by transferring a slice of the body, because a HEAD
-    # round-trip can succeed while the actual transfer stalls (which is how the Sling Break
-    # fetch times out even though a header probe passes).
+    # round-trip can succeed while the actual transfer stalls.
     verify_body: bool = False
 
 
@@ -707,7 +595,6 @@ def _network_endpoints() -> list[NetworkEndpoint]:
     values = _parse_gradle_properties()
     bundle_url = values.get("buildDeps.bundleUrl", "").strip() or DEFAULT_BUNDLE_URL
     build_deps_incomplete = bool(_missing_build_deps())
-    sling_break = _sling_break_state()
 
     endpoints = [
         NetworkEndpoint("Maven Central", "https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.pom"),
@@ -717,16 +604,6 @@ def _network_endpoints() -> list[NetworkEndpoint]:
         NetworkEndpoint("Build dependency bundle", bundle_url, blocking=build_deps_incomplete, verify_body=True),
         NetworkEndpoint("jre8-pojav.zip", JRE8_URL),
     ]
-    # A local slingBreak.sourceDir removes Sling Break from the build's network inputs.
-    if sling_break.mode != "local":
-        endpoints.append(
-            NetworkEndpoint(
-                "Sling Break source",
-                sling_break.url,
-                blocking=sling_break.mode == "remote",
-                verify_body=True,
-            )
-        )
     return endpoints
 
 
@@ -792,7 +669,7 @@ def check_network() -> Check:
             Finding(
                 "Unreachable build-blocking inputs: " + ", ".join(blocked) + ".",
                 "The build will fail until they are reachable; place the files locally "
-                "(build-deps/, slingBreak.sourceDir) or restore access/mirror.",
+                "(build-deps/) or restore access/mirror.",
             )
         )
         return Check("Network", FAIL, f"{detail}; {', '.join(blocked)} blocked", findings)
@@ -822,7 +699,6 @@ def collect_checks(include_network: bool = True) -> list[Check]:
         build_deps_check,
         check_release_signing(),
         check_debug_signing(),
-        check_slingbreak(),
         check_gradle_wrapper(),
         check_gradle_toolchains(),
         check_adb(sdk),

@@ -41,25 +41,6 @@ class StsAndroidAppBuildPlugin : Plugin<Project> {
 
 private const val RESOURCE_PACK_ABI = "arm64-v8a"
 
-private const val DEFAULT_SLING_BREAK_REPOSITORY = "https://github.com/Apricityx/slingbreak"
-private const val DEFAULT_SLING_BREAK_REF = "master"
-
-// Sling Break is a remote build input: the bundle is re-fetched from its upstream archive on
-// every packaging build. `slingBreak.sourceUrl` (or `slingBreak.repository`/`slingBreak.ref`)
-// pins the source, and `slingBreak.sourceDir` opts into a local checkout for offline builds.
-private fun Project.slingBreakSourceUrl(): String {
-    readGradleProperty("slingBreak.sourceUrl").takeIf { it.isNotBlank() }?.let { return it }
-    val repository = readGradleProperty("slingBreak.repository", DEFAULT_SLING_BREAK_REPOSITORY)
-        .trimEnd('/')
-    val ref = readGradleProperty("slingBreak.ref", DEFAULT_SLING_BREAK_REF)
-    val archiveRef = when {
-        ref.matches(Regex("[0-9a-fA-F]{7,40}")) -> ref
-        ref.startsWith("refs/") -> ref
-        else -> "refs/heads/$ref"
-    }
-    return "$repository/archive/$archiveRef.tar.gz"
-}
-
 private val externalizedModAssetPatterns = listOf(
     "components/mods/ModTheSpire.jar",
     "components/mods/BaseMod.jar",
@@ -327,45 +308,12 @@ private fun Project.registerPackagedRuntimeAssetTasks(
 ): PackagedRuntimeAssetTasks {
     val sourceAssetsDir = layout.projectDirectory.dir("src/main/assets")
     val resourcePackSourceDir = layout.projectDirectory.dir("src/main/resource-pack")
-    val localSlingBreakOverride = providers.gradleProperty("slingBreak.sourceDir")
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-
-    // Remote fetch is the default; a local checkout is only used when explicitly requested.
-    val fetchSlingBreakSource = tasks.register<FetchSlingBreakSourceTask>("fetchSlingBreakSource") {
-        sourceUrl.set(project.slingBreakSourceUrl())
-        outputDirectory.set(layout.buildDirectory.dir("generated/slingbreak-source"))
-        stateFile.set(layout.buildDirectory.file("generated/slingbreak-source.state"))
-    }
-    val slingBreakSourceDir: Provider<Directory> = if (localSlingBreakOverride.isPresent) {
-        layout.dir(providers.provider { rootProject.file(localSlingBreakOverride.get()) })
-    } else {
-        fetchSlingBreakSource.flatMap { it.outputDirectory }
-    }
-    val slingBreakBundleDir = slingBreakSourceDir.map { SlingBreakBundle.require(it.asFile) }
 
     val prepareCommonAssets = tasks.register<Sync>("prepareCommonRuntimeAssets") {
         dependsOn(generatedAssetTasks)
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
         from(sourceAssetsDir) {
             exclude(externalizedAssetPatterns + obsoleteCommonAssetPatterns + "slingbreak/**")
-        }
-        from(slingBreakBundleDir) {
-            into("slingbreak")
-            exclude(".git/**", "**/*.test.cjs", "**/*.txt", "libghostty")
-            filesMatching(listOf("**/audio-native.js", "audio-native.js")) {
-                // Upstream's v2 default names its own AudioTrack host. Our v2 host
-                // retains AAudio; diagnostics must report the negotiated backend.
-                filter { line: String ->
-                    line.replace("fullPlayback?'native-audiotrack':'native-aaudio'",
-                        "fullPlayback?(capabilities.backend||'native-audiotrack'):'native-aaudio'")
-                        // Keep the existing safe Web Audio fallback even with a v2 host.
-                        .replace("return {fullPlayback,musicPlayback,", "return {get fullPlayback(){return fullPlayback&&state!=='failed';},get musicPlayback(){return musicPlayback&&state!=='failed';},")
-                        .replace("return !!fullPlayback;", "return !!fullPlayback&&state!=='failed';")
-                        .replace("if(state==='idle'||state==='closed')return;",
-                            "if(state==='idle'||state==='closed'||state==='failed')return;")
-                }
-            }
         }
         from(generatedRuntimeAssetsDir) {
             exclude(externalizedAssetPatterns + obsoleteCommonAssetPatterns)

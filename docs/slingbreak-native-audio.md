@@ -64,25 +64,15 @@ session is not retried until the page is reloaded.
   actual Gecko transport latency still needs device measurement.
 - Host pause/resume, reset and destruction also govern Gecko native audio.
   Channel closure revokes the capability and releases the stream.
-- The build-time adapter in `StsAndroidAppBuildPlugin.kt` preserves the host's
-  reported AAudio backend and relinquishes v2 ownership after native failure,
-  restoring Web Audio instead of leaving output silently native-only. Changes
-  are applied when packaging, not to generated/downloaded files.
+- The former build-time web audio adapter has been removed along with web-runtime
+  packaging. The host-side code described here remains for the legacy WebView path.
 
-## Packaging local changes
+## Packaging status
 
-The app now fetches web sources by default. To include uncommitted sibling web
-changes, add this argument to the usual build command:
-
-```text
--PslingBreak.sourceDir=/home/apricityx/workspaces/slingbreak
-```
-
-The override accepts the repository root or its `game/` directory. Current upstream
-keeps `audio-recipes.js`, `audio-native.js`, and `audio.js` under `game/src/audio/`,
-with their script entries in `game/index.html`. The build packages only the web
-runtime into `assets/slingbreak/`, preserving relative paths. Older flat source
-layouts remain supported. No manual asset copy is needed.
+Builds no longer fetch or package the SlingBreak web runtime, including from a local
+checkout. The `slingBreak.sourceDir` override is no longer supported. The diagnostics
+below describe the legacy web integration, not a bundled runtime in current APKs.
+The Godot engine/PCK download path is independent and unchanged.
 
 ## Diagnostics and verification status
 
