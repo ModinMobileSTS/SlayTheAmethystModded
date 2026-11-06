@@ -23,6 +23,7 @@ object GamePresenceReporter {
     private const val MIN_SEND_INTERVAL_MS = 5_000L
 
     private val installed = AtomicBoolean(false)
+    private var mainProcessReporter: MainProcessPresenceReporter? = null
 
     @JvmStatic
     fun install(application: Application) {
@@ -31,8 +32,13 @@ object GamePresenceReporter {
             return
         }
         val reporter = MainProcessPresenceReporter(appContext)
+        mainProcessReporter = reporter
         application.registerActivityLifecycleCallbacks(reporter)
         reporter.start()
+    }
+
+    fun setAiEditorVisible(visible: Boolean) {
+        mainProcessReporter?.setAiEditorVisible(visible)
     }
 
     private class MainProcessPresenceReporter(
@@ -55,6 +61,7 @@ object GamePresenceReporter {
         private var webSocketMetadataSent = false
         private var lastMetadataSignature = ""
         private var lastSendAtMs = 0L
+        private var aiEditorVisible = false
 
         private data class WebSocketHeartbeatFrame(
             val text: String,
@@ -81,6 +88,16 @@ object GamePresenceReporter {
                 sendHeartbeat(force = true)
             }
             scheduleNext()
+        }
+
+        fun setAiEditorVisible(visible: Boolean) {
+            mainHandler.post {
+                if (aiEditorVisible != visible) {
+                    aiEditorVisible = visible
+                    // Navigation changes do not wait for the next periodic heartbeat.
+                    sendHeartbeat(force = true)
+                }
+            }
         }
 
         private val cloudControlListener = {
@@ -118,6 +135,7 @@ object GamePresenceReporter {
                 return
             }
             val snapshot = GamePresenceStateMarker.readCurrentState(context)
+                .forReporting(aiEditorVisible)
             lastSendAtMs = now
             if (isWebSocketUrl(heartbeatEndpoint)) {
                 if (!webSocketReady) {

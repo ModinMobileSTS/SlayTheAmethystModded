@@ -66,6 +66,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.material3.LinearProgressIndicator
 import io.stamethyst.ui.LauncherAlertDialog as AlertDialog
 import androidx.compose.material3.Button
@@ -100,6 +101,7 @@ import io.stamethyst.navigation.LocalNavigator
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.rememberAppNavigator
 import io.stamethyst.backend.feedback.FeedbackInboxCoordinator
+import io.stamethyst.backend.presence.GamePresenceReporter
 import io.stamethyst.ui.compatibility.LauncherCompatibilityScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackScreen
 import io.stamethyst.ui.feedback.LauncherFeedbackConversationScreen
@@ -252,6 +254,12 @@ fun LauncherContent(
     val workshopSubscriptionsViewModel: WorkshopViewModel = viewModel(key = "workshop-subscriptions")
     val currentRoute = navigator.backStack.lastOrNull() as? Route
     val rootRoute = navigator.backStack.firstOrNull() as? Route
+    LifecycleResumeEffect(currentRoute) {
+        GamePresenceReporter.setAiEditorVisible(currentRoute is Route.AiModEditor)
+        onPauseOrDispose {
+            GamePresenceReporter.setAiEditorVisible(false)
+        }
+    }
     var steamCloudMainRefreshTrackerState by remember {
         mutableStateOf(
             SteamCloudMainRefreshTrackerState(

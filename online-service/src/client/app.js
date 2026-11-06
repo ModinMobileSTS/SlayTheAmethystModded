@@ -228,6 +228,10 @@
     return normalized.slice(0, 14) + '...' + normalized.slice(-8);
   }
 
+  function formatSessionState(value) {
+    return value === 'ai_editor' ? 'AI editor' : (value || 'unknown');
+  }
+
   function getTotalOnlineUsers(snapshot) {
     const explicitValue = Number(snapshot && snapshot.totalOnlineUsers);
     if (Number.isFinite(explicitValue)) {
@@ -1207,6 +1211,7 @@
         formatAge,
         formatDateTime,
         formatShortDateTime,
+        formatSessionState,
         maskIdentifier
       };
     },
@@ -1441,7 +1446,7 @@
                       {{ tableItem(item).idType || 'unknown' }}
                     </template>
                     <template #item.state="{ item }">
-                      <v-chip color="primary" variant="tonal" size="small">{{ tableItem(item).state || 'unknown' }}</v-chip>
+                      <v-chip :color="tableItem(item).state === 'ai_editor' ? 'info' : 'primary'" variant="tonal" size="small">{{ formatSessionState(tableItem(item).state) }}</v-chip>
                     </template>
                     <template #item.appVersion="{ item }">
                       {{ tableItem(item).appVersion || '-' }}

@@ -77,4 +77,9 @@ object GamePresenceStateMarker {
 data class GamePresenceSnapshot(
     val state: GamePresenceState,
     val launchMode: String
-)
+) {
+    // Editor activity is a reporting-only overlay. Persisting it in the game
+    // marker would interfere with Steam presence and lose a background game's state.
+    internal fun forReporting(aiEditorVisible: Boolean): GamePresenceSnapshot =
+        if (aiEditorVisible) copy(state = GamePresenceState.AiEditor) else this
+}

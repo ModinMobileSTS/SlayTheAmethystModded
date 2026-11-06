@@ -4,5 +4,6 @@ enum class GamePresenceState(
     val wireValue: String
 ) {
     Launcher("launcher"),
-    Game("game")
+    Game("game"),
+    AiEditor("ai_editor")
 }

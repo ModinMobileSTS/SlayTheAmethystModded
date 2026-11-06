@@ -40,6 +40,20 @@ server push for sessions and stats, so it no longer polls the HTTP endpoints.
 - Protected EasyTier runtime stop: `POST /api/easytier/runtime/stop?token=...`
 - Protected EasyTier runtime restart: `POST /api/easytier/runtime/restart?token=...`
 
+### Player activity states
+
+The launcher reports `state=launcher`, `state=game`, or `state=ai_editor` through
+the existing full and minimal presence heartbeats. The panel shows `ai_editor`
+as **AI editor** in the session status column; it is included in online totals
+and exposed as `byState.ai_editor` in summaries and hourly samples.
+
+AI editor presence follows the launcher's foreground editor page, including
+reading and editing between AI requests. Entering/resuming or leaving/pausing
+that page triggers a heartbeat without waiting for the periodic timer. Leaving
+restores the current launcher/game state. Background AI jobs alone do not mark
+the player as editing. This reporting-only overlay never replaces the shared
+game-process marker used by Steam presence. No database migration is required.
+
 ## Run
 
 ### Presence database performance

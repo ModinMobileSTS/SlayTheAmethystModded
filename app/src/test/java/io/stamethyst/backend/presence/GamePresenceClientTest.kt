@@ -40,6 +40,32 @@ class GamePresenceClientTest {
     }
 
     @Test
+    fun buildHeartbeatPayload_includesAiEditorState() {
+        val payload = GamePresenceClient.buildHeartbeatPayload(
+            identity = TestIdentity,
+            launchMode = "launcher",
+            state = GamePresenceState.AiEditor,
+            playerName = "Apricityx"
+        )
+
+        assertEquals("ai_editor", payload.getString("state"))
+        assertEquals("Apricityx", payload.getString("player_name"))
+        assertEquals("android:test-device", payload.getString("client_id"))
+    }
+
+    @Test
+    fun buildMinimalHeartbeatPayload_includesAiEditorState() {
+        val payload = GamePresenceClient.buildMinimalHeartbeatPayload(
+            identity = TestIdentity,
+            state = GamePresenceState.AiEditor
+        )
+
+        assertEquals("ai_editor", payload.getString("state"))
+        assertEquals("android:test-device", payload.getString("client_id"))
+        assertTrue(!payload.has("player_name"))
+    }
+
+    @Test
     fun buildMinimalHeartbeatPayload_omitsStableMetadata() {
         val payload = GamePresenceClient.buildMinimalHeartbeatPayload(
             identity = TestIdentity,
