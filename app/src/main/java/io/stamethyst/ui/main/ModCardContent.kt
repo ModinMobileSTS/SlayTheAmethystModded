@@ -241,16 +241,7 @@ internal fun formatModFileSize(bytes: Long): String? {
 
 @Composable
 internal fun ModCardLeadingImage(mod: ModItemUi, size: androidx.compose.ui.unit.Dp = 48.dp) {
-    val context = LocalContext.current
-    val publishedFileId = mod.workshop?.publishedFileId
-    val imagePath = mod.workshop?.localPreviewImagePath.orEmpty()
-    val bitmapState = produceState<Bitmap?>(initialValue = null, key1 = publishedFileId, key2 = imagePath) {
-        value = withContext(Dispatchers.IO) {
-            publishedFileId?.let { WorkshopPreviewCacheStore.decodeCached(context.applicationContext, it) }
-                ?: imagePath.takeIf { it.isNotBlank() }?.let(ModCardPreviewImageLoader::load)
-        }
-    }
-    val bitmap = bitmapState.value
+    val bitmap = rememberModPreviewBitmap(mod).value
     if (bitmap != null) {
         Image(
             bitmap = bitmap.asImageBitmap(),
@@ -267,6 +258,20 @@ internal fun ModCardLeadingImage(mod: ModItemUi, size: androidx.compose.ui.unit.
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(size)
         )
+    }
+}
+
+/** Shared image resolution keeps card thumbnails and the details backdrop in sync. */
+@Composable
+internal fun rememberModPreviewBitmap(mod: ModItemUi): androidx.compose.runtime.State<Bitmap?> {
+    val context = LocalContext.current
+    val publishedFileId = mod.workshop?.publishedFileId
+    val imagePath = mod.workshop?.localPreviewImagePath.orEmpty()
+    return produceState<Bitmap?>(initialValue = null, key1 = publishedFileId, key2 = imagePath) {
+        value = withContext(Dispatchers.IO) {
+            publishedFileId?.let { WorkshopPreviewCacheStore.decodeCached(context.applicationContext, it) }
+                ?: imagePath.takeIf { it.isNotBlank() }?.let(ModCardPreviewImageLoader::load)
+        }
     }
 }
 

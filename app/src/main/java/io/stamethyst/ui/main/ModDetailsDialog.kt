@@ -14,8 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconToggleButton
@@ -39,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalConfiguration
@@ -112,15 +111,14 @@ internal fun ModDetailsDialog(
     val title = stringResource(R.string.mod_details_title)
     val maxHeight = (LocalConfiguration.current.screenHeightDp.dp - 48.dp).coerceIn(180.dp, 760.dp)
     LauncherDialog(onDismissRequest = onDismiss) {
-        Card(
+        ModDetailsSurface(
+            mod = mod,
             modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).testTag("mod_details_dialog")
                 .semantics { paneTitle = title },
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         ) {
             SecondaryTabRow(
                 selectedTabIndex = selectedSection.ordinal,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.fillMaxWidth().testTag("mod_details_section_tabs"),
             ) {

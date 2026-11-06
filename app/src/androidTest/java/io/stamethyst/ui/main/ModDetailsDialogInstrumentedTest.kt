@@ -1,5 +1,6 @@
 package io.stamethyst.ui.main
 
+import android.graphics.Bitmap
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,7 @@ import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.model.WorkshopModUi
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -73,6 +75,37 @@ class ModDetailsDialogInstrumentedTest {
         compose.onNode(hasText(mod.description) and hasAnyAncestor(hasTestTag("mod_details_dialog"))).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.mod_details_badge_suggestion)).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.mod_details_badge_priority, 10)).assertIsDisplayed()
+    }
+
+    @Test fun detailsWithoutArtworkKeepsPlainBackground() {
+        setCard()
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_details_dialog").assertIsDisplayed()
+        compose.onNodeWithTag("mod_details_frosted_background").assertDoesNotExist()
+    }
+
+    @Test fun detailsUsesCardArtworkAsFrostedBackground() {
+        val previewFile = File.createTempFile("mod-details-preview-", ".png", context.cacheDir)
+        try {
+            val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(android.graphics.Color.MAGENTA)
+            previewFile.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+            setCard(item = mod.copy(workshop = WorkshopModUi(
+                appId = 646570u, publishedFileId = ULong.MAX_VALUE,
+                state = WorkshopModState.ImportedPatched,
+                localPreviewImagePath = previewFile.absolutePath,
+            )))
+            compose.onNodeWithText(mod.name).performClick()
+            compose.waitUntil(timeoutMillis = 5_000) {
+                compose.onAllNodes(hasTestTag("mod_details_frosted_background"))
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithTag("mod_details_frosted_background").assertIsDisplayed()
+            compose.onNodeWithTag("mod_details_tab_info").assertIsDisplayed().assertIsSelected()
+        } finally {
+            previewFile.delete()
+        }
     }
 
     @Test fun actionsShortcutScrollsToOriginalListAndMoveOpensFolderPicker() {
