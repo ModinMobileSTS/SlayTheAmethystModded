@@ -112,6 +112,27 @@ adb shell am start -n io.stamethyst/io.stamethyst.godot.GodotPrototypeSetupActiv
 
 ## 真机操作与通过标准
 
+### 全屏宿主与游戏内启动控件
+
+`GodotMinigameActivity` 的引擎容器始终占满窗口，不再用原生纵向布局为顶部状态文字、底部返回按钮保留空间，也不再使用 `fitsSystemWindows` 缩小游戏区域。系统状态栏与导航栏采用沉浸式隐藏，窗口恢复焦点、恢复前台及配置变化时重新应用；Android 9+ 允许内容延伸至屏幕缺口区域。窗口仍保留 translucent 属性，避免改变下层主游戏准备所需的生命周期。
+
+启动校验和错误提示使用不改变引擎尺寸的浮层。带有原生桥接的 PCK 在报告 `launcher_ui_ready` 后由游戏自己的进度和“启动游戏”按钮接管，独立游玩在报告 `ready` 后隐藏原生浮层。旧版没有该握手的 PCK 保留浮层返回入口；返回键也始终走保存确认流程。
+
+主游戏通过 Binder 发布的进度、文案和 ready 状态会先缓存在 Activity，在下载组件校验及引擎创建完成后重新发送给 `PrototypeHost.state`，避免初始化之前收到的最终就绪状态丢失。游戏通过 `get_progress` / `get_message` / `is_ready` 读取真实状态；百分比不作为就绪判据。按钮的 `enter_requested` 仅在主游戏 ready 时受理，经 `leave` → GDScript 保存 → `saved` 才切回主游戏。
+
+额外验收：在带手势导航/屏幕缺口的设备检查上下无原生白条，Home 或系统弹窗返回后仍全屏；检查主游戏先于小游戏校验完成时，内置按钮仍能变为可点击；确认点击后保存完成再返回。本节描述代码行为，不代表已完成上述真机验收。
+
+#### 与上游 LauncherDock 的对接约定
+
+- `BootOverlayController.updateProgress` 发布实际启动进度，`markManualEnterGameReady` 独立发布首帧门禁就绪；99% 可以 ready，100% 本身不能代替 ready。
+- `GodotMinigameBoot` 通过会话 Binder 发送 `progress` / `message` / `ready`。`GodotLauncherState` 缓存它们，在引擎创建及 `launcher_ui_ready` 握手时补发；Binder 死亡后拒绝迟到的进度，防止重新开放进入按钮。
+- 下载引擎的 `PrototypeHost` 保持原有 `SlingPrototype` API 不变。上游 `godot/src/core/launcher.gd` 轮询状态，`godot/src/ui/launcher_dock.gd` 显示进度与按钮，仅启动器模式挂载。此次对接无需修改引擎容器、固定 hash 或上游 PCK 协议。
+- 只有已完成 UI 握手、主游戏 ready 且引擎未失败时，才受理 Godot 的 `enter_requested`。Android 返回键和原生回退入口仍允许提前离开，不将提前返回伪装为就绪。
+- 进入顺序固定为 `enter_requested` → Android `leave()` → Godot `should_leave()` → 保存 → `saved` → Binder 返回主游戏；重复保存确认/进程死亡通知只触发一次主游戏进入回调。
+- Godot `save_failed` 时保持小游戏，不进入主游戏；`save_retry_requested` 只在保存失败后受理，并重置原生保存超时。未完成 UI 握手的旧 PCK、独立模式或主游戏进程死亡时，显示原生恢复控件，避免丢失退出入口。
+
+本地回归：启动器运行 `GodotLauncherStateTest` 与 `GodotFilesTest`；上游运行 `godot --headless --path godot --script res://tests/launcher_test.gd`，覆盖真实 Godot Controls 的进度/ready/点击/保存失败重试及独立模式。Headless 测试不替代 Android 真机或 GUI 触控验收。
+
 应用内入口：**设置 → 开发者设置 → 实验功能 → Godot 双包原型测试**（仅 debug 显示）。也可以使用上面的 ADB 命令直接打开。
 
 ### 原型 1：独立原生小游戏

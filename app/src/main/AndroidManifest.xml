@@ -47,6 +47,19 @@
             android:name="com.android.app.gamemode.battery.enabled"
             android:value="true" />
 
+        <!-- Keep the launch window portrait for Godot; the inherited session switches to
+             landscape only after saved/entry, or when recovering from a minigame failure. -->
+        <activity
+            android:name="io.stamethyst.GodotBootGameActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"
+            android:exported="false"
+            android:enableOnBackInvokedCallback="true"
+            android:hardwareAccelerated="true"
+            android:process=":game"
+            android:resizeableActivity="true"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.SlayTheAmethyst.Game.GodotBoot" />
+
         <activity
             android:name="io.stamethyst.StsGameActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize"

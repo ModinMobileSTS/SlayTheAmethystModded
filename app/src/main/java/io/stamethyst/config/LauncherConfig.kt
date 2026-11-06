@@ -554,6 +554,11 @@ object LauncherConfig {
             PREF_KEY_BOOT_OVERLAY_STYLE,
             DEFAULT_BOOT_OVERLAY_STYLE.persistedValue
         )
+        // The retired WebView minigame must not opt players into the Godot replacement.
+        if (stored == "sling_break") {
+            saveBootOverlayStyle(context, DEFAULT_BOOT_OVERLAY_STYLE)
+            return DEFAULT_BOOT_OVERLAY_STYLE
+        }
         return BootOverlayStyle.fromPersistedValue(stored) ?: DEFAULT_BOOT_OVERLAY_STYLE
     }
 

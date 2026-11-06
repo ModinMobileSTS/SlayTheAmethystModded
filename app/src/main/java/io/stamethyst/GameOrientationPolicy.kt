@@ -3,7 +3,7 @@ package io.stamethyst
 import android.app.Activity
 import android.content.pm.ActivityInfo
 
-/** Keeps the game task landscape without overriding the geometry of vendor freeform windows. */
+/** Keeps gameplay landscape, with a portrait Godot boot window and freeform-host ownership. */
 internal object GameOrientationPolicy {
     private fun applyRequestedOrientation(activity: Activity, requestedOrientation: Int) {
         if (activity.requestedOrientation != requestedOrientation) {
@@ -11,16 +11,31 @@ internal object GameOrientationPolicy {
         }
     }
 
-    internal fun resolveRequestedOrientation(isInMultiWindowMode: Boolean): Int {
+    internal fun resolveRequestedOrientation(
+        isInMultiWindowMode: Boolean,
+        preparingGodotBoot: Boolean = false
+    ): Int {
         return if (isInMultiWindowMode) {
             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        } else if (preparingGodotBoot) {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else {
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
     }
 
-    fun apply(activity: Activity, isInMultiWindowMode: Boolean) {
-        applyRequestedOrientation(activity, resolveRequestedOrientation(isInMultiWindowMode))
+    fun apply(activity: Activity, isInMultiWindowMode: Boolean, preparingGodotBoot: Boolean = false) {
+        applyRequestedOrientation(activity, resolveRequestedOrientation(isInMultiWindowMode, preparingGodotBoot))
+    }
+
+    internal fun shouldWaitForLandscape(
+        width: Int,
+        height: Int,
+        isInMultiWindowMode: Boolean,
+        preparingGodotBoot: Boolean
+    ): Boolean {
+        // Godot boots in portrait while the fixed logical game canvas is already landscape.
+        return width < height && !isInMultiWindowMode && !preparingGodotBoot
     }
 
     /**
@@ -29,11 +44,6 @@ internal object GameOrientationPolicy {
      * from that transient window (see RenderSurfaceManager.resolveVirtualResolutionForViewport).
      */
     fun applyBootOverlayOrientation(activity: Activity, isInMultiWindowMode: Boolean) {
-        val requestedOrientation = if (isInMultiWindowMode) {
-            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-        }
-        applyRequestedOrientation(activity, requestedOrientation)
+        apply(activity, isInMultiWindowMode, preparingGodotBoot = true)
     }
 }

@@ -8,7 +8,7 @@ enum class BootOverlayStyle(
     LEGACY("legacy", supportsLoadingAnimation = true),
     CLASSIC_LOG("classic_log"),
     MATERIAL_LOG("material_log"),
-    SLING_BREAK("sling_break");
+    GODOT_SLING_BREAK("godot_sling_break");
 
     companion object {
         fun fromPersistedValue(value: String?): BootOverlayStyle? {

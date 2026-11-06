@@ -258,7 +258,7 @@ private fun WhatsNewFeature(
         if (entry.preview == WhatsNewPreview.SLING_BREAK_BOOT_OVERLAY) {
             Spacer(Modifier.height(16.dp))
             BootOverlayStyleAnimatedPreview(
-                style = BootOverlayStyle.SLING_BREAK,
+                style = BootOverlayStyle.GODOT_SLING_BREAK,
                 imageConfig = BootOverlayImageConfig(),
                 loadingAnimation = LauncherConfig.DEFAULT_BOOT_OVERLAY_ANIMATION,
                 animated = false,

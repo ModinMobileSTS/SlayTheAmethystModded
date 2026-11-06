@@ -287,6 +287,7 @@ class BootOverlayController(
         bootOverlay = activity.findViewById(R.id.bootOverlay)
         godotSession = GodotBootSession.create(activity, Runnable { dismiss() })
         // No WebView fallback: missing/corrupt dependencies leave the normal native loading UI.
+        if (godotSession == null) activity.completeGodotBootPreparation()
         if (bootOverlay == null) {
             activity.setBootOverlayKeepScreenOn(false)
             return
@@ -364,6 +365,9 @@ class BootOverlayController(
         } else {
             updateProgress(1, text(R.string.boot_overlay_status_starting_pipeline))
         }
+        // The session is assigned and fallback UI/state are initialized before start() can fail
+        // synchronously. Open Godot inside onCreate, not from decor.post after a loading frame.
+        godotSession?.start()
     }
 
     fun onDestroy() {
@@ -469,6 +473,7 @@ class BootOverlayController(
         if (bootOverlayDismissed || bootOverlay == null) return
 
         bootOverlayDismissed = true
+        activity.completeGodotBootPreparation()
         godotSession?.close()
         godotSession = null
         stopJvmLogPolling()
@@ -810,7 +815,7 @@ private fun BootOverlayPanel(
             manualDismissBootOverlay = manualDismissBootOverlay,
             onDismissClick = onDismissClick
         )
-        BootOverlayStyle.SLING_BREAK -> ModernBootOverlayPanel(
+        BootOverlayStyle.GODOT_SLING_BREAK -> ModernBootOverlayPanel(
             uiState = uiState,
             animatedProgress = animatedProgress,
             imageConfig = imageConfig,

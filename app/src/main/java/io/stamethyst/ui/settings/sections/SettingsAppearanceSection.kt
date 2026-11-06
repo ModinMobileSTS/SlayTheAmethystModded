@@ -225,7 +225,7 @@ internal fun SettingsAppearanceSection(
                     imageConfig = uiState.bootOverlayImageConfig,
                     loadingAnimation = uiState.bootOverlayAnimation,
                     onSelect = { style ->
-                        if (style == BootOverlayStyle.SLING_BREAK &&
+                        if (style == BootOverlayStyle.GODOT_SLING_BREAK &&
                             io.stamethyst.backend.minigame.SlingBreakInstallation.read(view.context) == null) {
                             showGodotDownloadConfirmation = true
                         } else actions.onBootOverlayStyleChanged(style)
@@ -331,7 +331,7 @@ internal fun bootOverlayStyleDisplayName(style: BootOverlayStyle): String {
             BootOverlayStyle.LEGACY -> R.string.settings_boot_overlay_style_legacy
             BootOverlayStyle.CLASSIC_LOG -> R.string.settings_boot_overlay_style_classic_log
             BootOverlayStyle.MATERIAL_LOG -> R.string.settings_boot_overlay_style_material_log
-            BootOverlayStyle.SLING_BREAK -> R.string.settings_boot_overlay_style_sling_break
+            BootOverlayStyle.GODOT_SLING_BREAK -> R.string.settings_boot_overlay_style_godot_sling_break
         }
     )
 }

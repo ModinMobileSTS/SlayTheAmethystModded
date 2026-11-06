@@ -17,6 +17,36 @@ import org.junit.Test
 
 class LegacyStsStorageMigrationTest {
     @Test
+    fun retiredWebMinigameSelectionIsResetAndPersisted() {
+        val preferences = InMemorySharedPreferences()
+        val context = object : ContextWrapper(Application()) {
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = preferences
+        }
+        preferences.edit().putString("boot_overlay_style", "sling_break").apply()
+
+        assertEquals(LauncherConfig.DEFAULT_BOOT_OVERLAY_STYLE, LauncherConfig.readBootOverlayStyle(context))
+        assertEquals(
+            LauncherConfig.DEFAULT_BOOT_OVERLAY_STYLE.persistedValue,
+            preferences.getString("boot_overlay_style", null)
+        )
+        assertEquals(LauncherConfig.DEFAULT_BOOT_OVERLAY_STYLE, LauncherConfig.readBootOverlayStyle(context))
+    }
+
+    @Test
+    fun currentBootOverlaySelectionsArePreserved() {
+        val preferences = InMemorySharedPreferences()
+        val context = object : ContextWrapper(Application()) {
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = preferences
+        }
+        assertEquals(LauncherConfig.DEFAULT_BOOT_OVERLAY_STYLE, LauncherConfig.readBootOverlayStyle(context))
+        for (style in BootOverlayStyle.entries) {
+            LauncherConfig.saveBootOverlayStyle(context, style)
+            assertEquals(style, LauncherConfig.readBootOverlayStyle(context))
+            assertEquals(style.persistedValue, preferences.getString("boot_overlay_style", null))
+        }
+    }
+
+    @Test
     fun migrationRewritesWorkshopAbsoluteJarPaths() {
         val root = Files.createTempDirectory("legacy-sts-storage-migration").toFile()
         val filesDir = File(root, "internal-files").apply { mkdirs() }

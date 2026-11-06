@@ -1,11 +1,13 @@
 <resources>
+    <string name="settings_boot_overlay_style_godot_sling_break">SlingBreak minigame (Godot)</string>
     <string name="godot_settings_title">Godot minigame</string>
     <string name="godot_standalone_summary">Play the downloaded Godot game independently. Dependencies are requested on first use; existing Web saves are kept separately.</string>
     <string name="godot_not_installed">Not installed</string>
     <string name="godot_check_updates">Check minigame updates</string>
     <string name="godot_install_version">Download / update minigame %1$s</string>
     <string name="godot_download_confirmation">The minigame requires a one-time download of the Godot engine and the latest game from GitHub (about 102 MiB). It needs Android 9+ and arm64, and additional storage for offline resources. The minigame will only be selected after installation succeeds. Existing Web saves will be kept, not automatically converted.</string>
-    <string name="godot_update_confirmation">Download and verify this GitHub release, then activate it for the next launch. Existing saves and the previous game files will be kept if installation fails. The engine is downloaded only if required.</string>
+    <string name="godot_update_confirmation">Download and verify this GitHub release, then activate it for the next launch. After success, old game files are removed and only the current engine is kept. Installation failures keep the previous version and all saves. Close the minigame before updating; the engine is downloaded only if required.</string>
+    <string name="godot_components_busy">The minigame is running or updating. Close it and try again.</string>
     <string name="godot_preparing">Preparing Godot minigame dependencies</string>
     <string name="godot_prepare_failed">Could not prepare minigame dependencies</string>
     <string name="godot_unsupported">The Godot minigame requires Android 9+ and an arm64 device</string>
@@ -13,4 +15,11 @@
     <string name="godot_verifying">Verifying engine, game and offline resources…</string>
     <string name="godot_installed_offline">Minigame %1$s is installed and available offline</string>
     <string name="godot_update_available">Minigame update available: %1$s</string>
+    <string name="godot_back_exit_confirmation">Press Back again within 2 seconds to save and return to the launcher</string>
+    <string name="godot_main_game_disconnected">The main game has stopped. Press Back twice to save and return to the launcher.</string>
+    <string name="godot_engine_failed_return">The minigame engine could not continue. Return to the launcher? Existing saves will be kept; the latest progress may not have been saved.</string>
+    <string name="godot_return_to_launcher">Return to launcher</string>
+    <string name="godot_save_unconfirmed">Saving has not been confirmed. You can keep waiting (or retry in the minigame), or discard this session’s unsaved progress and return. Existing saves will not be deleted.</string>
+    <string name="godot_keep_waiting">Keep waiting</string>
+    <string name="godot_discard_and_return">Discard and return</string>
 </resources>

@@ -136,7 +136,7 @@ internal class GameSessionCoordinator(
     }
     private var requestFileObserver: FileObserver? = null
     private val slingBreakBootMode =
-        LauncherConfig.readBootOverlayStyle(activity) == BootOverlayStyle.SLING_BREAK
+        LauncherConfig.readBootOverlayStyle(activity) == BootOverlayStyle.GODOT_SLING_BREAK
     private val expectedGameExitReturnPolicy = ExpectedGameExitReturnPolicy()
     private var pendingAudioDeviceRecovery = false
     private val foregroundAudioRestoreRunnables = mutableListOf<Runnable>()
@@ -540,10 +540,11 @@ internal class GameSessionCoordinator(
             return
         }
 
-        // Waiting for the requested landscape orientation only makes sense when the system still
-        // honours screenOrientation. In multi-window the requested orientation is ignored, so a
-        // portrait window would never turn landscape and this would just stall the launch.
-        if (rawWidth < rawHeight && !isActivityInMultiWindowMode()) {
+        // Freeform owns its geometry; Godot deliberately keeps the Android boot window portrait.
+        // Both use the fixed logical landscape canvas and must not stall waiting for a rotation.
+        if (GameOrientationPolicy.shouldWaitForLandscape(
+                rawWidth, rawHeight, isActivityInMultiWindowMode(), activity.isGodotBootPreparing
+            )) {
             val now = SystemClock.uptimeMillis()
             if (waitingLandscapeSinceMs < 0L) {
                 waitingLandscapeSinceMs = now
@@ -811,6 +812,19 @@ internal class GameSessionCoordinator(
                 terminateProcessAfterReturn = true
             )
         }
+    }
+
+    /** Godot has already saved (or the user explicitly discarded); never dismiss into gameplay. */
+    fun returnToLauncherFromGodot() {
+        if (destroyed || backExitRequested) return
+        activity.markGodotBootCancelled()
+        requestBackExitToLauncher()
+        // Interrupt alone cannot stop a JVM already executing native code, especially while
+        // paused at the boot gate. Terminate only this :game process after launching the app UI.
+        // Use a handler not tied to a View that CLEAR_TASK will detach during return.
+        mainHandler.postDelayed({
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, 220L)
     }
 
     private fun requestBackExitToLauncher() {

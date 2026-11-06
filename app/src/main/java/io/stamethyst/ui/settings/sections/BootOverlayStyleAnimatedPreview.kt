@@ -196,7 +196,7 @@ private fun PreviewScene(
                     PreviewLogs(progress, colors.onSurfaceVariant, Modifier.fillMaxWidth().weight(1f))
                 }
             }
-            BootOverlayStyle.SLING_BREAK -> SlingBreakPreview(progress, cycle, status)
+            BootOverlayStyle.GODOT_SLING_BREAK -> SlingBreakPreview(progress, cycle, status)
         }
     }
 }

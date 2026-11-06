@@ -46,7 +46,7 @@ import java.io.FileOutputStream
 import java.util.UUID
 import org.lwjgl.glfw.CallbackBridge
 
-class StsGameActivity : AppCompatActivity(), SensorEventListener {
+open class StsGameActivity : AppCompatActivity(), SensorEventListener {
     companion object {
         private const val GYROSCOPE_LOG_TAG = "STS-Gyroscope"
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
@@ -86,7 +86,12 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             cardObtainEffectOwnershipCompatEnabled: Boolean = true,
             debugMode: Boolean = false
         ) {
-            val intent = Intent(context, StsGameActivity::class.java)
+            val entryActivity = if (GodotBootSession.enabled(context)) {
+                GodotBootGameActivity::class.java
+            } else {
+                StsGameActivity::class.java
+            }
+            val intent = Intent(context, entryActivity)
             if (context !is android.app.Activity) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -137,6 +142,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     private val launchGuardToken: String = UUID.randomUUID().toString()
     private val launchGuardLock = Any()
     private var launchGuardAcquired = false
+    private var keepLaunchGuardUntilProcessDeath = false
     private var pendingFilePickerRequestId: String? = null
     private var gyroscopeSensorManager: SensorManager? = null
     private var gyroscopeSensor: Sensor? = null
@@ -148,12 +154,35 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     private var gyroscopeForwardFailureLogged = false
     private var gyroscopeFirstForwardLogged = false
     private var swappyFramePacingInitialized = false
+    internal var isGodotBootPreparing = false
+        private set
+
+    /** Called on both normal entry and recovery; never keep the main game in portrait. */
+    internal fun completeGodotBootPreparation() {
+        if (!isGodotBootPreparing) return
+        isGodotBootPreparing = false
+        applyGameActivityOrientation()
+    }
 
     fun setGodotMinigameVisible(visible: Boolean) {
         if (!::sessionCoordinator.isInitialized) return
         sessionCoordinator.onGodotMinigameVisibilityChanged(visible)
         renderSurfaceManager.onForegroundChanged(visible || activityForeground)
         android.util.Log.i("GodotPrototype", "main_surface_visible=$visible")
+    }
+
+    /** Separate Binder destination from entering the main game; called only after save/discard. */
+    fun returnToLauncherFromGodot() {
+        if (::sessionCoordinator.isInitialized) sessionCoordinator.returnToLauncherFromGodot()
+    }
+
+    internal fun markGodotBootCancelled() {
+        synchronized(launchGuardLock) {
+            keepLaunchGuardUntilProcessDeath = true
+        }
+        markGameSessionFinished()
+        // Keep the process launch guard until :game terminates; releasing it while a native
+        // JVM is still alive would allow a rapid second launch to race the shutdown timer.
     }
 
     private val filePickerLauncher = registerForActivityResult(
@@ -169,6 +198,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        isGodotBootPreparing = GodotBootSession.enabled(this)
         val startupBackground = StartupWindowBackground.gameColor(this)
         StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
@@ -672,8 +702,9 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun applyGameActivityOrientation() {
-        // Godot owns portrait in :minigame; the main Surface always prepares in game orientation.
-        GameOrientationPolicy.apply(this, isInMultiWindowMode)
+        // The Android window stays portrait until entry; the game's logical Surface buffer
+        // remains landscape (RenderSurfaceManager's display-derived startup canvas).
+        GameOrientationPolicy.apply(this, isInMultiWindowMode, isGodotBootPreparing)
     }
 
     fun setBootOverlayKeepScreenOn(enabled: Boolean) {
@@ -840,7 +871,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
     private fun releaseLaunchGuard() {
         synchronized(launchGuardLock) {
-            if (!launchGuardAcquired) {
+            if (!launchGuardAcquired || keepLaunchGuardUntilProcessDeath) {
                 return
             }
             GameProcessLaunchGuard.release(launchGuardToken)

@@ -810,7 +810,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy || uiState.slingBreakDependencyProgress != null || uiState.bootOverlayStyle == style) {
             return
         }
-        if (style == BootOverlayStyle.SLING_BREAK && SlingBreakInstallation.read(host) == null) {
+        if (style == BootOverlayStyle.GODOT_SLING_BREAK && SlingBreakInstallation.read(host) == null) {
             onSlingBreakEngineModeChanged(host, uiState.slingBreakEngineMode)
             return
         }
@@ -891,12 +891,12 @@ class SettingsScreenViewModel : ViewModel() {
             uiState = uiState.copy(slingBreakDependencyProgress = progress, slingBreakDownloadMessage = message)
         }, slingBreakMirrorSwitchController, release, { failure ->
             slingBreakMirrorSwitchController.removeSlowDownloadListener(listener)
-            if (failure == null && slingBreakSelectAfterInstall) LauncherPreferences.saveBootOverlayStyle(context, BootOverlayStyle.SLING_BREAK)
+            if (failure == null && slingBreakSelectAfterInstall) LauncherPreferences.saveBootOverlayStyle(context, BootOverlayStyle.GODOT_SLING_BREAK)
             uiState = uiState.copy(
                 slingBreakDependencyProgress = null,
                 slingBreakDependencyFailure = failure,
                 slingBreakSlowDownloadSwitch = null,
-                bootOverlayStyle = if (failure == null && slingBreakSelectAfterInstall) BootOverlayStyle.SLING_BREAK else uiState.bootOverlayStyle,
+                bootOverlayStyle = if (failure == null && slingBreakSelectAfterInstall) BootOverlayStyle.GODOT_SLING_BREAK else uiState.bootOverlayStyle,
                 slingBreakInstalledVersion = SlingBreakInstallation.read(context)?.rawTagName.orEmpty(),
                 slingBreakUpdateStatus = if (failure == null) context.getString(R.string.godot_installed_offline,
                     SlingBreakInstallation.read(context)?.rawTagName.orEmpty()) else uiState.slingBreakUpdateStatus,
