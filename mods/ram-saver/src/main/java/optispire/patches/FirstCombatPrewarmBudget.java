@@ -7,6 +7,7 @@ import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
 import com.megacrit.cardcrawl.rooms.AbstractRoom;
 import com.megacrit.cardcrawl.rooms.MonsterRoom;
 import com.megacrit.cardcrawl.saveAndContinue.SaveFile;
+import optispire.RunTextureResidency;
 
 /** One synchronous step followed by two clean updates across all first-combat prewarm patches. */
 final class FirstCombatPrewarmBudget {
@@ -66,7 +67,12 @@ final class FirstCombatPrewarmBudget {
     }
 
     static boolean tryStep() {
-        if (stopped || claimed || cooldownFrames > 0) return false;
+        return !stopped && !RunTextureResidency.isUnderPressure() && tryTextureStep();
+    }
+
+    /** Run-owned card textures keep using this cadence after first-combat warmup has stopped. */
+    static boolean tryTextureStep() {
+        if (claimed || cooldownFrames > 0) return false;
         claimed = true;
         cooldownFrames = STEP_COOLDOWN_FRAMES;
         return true;

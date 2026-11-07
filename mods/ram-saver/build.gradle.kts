@@ -13,14 +13,26 @@ java {
 val appProjectRef = rootProject.project(":app")
 
 dependencies {
+    compileOnly(project(":patches:gdx-patch"))
     compileOnly(files(rootProject.file("build-deps/desktop.jar")))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/BaseMod.jar")))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/ModTheSpire.jar")))
-    compileOnly(project(":patches:gdx-patch"))
     testImplementation(libs.junit4)
     testImplementation(project(":patches:gdx-patch"))
     testImplementation(files(rootProject.file("build-deps/desktop.jar")))
+    testImplementation(files(appProjectRef.file("src/main/assets/components/mods/BaseMod.jar")))
     testImplementation(files(appProjectRef.file("src/main/assets/components/mods/ModTheSpire.jar")))
+}
+
+tasks.compileJava {
+    // File dependencies precede project jars in Gradle's classpath. Prefer our replacement APIs.
+    dependsOn(":patches:gdx-patch:classes")
+    classpath = files(project(":patches:gdx-patch").layout.buildDirectory.dir("classes/java/main")) + classpath
+}
+
+tasks.compileTestJava {
+    dependsOn(":patches:gdx-patch:classes")
+    classpath = files(project(":patches:gdx-patch").layout.buildDirectory.dir("classes/java/main")) + classpath
 }
 
 tasks.test {
@@ -31,6 +43,8 @@ tasks.test {
     systemProperty("ramsaver.diag.enabled", "false")
     systemProperty("ramsaver.age.tick_seconds", "1")
     systemProperty("ramsaver.hot.budget_mb", "1")
+    systemProperty("ramsaver.run.budget_mb", "1")
+    systemProperty("ramsaver.run.pressure_mb", "64")
     systemProperty("ramsaver.release.max_per_frame", "4")
 }
 

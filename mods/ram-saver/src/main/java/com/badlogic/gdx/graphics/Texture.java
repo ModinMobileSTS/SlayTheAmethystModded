@@ -48,6 +48,37 @@ public class Texture extends GLTexture {
         return cacheKey;
     }
 
+    /** Header-only budget estimate. Unknown formats return zero; never decode/upload just to count bytes. */
+    public long getRamSaverEstimatedBytes() {
+        int w, h;
+        if (!isFake) {
+            w = getWidth();
+            h = getHeight();
+        } else {
+            if (!knowSize) {
+                int[] cached = RamSaver.getCachedTextureSize(cacheKey);
+                if (cached != null) {
+                    width = cached[0];
+                    height = cached[1];
+                    knowSize = true;
+                } else if (!headerSizeAttempted) {
+                    headerSizeAttempted = true;
+                    Consumer<Texture> reader = sizeGetters.get(file.extension().toLowerCase());
+                    if (reader != null) {
+                        try { reader.accept(this); }
+                        catch (RuntimeException ignored) { knowSize = false; }
+                    }
+                    if (knowSize) RamSaver.cacheTextureSize(cacheKey, width, height);
+                }
+            }
+            if (!knowSize) return 0L;
+            w = width;
+            h = height;
+        }
+        long bytes = (long) w * h * 4L;
+        return (isFake ? useMipMaps : data.useMipMaps()) ? bytes + bytes / 3L : bytes;
+    }
+
     public void attachToRamSaver(String key) {
         cacheKey = key;
     }
@@ -303,6 +334,7 @@ public class Texture extends GLTexture {
                     );
                 }
                 knowSize = false;
+                headerSizeAttempted = false;
                 registerVariant();
             }
         }
@@ -353,6 +385,7 @@ public class Texture extends GLTexture {
     }
 
     boolean knowSize = false;
+    private boolean headerSizeAttempted;
     int width;
     int height;
     public int getWidth() {

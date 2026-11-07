@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.g2d.TextureAtlas.TextureAtlasData;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas.TextureAtlasData.Page;
 import optispire.RamSaver;
 import optispire.RamSaverDiag;
+import optispire.RunTextureResidency;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -39,6 +40,7 @@ final class PrewarmTextureRegistry {
         if (page == null) return null;
         String key = RamSaver.textureKey(page.textureFile, page.format, page.useMipMaps,
                 page.minFilter, page.magFilter, page.uWrap, page.vWrap);
+        RamSaver.cacheTextureSize(key, (int) page.width, (int) page.height);
         // Parse every page's metadata, but register/materialize only the explicitly requested page.
         if (!RamSaver.textureExists(key) && page.textureFile.exists()) {
             RamSaver.FileTextureSupplier supplier = new RamSaver.FileTextureSupplier(
@@ -51,6 +53,7 @@ final class PrewarmTextureRegistry {
     }
 
     static void prewarm(String path, String atlasPath, String event) {
+        if (RunTextureResidency.isUnderPressure()) return;
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
         String result = "missing";

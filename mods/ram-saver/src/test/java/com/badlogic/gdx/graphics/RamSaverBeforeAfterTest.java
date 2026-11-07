@@ -65,6 +65,7 @@ public class RamSaverBeforeAfterTest extends RamSaverTestSupport {
         for (int i = 0; i < 8; i++) load("pin" + i, 512, false);
         tick();
         tick();
+        tick(); // Seven evictions now span two release frames under the shared four-operation limit.
         assertTrue("1 MiB pin budget must not retain eight 1 MiB textures", live.size() <= 1);
     }
     @Test public void fileConfigurationIsPartOfCacheIdentity() {

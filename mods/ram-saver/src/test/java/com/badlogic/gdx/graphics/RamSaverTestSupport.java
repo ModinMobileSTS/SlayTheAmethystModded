@@ -6,6 +6,7 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Graphics;
 import com.badlogic.gdx.files.FileHandle;
 import optispire.RamSaver;
+import optispire.RunTextureResidency;
 import org.junit.After;
 import org.junit.Before;
 
@@ -18,6 +19,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.LongSupplier;
 
 import static org.junit.Assert.*;
 
@@ -28,6 +30,8 @@ public abstract class RamSaverTestSupport {
     protected int bound;
     protected int activeUnit;
     protected float delta;
+    protected long releaseNow;
+    protected long releaseDeleteNanos;
 
     @Before public void setUpGL() throws Exception {
         Gdx.app = proxy(Application.class, (name, args) -> null);
@@ -38,18 +42,36 @@ public abstract class RamSaverTestSupport {
                 int handle = (Integer) args[0];
                 assertTrue("Double/stale deletion: " + handle, live.remove(handle));
                 deleted.add(handle);
+                releaseNow += releaseDeleteNanos;
             }
             if (name.equals("glBindTexture")) {
                 bound = (Integer) args[1];
                 assertTrue("Binding deleted name: " + bound, bound == 0 || live.contains(bound));
             }
             if (name.equals("glActiveTexture")) activeUnit = (Integer) args[0];
+            if (name.equals("glGetIntegerv")) {
+                int parameter = (Integer) args[0];
+                java.nio.IntBuffer result = (java.nio.IntBuffer) args[1];
+                if (parameter == GL20.GL_TEXTURE_BINDING_2D) result.put(0, bound);
+                if (parameter == GL20.GL_ACTIVE_TEXTURE) result.put(0, activeUnit);
+            }
             return null;
         });
         set(RamSaver.class, "timer", 100f);
+        set(RamSaver.class, "releaseClock", (LongSupplier) () -> releaseNow);
+        set(RamSaver.class, "nextReleaseSource", 0);
     }
 
     @After public void tearDownGL() throws Exception {
+        RunTextureResidency.clear();
+        // Production scope changes deliberately preserve global pressure. Each test is a new process model.
+        set(RunTextureResidency.class, "suspended", false);
+        set(RunTextureResidency.class, "constrained", false);
+        set(RunTextureResidency.class, "protectionBudget", field(RunTextureResidency.class, "PRESSURE_BYTES"));
+        set(RunTextureResidency.class, "resumeAfterNanos", 0L);
+        set(RunTextureResidency.class, "pressureStarted", -1L);
+        set(RunTextureResidency.class, "nextPressureSample", 0L);
+        RamSaver.setHotPinBudget(Long.MAX_VALUE);
         Map<String, ?> loaded = map("loadedAssets");
         for (String id : new ArrayList<>(loaded.keySet())) RamSaver.dispose(id);
         delta = 0;
@@ -70,6 +92,7 @@ public abstract class RamSaverTestSupport {
         sets.clear();
         sets.add(new ArrayList<>());
         set(RamSaver.class, "nextSet", 0);
+        set(RamSaver.class, "releaseClock", (LongSupplier) System::nanoTime);
         Gdx.gl = Gdx.gl20 = null;
         Gdx.graphics = null;
         Gdx.app = null;
@@ -119,18 +142,18 @@ public abstract class RamSaverTestSupport {
         }));
     }
 
-    static class MemoryFile extends FileHandle {
+    protected static class MemoryFile extends FileHandle {
         final byte[] bytes;
-        MemoryFile(String path, byte[] bytes) { this(path, bytes, FileType.Internal); }
+        public MemoryFile(String path, byte[] bytes) { this(path, bytes, FileType.Internal); }
         MemoryFile(String path, byte[] bytes, FileType type) { super(path, type); this.bytes = bytes; }
         @Override public boolean exists() { return true; }
         @Override public InputStream read() { return new ByteArrayInputStream(bytes); }
     }
 
-    static class MockData implements TextureData {
+    protected static class MockData implements TextureData {
         final int size;
         boolean prepared;
-        MockData(int size) { this.size = size; }
+        public MockData(int size) { this.size = size; }
         public TextureDataType getType() { return TextureDataType.Custom; }
         public boolean isPrepared() { return prepared; }
         public void prepare() { prepared = true; }

@@ -1285,6 +1285,13 @@ public abstract class GLTexture implements Disposable {
 		);
 	}
 
+	/** Current allocation only, in the same accounting domain as getEstimatedNativeBytes(). */
+	public long getTrackedNativeBytes () {
+		if (glHandle == 0) return 0L;
+		Long bytes = TEXTURE_HANDLE_ESTIMATED_BYTES.get(glHandle);
+		return bytes == null ? 0L : Math.max(0L, bytes.longValue());
+	}
+
 	private long captureTrackedHandleBytes () {
 		if (glHandle == 0) return Math.max(0L, residencyLastKnownBytes);
 		refreshResidencySnapshotFromHandle(glHandle);
