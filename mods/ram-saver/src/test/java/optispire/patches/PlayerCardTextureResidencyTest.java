@@ -95,6 +95,61 @@ public class PlayerCardTextureResidencyTest extends RamSaverTestSupport {
         return card;
     }
 
+    @Test public void gameplayBeforeMapNodeExistsDoesNotCrashResidencyUpdate() throws Exception {
+        // Keep the real game methods (including getCurrRoom's null-node dereference), but omit
+        // unrelated static screen/audio/Twitch construction. Isolate both dungeon and patch so
+        // their static references resolve to the same fixture; all GDX/card/residency APIs are real.
+        ClassLoader fixture = new ClassLoader(getClass().getClassLoader()) {
+            @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (!name.equals("com.megacrit.cardcrawl.dungeons.AbstractDungeon")
+                        && !name.startsWith(PlayerCardTextureResidency.class.getName())
+                        && !name.startsWith(FirstCombatPrewarmBudget.class.getName())
+                        && !name.equals(PrewarmTextureRegistry.class.getName())) return super.loadClass(name, resolve);
+                Class<?> loaded = findLoadedClass(name);
+                if (loaded == null) {
+                    try {
+                        javassist.ClassPool pool = new javassist.ClassPool(true);
+                        pool.insertClassPath(new javassist.LoaderClassPath(getParent()));
+                        javassist.CtClass type = pool.get(name);
+                        if (name.equals("com.megacrit.cardcrawl.dungeons.AbstractDungeon"))
+                            type.removeConstructor(type.getClassInitializer());
+                        byte[] bytes = type.toBytecode();
+                        type.detach();
+                        loaded = defineClass(name, bytes, 0, bytes.length);
+                    } catch (Exception error) { throw new ClassNotFoundException(name, error); }
+                }
+                if (resolve) resolveClass(loaded);
+                return loaded;
+            }
+        };
+        Class<?> dungeon = fixture.loadClass("com.megacrit.cardcrawl.dungeons.AbstractDungeon");
+        java.lang.reflect.Method update = fixture.loadClass(PlayerCardTextureResidency.UpdatePatch.class.getName()).getMethod("Postfix");
+        java.lang.reflect.Method battle = fixture.loadClass(PlayerCardTextureResidency.BattleDeckPatch.class.getName()).getMethod("Postfix");
+        update.invoke(null); // GAMEPLAY before player and map node construction.
+        dungeon.getField("player").set(null, player);
+        Texture portrait = texture("initializing-run.png");
+        player.masterDeck.group.add(card(portrait));
+        update.invoke(null); // Player exists, node still absent: also exercises update's second lookup.
+        battle.invoke(null);
+        assertTrue(RunTextureResidency.isProtected(portrait.getRamSaverKey()));
+        com.megacrit.cardcrawl.map.MapRoomNode node = (com.megacrit.cardcrawl.map.MapRoomNode)
+                unsafe.allocateInstance(com.megacrit.cardcrawl.map.MapRoomNode.class);
+        dungeon.getField("currMapNode").set(null, node);
+        update.invoke(null); // Map node exists, room not yet installed.
+        com.megacrit.cardcrawl.rooms.AbstractRoom room = (com.megacrit.cardcrawl.rooms.AbstractRoom)
+                unsafe.allocateInstance(com.megacrit.cardcrawl.rooms.MonsterRoom.class);
+        room.phase = com.megacrit.cardcrawl.rooms.AbstractRoom.RoomPhase.COMBAT;
+        node.room = room;
+        Texture next = texture("initializing-combat.png");
+        player.drawPile.group.add(card(next));
+        battle.invoke(null);
+        assertTrue("Combat tracking resumes once the room is available", RunTextureResidency.isProtected(next.getRamSaverKey()));
+        int before = generated;
+        update.invoke(null);
+        assertEquals("Combat must not trigger speculative uploads", before, generated);
+        fixture.loadClass(PlayerCardTextureResidency.EndRunPatch.class.getName()).getMethod("Prefix").invoke(null);
+    }
+
     @Test public void allPlayerPilesProtectedButLibraryCardsAreNot() throws Exception {
         Texture[] cards = new Texture[6];
         CardGroup[] groups = {player.masterDeck, player.hand, player.drawPile,

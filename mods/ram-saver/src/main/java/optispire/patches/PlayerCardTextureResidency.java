@@ -136,7 +136,7 @@ public final class PlayerCardTextureResidency {
         RunTextureResidency.samplePressure();
         refresh();
         if (owner == null || Gdx.gl == null) return;
-        AbstractRoom room = AbstractDungeon.getCurrRoom();
+        AbstractRoom room = currentRoomIfReady();
         // Keep speculative uploads out of active card animations; decode itself is CPU-only.
         if ((room == null || room.phase != AbstractRoom.RoomPhase.COMBAT)
                 && RunTextureResidency.hasPending(null) && FirstCombatPrewarmBudget.tryTextureStep()) {
@@ -150,10 +150,16 @@ public final class PlayerCardTextureResidency {
             reconcile(null, false, false);
             return;
         }
-        AbstractRoom room = AbstractDungeon.getCurrRoom();
+        AbstractRoom room = currentRoomIfReady();
         reconcile(AbstractDungeon.player, room != null && room.phase == AbstractRoom.RoomPhase.COMBAT,
                 AbstractDungeon.screen != AbstractDungeon.CurrentScreen.DEATH
                         && AbstractDungeon.screen != AbstractDungeon.CurrentScreen.VICTORY);
+    }
+
+    private static AbstractRoom currentRoomIfReady() {
+        // GAMEPLAY is entered before the first map node is assigned. getCurrRoom() itself
+        // dereferences that node, so checking its result for null is too late during startup.
+        return AbstractDungeon.getCurrMapNode() == null ? null : AbstractDungeon.getCurrRoom();
     }
 
     static void reconcile(AbstractPlayer player, boolean combat, boolean active) {
