@@ -52,23 +52,24 @@ final class PrewarmTextureRegistry {
         return key;
     }
 
-    static void prewarm(String path, String atlasPath, String event) {
-        if (RunTextureResidency.isUnderPressure()) return;
+    static boolean prewarm(String path, String atlasPath, String event) {
+        if (RunTextureResidency.isUnderPressure()) return false;
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
         String result = "missing";
+        boolean complete = true;
         try {
             String key = register(path, atlasPath);
             if (key != null && RamSaver.textureExists(key)) {
                 boolean cached = RamSaver.getExistingTexture(key) != null;
-                Texture texture = RamSaver.getTexture(null, key, false);
-                result = texture != null && texture.getTextureObjectHandle() != 0
-                        ? (cached ? "cached" : "loaded") : "skipped";
+                complete = RamSaver.prewarmTexture(key, false, optispire.TextureDecodeService.FIRST_COMBAT);
+                result = complete ? (cached ? "cached" : "attempted") : "pending";
             }
         }
         catch (RuntimeException error) {
             result = "failed:" + error.getClass().getName();
         }
         if (diag) RamSaverDiag.logDuration(event, path, started, "result=" + result, false);
+        return complete;
     }
 }

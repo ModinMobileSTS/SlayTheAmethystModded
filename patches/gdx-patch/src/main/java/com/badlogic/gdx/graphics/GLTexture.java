@@ -1561,69 +1561,72 @@ public abstract class GLTexture implements Disposable {
 		}
 		logLargeTextureUpload(data, miplevel, stackKey, sourcePath);
 		Pixmap pixmap = data.consumePixmap();
-		if (stackKey == null) {
-			stackKey = captureTextureUploadStackIfNeeded(data, sourcePath, pixmap.getWidth(), pixmap.getHeight(), pixmap.getFormat());
-		}
 		boolean disposePixmap = data.disposePixmap();
-		if (data.getFormat() != pixmap.getFormat()) {
-			Pixmap tmp = new Pixmap(pixmap.getWidth(), pixmap.getHeight(), data.getFormat());
-			Blending blend = Pixmap.getBlending();
-			Pixmap.setBlending(Blending.None);
-			tmp.drawPixmap(pixmap, 0, 0, 0, 0, pixmap.getWidth(), pixmap.getHeight());
-			Pixmap.setBlending(blend);
-			if (data.disposePixmap()) {
-				pixmap.dispose();
+		try {
+			if (stackKey == null) {
+				stackKey = captureTextureUploadStackIfNeeded(data, sourcePath, pixmap.getWidth(), pixmap.getHeight(), pixmap.getFormat());
 			}
-			pixmap = tmp;
-			disposePixmap = true;
-		}
-		Pixmap downscaledPixmap = maybePressureDownscalePixmap(pixmap, data, miplevel, stackKey, sourcePath);
-		if (downscaledPixmap != pixmap) {
-			if (disposePixmap) {
-				pixmap.dispose();
+			if (data.getFormat() != pixmap.getFormat()) {
+				Pixmap tmp = new Pixmap(pixmap.getWidth(), pixmap.getHeight(), data.getFormat());
+				Blending blend = Pixmap.getBlending();
+				try {
+					Pixmap.setBlending(Blending.None);
+					tmp.drawPixmap(pixmap, 0, 0, 0, 0, pixmap.getWidth(), pixmap.getHeight());
+				} catch (RuntimeException | Error error) {
+					tmp.dispose();
+					throw error;
+				} finally {
+					Pixmap.setBlending(blend);
+				}
+				if (disposePixmap) pixmap.dispose();
+				pixmap = tmp;
+				disposePixmap = true;
 			}
-			pixmap = downscaledPixmap;
-			disposePixmap = true;
-		}
-		Gdx.gl.glPixelStorei(GL20.GL_UNPACK_ALIGNMENT, 1);
-		if (data.useMipMaps()) {
-			MipMapGenerator.generateMipMap(target, pixmap, pixmap.getWidth(), pixmap.getHeight());
-		} else {
-			Gdx.gl.glTexImage2D(
+			Pixmap downscaledPixmap = maybePressureDownscalePixmap(pixmap, data, miplevel, stackKey, sourcePath);
+			if (downscaledPixmap != pixmap) {
+				if (disposePixmap) pixmap.dispose();
+				pixmap = downscaledPixmap;
+				disposePixmap = true;
+			}
+			Gdx.gl.glPixelStorei(GL20.GL_UNPACK_ALIGNMENT, 1);
+			if (data.useMipMaps()) {
+				MipMapGenerator.generateMipMap(target, pixmap, pixmap.getWidth(), pixmap.getHeight());
+			} else {
+				Gdx.gl.glTexImage2D(
+					target,
+					miplevel,
+					pixmap.getGLInternalFormat(),
+					pixmap.getWidth(),
+					pixmap.getHeight(),
+					0,
+					pixmap.getGLFormat(),
+					pixmap.getGLType(),
+					pixmap.getPixels()
+				);
+			}
+			recordTextureNativeBytes(
 				target,
-				miplevel,
-				pixmap.getGLInternalFormat(),
 				pixmap.getWidth(),
 				pixmap.getHeight(),
-				0,
-				pixmap.getGLFormat(),
-				pixmap.getGLType(),
-				pixmap.getPixels()
+				pixmap.getFormat(),
+				data.useMipMaps(),
+				sourcePath,
+				stackKey
 			);
-		}
-		recordTextureNativeBytes(
-			target,
-			pixmap.getWidth(),
-			pixmap.getHeight(),
-			pixmap.getFormat(),
-			data.useMipMaps(),
-			sourcePath,
-			stackKey
-		);
-		logTextureResourceStall(
-			"texture_upload",
-			uploadStartNanos,
-			estimateTextureBytes(pixmap.getWidth(), pixmap.getHeight(), pixmap.getFormat()),
-			pixmap.getWidth(),
-			pixmap.getHeight(),
-			pixmap.getFormat(),
-			data.useMipMaps() ? "mipmap" : "texImage2D",
-			sourcePath,
-			"unknown",
-			stackKey
-		);
-		if (disposePixmap) {
-			pixmap.dispose();
+			logTextureResourceStall(
+				"texture_upload",
+				uploadStartNanos,
+				estimateTextureBytes(pixmap.getWidth(), pixmap.getHeight(), pixmap.getFormat()),
+				pixmap.getWidth(),
+				pixmap.getHeight(),
+				pixmap.getFormat(),
+				data.useMipMaps() ? "mipmap" : "texImage2D",
+				sourcePath,
+				"unknown",
+				stackKey
+			);
+		} finally {
+			if (disposePixmap) pixmap.dispose();
 		}
 	}
 
@@ -1732,19 +1735,25 @@ public abstract class GLTexture implements Disposable {
 
 		Pixmap scaledPixmap = new Pixmap(scaledWidth, scaledHeight, pixmap.getFormat());
 		Blending blend = Pixmap.getBlending();
-		Pixmap.setBlending(Blending.None);
-		scaledPixmap.drawPixmap(
-			pixmap,
-			0,
-			0,
-			width,
-			height,
-			0,
-			0,
-			scaledWidth,
-			scaledHeight
-		);
-		Pixmap.setBlending(blend);
+		try {
+			Pixmap.setBlending(Blending.None);
+			scaledPixmap.drawPixmap(
+				pixmap,
+				0,
+				0,
+				width,
+				height,
+				0,
+				0,
+				scaledWidth,
+				scaledHeight
+			);
+		} catch (RuntimeException | Error error) {
+			scaledPixmap.dispose();
+			throw error;
+		} finally {
+			Pixmap.setBlending(blend);
+		}
 
 		System.out.println("[gdx-diag] GLTexture pressure_downscale mode=" + texturePressureDownscaleModeName(mode)
 			+ " source=" + width + "x" + height

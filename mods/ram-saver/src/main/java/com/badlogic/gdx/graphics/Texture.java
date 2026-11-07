@@ -571,6 +571,7 @@ public class Texture extends GLTexture {
 
     @Override
     public void dispose() {
+        optispire.TextureDecodeService.cancel(cacheKey);
         // Fake wrappers do not own the shared real texture. Preserve their lazy reuse semantics.
         if (!isFake) explicitlyDisposed = true;
         super.dispose();
@@ -693,10 +694,12 @@ public class Texture extends GLTexture {
     }
 
     public static void clearAllTextures(Application app) {
+        optispire.TextureDecodeService.cancelAll();
         managedTextures.remove(app);
     }
 
     public static void invalidateAllTextures(Application app) {
+        optispire.TextureDecodeService.cancelAll();
         Array<Texture> managedTextureArray = managedTextures.get(app);
         if (managedTextureArray != null) {
             if (assetManager == null) {

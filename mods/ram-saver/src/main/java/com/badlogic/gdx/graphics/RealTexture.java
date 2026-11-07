@@ -57,7 +57,7 @@ public class RealTexture extends Texture {
         }
         try {
             this.load(data);
-        } catch (RuntimeException error) {
+        } catch (RuntimeException | Error error) {
             disposeForRamSaver();
             throw error;
         }

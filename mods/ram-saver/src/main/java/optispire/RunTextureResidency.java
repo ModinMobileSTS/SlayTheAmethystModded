@@ -42,6 +42,7 @@ public final class RunTextureResidency {
         while (old.hasNext()) {
             Map.Entry<String, Entry> entry = old.next();
             if (!candidates.containsKey(entry.getKey())) {
+                TextureDecodeService.cancel(entry.getKey(), TextureDecodeService.RUN);
                 RamSaver.releaseRunTexturePin(entry.getKey());
                 old.remove();
             }
@@ -78,6 +79,7 @@ public final class RunTextureResidency {
             // One owner/charge per key: run candidates never also consume the generic hot budget.
             RamSaver.releaseRunTexturePin(item.getKey());
             entry.admitted = admitted;
+            if (!admitted) TextureDecodeService.cancel(item.getKey(), TextureDecodeService.RUN);
             if (admitted) admittedBytes += entry.bytes;
         }
         RamSaver.setHotPinBudget(constrained ? 0L : protectionBudget - admittedBytes);
@@ -123,18 +125,17 @@ public final class RunTextureResidency {
         return false;
     }
 
-    /** At most one decode/upload. The game patch owns the shared frame/cooldown budget. */
+    /** At most one request, ready upload or synchronous fallback; the patch owns the frame budget. */
     public static void prewarmOne(Collection<String> priority) {
         if (constrained) return;
         Iterable<String> keys = priority == null ? wanted.keySet() : priority;
         for (String key : keys) {
             Entry entry = wanted.get(key);
             if (entry == null || !entry.admitted || entry.attempted) continue;
-            // Mark before loading: rejected/failed resources must never hold a draw action forever.
-            entry.attempted = true;
             try {
-                RamSaver.getTexture(null, key, true);
+                entry.attempted = RamSaver.prewarmTexture(key, true, TextureDecodeService.RUN);
             } catch (RuntimeException error) {
+                entry.attempted = true;
                 RamSaverDiag.logRepeat("run_texture_prewarm_failed", key, error.toString());
             }
             return;
@@ -153,6 +154,10 @@ public final class RunTextureResidency {
 
     /** Shared policy for run protection, hot pins and speculative prewarm. No GL deletion here. */
     public static void updatePressure(long trackedBytes, long heapUsed, long heapMax, long now) {
+        // Reservations include CPU/native staging, which is absent from GL counters. Count once here,
+        // not as reclaimable RamSaver GL credit or as a second run/hot allocation.
+        long staging = TextureDecodeService.reservedBytes();
+        trackedBytes = trackedBytes > Long.MAX_VALUE - staging ? Long.MAX_VALUE : trackedBytes + staging;
         boolean heapPressure = heapMax > 0L && heapUsed >= heapMax - heapMax / 10L;
         boolean pressure = trackedBytes >= PRESSURE_BYTES || heapPressure;
         if (pressure) {
@@ -162,6 +167,7 @@ public final class RunTextureResidency {
                     || now - pressureStarted >= PRESSURE_GRACE_NANOS;
             boolean changed = !constrained || (severe && !suspended);
             constrained = true;
+            TextureDecodeService.cancelAll();
             suspended |= severe;
             // Subtract only bytes actually present in the aggregate GL counters, not RGBA estimates
             // (RGB565, mipmaps, downscaling and context loss can all make those estimates differ).
@@ -199,6 +205,7 @@ public final class RunTextureResidency {
     }
 
     public static void clear() {
+        TextureDecodeService.cancelScope(TextureDecodeService.RUN);
         for (String key : wanted.keySet()) RamSaver.releaseRunTexturePin(key);
         wanted.clear();
         admittedBytes = 0L;

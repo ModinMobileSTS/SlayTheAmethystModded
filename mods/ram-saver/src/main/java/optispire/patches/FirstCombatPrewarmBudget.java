@@ -9,7 +9,7 @@ import com.megacrit.cardcrawl.rooms.MonsterRoom;
 import com.megacrit.cardcrawl.saveAndContinue.SaveFile;
 import optispire.RunTextureResidency;
 
-/** One synchronous step followed by two clean updates across all first-combat prewarm patches. */
+/** One main-thread prewarm step followed by two clean updates across all prewarm patches. */
 final class FirstCombatPrewarmBudget {
     private static final long RECHECK_WINDOW_NANOS = 5_000_000_000L;
     private static final int STEP_COOLDOWN_FRAMES = 3;
@@ -46,6 +46,7 @@ final class FirstCombatPrewarmBudget {
         public static void Prefix() {
             if (AbstractDungeon.nextRoom != null && AbstractDungeon.nextRoom.room instanceof MonsterRoom) {
                 stopped = true;
+                optispire.TextureDecodeService.cancelScope(optispire.TextureDecodeService.FIRST_COMBAT);
                 texturePass = -1;
             }
         }
@@ -55,11 +56,13 @@ final class FirstCombatPrewarmBudget {
         claimed = false;
         if (cooldownFrames > 0) cooldownFrames--;
         stopped |= combat;
+        if (stopped) optispire.TextureDecodeService.cancelScope(optispire.TextureDecodeService.FIRST_COMBAT);
         if (gameplay && gameplayStarted == -1L) gameplayStarted = now;
         // Completion means an attempt, not permanent residency. Recheck only once near run start.
         texturePass = stopped ? -1 : gameplay
                 ? (now - gameplayStarted < RECHECK_WINDOW_NANOS ? 1 : -1)
                 : (gameplayStarted == -1L ? 0 : -1);
+        if (texturePass < 0) optispire.TextureDecodeService.cancelScope(optispire.TextureDecodeService.FIRST_COMBAT);
     }
 
     static int texturePass() {

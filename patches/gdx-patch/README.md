@@ -2,6 +2,13 @@
 
 启动器使用的 libGDX 兼容层补丁。
 
+## 纹理上传临时像素清理
+
+- **症状：** 纹理上传失败时格式转换/缩放产生的 native Pixmap 未释放；libGDX 1.9.5 软件 mipmap 路径也会保留最后一级临时像素，削弱 RamSaver 后台解码 staging 的有界生命周期。
+- **修复：** `GLTexture.uploadImageData` 在 `finally` 中释放其拥有的上传 Pixmap，转换/缩放异常恢复全局 blending 并释放临时对象。`MipMapGenerator` 保留原硬件选择/API/级别生成语义，释放最后一级及异常中的软件 mipmap；借入的源 Pixmap 仍由调用方负责。
+- **接线：** `StsDesktopJarPatcher` 白名单及 `REQUIRED_STS_PATCH_CLASSES` 包含 `MipMapGenerator.class`，确保覆盖游戏 jar 的原实现。`StsDesktopJarPatcherTest` 校验此项。
+- **验证：** RamSaver 的 `BackgroundTextureDecodeTest` 使用真实 native Pixmap、mock GL 验证上传失败、format/mipmap、managed reload 及 blending 恢复；没有宣称 Android 帧率或驱动延迟实测。完整后台解码覆盖范围和预算见 `mods/ram-saver/README.md` 第 37–38 项。
+
 ## Android 桌面窗口图标兼容
 
 - **症状：** 启动时打印 `ArrayIndexOutOfBoundsException: 1`，堆栈指向

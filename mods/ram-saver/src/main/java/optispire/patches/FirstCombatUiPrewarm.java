@@ -164,11 +164,11 @@ public final class FirstCombatUiPrewarm {
             }
             if (nextTextureIndex < PREWARM_TEXTURES.length) {
                 if (!FirstCombatPrewarmBudget.tryStep()) return;
-                int index = nextTextureIndex++;
+                int index = nextTextureIndex;
                 String path = PREWARM_TEXTURES[index];
                 String atlas = index < FIRST_ROOM_MONSTER_TEXTURES.length
                         ? path.substring(0, path.lastIndexOf('/') + 1) + "skeleton.atlas" : null;
-                PrewarmTextureRegistry.prewarm(path, atlas, "first_combat_ui_prewarm_step");
+                if (PrewarmTextureRegistry.prewarm(path, atlas, "first_combat_ui_prewarm_step")) nextTextureIndex++;
                 return;
             }
         }

@@ -340,10 +340,16 @@ public class RamSaver {
             boolean diag = RamSaverDiag.enabled();
             long started = diag ? System.nanoTime() : 0L;
             long loadStarted = System.nanoTime();
-            try {
-                RealTexture real = new RealTexture(file, format, useMipMaps);
-                real.setFilter(this.minFilter, this.magFilter);
-                real.setWrap(this.uWrap, this.vWrap);
+            try (BoundedTextureDecoder<PngTextureDecoder.Pixels>.Lease lease = TextureDecodeService.take(cacheKey)) {
+                RealTexture real = lease == null ? new RealTexture(file, format, useMipMaps)
+                        : TextureDecodeService.upload(this, lease.pixels);
+                try {
+                    real.setFilter(this.minFilter, this.magFilter);
+                    real.setWrap(this.uWrap, this.vWrap);
+                } catch (RuntimeException | Error error) {
+                    real.disposeForRamSaver();
+                    throw error;
+                }
                 markTextureMaterialized(cacheKey, real, Math.max(0L, System.nanoTime() - loadStarted));
                 if (diag) {
                     RamSaverDiag.logDuration(
@@ -619,15 +625,21 @@ public class RamSaver {
 
     private static Texture createMaterializationFallback(FileTextureSupplier supplier, RuntimeException originalError) {
         Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-        pixmap.setColor(0f, 0f, 0f, 0f);
-        pixmap.fill();
+        RealTexture fallback = null;
         try {
-            RealTexture fallback = new RealTexture(new PixmapTextureData(pixmap, Pixmap.Format.RGBA8888, false, true));
+            pixmap.setColor(0f, 0f, 0f, 0f);
+            pixmap.fill();
+            fallback = new RealTexture(new PixmapTextureData(pixmap, Pixmap.Format.RGBA8888, false, false));
             fallback.setFilter(supplier.minFilter, supplier.magFilter);
             fallback.setWrap(supplier.uWrap, supplier.vWrap);
             return fallback;
         }
+        catch (Error error) {
+            if (fallback != null) fallback.disposeForRamSaver();
+            throw error;
+        }
         catch (RuntimeException fallbackError) {
+            if (fallback != null) fallback.disposeForRamSaver();
             System.out.println("[ram-saver] texture materialization fallback failed path="
                     + RamSaverDiag.safe(supplier.file.path())
                     + " originalError=" + exceptionDetails(originalError)
@@ -640,6 +652,7 @@ public class RamSaver {
             );
             throw originalError;
         }
+        finally { pixmap.dispose(); }
     }
 
     private static boolean isMaterializationFallback(String textureID) {
@@ -968,6 +981,21 @@ public class RamSaver {
     public static FileTextureSupplier getTextureSupplier(String id) {
         return textures.get(id);
     }
+    /** Called only after the shared frame budget is claimed. Pending decode is not a completed attempt. */
+    public static boolean prewarmTexture(String key, boolean canAge, int scope) {
+        if (RunTextureResidency.isUnderPressure()) return false;
+        if (getExistingTexture(key) != null) {
+            TextureDecodeService.cancel(key);
+            if (!canAge) makeResident(key);
+            return true;
+        }
+        FileTextureSupplier supplier = textures.get(key);
+        if (supplier == null) return true;
+        BoundedTextureDecoder.State state = TextureDecodeService.request(key, supplier, scope);
+        if (state == BoundedTextureDecoder.State.PENDING || state == BoundedTextureDecoder.State.MISSING) return false;
+        getTexture(null, key, canAge);
+        return true;
+    }
     public static Texture getExistingTexture(String id) {
         Texture t = getAsset(id);
         boolean usable = t != null && t.getTextureObjectHandle() != 0;
@@ -1178,6 +1206,7 @@ public class RamSaver {
         }
     }
     public static void dispose(String id) {
+        TextureDecodeService.cancel(id);
         ManagedAsset asset = loadedAssets.get(id);
         if (asset != null) {
             dispose(asset, true);

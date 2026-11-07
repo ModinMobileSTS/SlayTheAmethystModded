@@ -9,6 +9,16 @@ import org.junit.Test
 
 class StsDesktopJarPatcherTest {
     @Test
+    fun mipMapGeneratorCleanup_isRequiredAndInjected() {
+        assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_MIPMAP_GENERATOR_CLASS))
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry", String::class.java
+        )
+        method.isAccessible = true
+        assertTrue(method.invoke(StsDesktopJarPatcher, STS_PATCH_MIPMAP_GENERATOR_CLASS) as Boolean)
+    }
+
+    @Test
     fun requiredPatchClasses_includeWindowIconCompat() {
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_WINDOW_ICON_COMPAT_CLASS))
     }

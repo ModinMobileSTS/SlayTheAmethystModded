@@ -47,8 +47,8 @@ public final class CombatTexturePrewarm {
             nextTextureIndex = 0;
         }
         if (nextTextureIndex >= COMBAT_TEXTURES.length || !FirstCombatPrewarmBudget.tryStep()) return;
-        String path = COMBAT_TEXTURES[nextTextureIndex++];
-        PrewarmTextureRegistry.prewarm(path, atlasPath(path), "combat_texture_prewarm_step");
+        String path = COMBAT_TEXTURES[nextTextureIndex];
+        if (PrewarmTextureRegistry.prewarm(path, atlasPath(path), "combat_texture_prewarm_step")) nextTextureIndex++;
     }
 
     static String atlasPath(String path) {

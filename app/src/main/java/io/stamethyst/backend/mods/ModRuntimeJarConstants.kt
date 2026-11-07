@@ -140,6 +140,8 @@ internal const val STS_PATCH_SINGLE_CARD_VIEW_POPUP_PREFIX =
     "com/megacrit/cardcrawl/screens/SingleCardViewPopup"
 internal const val STS_PATCH_GL_TEXTURE_CLASS =
     "com/badlogic/gdx/graphics/GLTexture.class"
+internal const val STS_PATCH_MIPMAP_GENERATOR_CLASS =
+    "com/badlogic/gdx/graphics/glutils/MipMapGenerator.class"
 internal const val STS_PATCH_GL_TEXTURE_INNER_PREFIX =
     "com/badlogic/gdx/graphics/GLTexture$"
 internal const val STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS =
@@ -219,6 +221,7 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_SEED_PANEL_CLASS,
         STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS,
         STS_PATCH_GL_TEXTURE_CLASS,
+        STS_PATCH_MIPMAP_GENERATOR_CLASS,
         STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS,
         STS_PATCH_GPU_RESOURCE_GUARDIAN_CLASS,
         STS_PATCH_GPU_RESOURCE_GUARDIAN_MODE_CLASS,

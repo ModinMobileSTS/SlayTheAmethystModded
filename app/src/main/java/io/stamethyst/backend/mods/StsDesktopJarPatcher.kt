@@ -302,6 +302,7 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_SEED_PANEL_CLASS == entryName ||
             STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS == entryName ||
             STS_PATCH_GL_TEXTURE_CLASS == entryName ||
+            STS_PATCH_MIPMAP_GENERATOR_CLASS == entryName ||
             entryName.startsWith(STS_PATCH_GL_TEXTURE_INNER_PREFIX) ||
             STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS == entryName ||
             STS_PATCH_GPU_RESOURCE_GUARDIAN_CLASS == entryName ||

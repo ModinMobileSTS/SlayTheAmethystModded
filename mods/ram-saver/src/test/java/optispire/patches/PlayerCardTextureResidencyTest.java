@@ -173,6 +173,33 @@ public class PlayerCardTextureResidencyTest extends RamSaverTestSupport {
         assertEquals(0, generated);
     }
 
+    @Test public void pendingWorkerDoesNotCompletePrewarmOrHoldDrawForever() throws Exception {
+        optispire.BoundedTextureDecoderTest.ManualExecutor executor = new optispire.BoundedTextureDecoderTest.ManualExecutor();
+        optispire.BoundedTextureDecoder<optispire.PngTextureDecoder.Pixels> queue =
+                new optispire.BoundedTextureDecoder<>(executor, 1024 * 1024, 2);
+        set(optispire.TextureDecodeService.class, "decoder", queue);
+        try {
+            MemoryFile file = new MemoryFile("pending-draw.png", optispire.PngFixtures.image(1, 1, 4, new byte[4], 0));
+            Texture texture = new Texture(file);
+            player.drawPile.group.add(card(texture));
+            PlayerCardTextureResidency.reconcile(player, true, true);
+            DrawCardAction action = (DrawCardAction) unsafe.allocateInstance(DrawCardAction.class);
+            action.amount = 1;
+            FirstCombatPrewarmBudget.beginFrame(0L, true, true);
+            assertTrue(PlayerCardTextureResidency.deferDraw(action, player));
+            assertEquals(0, generated);
+            assertTrue(RunTextureResidency.hasPending(null));
+            set(PlayerCardTextureResidency.class, "drawWaitUpdates", 120);
+            assertFalse(PlayerCardTextureResidency.deferDraw(action, player));
+            assertTrue("Timeout doesn't pretend it uploaded", RunTextureResidency.hasPending(null));
+            queue.shutdown(); executor.drainWorker();
+            assertEquals(0, queue.pendingCount());
+        } finally {
+            queue.shutdown();
+            set(optispire.TextureDecodeService.class, "decoder", null);
+        }
+    }
+
     @Test public void oneCardDrawOnlyPrewarmsTheActualTopCard() throws Exception {
         Texture bottom = texture("bottom.png"), top = texture("top.png");
         player.drawPile.group.add(card(bottom));

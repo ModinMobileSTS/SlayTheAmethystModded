@@ -37,6 +37,9 @@ public final class PlayerCardTextureResidency {
     private static final LinkedHashMap<String, Long> drawTextures = new LinkedHashMap<>();
     private static final LinkedHashMap<String, Long> upcomingTextures = new LinkedHashMap<>();
     private static DrawCardAction lastDrawAction;
+    private static DrawCardAction waitingDraw;
+    private static long drawWaitStarted;
+    private static int drawWaitUpdates;
     private static AbstractPlayer owner;
     private static long nextScan;
     private static boolean dirty = true;
@@ -99,8 +102,15 @@ public final class PlayerCardTextureResidency {
     }
 
     static boolean deferDraw(DrawCardAction action, AbstractPlayer player) {
+        if (waitingDraw != action) {
+            waitingDraw = action;
+            drawWaitStarted = System.nanoTime();
+            drawWaitUpdates = 0;
+        }
         if (owner == null || player != owner || action.isDone || action.amount <= 0
                 || player.hasPower("No Draw") || player.hand.size() >= 10) return false;
+        // Backpressure or slow I/O must not hold the draw action indefinitely. Demand still loads safely.
+        if (++drawWaitUpdates > 120 || System.nanoTime() - drawWaitStarted >= 500_000_000L) return false;
         if (!RunTextureResidency.hasPending(null)) return false;
         upcomingTextures.clear();
         upcomingTextures.putAll(coreTextures);
@@ -127,7 +137,7 @@ public final class PlayerCardTextureResidency {
         refresh();
         if (owner == null || Gdx.gl == null) return;
         AbstractRoom room = AbstractDungeon.getCurrRoom();
-        // Never move arbitrary background decode/upload work into active card animations.
+        // Keep speculative uploads out of active card animations; decode itself is CPU-only.
         if ((room == null || room.phase != AbstractRoom.RoomPhase.COMBAT)
                 && RunTextureResidency.hasPending(null) && FirstCombatPrewarmBudget.tryTextureStep()) {
             RunTextureResidency.prewarmOne(null);
@@ -293,6 +303,7 @@ public final class PlayerCardTextureResidency {
         drawTextures.clear();
         upcomingTextures.clear();
         lastDrawAction = null;
+        waitingDraw = null;
         owner = null;
         nextScan = 0L;
         dirty = true;
