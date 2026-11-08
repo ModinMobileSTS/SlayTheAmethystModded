@@ -1300,6 +1300,17 @@ object LauncherConfig {
         }
     }
 
+    fun readRamSaverOptimizations(context: Context): Map<RamSaverOptimization, Boolean> {
+        val preferences = prefs(context)
+        return RamSaverOptimization.entries.associateWith {
+            preferences.getBoolean(it.preferenceKey, it.defaultEnabled)
+        }
+    }
+
+    fun setRamSaverOptimization(context: Context, optimization: RamSaverOptimization, enabled: Boolean) {
+        prefs(context).edit { putBoolean(optimization.preferenceKey, enabled) }
+    }
+
     fun isMtsPatchCacheEnabled(context: Context): Boolean {
         return prefs(context).getBoolean(
             PREF_KEY_MTS_PATCH_CACHE_ENABLED,

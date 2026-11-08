@@ -52,7 +52,10 @@ object StsLaunchSpec {
         "amethyst.gdx.frame_hud",
         "amethyst.bridge.launcher_perf_snapshot",
         "amethyst.gdx.gpu_resource_summary",
-        "amethyst.gdx.gpu_resource_diag"
+        "amethyst.gdx.gpu_resource_diag",
+        "ramsaver.release.shared_budget_enabled",
+        "ramsaver.decode.enabled",
+        "ramsaver.debug.visual"
     )
     private val DEBUG_GPU_GUARDIAN_PROPERTY_KEYS = setOf(
         "amethyst.gdx.debug_leak_injector",
@@ -727,6 +730,7 @@ object StsLaunchSpec {
             args.add("-Damethyst.gdx.frame_hud=$showPerformanceOverlay")
         }
         if (ramSaverEnabled) {
+            args.addAll(ramSaverOptimizationArgs(LauncherConfig.readRamSaverOptimizations(context)))
             // Scale ram-saver's hot-pin texture budget with the heap size.
             // The default 384 MB was calibrated for a 512 MB heap (75%).
             // At 1024 MB the same ratio gives ~768 MB, keeping the proportion
@@ -965,6 +969,12 @@ object StsLaunchSpec {
 
     internal fun tieredStopAtLevelArg(level: Int): String =
         "-XX:TieredStopAtLevel=${LauncherConfig.normalizeJvmTieredStopAtLevel(level)}"
+
+    internal fun ramSaverOptimizationArgs(
+        selections: Map<io.stamethyst.config.RamSaverOptimization, Boolean>,
+    ): List<String> = io.stamethyst.config.RamSaverOptimization.entries.map {
+        "-D${it.propertyName}=${selections[it] ?: it.defaultEnabled}"
+    }
 
     internal fun resolveTexturePressureDownscaleEnabled(
         ramSaverEnabled: Boolean,

@@ -340,6 +340,24 @@ private fun renderingSection(
                 zh,
             ),
             boolField(
+                "ramSaverSharedReleaseBudgetEnabled",
+                R.string.settings_ram_saver_shared_release,
+                LauncherConfig.readRamSaverOptimizations(context)[io.stamethyst.config.RamSaverOptimization.SHARED_RELEASE_BUDGET] ?: false,
+                zh,
+            ),
+            boolField(
+                "ramSaverBackgroundDecodeEnabled",
+                R.string.settings_ram_saver_background_decode,
+                LauncherConfig.readRamSaverOptimizations(context)[io.stamethyst.config.RamSaverOptimization.BACKGROUND_DECODE] ?: false,
+                zh,
+            ),
+            boolField(
+                "ramSaverVisualReleaseDebugEnabled",
+                R.string.settings_ram_saver_visual_debug,
+                LauncherConfig.readRamSaverOptimizations(context)[io.stamethyst.config.RamSaverOptimization.VISUAL_RELEASE_DEBUG] ?: false,
+                zh,
+            ),
+            boolField(
                 "mtsPatchCacheEnabled",
                 R.string.settings_mts_patch_cache_title,
                 LauncherConfig.isMtsPatchCacheEnabled(context),

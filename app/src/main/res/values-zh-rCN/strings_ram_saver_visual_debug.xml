@@ -1,0 +1,4 @@
+<resources>
+    <string name="settings_ram_saver_visual_debug">RamSaver 可视化释放调试</string>
+    <string name="settings_ram_saver_visual_debug_desc">默认关闭。启用 RamSaver 后，逐项显示资源释放提示（有界队列），包含资源名、原因和估算大小。同时开启“深度性能诊断”和“性能浮层”时，在帧时图上方以对应资源颜色标记释放帧，保留原有绿黄红耗时柱。不自动开启详细日志。修改后重启游戏生效；调试绘制会增加开销，仅建议短期排查。</string>
+</resources>

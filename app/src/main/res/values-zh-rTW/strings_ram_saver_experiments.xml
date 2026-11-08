@@ -1,0 +1,8 @@
+<resources>
+    <string name="settings_ram_saver_experiments_title">RamSaver 最佳化與偵錯</string>
+    <string name="settings_ram_saver_experiments_desc">僅在啟用 RamSaver 時生效。兩項最佳化和視覺化釋放偵錯均預設關閉。每次修改後請完全退出遊戲再啟動，無須重建修補快取。建議一次只改一項最佳化，固定存檔、角色和模組組合。關閉僅恢復對應的舊策略，不等於原版遊戲；當機修復和安全資源清理始終保留。</string>
+    <string name="settings_ram_saver_shared_release">所有自動回收路徑共用預算</string>
+    <string name="settings_ram_saver_shared_release_desc">開啟：自動回收共同受操作數、位元組數和耗時限制。關閉：恢復參照清理和老化分開處理、老化桶直接釋放；可能在一幀內刪除較多紋理。</string>
+    <string name="settings_ram_saver_background_decode">有界背景 PNG 解碼</string>
+    <string name="settings_ram_saver_background_decode_desc">開啟：單背景執行緒預解碼支援的 PNG，遊戲執行緒上傳。關閉：保留預熱，但改為遊戲執行緒同步讀取和解碼。JPEG 等未支援格式在兩種模式下均同步載入。</string>
+</resources>

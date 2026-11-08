@@ -653,6 +653,12 @@ object LauncherPreferences {
         LauncherConfig.setRamSaverEnabled(context, enabled)
     }
 
+    fun readRamSaverOptimizations(context: Context): Map<io.stamethyst.config.RamSaverOptimization, Boolean> =
+        LauncherConfig.readRamSaverOptimizations(context)
+
+    fun setRamSaverOptimization(context: Context, optimization: io.stamethyst.config.RamSaverOptimization, enabled: Boolean) =
+        LauncherConfig.setRamSaverOptimization(context, optimization, enabled)
+
     fun isMtsPatchCacheEnabled(context: Context): Boolean {
         return LauncherConfig.isMtsPatchCacheEnabled(context)
     }

@@ -51,6 +51,7 @@ import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.RamSaverOptimization
 import io.stamethyst.ui.preferences.LauncherPreferences
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -115,6 +116,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onSustainedPerformanceModeChanged: (Boolean) -> Unit = {},
     onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit = {},
+    onRamSaverOptimizationChanged: (RamSaverOptimization, Boolean) -> Unit = { _, _ -> },
     onTogetherInSpireRouteLockEnabledChanged: (Boolean) -> Unit = {},
     onTogetherInSpireEasyTierAutofillEnabledChanged: (Boolean) -> Unit = {},
     onAccelerationStrategyChanged: (AccelerationStrategy) -> Unit = {},
@@ -213,6 +215,32 @@ internal fun LauncherDeveloperSettingsScreenContent(
         }
 
         item {
+            SettingsSectionCard(title = stringResource(R.string.settings_ram_saver_experiments_title)) {
+                Text(
+                    text = stringResource(R.string.settings_ram_saver_experiments_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(16.dp),
+                )
+                RamSaverOptimization.entries.forEach { optimization ->
+                    val (title, description) = when (optimization) {
+                        RamSaverOptimization.SHARED_RELEASE_BUDGET -> R.string.settings_ram_saver_shared_release to R.string.settings_ram_saver_shared_release_desc
+                        RamSaverOptimization.BACKGROUND_DECODE -> R.string.settings_ram_saver_background_decode to R.string.settings_ram_saver_background_decode_desc
+                        RamSaverOptimization.VISUAL_RELEASE_DEBUG -> R.string.settings_ram_saver_visual_debug to R.string.settings_ram_saver_visual_debug_desc
+                    }
+                    SettingsSwitchItem(
+                        SettingsSwitchSpec(
+                            checked = uiState.ramSaverOptimizations[optimization] ?: optimization.defaultEnabled,
+                            enabled = !uiState.busy,
+                            title = stringResource(title),
+                            description = stringResource(description),
+                            onCheckedChange = { onRamSaverOptimizationChanged(optimization, it) },
+                        )
+                    )
+                }
+            }
+        }
+
+        item {
             SettingsSectionCard(
                 title = stringResource(R.string.settings_together_in_spire_title)
             ) {
@@ -264,7 +292,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                                 localTestEndpointInputInvalid = false
                             },
                             singleLine = true,
-                            enabled = !uiState.busy,
+                            enabled = settingsControlEnabled(!uiState.busy),
                             isError = localTestEndpointInputInvalid,
                             label = { Text(stringResource(R.string.settings_cloud_control_test_online_service_label)) },
                         )
@@ -276,7 +304,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                                 localTestEndpointInputInvalid = false
                             },
                             singleLine = true,
-                            enabled = !uiState.busy,
+                            enabled = settingsControlEnabled(!uiState.busy),
                             isError = localTestEndpointInputInvalid,
                             label = { Text(stringResource(R.string.settings_cloud_control_test_config_server_label)) },
                         )
@@ -288,7 +316,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                                 localTestEndpointInputInvalid = false
                             },
                             singleLine = true,
-                            enabled = !uiState.busy,
+                            enabled = settingsControlEnabled(!uiState.busy),
                             isError = localTestEndpointInputInvalid,
                             label = { Text(stringResource(R.string.settings_cloud_control_test_entry_node_label)) },
                             supportingText = if (localTestEndpointInputInvalid) {
@@ -607,52 +635,58 @@ internal fun SettingsDeveloperRuntimeSection(
 ) {
     var showPerformanceLogsDialog by rememberSaveable { mutableStateOf(false) }
 
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_resource_pack_title),
-        supportingText = if (uiState.resourcePackReady) {
-            stringResource(
-                R.string.settings_resource_pack_ready,
-                uiState.resourcePackVersion.ifBlank { "unknown" },
-                uiState.resourcePackId.take(12).ifBlank { "unknown" }
-            )
-        } else {
-            stringResource(
-                R.string.settings_resource_pack_invalid,
-                uiState.resourcePackIssues.ifBlank { "unknown" }
-            )
-        },
-        enabled = !uiState.busy,
-        onClick = actions.onRepairResourcePack
-    )
-
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.gpuResourceDiagEnabled,
-            enabled = !uiState.busy,
-            title = stringResource(R.string.settings_gpu_resource_diag_enabled),
-            description = stringResource(R.string.settings_gpu_resource_diag_desc),
-            onCheckedChange = actions.onGpuResourceDiagChanged
-        )
-    )
-    if (uiState.gpuResourceDiagEnabled) {
-        if (!uiState.arthasResourceInstalled) {
-            SettingsActionListItem(
-                title = stringResource(R.string.settings_arthas_resource_title),
-                supportingText = stringResource(R.string.settings_arthas_resource_install_summary),
-                enabled = !uiState.busy,
-                onClick = actions.onInstallArthasResource
-            )
-        } else {
-            SettingsSwitchItem(
-                SettingsSwitchSpec(
-                    checked = uiState.arthasAnalysisEnabled,
-                    enabled = !uiState.busy,
-                    title = stringResource(R.string.settings_arthas_analysis_enabled),
-                    description = stringResource(R.string.settings_arthas_analysis_desc),
-                    onCheckedChange = actions.onArthasAnalysisChanged
+    SettingsDependencyContent(uiState, SettingsLoadDomain.RESOURCES) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_resource_pack_title),
+            supportingText = if (uiState.resourcePackReady) {
+                stringResource(
+                    R.string.settings_resource_pack_ready,
+                    uiState.resourcePackVersion.ifBlank { "unknown" },
+                    uiState.resourcePackId.take(12).ifBlank { "unknown" }
                 )
+            } else {
+                stringResource(
+                    R.string.settings_resource_pack_invalid,
+                    uiState.resourcePackIssues.ifBlank { "unknown" }
+                )
+            },
+            enabled = !uiState.busy,
+            onClick = actions.onRepairResourcePack
+        )
+    }
+
+    SettingsDependencyContent(uiState, SettingsLoadDomain.RESOURCES) {
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.gpuResourceDiagEnabled,
+                enabled = !uiState.busy,
+                title = stringResource(R.string.settings_gpu_resource_diag_enabled),
+                description = stringResource(R.string.settings_gpu_resource_diag_desc),
+                onCheckedChange = actions.onGpuResourceDiagChanged
             )
+        )
+        if (uiState.gpuResourceDiagEnabled) {
+            if (!uiState.arthasResourceInstalled) {
+                SettingsActionListItem(
+                    title = stringResource(R.string.settings_arthas_resource_title),
+                    supportingText = stringResource(R.string.settings_arthas_resource_install_summary),
+                    enabled = !uiState.busy,
+                    onClick = actions.onInstallArthasResource
+                )
+            } else {
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = uiState.arthasAnalysisEnabled,
+                        enabled = !uiState.busy,
+                        title = stringResource(R.string.settings_arthas_analysis_enabled),
+                        description = stringResource(R.string.settings_arthas_analysis_desc),
+                        onCheckedChange = actions.onArthasAnalysisChanged
+                    )
+                )
+            }
         }
+    }
+    if (uiState.gpuResourceDiagEnabled) {
         SettingsActionListItem(
             title = stringResource(R.string.settings_performance_logs_title),
             supportingText = stringResource(R.string.settings_performance_logs_desc),
@@ -671,12 +705,13 @@ internal fun SettingsDeveloperRuntimeSection(
         )
     )
 
-    SettingsSystemGameModeSetting(uiState)
-
-    Text(
-        text = uiState.systemGameModeDescription,
-        style = MaterialTheme.typography.bodySmall
-    )
+    SettingsDependencyContent(uiState, SettingsLoadDomain.GAME_MODE) {
+        SettingsSystemGameModeSetting(uiState)
+        Text(
+            text = uiState.systemGameModeDescription.takeIf { settingsControlEnabled() }.orEmpty(),
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
@@ -761,61 +796,63 @@ internal fun SettingsAdvancedRenderSection(
         text = stringResource(R.string.settings_renderer_backend_title),
         style = MaterialTheme.typography.bodyMedium
     )
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.rendererSelectionMode == RendererSelectionMode.AUTO,
-            enabled = !uiState.busy,
-            title = stringResource(R.string.settings_renderer_auto_enabled),
-            description = if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
-                stringResource(
-                    R.string.settings_renderer_auto_current,
-                    uiState.autoSelectedRendererBackend.displayName,
-                    uiState.autoSelectedRendererBackend.briefProsCons(context)
-                )
-            } else {
-                stringResource(
-                    R.string.settings_renderer_manual_current,
-                    uiState.manualRendererBackend.displayName,
-                    uiState.manualRendererBackend.briefProsCons(context)
-                )
-            },
-            onCheckedChange = { checked ->
-                actions.onRendererSelectionModeChanged(
-                    if (checked) RendererSelectionMode.AUTO else RendererSelectionMode.MANUAL
-                )
-            }
+    SettingsDependencyContent(uiState, SettingsLoadDomain.RENDERER) {
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.rendererSelectionMode == RendererSelectionMode.AUTO,
+                enabled = !uiState.busy,
+                title = stringResource(R.string.settings_renderer_auto_enabled),
+                description = if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
+                    stringResource(
+                        R.string.settings_renderer_auto_current,
+                        uiState.autoSelectedRendererBackend.displayName,
+                        uiState.autoSelectedRendererBackend.briefProsCons(context)
+                    )
+                } else {
+                    stringResource(
+                        R.string.settings_renderer_manual_current,
+                        uiState.manualRendererBackend.displayName,
+                        uiState.manualRendererBackend.briefProsCons(context)
+                    )
+                },
+                onCheckedChange = { checked ->
+                    actions.onRendererSelectionModeChanged(
+                        if (checked) RendererSelectionMode.AUTO else RendererSelectionMode.MANUAL
+                    )
+                }
+            )
         )
-    )
-    uiState.rendererFallbackText?.let {
+        uiState.rendererFallbackText?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        if (uiState.rendererSelectionMode == RendererSelectionMode.MANUAL) {
+            SettingsManualRendererSetting(uiState, actions)
+        }
+
+        if (uiState.effectiveRendererBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_mobileglues_entry_title),
+                supportingText = stringResource(
+                    R.string.settings_mobileglues_entry_summary,
+                    uiState.mobileGluesAnglePolicy.displayName(context),
+                    uiState.mobileGluesMultidrawMode.displayName(context),
+                    uiState.mobileGluesCustomGlVersion.displayName(context)
+                ),
+                enabled = !uiState.busy,
+                onClick = actions.onOpenMobileGluesSettings
+            )
+        }
+
         Text(
-            text = it,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error
+            text = stringResource(R.string.settings_render_surface_backend_title),
+            style = MaterialTheme.typography.bodyMedium
         )
+        SettingsRenderSurfaceBackendSetting(uiState, actions)
     }
-    if (uiState.rendererSelectionMode == RendererSelectionMode.MANUAL) {
-        SettingsManualRendererSetting(uiState, actions)
-    }
-
-    if (uiState.effectiveRendererBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_mobileglues_entry_title),
-            supportingText = stringResource(
-                R.string.settings_mobileglues_entry_summary,
-                uiState.mobileGluesAnglePolicy.displayName(context),
-                uiState.mobileGluesMultidrawMode.displayName(context),
-                uiState.mobileGluesCustomGlVersion.displayName(context)
-            ),
-            enabled = !uiState.busy,
-            onClick = actions.onOpenMobileGluesSettings
-        )
-    }
-
-    Text(
-        text = stringResource(R.string.settings_render_surface_backend_title),
-        style = MaterialTheme.typography.bodyMedium
-    )
-    SettingsRenderSurfaceBackendSetting(uiState, actions)
 
     SettingsGpuResourceGuardianSetting(uiState, actions)
 
@@ -861,7 +898,7 @@ internal fun SettingsAdvancedRenderSection(
         valueRange = uiState.jvmHeapMinMb.toFloat()..uiState.jvmHeapMaxMb.toFloat(),
         steps = ((uiState.jvmHeapMaxMb - uiState.jvmHeapMinMb) / uiState.jvmHeapStepMb - 1)
             .coerceAtLeast(0),
-        enabled = !uiState.busy,
+        enabled = settingsControlEnabled(!uiState.busy),
         modifier = Modifier.fillMaxWidth()
     )
     Text(
@@ -1067,12 +1104,15 @@ internal fun SettingsStatusSection(
             .joinToString("\n")
     }
 
-    Text(
-        text = statusPreview.ifBlank { stringResource(R.string.settings_status_loading) },
-        style = MaterialTheme.typography.bodySmall,
-        maxLines = 3,
-        overflow = TextOverflow.Ellipsis
-    )
+    SettingsDependencyContent(uiState, SettingsLoadDomain.DIAGNOSTICS,
+        SettingsLoadDomain.RENDERER, SettingsLoadDomain.GAME_MODE) {
+        Text(
+            text = statusPreview,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
@@ -1166,18 +1206,23 @@ internal fun SettingsStatusDialogActions(
     var showUnplayableModsDialog by rememberSaveable { mutableStateOf(false) }
 
     if (settingTitleResId == null || settingTitleResId == R.string.settings_view_full_status) {
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_view_full_status),
-            enabled = uiState.statusText.isNotBlank(),
-            onClick = { showStatusDialog = true }
-        )
+        SettingsDependencyContent(uiState, SettingsLoadDomain.DIAGNOSTICS,
+            SettingsLoadDomain.RENDERER, SettingsLoadDomain.GAME_MODE) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_view_full_status),
+                enabled = uiState.statusText.isNotBlank(),
+                onClick = { showStatusDialog = true }
+            )
+        }
     }
     if (settingTitleResId == null || settingTitleResId == R.string.settings_view_log_paths) {
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_view_log_paths),
-            enabled = uiState.logPathText.isNotBlank(),
-            onClick = { showLogDialog = true }
-        )
+        SettingsDependencyContent(uiState, SettingsLoadDomain.DIAGNOSTICS) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_view_log_paths),
+                enabled = uiState.logPathText.isNotBlank(),
+                onClick = { showLogDialog = true }
+            )
+        }
     }
     if (settingTitleResId == null || settingTitleResId == R.string.settings_unplayable_mods_entry_title) {
         SettingsActionListItem(
@@ -1193,11 +1238,14 @@ internal fun SettingsStatusDialogActions(
             onDismissRequest = { showStatusDialog = false },
             title = { Text(stringResource(R.string.settings_status_info_title)) },
             text = {
-                SelectionContainer {
-                    Text(
-                        text = uiState.statusText.ifBlank { emptyStatusInfo },
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                SettingsDependencyContent(uiState, SettingsLoadDomain.DIAGNOSTICS,
+                    SettingsLoadDomain.RENDERER, SettingsLoadDomain.GAME_MODE) {
+                    SelectionContainer {
+                        Text(
+                            text = uiState.statusText.ifBlank { emptyStatusInfo },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -1214,11 +1262,13 @@ internal fun SettingsStatusDialogActions(
             onDismissRequest = { showLogDialog = false },
             title = { Text(stringResource(R.string.settings_log_paths_title)) },
             text = {
-                SelectionContainer {
-                    Text(
-                        text = uiState.logPathText.ifBlank { emptyLogPaths },
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                SettingsDependencyContent(uiState, SettingsLoadDomain.DIAGNOSTICS) {
+                    SelectionContainer {
+                        Text(
+                            text = uiState.logPathText.ifBlank { emptyLogPaths },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             },
             confirmButton = {

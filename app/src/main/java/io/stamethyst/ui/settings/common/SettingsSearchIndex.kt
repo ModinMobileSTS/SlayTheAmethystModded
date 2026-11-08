@@ -418,6 +418,18 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.DeveloperSettings,
     ),
     entry(
+        titleResId = R.string.settings_ram_saver_shared_release,
+        subtitleResId = R.string.settings_ram_saver_shared_release_desc,
+        categoryTitleResId = R.string.settings_developer_title,
+        route = Route.DeveloperSettings,
+    ),
+    entry(
+        titleResId = R.string.settings_ram_saver_background_decode,
+        subtitleResId = R.string.settings_ram_saver_background_decode_desc,
+        categoryTitleResId = R.string.settings_developer_title,
+        route = Route.DeveloperSettings,
+    ),
+    entry(
         titleResId = R.string.settings_renderer_backend_title,
         categoryTitleResId = R.string.settings_developer_title,
         route = Route.DeveloperSettings,
@@ -494,6 +506,12 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
     ),
     entry(
         titleResId = R.string.settings_gpu_resource_diag_enabled,
+        categoryTitleResId = R.string.settings_developer_title,
+        route = Route.DeveloperSettings,
+    ),
+    entry(
+        titleResId = R.string.settings_ram_saver_visual_debug,
+        subtitleResId = R.string.settings_ram_saver_visual_debug_desc,
         categoryTitleResId = R.string.settings_developer_title,
         route = Route.DeveloperSettings,
     ),

@@ -1,0 +1,4 @@
+<resources>
+    <string name="settings_ram_saver_visual_debug">RamSaver 視覺化釋放偵錯</string>
+    <string name="settings_ram_saver_visual_debug_desc">預設關閉。啟用 RamSaver 後，逐項顯示資源釋放提示（有界佇列），包含資源名、原因與估算大小。同時開啟「深度效能診斷」和「效能浮層」時，在影格時間圖上方以對應資源顏色標記釋放影格，保留原有綠黃紅耗時柱。不自動開啟詳細日誌。修改後重新啟動遊戲生效；偵錯繪製會增加負擔，僅建議短期排查。</string>
+</resources>

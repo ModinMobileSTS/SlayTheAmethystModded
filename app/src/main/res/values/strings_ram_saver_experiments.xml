@@ -1,0 +1,8 @@
+<resources>
+    <string name="settings_ram_saver_experiments_title">RamSaver optimization and debugging</string>
+    <string name="settings_ram_saver_experiments_desc">Only applies when RamSaver is enabled. Both optimizations and visual release debugging default OFF. Completely exit the game and launch it again after each change; no patch-cache rebuild is needed. Change one optimization at a time and use the same save, character and mod set. OFF restores the corresponding previous strategy, not the original game. Crash fixes and safe resource cleanup remain enabled.</string>
+    <string name="settings_ram_saver_shared_release">Shared automatic-release budget</string>
+    <string name="settings_ram_saver_shared_release_desc">ON shares operation, byte and time limits across automatic cleanup. OFF restores separate reference cleanup and immediate aging-bucket disposal, which may release many textures in one frame.</string>
+    <string name="settings_ram_saver_background_decode">Bounded background PNG decoding</string>
+    <string name="settings_ram_saver_background_decode_desc">ON predecodes supported PNG files on one worker and uploads on the game thread. OFF keeps prewarming but reads and decodes synchronously on the game thread. JPEG and unsupported formats are synchronous in both modes.</string>
+</resources>

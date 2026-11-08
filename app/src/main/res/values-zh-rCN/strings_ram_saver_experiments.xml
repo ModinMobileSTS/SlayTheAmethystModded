@@ -1,0 +1,8 @@
+<resources>
+    <string name="settings_ram_saver_experiments_title">RamSaver 优化与调试</string>
+    <string name="settings_ram_saver_experiments_desc">仅在启用 RamSaver 时生效。两项优化和可视化释放调试均默认关闭。每次修改后请完全退出游戏再启动，无需重建补丁缓存。建议一次只改一项优化，固定存档、角色和模组组合。关闭仅恢复对应的旧策略，不等于原版游戏；崩溃修复和安全资源清理始终保留。</string>
+    <string name="settings_ram_saver_shared_release">所有自动回收路径共享预算</string>
+    <string name="settings_ram_saver_shared_release_desc">开启：自动回收共同受操作数、字节数和耗时限制。关闭：恢复引用清理和老化分开处理、老化桶直接释放；可能在一帧内删除较多纹理。</string>
+    <string name="settings_ram_saver_background_decode">有界后台 PNG 解码</string>
+    <string name="settings_ram_saver_background_decode_desc">开启：单后台线程预解码支持的 PNG，游戏线程上传。关闭：保留预热，但改为游戏线程同步读取和解码。JPEG 等未支持格式在两种模式下均同步加载。</string>
+</resources>
