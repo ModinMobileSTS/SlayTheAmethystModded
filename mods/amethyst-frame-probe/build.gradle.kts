@@ -18,6 +18,16 @@ dependencies {
     compileOnly(project(":patches:gdx-patch"))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/BaseMod.jar")))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/ModTheSpire.jar")))
+    testImplementation(libs.junit4)
+    testImplementation(project(":patches:gdx-patch"))
+    testImplementation(files(rootProject.file("build-deps/desktop.jar")))
+    testImplementation(files(appProjectRef.file("src/main/assets/components/mods/BaseMod.jar")))
+    testImplementation(files(appProjectRef.file("src/main/assets/components/mods/ModTheSpire.jar")))
+}
+
+tasks.test {
+    systemProperty("ramsaver.debug.visual", "true")
+    systemProperty("amethyst.gdx.frame_ring", "true")
 }
 
 tasks.jar {

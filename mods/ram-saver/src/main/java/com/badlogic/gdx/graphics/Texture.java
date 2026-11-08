@@ -572,9 +572,16 @@ public class Texture extends GLTexture {
     @Override
     public void dispose() {
         optispire.TextureDecodeService.cancel(cacheKey);
+        int releasedHandle = RamSaverReleaseEvents.ENABLED && !isFake && cacheKey != null ? glHandle : 0;
+        long releasedBytes = releasedHandle == 0 ? 0L : getRamSaverEstimatedBytes();
         // Fake wrappers do not own the shared real texture. Preserve their lazy reuse semantics.
         if (!isFake) explicitlyDisposed = true;
         super.dispose();
+        if (releasedHandle != 0) {
+            RamSaverReleaseEvents.record(Gdx.graphics == null ? -1L : Gdx.graphics.getFrameId(),
+                    cacheKey, file == null ? cacheKey : file.path(), RamSaverReleaseEvents.TEXTURE,
+                    "caller-dispose", releasedBytes, releasedHandle);
+        }
         removeManagedTexture(this);
         if (!isFake && cacheKey != null) {
             if (RamSaverDiag.enabled()) {

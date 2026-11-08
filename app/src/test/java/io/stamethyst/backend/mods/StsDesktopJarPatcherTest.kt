@@ -9,6 +9,19 @@ import org.junit.Test
 
 class StsDesktopJarPatcherTest {
     @Test
+    fun visualReleaseBridgeAndNestedClasses_areInjectedIntoTheGameJar() {
+        assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_RAM_SAVER_RELEASE_EVENTS_CLASS))
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry", String::class.java
+        ).apply { isAccessible = true }
+        for (entry in listOf(STS_PATCH_RAM_SAVER_RELEASE_EVENTS_CLASS,
+            "${STS_PATCH_RAM_SAVER_RELEASE_EVENTS_PREFIX}Event.class",
+            "${STS_PATCH_RAM_SAVER_RELEASE_EVENTS_PREFIX}History.class")) {
+            assertTrue(entry, method.invoke(StsDesktopJarPatcher, entry) as Boolean)
+        }
+    }
+
+    @Test
     fun mipMapGeneratorCleanup_isRequiredAndInjected() {
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_MIPMAP_GENERATOR_CLASS))
         val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(

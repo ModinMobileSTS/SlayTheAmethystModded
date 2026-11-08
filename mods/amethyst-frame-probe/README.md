@@ -57,6 +57,10 @@ Headless allocation update: reuses the frame consumer and percentile scratch buf
 
 ## Output format
 
+### RamSaver release-color linkage
+
+With the launcher's default-OFF **RamSaver visual release debug** switch enabled (`ramsaver.debug.visual=true`), `FrameHud` adds a narrow release marker strip above the timing bars. This addresses releases being invisible in the existing performance chart. `RamSaverReleaseEvents` supplies frame IDs and stable resource-configuration palette colors shared with RamSaver's standalone notification feed. Each completed frame is matched by its recorded ID, not the later update/drain time; all palette colors present on that frame are drawn as stripes. Timing heights and green/yellow/red severity remain unchanged. Notifications distinguish real-texture deletion from zero-GPU-byte region unlinking. Collection remains independent of HUD visibility, and the marker does not change frame or incident thresholds. Implemented by `FrameHud`, using the gdx-patch `RamSaverReleaseEvents` bridge; no additional game patch is installed by this component. `FrameHudReleaseTest` covers alignment, multi-resource masks, timing preservation and ring wrap. Device drawing validation is still required.
+
 ```jsonl
 {"t":1723621842000,"frame":9134,"totalMs":18.342,"renderMs":15.210,"guardianMs":0.012,"reclaimMs":0.188,"swapMs":2.844,"heapMb":398,"flushes":312,"switches":87,"room":"MonsterRoom","floor":3,"act":1,"tag":"card:Whirlwind","action":"DamageAllEnemiesAction"}
 ```

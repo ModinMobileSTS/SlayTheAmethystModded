@@ -1,6 +1,7 @@
 package io.stamethyst.frameprobe;
 
 import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.RamSaverReleaseEvents;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.megacrit.cardcrawl.core.Settings;
 import com.megacrit.cardcrawl.helpers.FontHelper;
@@ -44,6 +45,8 @@ public final class FrameHud {
     // ── ring shadow for the chart ─────────────────────────────────────────────
     /** Circular buffer of totalNs values, length WINDOW. */
     private final long[] ring   = new long[WINDOW];
+    private final int[] releaseColors = RamSaverReleaseEvents.ENABLED ? new int[WINDOW] : null;
+    private final Color[] releasePalette = RamSaverReleaseEvents.ENABLED ? new Color[RamSaverReleaseEvents.COLOR_COUNT] : null;
     private final long[] percentileScratch = new long[WINDOW];
     private int ringHead = 0;   // next write position
     private int ringSize = 0;   // how many valid entries
@@ -87,6 +90,11 @@ public final class FrameHud {
         this.budgetNs     = budgetNs;
         this.snapshotFile = snapshotFile;
         this.hudVisible   = hudVisible;
+        if (releasePalette != null) {
+            for (int i = 0; i < releasePalette.length; i++) {
+                releasePalette[i] = new Color(RamSaverReleaseEvents.colorRgba(i));
+            }
+        }
         this.consumer = new com.badlogic.gdx.backends.lwjgl.FrameRingBuffer.FrameConsumer() {
             @Override
             public void consume(
@@ -94,6 +102,8 @@ public final class FrameHud {
                     long guardian, long reclaim, long swap,
                     long heap, int flushes, int switches) {
                 ring[ringHead] = total;
+                // The completed frame ID, not the update/drain frame, owns each release marker.
+                if (releaseColors != null) releaseColors[ringHead] = RamSaverReleaseEvents.colorsForFrame(fid);
                 ringHead = (ringHead + 1) % WINDOW;
                 if (ringSize < WINDOW) ringSize++;
                 lastTotalNs = total;
@@ -169,7 +179,8 @@ public final class FrameHud {
         float barAreaW = WINDOW * (bw + bg);
         // ── 背景面板（柱状图 + 两行文字 + 上下边距）──────────────────────────
         float panelW = barAreaW + bg * 4f;
-        float panelH = maxH + lineH * 2f + textPad * 3f;
+        float markerH = releaseColors == null ? 0f : 16f * scale;
+        float panelH = maxH + markerH + lineH * 2f + textPad * 3f;
         sb.setColor(BLACK);
         sb.draw(ownTexture(), ox - bg * 2f, oy - bg, panelW, panelH + bg * 2f);
 
@@ -190,8 +201,9 @@ public final class FrameHud {
         float lastMs = lastTotalNs / 1_000_000f;
         String frameLine = String.format(
             java.util.Locale.US,
-            "last:%.1fms  p99:%.1fms  over:%d/%d",
-            lastMs, p99Ms, budgetBreaches, ringSize);
+            "last:%.1fms  p99:%.1fms  over:%d/%d%s",
+            lastMs, p99Ms, budgetBreaches, ringSize,
+            releaseColors == null ? "" : "  RS: colored release markers");
         // p99 超预算时用红色提示
         Color frameColor = p99Ms > (budgetNs / 1_000_000f) ? RED : WHITE;
         FontHelper.renderFontLeftTopAligned(sb, FontHelper.tipBodyFont,
@@ -200,13 +212,25 @@ public final class FrameHud {
         // ── ③ 柱状图 ───────────────────────────────────────────────────────────
         int head = ringHead;
         for (int i = 0; i < ringSize; i++) {
-            long ns = ring[(head - ringSize + i + WINDOW) % WINDOW];
+            int slot = (head - ringSize + i + WINDOW) % WINDOW;
+            long ns = ring[slot];
             float ratio = (float)(ns / (double) budgetNs);
             float barH  = Math.min(ratio * scaleH, maxH);
             Color c = ratio <= 1f ? GREEN : (ratio <= 2f ? YELLOW : RED);
             sb.setColor(c);
             float bx = ox + i * (bw + bg);
             sb.draw(ownTexture(), bx, oy, bw, Math.max(barH, 1f));
+            if (releaseColors != null) {
+                int mask = releaseColors[slot];
+                int count = Integer.bitCount(mask);
+                int stripe = 0;
+                for (int color = 0; color < releasePalette.length; color++) {
+                    if ((mask & (1 << color)) == 0) continue;
+                    sb.setColor(releasePalette[color]);
+                    sb.draw(ownTexture(), bx, oy + maxH + stripe++ * markerH / count,
+                            bw, markerH / count);
+                }
+            }
         }
 
         sb.setColor(WHITE);  // 恢复颜色，避免影响后续绘制

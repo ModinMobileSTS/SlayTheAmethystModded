@@ -146,6 +146,10 @@ internal const val STS_PATCH_GL_TEXTURE_INNER_PREFIX =
     "com/badlogic/gdx/graphics/GLTexture$"
 internal const val STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS =
     "com/badlogic/gdx/graphics/TextureOwnerSummary.class"
+internal const val STS_PATCH_RAM_SAVER_RELEASE_EVENTS_CLASS =
+    "com/badlogic/gdx/graphics/RamSaverReleaseEvents.class"
+internal const val STS_PATCH_RAM_SAVER_RELEASE_EVENTS_PREFIX =
+    "com/badlogic/gdx/graphics/RamSaverReleaseEvents$"
 internal const val STS_PATCH_GPU_RESOURCE_GUARDIAN_CLASS =
     "com/badlogic/gdx/graphics/GpuResourceGuardian.class"
 internal const val STS_PATCH_GPU_RESOURCE_GUARDIAN_MODE_CLASS =
@@ -223,6 +227,7 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_GL_TEXTURE_CLASS,
         STS_PATCH_MIPMAP_GENERATOR_CLASS,
         STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS,
+        STS_PATCH_RAM_SAVER_RELEASE_EVENTS_CLASS,
         STS_PATCH_GPU_RESOURCE_GUARDIAN_CLASS,
         STS_PATCH_GPU_RESOURCE_GUARDIAN_MODE_CLASS,
         STS_PATCH_GPU_RESOURCE_GUARDIAN_STATE_CLASS,
