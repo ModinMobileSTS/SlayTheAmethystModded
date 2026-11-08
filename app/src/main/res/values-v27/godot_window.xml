@@ -1,0 +1,5 @@
+<resources>
+    <style name="GodotPrototypeWindow" parent="GodotPrototypeWindowBase">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

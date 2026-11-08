@@ -50,6 +50,43 @@ class GodotBootEntryContractTest {
     }
 
     @Test
+    fun minigameNavigationBarOverrideIsApi27OnlyAndRetainsSharedWindowFlags() {
+        fun style(directory: String, name: String): Element {
+            val document = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(source("src/main/res/$directory/godot_window.xml"))
+            val styles = document.getElementsByTagName("style")
+            return (0 until styles.length).map { styles.item(it) as Element }
+                .first { it.getAttribute("name") == name }
+        }
+        fun values(style: Element): Map<String, String> {
+            val items = style.getElementsByTagName("item")
+            return (0 until items.length).map { items.item(it) as Element }
+                .associate { it.getAttribute("name") to it.textContent.trim() }
+        }
+
+        val base = style("values", "GodotPrototypeWindowBase")
+        assertEquals("android:style/Theme.Material.Light.NoActionBar", base.getAttribute("parent"))
+        val shared = values(base)
+        assertEquals("true", shared["android:windowIsTranslucent"])
+        assertEquals("@android:color/transparent", shared["android:windowBackground"])
+        assertEquals("false", shared["android:windowIsFloating"])
+        assertEquals("true", shared["android:windowDisablePreview"])
+        assertEquals("true", shared["android:windowFullscreen"])
+        assertEquals("true", shared["android:windowActionModeOverlay"])
+        assertEquals("@android:color/transparent", shared["android:statusBarColor"])
+        assertEquals("@android:color/transparent", shared["android:navigationBarColor"])
+        assertEquals("false", shared["android:windowLightStatusBar"])
+        assertFalse(shared.containsKey("android:windowLightNavigationBar"))
+
+        val default = style("values", "GodotPrototypeWindow")
+        val api27 = style("values-v27", "GodotPrototypeWindow")
+        assertEquals("GodotPrototypeWindowBase", default.getAttribute("parent"))
+        assertEquals("GodotPrototypeWindowBase", api27.getAttribute("parent"))
+        assertTrue(values(default).isEmpty())
+        assertEquals(mapOf("android:windowLightNavigationBar" to "false"), values(api27))
+    }
+
+    @Test
     fun minigameStartsAfterSessionAssignmentNotAfterTheGameDecorHasDrawn() {
         val controller = source("src/main/java/io/stamethyst/BootOverlayController.kt").readText()
         assertTrue(controller.indexOf("godotSession = GodotBootSession.create") < controller.indexOf("godotSession?.start()"))

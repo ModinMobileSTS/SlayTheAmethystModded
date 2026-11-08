@@ -6,7 +6,7 @@
 
     <!-- Translucent at WindowManager level keeps the game Surface alive. The rendered content
          itself is opaque; JVM/Surface preparation continues behind the minigame. -->
-    <style name="GodotPrototypeWindow" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="GodotPrototypeWindowBase" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowIsFloating">false</item>
@@ -16,6 +16,7 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
     </style>
+
+    <style name="GodotPrototypeWindow" parent="GodotPrototypeWindowBase" />
 </resources>
