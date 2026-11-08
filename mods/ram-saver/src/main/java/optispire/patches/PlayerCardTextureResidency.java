@@ -184,16 +184,11 @@ public final class PlayerCardTextureResidency {
         drawTextures.putAll(coreTextures);
         Set<AbstractCard> seen = Collections.newSetFromMap(new IdentityHashMap<AbstractCard, Boolean>());
         if (combat) {
-            // The last element is drawn first. Reserve scarce bytes for the actual next cards.
-            for (int i = player.drawPile.size() - 1; i >= 0; i--) {
-                collectCard(player.drawPile.group.get(i), drawTextures, seen, 0);
-            }
+            collectGroup(player.drawPile, drawTextures, seen);
             // A draw may shuffle the discard pile before taking its next card.
             collectGroup(player.discardPile, drawTextures, seen);
             seen.clear();
             collectGroup(player.hand, candidates, seen);
-            collectCard(player.cardInUse, candidates, seen, 0);
-            collectGroup(player.limbo, candidates, seen);
             candidates.putAll(drawTextures);
         }
         collectGroup(player.masterDeck, candidates, seen);

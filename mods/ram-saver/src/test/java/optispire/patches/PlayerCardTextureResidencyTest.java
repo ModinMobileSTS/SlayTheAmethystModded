@@ -285,7 +285,7 @@ public class PlayerCardTextureResidencyTest extends RamSaverTestSupport {
         assertFalse(RunTextureResidency.isProtected(second.getRamSaverKey()));
     }
 
-    @Test public void scarceBudgetProtectsTopOfDrawPileAheadOfBottomAndMasterDeck() throws Exception {
+    @Test public void scarceBudgetKeepsOrdinaryDrawPileOrderAheadOfMasterDeck() throws Exception {
         Texture bottom = texture("budget-bottom.png", 512);
         Texture top = texture("budget-top.png", 512);
         Texture master = texture("budget-master.png", 512);
@@ -293,12 +293,12 @@ public class PlayerCardTextureResidencyTest extends RamSaverTestSupport {
         player.drawPile.group.add(card(top));
         player.masterDeck.group.add(card(master));
         PlayerCardTextureResidency.reconcile(player, true, true);
-        assertTrue(RunTextureResidency.isProtected(top.getRamSaverKey()));
-        assertFalse(RunTextureResidency.isProtected(bottom.getRamSaverKey()));
+        assertTrue(RunTextureResidency.isProtected(bottom.getRamSaverKey()));
+        assertFalse(RunTextureResidency.isProtected(top.getRamSaverKey()));
         assertFalse(RunTextureResidency.isProtected(master.getRamSaverKey()));
     }
 
-    @Test public void inUseAndLimboCardsTakePriorityOverDrawPileAndReserve() throws Exception {
+    @Test public void inUseAndLimboCardsDoNotDisplaceTheDrawPile() throws Exception {
         Texture inUse = texture("budget-in-use.png", 256);
         Texture limbo = texture("budget-limbo.png", 256);
         Texture draw = texture("budget-draw.png", 512);
@@ -306,17 +306,30 @@ public class PlayerCardTextureResidencyTest extends RamSaverTestSupport {
         player.limbo.group.add(card(limbo));
         player.drawPile.group.add(card(draw));
         PlayerCardTextureResidency.reconcile(player, true, true);
-        assertTrue(RunTextureResidency.isProtected(inUse.getRamSaverKey()));
-        assertTrue(RunTextureResidency.isProtected(limbo.getRamSaverKey()));
-        assertFalse(RunTextureResidency.isProtected(draw.getRamSaverKey()));
+        assertFalse(RunTextureResidency.isProtected(inUse.getRamSaverKey()));
+        assertFalse(RunTextureResidency.isProtected(limbo.getRamSaverKey()));
+        assertTrue(RunTextureResidency.isProtected(draw.getRamSaverKey()));
     }
 
-    @Test public void globalPressurePausesFirstCombatWorkWithoutConsumingItsStep() {
+    @Test public void runPressureLeavesFirstCombatWorkAndItsNormalCadenceIndependent() {
         RunTextureResidency.updatePressure(Long.MAX_VALUE, 1, 100, 0L);
         FirstCombatPrewarmBudget.beginFrame(0L, false, false);
-        assertFalse(FirstCombatPrewarmBudget.tryStep());
+        assertTrue(FirstCombatPrewarmBudget.tryStep());
+        assertFalse("A successful step still consumes the shared frame budget", FirstCombatPrewarmBudget.tryStep());
         RunTextureResidency.updatePressure(0L, 1, 100, 31_000_000_000L);
-        assertTrue("The skipped work can resume without another cooldown", FirstCombatPrewarmBudget.tryStep());
+        assertFalse("Pressure recovery does not reset an already consumed step", FirstCombatPrewarmBudget.tryStep());
+    }
+
+    @Test public void runPressureStillAllowsFirstCombatTextureMaterialization() throws Exception {
+        Texture texture = texture("first-combat-under-run-pressure.png", 512);
+        player.drawPile.group.add(card(texture));
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        RunTextureResidency.updatePressure(Long.MAX_VALUE, 1, 100, 0L);
+        assertFalse(RunTextureResidency.isProtected(texture.getRamSaverKey()));
+        FirstCombatPrewarmBudget.beginFrame(0L, false, false);
+        assertTrue(FirstCombatPrewarmBudget.tryStep());
+        assertTrue(RamSaver.prewarmTexture(texture.getRamSaverKey(), false, optispire.TextureDecodeService.FIRST_COMBAT));
+        assertEquals(1, generated);
     }
 
     @Test public void allPatchTargetsExistAndHaveUnambiguousSignatures() throws Exception {

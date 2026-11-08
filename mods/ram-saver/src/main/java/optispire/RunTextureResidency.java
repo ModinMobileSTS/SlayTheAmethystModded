@@ -17,15 +17,11 @@ public final class RunTextureResidency {
             Math.min(512L, Long.getLong("amethyst.gdx.gpu_guardian_soft_budget_bytes", 768L * MIB) / MIB),
             64L, 4096L) * MIB;
     private static final long PRESSURE_COOLDOWN_NANOS = 30_000_000_000L;
-    private static final long PRESSURE_GRACE_NANOS = 5_000_000_000L;
     private static final long PRESSURE_SAMPLE_NANOS = 500_000_000L;
     private static final LinkedHashMap<String, Entry> wanted = new LinkedHashMap<>();
     private static long admittedBytes;
     private static boolean suspended;
-    private static boolean constrained;
-    private static long protectionBudget = PRESSURE_BYTES;
     private static long resumeAfterNanos;
-    private static long pressureStarted = -1L;
     private static long nextPressureSample;
 
     private RunTextureResidency() { }
@@ -75,14 +71,13 @@ public final class RunTextureResidency {
         for (Map.Entry<String, Entry> item : wanted.entrySet()) {
             Entry entry = item.getValue();
             boolean admitted = !suspended && entry.bytes > 0L
-                    && entry.bytes <= Math.min(BUDGET_BYTES, protectionBudget) - admittedBytes;
-            // One owner/charge per key: run candidates never also consume the generic hot budget.
-            RamSaver.releaseRunTexturePin(item.getKey());
+                    && entry.bytes <= BUDGET_BYTES - admittedBytes;
+            // Run residency and the ordinary hot cache have independent budgets.
+            if (!admitted) RamSaver.releaseRunTexturePin(item.getKey());
             entry.admitted = admitted;
             if (!admitted) TextureDecodeService.cancel(item.getKey(), TextureDecodeService.RUN);
             if (admitted) admittedBytes += entry.bytes;
         }
-        RamSaver.setHotPinBudget(constrained ? 0L : protectionBudget - admittedBytes);
     }
 
     public static boolean isProtected(String key) {
@@ -91,10 +86,16 @@ public final class RunTextureResidency {
     }
 
     public static boolean allowsHotPin(String key) {
-        return !constrained && !wanted.containsKey(key);
+        Entry entry = wanted.get(key);
+        return entry == null || entry.admitted;
     }
 
-    public static boolean isUnderPressure() { return constrained; }
+    public static boolean isUnderPressure() { return suspended; }
+
+    /** Run pressure never pauses unrelated first-combat work or withdraws generic hot pins. */
+    public static boolean shouldPausePrewarm(int scope) {
+        return suspended && (scope & TextureDecodeService.RUN) != 0;
+    }
 
     public static void onTextureLoaded(String key, Texture texture) {
         Entry entry = wanted.get(key);
@@ -113,7 +114,7 @@ public final class RunTextureResidency {
     }
 
     public static boolean hasPending(Collection<String> priority) {
-        if (constrained) return false;
+        if (suspended) return false;
         if (priority == null) {
             for (Entry entry : wanted.values()) if (entry.admitted && !entry.attempted) return true;
         } else {
@@ -127,7 +128,7 @@ public final class RunTextureResidency {
 
     /** At most one request, ready upload or synchronous fallback; the patch owns the frame budget. */
     public static void prewarmOne(Collection<String> priority) {
-        if (constrained) return;
+        if (suspended) return;
         Iterable<String> keys = priority == null ? wanted.keySet() : priority;
         for (String key : keys) {
             Entry entry = wanted.get(key);
@@ -152,55 +153,22 @@ public final class RunTextureResidency {
                 runtime.totalMemory() - runtime.freeMemory(), runtime.maxMemory(), now);
     }
 
-    /** Shared policy for run protection, hot pins and speculative prewarm. No GL deletion here. */
+    /** Run-only pressure withdrawal and recovery. Generic hot-cache policy remains independent. */
     public static void updatePressure(long trackedBytes, long heapUsed, long heapMax, long now) {
-        // Reservations include CPU/native staging, which is absent from GL counters. Count once here,
-        // not as reclaimable RamSaver GL credit or as a second run/hot allocation.
+        // Keep background staging in the existing run-pressure input; no global hot-cache budget.
         long staging = TextureDecodeService.reservedBytes();
         trackedBytes = trackedBytes > Long.MAX_VALUE - staging ? Long.MAX_VALUE : trackedBytes + staging;
         boolean heapPressure = heapMax > 0L && heapUsed >= heapMax - heapMax / 10L;
         boolean pressure = trackedBytes >= PRESSURE_BYTES || heapPressure;
         if (pressure) {
             resumeAfterNanos = now + PRESSURE_COOLDOWN_NANOS;
-            if (pressureStarted < 0L) pressureStarted = now;
-            boolean severe = heapPressure || trackedBytes >= PRESSURE_BYTES + PRESSURE_BYTES / 4L
-                    || now - pressureStarted >= PRESSURE_GRACE_NANOS;
-            boolean changed = !constrained || (severe && !suspended);
-            constrained = true;
-            TextureDecodeService.cancelAll();
-            suspended |= severe;
-            // Subtract only bytes actually present in the aggregate GL counters, not RGBA estimates
-            // (RGB565, mipmaps, downscaling and context loss can all make those estimates differ).
-            long externalBytes = Math.max(0L, trackedBytes - RamSaver.getLoadedTextureTrackedBytes());
-            long available = suspended ? 0L : Math.max(0L, PRESSURE_BYTES * 4L / 5L - externalBytes);
-            // No expansion during the cooldown: reclaiming our own textures must not repin them.
-            protectionBudget = Math.min(protectionBudget, available);
+            suspended = true;
+            TextureDecodeService.cancelScope(TextureDecodeService.RUN);
             admit();
-            RamSaver.requestPressureAging();
-            if (changed && RamSaverDiag.enabled()) {
-                RamSaverDiag.log("texture_residency_pressure", "trackedBytes=" + trackedBytes
-                        + " heapUsed=" + heapUsed + " severe=" + suspended
-                        + " protectionBudget=" + protectionBudget + " protectedBytes=" + admittedBytes);
-            }
-        } else if (constrained && now >= resumeAfterNanos && trackedBytes < PRESSURE_BYTES * 4L / 5L
+        } else if (suspended && now >= resumeAfterNanos && trackedBytes < PRESSURE_BYTES * 4L / 5L
                 && (heapMax <= 0L || heapUsed < heapMax - heapMax / 5L)) {
             suspended = false;
-            constrained = false;
-            pressureStarted = -1L;
-            long externalBytes = Math.max(0L, trackedBytes - RamSaver.getLoadedTextureTrackedBytes());
-            protectionBudget = Math.max(0L, PRESSURE_BYTES - externalBytes);
             admit();
-            RamSaverDiag.log("run_residency_resumed", "trackedBytes=" + trackedBytes + " protectedBytes=" + admittedBytes);
-        } else if (!pressure) {
-            pressureStarted = -1L;
-            if (!constrained) {
-                long externalBytes = Math.max(0L, trackedBytes - RamSaver.getLoadedTextureTrackedBytes());
-                long available = Math.max(0L, PRESSURE_BYTES - externalBytes);
-                if (available != protectionBudget) {
-                    protectionBudget = available;
-                    admit();
-                }
-            }
         }
     }
 
@@ -209,8 +177,8 @@ public final class RunTextureResidency {
         for (String key : wanted.keySet()) RamSaver.releaseRunTexturePin(key);
         wanted.clear();
         admittedBytes = 0L;
-        // A new run/menu transition must not reset process-wide memory pressure.
-        RamSaver.setHotPinBudget(constrained ? 0L : protectionBudget);
+        suspended = false;
+        resumeAfterNanos = 0L;
     }
 
     private static long property(String name, long fallback, long min, long max) {

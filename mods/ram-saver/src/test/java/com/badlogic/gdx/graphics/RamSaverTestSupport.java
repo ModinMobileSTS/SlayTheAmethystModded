@@ -64,14 +64,7 @@ public abstract class RamSaverTestSupport {
 
     @After public void tearDownGL() throws Exception {
         RunTextureResidency.clear();
-        // Production scope changes deliberately preserve global pressure. Each test is a new process model.
-        set(RunTextureResidency.class, "suspended", false);
-        set(RunTextureResidency.class, "constrained", false);
-        set(RunTextureResidency.class, "protectionBudget", field(RunTextureResidency.class, "PRESSURE_BYTES"));
-        set(RunTextureResidency.class, "resumeAfterNanos", 0L);
-        set(RunTextureResidency.class, "pressureStarted", -1L);
         set(RunTextureResidency.class, "nextPressureSample", 0L);
-        RamSaver.setHotPinBudget(Long.MAX_VALUE);
         Map<String, ?> loaded = map("loadedAssets");
         for (String id : new ArrayList<>(loaded.keySet())) RamSaver.dispose(id);
         delta = 0;

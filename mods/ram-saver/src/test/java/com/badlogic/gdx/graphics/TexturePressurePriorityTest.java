@@ -11,7 +11,7 @@ import java.util.Map;
 
 import static org.junit.Assert.*;
 
-/** Same workload/assertions run before and after the pressure-policy change. No timing/sleeps. */
+/** Run pressure must leave ordinary hot-cache retention and aging independent. No timing/sleeps. */
 public class TexturePressurePriorityTest extends RamSaverTestSupport {
     private static final long MIB = 1024L * 1024L;
     private final List<Texture> uploaded = new ArrayList<>();
@@ -40,7 +40,7 @@ public class TexturePressurePriorityTest extends RamSaverTestSupport {
         return bytes;
     }
 
-    @Test public void softPressureReclaimsHistoryBeforeUpcomingCardsWithoutIncreasingMemory() throws Exception {
+    @Test public void pressureWithdrawsRunImagesWithoutTakingUnrelatedHotBudget() throws Exception {
         // Test budgets: run=1 MiB, hot=1 MiB, aggregate pressure=64 MiB.
         // Three 256x256 cards cost 0.75 MiB; history 1 MiB; idle pages 12 MiB.
         Texture hand = image("priority-hand.png", 256, true);
@@ -75,25 +75,39 @@ public class TexturePressurePriorityTest extends RamSaverTestSupport {
                 + " aggregateAfterBytes=" + (externalBytes + after) + " criticalRetained=" + retained
                 + " criticalReloads=" + reloads + " historyRetained=" + historyRetained
                 + " reserveRetained=" + reserveRetained);
-        assertEquals("Keep the hand and upcoming card ahead of reserve/history", 2, retained);
-        assertEquals("Reuse must not synchronously materialize the critical cards again", 0, reloads);
-        assertFalse("History must yield to the run", historyRetained);
-        assertFalse("Reserve must yield when only the first two cards fit", reserveRetained);
-        assertTrue("Reclamation must reach the aggregate 80% recovery target",
-                externalBytes + after <= 64 * MIB * 4 / 5);
-        assertEquals("Exactly the two critical 0.25 MiB cards remain", MIB / 2, after);
+        assertEquals("Pressure withdraws all run-owned protection", 0, retained);
+        assertEquals("Withdrawn run images use ordinary demand loading", 2, reloads);
+        assertTrue("History retains its independent hot protection", historyRetained);
+        assertFalse("The reserve card also yields its run protection", reserveRetained);
+        assertEquals("Only the independent 1 MiB hot image remains before demand reuse", MIB, after);
     }
 
-    @Test public void severePressureCannotRepinUnrelatedTexturesThroughDemandOrPrewarm() throws Exception {
-        Texture history = image("severe-history.png", 512, true);
+    @Test public void severeRunPressureDoesNotDisableUnrelatedHotPinsOrDemandMaterialization() throws Exception {
+        Texture history = image("severe-history.png", 256, true);
         Texture real = history.getRealTexture();
         RunTextureResidency.updatePressure(128 * MIB, 1, 100, 0L);
         history.getRealTexture(false); // Fixed-set prewarm/cache-hit path.
         Texture newlyLoaded = image("severe-new.png", 256, true).getRealTexture(false);
-        assertFalse("An unrelated cache hit must not bypass global pressure",
+        assertTrue("An unrelated cache hit keeps its independent hot protection",
                 RamSaver.isHotTexturePinned(history.getRamSaverKey()));
         tick(); tick();
-        assertEquals(0, real.getTextureObjectHandle());
-        assertEquals(0, newlyLoaded.getTextureObjectHandle());
+        assertNotEquals(0, real.getTextureObjectHandle());
+        assertNotEquals(0, newlyLoaded.getTextureObjectHandle());
+    }
+
+    @Test public void intermittentBattleEffectDoesNotReloadDuringSustainedRunPressure() throws Exception {
+        Texture effect = image("vfx/intermittent.png", 256, true);
+        Texture real = effect.getRealTexture();
+        int initialLoads = generated;
+        delta = 1f / 60f;
+        for (int frame = 0; frame <= 900; frame++) {
+            if (frame % 30 == 0) {
+                RunTextureResidency.updatePressure(64 * MIB, 1, 100, frame * 1_000_000_000L / 60);
+            }
+            if (frame % 300 == 0) assertSame(real, effect.getRealTexture());
+            RamSaver.update();
+        }
+        assertEquals("An effect reused every five seconds must not synchronously reload", initialLoads, generated);
+        assertTrue(deleted.isEmpty());
     }
 }

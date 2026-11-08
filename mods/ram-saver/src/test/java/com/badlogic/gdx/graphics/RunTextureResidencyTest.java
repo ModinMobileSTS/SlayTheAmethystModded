@@ -47,10 +47,12 @@ public class RunTextureResidencyTest extends RamSaverTestSupport {
         assertTrue(deleted.isEmpty());
     }
 
-    @Test public void runProtectionDoesNotDuplicateGenericHotPinAccounting() throws Exception {
+    @Test public void runProtectionSurvivesOrdinaryHotPinExpiry() throws Exception {
         Texture fake = fake("expired.png", 64, true);
         RunTextureResidency.replaceCandidates(candidates(fake));
         Texture real = fake.getRealTexture();
+        assertTrue(RamSaver.isHotTexturePinned(fake.getRamSaverKey()));
+        set(map("fakeTextureStates").get(fake.getRamSaverKey()), "hotPinnedUntilNanos", 0L);
         assertFalse(RamSaver.isHotTexturePinned(fake.getRamSaverKey()));
         for (int i = 0; i < 20; i++) tick();
         assertNotEquals(0, real.getTextureObjectHandle());
@@ -220,43 +222,43 @@ public class RunTextureResidencyTest extends RamSaverTestSupport {
         assertTrue(RunTextureResidency.isProtected(fake.getRamSaverKey()));
     }
 
-    @Test public void healthyAggregateBudgetIsSharedWithHotCacheAndExternalResources() throws Exception {
+    @Test public void healthyRunAndHotBudgetsRemainIndependentOfExternalAllocations() throws Exception {
         long mib = 1024L * 1024L;
         Texture card = fake("shared-card.png", 256, true);
         RunTextureResidency.replaceCandidates(candidates(card));
         Texture cardReal = card.getRealTexture();
         assertEquals(mib / 4, cardReal.getTrackedNativeBytes());
-        // 63 MiB of unrelated resources leave 1 MiB total, with 0.25 MiB already reserved for the card.
+        // Below the pressure threshold, external allocations do not shrink either independent budget.
         RunTextureResidency.updatePressure(63 * mib + mib / 4, 1, 100, 0L);
         Texture history = fake("shared-history.png", 512, true);
         history.getRealTexture();
-        assertFalse("A 1 MiB history pin cannot fit in the remaining 0.75 MiB", RamSaver.isHotTexturePinned(history.getRamSaverKey()));
+        assertTrue("History retains its independent 1 MiB hot budget", RamSaver.isHotTexturePinned(history.getRamSaverKey()));
         tick(); tick();
         assertNotEquals(0, cardReal.getTextureObjectHandle());
-        assertNull(RamSaver.getAsset(history.getRamSaverKey(), false));
+        assertNotNull(RamSaver.getAsset(history.getRamSaverKey(), false));
     }
 
-    @Test public void persistentSoftPressureEventuallyWithdrawsEvenRunProtection() {
+    @Test public void thresholdPressureWithdrawsRunProtectionImmediatelyAndRenewsCooldown() {
         long mib = 1024L * 1024L;
         Texture card = fake("persistent-card.png", 256, false);
         RunTextureResidency.replaceCandidates(candidates(card));
         card.getRealTexture();
-        fake("persistent-idle.png", 2048, false).getRealTexture();
         RunTextureResidency.updatePressure(64 * mib, 1, 100, 0L);
-        assertTrue(RunTextureResidency.isProtected(card.getRamSaverKey()));
+        assertFalse(RunTextureResidency.isProtected(card.getRamSaverKey()));
         assertFalse("Do not prefetch while reclaiming", RunTextureResidency.hasPending(null));
         RunTextureResidency.updatePressure(64 * mib, 1, 100, 5_000_000_000L);
-        assertFalse("Continuing pressure cannot preserve optimistic reclaim credit indefinitely",
-                RunTextureResidency.isProtected(card.getRamSaverKey()));
+        RunTextureResidency.updatePressure(0, 1, 100, 34_000_000_000L);
+        assertFalse("Cooldown starts from the last high sample", RunTextureResidency.isProtected(card.getRamSaverKey()));
+        RunTextureResidency.updatePressure(0, 1, 100, 36_000_000_000L);
+        assertTrue(RunTextureResidency.isProtected(card.getRamSaverKey()));
     }
 
-    @Test public void runChangesCannotResetGlobalPressureAndRecoveryRequiresBothLowWatermarks() {
+    @Test public void recoveryRequiresCooldownAndBothLowWatermarks() {
         long mib = 1024L * 1024L;
         RunTextureResidency.updatePressure(128 * mib, 1, 100, 0L);
-        RunTextureResidency.clear();
         Texture history = fake("pressure-next-run.png", 256, true);
         history.getRealTexture(false);
-        assertFalse(RamSaver.isHotTexturePinned(history.getRamSaverKey()));
+        assertTrue("Unrelated hot pins remain available during run pressure", RamSaver.isHotTexturePinned(history.getRamSaverKey()));
         RunTextureResidency.updatePressure(0, 1, 100, 29_000_000_000L);
         assertTrue(RunTextureResidency.isUnderPressure());
         RunTextureResidency.updatePressure(52 * mib, 1, 100, 31_000_000_000L);
@@ -269,7 +271,18 @@ public class RunTextureResidencyTest extends RamSaverTestSupport {
         assertTrue(RamSaver.isHotTexturePinned(history.getRamSaverKey()));
     }
 
-    @Test public void trackedCreditUsesActualFormatAndDisposalDoesNotLeavePhantomBytes() {
+    @Test public void clearingTheRunResetsItsPressureState() {
+        RunTextureResidency.updatePressure(Long.MAX_VALUE, 1, 100, 0L);
+        assertTrue(RunTextureResidency.isUnderPressure());
+        RunTextureResidency.clear();
+        assertFalse(RunTextureResidency.isUnderPressure());
+        Texture card = fake("new-run.png", 256, false);
+        RunTextureResidency.replaceCandidates(candidates(card));
+        assertTrue(RunTextureResidency.isProtected(card.getRamSaverKey()));
+        assertTrue(RunTextureResidency.hasPending(null));
+    }
+
+    @Test public void trackedAllocationUsesActualFormatAndDisposalDoesNotLeavePhantomBytes() {
         Texture real = new RealTexture(new MockData(256) {
             @Override public Pixmap.Format getFormat() { return Pixmap.Format.RGB565; }
         });
@@ -279,9 +292,10 @@ public class RunTextureResidencyTest extends RamSaverTestSupport {
         assertEquals(0, real.getTrackedNativeBytes());
     }
 
-    @Test public void pressureAgingRunsPromptlyButNeverDeletesAnActivelyBoundImage() {
-        Texture idle = fake("pressure-idle-cadence.png", 256, true).getRealTexture();
-        Texture visible = fake("pressure-visible-cadence.png", 256, true).getRealTexture();
+    @Test public void pressureDoesNotAccelerateAgingOrRemoveIntermittentHotProtection() throws Exception {
+        Texture idle = fake("pressure-idle-cadence.png", 256, false).getRealTexture();
+        Texture visible = fake("pressure-visible-cadence.png", 256, false).getRealTexture();
+        Texture effect = fake("pressure-effect-cadence.png", 256, true).getRealTexture();
         RunTextureResidency.updatePressure(Long.MAX_VALUE, 1, 100, 0L);
         assertTrue("The pressure sample must not delete GL resources in bulk", deleted.isEmpty());
         delta = 0.25f;
@@ -289,7 +303,13 @@ public class RunTextureResidencyTest extends RamSaverTestSupport {
             visible.bind();
             RamSaver.update(); // Real delta-driven scheduler, not the forced-bucket test helper.
         }
-        assertEquals("Idle historical pin must be reclaimed promptly", 0, idle.getTextureObjectHandle());
+        assertNotEquals("Pressure must not shorten the current normal aging timer", 0, idle.getTextureObjectHandle());
+        for (int i = 0; i < 2; i++) {
+            visible.bind();
+            tick();
+        }
+        assertEquals("Unpinned idle images still age out normally", 0, idle.getTextureObjectHandle());
+        assertNotEquals("Intermittent hot images retain their ordinary protection", 0, effect.getTextureObjectHandle());
         assertNotEquals("Normal freshness still protects a visible texture", 0, visible.getTextureObjectHandle());
     }
 }

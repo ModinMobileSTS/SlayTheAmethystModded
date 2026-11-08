@@ -7,7 +7,6 @@ import com.badlogic.gdx.graphics.g2d.TextureAtlas.TextureAtlasData;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas.TextureAtlasData.Page;
 import optispire.RamSaver;
 import optispire.RamSaverDiag;
-import optispire.RunTextureResidency;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -53,7 +52,6 @@ final class PrewarmTextureRegistry {
     }
 
     static boolean prewarm(String path, String atlasPath, String event) {
-        if (RunTextureResidency.isUnderPressure()) return false;
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
         String result = "missing";

@@ -144,6 +144,25 @@ public class BackgroundTextureDecodeTest extends RamSaverTestSupport {
         assertEquals(0, queue.pendingCount());
     }
 
+    @Test public void runPressureCancelsOnlyRunDecodeAndKeepsReadyFirstCombatPixels() throws Exception {
+        Texture run = image("pressure-run.png", null, false);
+        Texture firstCombat = image("pressure-first-combat.png", null, false);
+        assertFalse(RamSaver.prewarmTexture(run.getRamSaverKey(), true, TextureDecodeService.RUN));
+        assertFalse(RamSaver.prewarmTexture(firstCombat.getRamSaverKey(), false, TextureDecodeService.FIRST_COMBAT));
+        executor.drainWorker();
+        assertEquals(BoundedTextureDecoder.State.READY, queue.state(run.getRamSaverKey()));
+        assertEquals(BoundedTextureDecoder.State.READY, queue.state(firstCombat.getRamSaverKey()));
+        RunTextureResidency.updatePressure(Long.MAX_VALUE, 1, 100, 0L);
+        assertEquals(BoundedTextureDecoder.State.MISSING, queue.state(run.getRamSaverKey()));
+        assertEquals(BoundedTextureDecoder.State.READY, queue.state(firstCombat.getRamSaverKey()));
+        reads.clear();
+        assertTrue(RamSaver.prewarmTexture(firstCombat.getRamSaverKey(), false, TextureDecodeService.FIRST_COMBAT));
+        assertTrue("Ready pixels must not be re-read on render after run pressure", reads.isEmpty());
+        assertEquals(1, uploads.size());
+        assertSame(Thread.currentThread(), uploads.get(0));
+        assertEquals(0, queue.reservedBytes());
+    }
+
     @Test public void nativeFormatMipmapAndSamplerVariantsRemainIndependent() throws Exception {
         Texture fake = image("format.png", Pixmap.Format.RGB565, true);
         String key = fake.getRamSaverKey();
@@ -276,6 +295,25 @@ public class BackgroundTextureDecodeTest extends RamSaverTestSupport {
                 assertArrayEquals("Background output matches the bundled native decoder", uploaded, background);
                 RamSaver.dispose(key);
             }
+        }
+    }
+
+    @Test public void disablingDecodeSwitchMakesProductionPrewarmSynchronousWithoutWorkerWork() throws Exception {
+        String old = System.getProperty("ramsaver.decode.enabled");
+        System.setProperty("ramsaver.decode.enabled", "false");
+        try {
+            Texture fake = image("decode-switch-off.png", null, false);
+            assertTrue(RamSaver.prewarmTexture(fake.getRamSaverKey(), true, TextureDecodeService.FIRST_COMBAT));
+            assertFalse(reads.isEmpty());
+            for (Thread reader : reads) assertSame(renderThread, reader);
+            assertEquals(1, uploads.size());
+            assertEquals(0, queue.pendingCount());
+            assertEquals(0, queue.reservedBytes());
+            executor.drainWorker();
+            assertEquals("No delayed upload or duplicate decode", 1, uploads.size());
+        } finally {
+            if (old == null) System.clearProperty("ramsaver.decode.enabled");
+            else System.setProperty("ramsaver.decode.enabled", old);
         }
     }
 }

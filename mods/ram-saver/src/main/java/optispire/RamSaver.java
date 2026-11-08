@@ -71,6 +71,7 @@ import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.RealTexture;
+import com.badlogic.gdx.graphics.RamSaverReleaseEvents;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas;
 import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
@@ -105,7 +106,6 @@ public class RamSaver {
     private static final long HOT_SLOW_LOAD_NANOS = readLong("ramsaver.hot.slow_ms", 8L, 1L, 60000L) * 1000000L;
     private static final long HOT_PIN_NANOS = readLong("ramsaver.hot.pin_seconds", 120L, 10L, 1800L) * 1000000000L;
     private static final long HOT_PIN_BUDGET_BYTES = readLong("ramsaver.hot.budget_mb", 384L, 0L, 2048L) * 1024L * 1024L;
-    private static long effectiveHotPinBudgetBytes = HOT_PIN_BUDGET_BYTES;
     private static int nextSet = 0;
     private static float timer = TICK;
 
@@ -121,11 +121,12 @@ public class RamSaver {
     public static void update() {
         boolean diag = RamSaverDiag.enabled();
         long updateStarted = diag ? System.nanoTime() : 0L;
+        if (!RamSaverFeatures.sharedReleaseBudget()) releaseLegacyReferences();
         timer -= Gdx.graphics.getRawDeltaTime();
         if (timer <= 0) {
             long bucketStarted = diag ? System.nanoTime() : 0L;
             int setIndex = nextSet;
-            timer = (RunTextureResidency.isUnderPressure() ? Math.min(TICK, 1f) : TICK) / loadedSets.size();
+            timer = TICK / loadedSets.size();
 
             ArrayList<String> set = loadedSets.get(nextSet);
             int sizeBefore = set.size();
@@ -133,7 +134,7 @@ public class RamSaver {
             int queuedOldAssets = 0;
             int agedAssets = 0;
             int keptFreshAssets = 0;
-            // Reuse a bounded snapshot; aging only produces candidates for the shared scheduler.
+            // Reuse a bounded snapshot; shared mode nominates candidates, legacy mode deletes directly.
             int count = set.size();
             for (int i = 0; i < count; i++) agingKeys[i] = set.get(i);
             for (int i = count - 1; i >= 0; --i) {
@@ -150,7 +151,11 @@ public class RamSaver {
                     asset.refresh();
                 }
                 else if (!asset.isFresh()) {
-                    if (agingCandidates.add(asset.asset)) queuedOldAssets++;
+                    if (RamSaverFeatures.sharedReleaseBudget()) {
+                        if (agingCandidates.add(asset.asset)) queuedOldAssets++;
+                    } else {
+                        dispose(asset, true, "idle"); // Legacy: aging is independent of the reference cleanup limit.
+                    }
                 }
                 else if (asset.canAge()) {
                     agedAssets++;
@@ -184,7 +189,7 @@ public class RamSaver {
                 SystemStats.logMemoryStats();
             }*/
         }
-        int releaseOperations = releaseAutomatically();
+        int releaseOperations = RamSaverFeatures.sharedReleaseBudget() ? releaseAutomatically() : 0;
         if (diag && releaseOperations > 0) {
             RamSaverDiag.logDuration(
                     "update_auto_release",
@@ -196,6 +201,28 @@ public class RamSaver {
                             + " " + inventoryDetails(),
                     false
             );
+        }
+    }
+
+    /** Legacy A/B path: reference/retired cleanup shares a count, aging deletion does not. */
+    private static void releaseLegacyReferences() {
+        int operations = 0;
+        ManagedAsset.ManagedAssetReference reference;
+        while (operations < RELEASE_OPERATIONS_PER_FRAME
+                && (reference = (ManagedAsset.ManagedAssetReference) referenceQueue.poll()) != null) {
+            operations++;
+            ManagedAsset holder = reference.holder;
+            if (holder.asset == reference && loadedAssets.get(holder.ID) == holder
+                    && holder.texture == null && reference.get() == null) dispose(holder, true, "gc-region");
+        }
+        while (operations < RELEASE_OPERATIONS_PER_FRAME && !retiredAssets.isEmpty()) {
+            operations++;
+            ManagedAsset parent = retiredAssets.peek();
+            if (!parent.dependent.isEmpty()) dispose(parent.dependent.get(parent.dependent.size() - 1), true, "retired-parent");
+            if (parent.dependent.isEmpty()) {
+                retiredAssets.remove();
+                managedAssetPool.free(parent);
+            }
         }
     }
 
@@ -220,7 +247,7 @@ public class RamSaver {
                     worked = true;
                     ManagedAsset holder = reference.holder;
                     if (holder.asset == reference && loadedAssets.get(holder.ID) == holder
-                            && holder.texture == null && reference.get() == null) dispose(holder);
+                            && holder.texture == null && reference.get() == null) dispose(holder, true, "gc-region");
                 }
             }
             else if (nextReleaseSource == 1) {
@@ -228,7 +255,7 @@ public class RamSaver {
                 if (parent != null) {
                     worked = true;
                     // loadRegion is the only producer of dependent entries; these own no GL handle.
-                    if (!parent.dependent.isEmpty()) dispose(parent.dependent.get(parent.dependent.size() - 1));
+                    if (!parent.dependent.isEmpty()) dispose(parent.dependent.get(parent.dependent.size() - 1), true, "retired-parent");
                     if (parent.dependent.isEmpty()) {
                         retiredAssets.remove();
                         managedAssetPool.free(parent);
@@ -248,7 +275,7 @@ public class RamSaver {
                 agingCandidates.remove(reference);
                 worked = true;
                 if (eligible) {
-                    dispose(holder);
+                    dispose(holder, true, "idle");
                     releasedBytes += bytes;
                 }
             }
@@ -535,7 +562,7 @@ public class RamSaver {
             state.height = height;
             state.knowSize = width > 0 && height > 0;
             state.materializationFailed = false;
-            boolean shouldPin = effectiveHotPinBudgetBytes > 0L && RunTextureResidency.allowsHotPin(textureID)
+            boolean shouldPin = HOT_PIN_BUDGET_BYTES > 0L && RunTextureResidency.allowsHotPin(textureID)
                     && (elapsedNanos >= HOT_SLOW_LOAD_NANOS || state.recentMaterializeCount >= HOT_LOAD_REPEAT_THRESHOLD);
             if (shouldPin) {
                 repeatedHot = state.hotPinned;
@@ -752,7 +779,7 @@ public class RamSaver {
     public static <T> T getAsset(String id, boolean refresh) {
         ManagedAsset asset = loadedAssets.get(id);
         if (asset != null && asset.parent != null && asset.parent.retired) {
-            dispose(asset);
+            dispose(asset, true, "retired-parent");
             return null;
         }
         if (asset != null) {
@@ -889,7 +916,7 @@ public class RamSaver {
         else {
             // The old holder no longer owns the active cache entry.
             holder.set = old.set;
-            dispose(old, false);
+            dispose(old, false, "replacement");
         }
         if (diag) {
             RamSaverDiag.logDuration(
@@ -957,7 +984,7 @@ public class RamSaver {
         else {
             // Replacement immediately unlinks the old region; queued references become stale.
             holder.set = old.set;
-            dispose(old, false);
+            dispose(old, false, "replacement");
         }
         if (diag) {
             RamSaverDiag.logDuration(
@@ -983,7 +1010,7 @@ public class RamSaver {
     }
     /** Called only after the shared frame budget is claimed. Pending decode is not a completed attempt. */
     public static boolean prewarmTexture(String key, boolean canAge, int scope) {
-        if (RunTextureResidency.isUnderPressure()) return false;
+        if (RunTextureResidency.shouldPausePrewarm(scope)) return false;
         if (getExistingTexture(key) != null) {
             TextureDecodeService.cancel(key);
             if (!canAge) makeResident(key);
@@ -1059,7 +1086,7 @@ public class RamSaver {
         }
     }
     private static void makeResident(String id, Texture texture) {
-        if (texture == null || effectiveHotPinBudgetBytes == 0L || !RunTextureResidency.allowsHotPin(id)) return;
+        if (texture == null || HOT_PIN_BUDGET_BYTES == 0L || !RunTextureResidency.allowsHotPin(id)) return;
         FakeTextureState state = getOrCreateFakeTextureState(id);
         long now = System.nanoTime();
         state.estimatedBytes = estimateTextureBytes(texture.getWidth(), texture.getHeight());
@@ -1079,27 +1106,6 @@ public class RamSaver {
         if (state != null) unpin(state);
     }
 
-    /** Shared protection budget: run candidates reserve bytes first; generic hot pins use the remainder. */
-    public static void setHotPinBudget(long availableBytes) {
-        long budget = Math.min(HOT_PIN_BUDGET_BYTES, Math.max(0L, availableBytes));
-        if (effectiveHotPinBudgetBytes == budget) return;
-        effectiveHotPinBudgetBytes = budget;
-        enforceHotPinBudget(System.nanoTime());
-    }
-
-    /** Only queried on low-frequency pressure samples, never scan historical fake-texture metadata. */
-    public static long getLoadedTextureTrackedBytes() {
-        long bytes = 0L;
-        for (ManagedAsset asset : loadedAssets.values()) {
-            if (asset.texture != null) bytes += asset.texture.getTrackedNativeBytes();
-        }
-        return bytes;
-    }
-
-    public static void requestPressureAging() {
-        // Start the faster pressure sweep promptly, even when the normal bucket timer is still long.
-        timer = Math.min(timer, 1f / loadedSets.size());
-    }
     public static Texture getTextureForBindFallback(String id) {
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
@@ -1209,7 +1215,7 @@ public class RamSaver {
         TextureDecodeService.cancel(id);
         ManagedAsset asset = loadedAssets.get(id);
         if (asset != null) {
-            dispose(asset, true);
+            dispose(asset, true, "explicit");
         }
         else {
             if (RamSaverDiag.enabled()) {
@@ -1228,12 +1234,9 @@ public class RamSaver {
             return;
         }
         // The handle is already zero; use the same child/unlink/pool lifecycle as eviction.
-        dispose(asset);
+        dispose(asset, true, "caller-dispose");
     }
-    private static void dispose(ManagedAsset asset) {
-        dispose(asset, true);
-    }
-    private static void dispose(ManagedAsset asset, boolean removeKey) {
+    private static void dispose(ManagedAsset asset, boolean removeKey, String reason) {
         if (asset.retired) return;
         agingCandidates.remove(asset.asset);
         asset.retired = true;
@@ -1241,7 +1244,28 @@ public class RamSaver {
         long started = diag ? System.nanoTime() : 0L;
         String id = asset.ID;
         String before = diag ? asset.describe() : "";
+        int releasedHandle = 0;
+        long releasedBytes = 0L;
+        String resource = id;
+        boolean releasedRegion = false;
+        if (RamSaverReleaseEvents.ENABLED) {
+            releasedRegion = asset.type == ManagedAsset.AssetType.REGION && asset.parent != null;
+            FileTextureSupplier source = textures.get(releasedRegion ? asset.parent.ID : id);
+            if (source != null && source.file != null) resource = source.file.path();
+            if (asset.texture != null) {
+                releasedHandle = asset.texture.peekTextureObjectHandle();
+                if (releasedHandle != 0) releasedBytes = asset.texture.getRamSaverEstimatedBytes();
+                if (asset.texture.file != null) resource = asset.texture.file.path();
+            }
+        }
         asset.dispose();
+        // Caller disposal already emitted the real deletion before entering this bookkeeping path.
+        // Stale notifications and already-zero texture handles are not release events.
+        if (RamSaverReleaseEvents.ENABLED && (releasedHandle != 0 || releasedRegion)) {
+            RamSaverReleaseEvents.record(Gdx.graphics == null ? -1L : Gdx.graphics.getFrameId(),
+                    id, resource, releasedRegion ? RamSaverReleaseEvents.REGION : RamSaverReleaseEvents.TEXTURE,
+                    reason, releasedBytes, releasedHandle);
+        }
         FakeTextureState state = getFakeTextureState(id);
         if (state != null && (removeKey || !loadedAssets.containsKey(id))) {
             unpin(state);
@@ -1350,7 +1374,7 @@ public class RamSaver {
                 Map.Entry<FakeTextureState, Long> entry = iterator.next();
                 FakeTextureState state = entry.getKey();
                 boolean expired = nowNanos >= state.hotPinnedUntilNanos;
-                if (!expired && hotPinBytes <= effectiveHotPinBudgetBytes) break;
+                if (!expired && hotPinBytes <= HOT_PIN_BUDGET_BYTES) break;
                 hotPinBytes -= entry.getValue();
                 iterator.remove();
                 state.hotPinned = false;
@@ -1358,7 +1382,7 @@ public class RamSaver {
                 if (!expired && RamSaverDiag.enabled()) {
                     RamSaverDiag.logRepeat("hot_texture_unpinned_budget", state.textureID,
                             "estimatedBytes=" + entry.getValue() + " totalBytes=" + hotPinBytes
-                                    + " hotCount=" + hotPins.size() + " budgetBytes=" + effectiveHotPinBudgetBytes);
+                                    + " hotCount=" + hotPins.size() + " budgetBytes=" + HOT_PIN_BUDGET_BYTES);
                 }
             }
         }

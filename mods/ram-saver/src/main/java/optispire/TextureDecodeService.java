@@ -32,7 +32,7 @@ public final class TextureDecodeService {
 
     public static BoundedTextureDecoder.State request(String key, RamSaver.FileTextureSupplier supplier, int scope) {
         // Overridden suppliers may have different semantics. Never call their code off-thread.
-        if (stopped || !Boolean.parseBoolean(System.getProperty("ramsaver.decode.enabled", "true"))
+        if (stopped || !Boolean.parseBoolean(System.getProperty("ramsaver.decode.enabled", "false"))
                 || supplier.getClass() != RamSaver.FileTextureSupplier.class
                 || !supplier.file.extension().equalsIgnoreCase("png") || Gdx.gl20 == null)
             return BoundedTextureDecoder.State.FALLBACK;

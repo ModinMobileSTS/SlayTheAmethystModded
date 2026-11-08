@@ -153,7 +153,7 @@ public class AutomaticReleaseBudgetTest extends RamSaverTestSupport {
         assertNotEquals(0, replacement.getTextureObjectHandle());
     }
 
-    @Test public void pressureAcceleratesCandidatesWithoutBypassingReleaseCaps() throws Exception {
+    @Test public void runPressureDoesNotBypassAutomaticReleaseCaps() throws Exception {
         for (int i = 0; i < 16; i++) load("pressure" + i, 1024, true);
         int before = deleted.size();
         RunTextureResidency.updatePressure(128 * MIB, 1, 100, 0L);
