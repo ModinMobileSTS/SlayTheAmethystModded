@@ -94,6 +94,7 @@ internal fun DeveloperModConfigDialog(controlsEnabled: Boolean, onDismiss: () ->
         }
     } else {
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = onDismiss,
             title = { Text(stringResource(R.string.mod_config_developer_title)) },
             text = {

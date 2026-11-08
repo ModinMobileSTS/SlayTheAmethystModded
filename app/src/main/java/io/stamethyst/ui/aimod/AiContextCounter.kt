@@ -124,6 +124,7 @@ internal fun AiContextCounter(
         val cache = state?.cacheStats
             ?.takeIf { endpoint == null || it.endpoint == endpoint } ?: AgentCacheStats()
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = { showDetails = false },
             title = { Text(usageLabel) },
             text = {

@@ -52,6 +52,7 @@ internal fun AgentPatchContributionDialog(
     }
     val active = receipts.values.any { it != null }
     LauncherAlertDialog(
+        scrollableText = false,
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ai_patch_contribution_title)) },
         text = {

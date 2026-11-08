@@ -31,6 +31,7 @@ internal fun SaveSlotDialog(
         mutableStateOf(state.selectedMode)
     }
     AlertDialog(
+        scrollableText = false,
         onDismissRequest = onDismiss,
         title = {
             Text(

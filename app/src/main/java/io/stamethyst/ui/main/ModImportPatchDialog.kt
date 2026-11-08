@@ -10,7 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import io.stamethyst.ui.LauncherAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,6 +45,7 @@ internal fun ModImportPatchDialog(
     val canUpgradeFromWorkshop = mod.needsImportPatchUpdate && mod.workshop != null
     var showWorkshopUpgradeConfirmation by remember(mod.storagePath) { mutableStateOf(false) }
     AlertDialog(
+        scrollableText = false,
         onDismissRequest = onDismiss,
         title = {
             Text(

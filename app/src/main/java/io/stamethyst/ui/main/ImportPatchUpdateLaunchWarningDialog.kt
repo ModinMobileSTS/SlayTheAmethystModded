@@ -31,6 +31,7 @@ internal fun ImportPatchUpdateLaunchWarningDialog(
     onDontShowAgain: () -> Unit,
 ) {
     AlertDialog(
+        scrollableText = false,
         onDismissRequest = onDismissRequest,
         title = {
             Text(text = stringResource(R.string.main_launch_import_patch_update_title))

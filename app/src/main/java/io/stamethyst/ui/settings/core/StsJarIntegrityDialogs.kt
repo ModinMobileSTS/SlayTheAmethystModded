@@ -83,6 +83,7 @@ internal fun StsJarIntegrityDialogHost(
         title = {
             Text(stringResource(R.string.sts_jar_integrity_warning_title))
         },
+        scrollableText = false,
         text = {
             Column(
                 modifier = Modifier

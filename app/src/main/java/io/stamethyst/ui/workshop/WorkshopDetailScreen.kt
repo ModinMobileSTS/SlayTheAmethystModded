@@ -1546,6 +1546,7 @@ private fun WorkshopChangeNotesDialog(
 ) {
     val markdown = changeNotes?.markdown.orEmpty()
     AlertDialog(
+        scrollableText = false,
         onDismissRequest = onDismiss,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

@@ -142,6 +142,7 @@ internal fun SettingsUpdateSection(
 
     uiState.releaseHistoryDialogState?.let { dialogState ->
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = actions.onDismissReleaseHistoryDialog,
             title = { Text(stringResource(R.string.update_history_dialog_title)) },
             text = {

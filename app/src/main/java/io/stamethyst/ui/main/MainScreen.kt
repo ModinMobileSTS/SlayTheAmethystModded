@@ -4476,6 +4476,7 @@ internal fun LauncherMainRoute(
 
     batchBlockedModDisableDialog?.let { dialog ->
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = { batchBlockedModDisableDialog = null },
             title = { Text(dialog.title.resolve()) },
             text = {
@@ -4671,6 +4672,7 @@ private fun ModNameMigrationFailureDialog(
         title = {
             Text(text = stringResource(R.string.main_mod_name_migration_failed_title))
         },
+        scrollableText = false,
         text = {
             Column {
                 Text(
@@ -5050,6 +5052,7 @@ private fun LauncherMainScreenContent(
             pendingLaunchUnreadSuggestionModNames
         )
         io.stamethyst.ui.LauncherAlertDialog(
+            scrollableText = false,
             onDismissRequest = actions.onCancelLaunchWithUnreadSuggestions,
             title = { Text(text = stringResource(R.string.main_launch_unread_suggestions_title)) },
             text = {
@@ -5495,6 +5498,7 @@ private fun WorkshopJarSelectionDialog(
             dismissOnBackPress = false,
             dismissOnClickOutside = false,
         ),
+        scrollableText = false,
         title = {
             Text(text = stringResource(R.string.main_mod_workshop_jar_selection_title))
         },
@@ -5593,6 +5597,7 @@ private fun EnabledModsDialog(
     io.stamethyst.ui.LauncherAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.main_enabled_mods_dialog_title)) },
+        scrollableText = false,
         text = {
             Column(
                 modifier = Modifier
@@ -5645,6 +5650,7 @@ private fun ModSizeBreakdownDialog(
     io.stamethyst.ui.LauncherAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.main_mod_size_dialog_title)) },
+        scrollableText = false,
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),

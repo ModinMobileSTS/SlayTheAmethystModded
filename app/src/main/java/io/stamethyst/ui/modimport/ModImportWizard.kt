@@ -39,7 +39,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -162,6 +162,7 @@ private fun ModImportWizardDialog(
         ModImportStep.Result -> stringResource(R.string.mod_import_wizard_title_result)
     }
     AlertDialog(
+        scrollableText = false,
         modifier = modifier,
         onDismissRequest = {
             if (state.step != ModImportStep.Executing) onDismiss()
@@ -391,6 +392,7 @@ private fun PatchStep(
     val atlasHelpText = buildAtlasDownscaleHelpText()
     if (showAtlasHelp) {
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = { showAtlasHelp = false },
             properties = DialogProperties(dismissOnClickOutside = false),
             title = { Text(stringResource(R.string.mod_import_dialog_atlas_downscale_confirm_title)) },

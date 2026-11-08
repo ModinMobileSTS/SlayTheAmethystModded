@@ -23,6 +23,7 @@ import io.stamethyst.backend.steamcloud.steamCloudPhaseLabel
 internal fun SteamCloudPullProgressDialog(progress: SteamCloudSyncProgress) {
     val percent = progress.pullProgressPercent()
     AlertDialog(
+        scrollableText = false,
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
         title = { Text(stringResource(R.string.settings_busy_steam_cloud_pull)) },

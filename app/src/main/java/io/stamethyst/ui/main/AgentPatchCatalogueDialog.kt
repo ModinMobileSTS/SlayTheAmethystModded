@@ -823,7 +823,7 @@ private fun LocalAgentPatchChooserDialog(
                     )
                 } else {
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp),
+                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 440.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         items(patches, key = { it.patchId }) { patch ->
@@ -977,7 +977,8 @@ private fun LocalAgentPatchActionsDialog(
                 )
                 HorizontalDivider()
                 Column(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
+                        .heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     ModActionOptionItem(
@@ -1070,31 +1071,30 @@ private fun AgentPatchInstallProgressDialog(
         animationSpec = tween(320),
         label = "agent_patch_install_progress",
     )
-    Dialog(
+    AlertDialog(
         onDismissRequest = { if (!working) onDismiss() },
+        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
         properties = DialogProperties(
             dismissOnBackPress = !working,
             dismissOnClickOutside = !working,
         ),
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        ) {
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        title = {
+            Text(
+                when {
+                    state.done -> stringResource(R.string.main_mod_agent_patch_install_done_title)
+                    state.error != null -> stringResource(R.string.main_mod_agent_patch_install_failed_title)
+                    else -> stringResource(R.string.main_mod_agent_patch_install_progress_title)
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        text = {
             Column(
-                modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
-                    when {
-                        state.done -> stringResource(R.string.main_mod_agent_patch_install_done_title)
-                        state.error != null -> stringResource(R.string.main_mod_agent_patch_install_failed_title)
-                        else -> stringResource(R.string.main_mod_agent_patch_install_progress_title)
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
                 Text(
                     state.patch.name.ifBlank { stringResource(R.string.main_mod_agent_patch_unnamed) },
                     style = MaterialTheme.typography.bodySmall,
@@ -1165,16 +1165,14 @@ private fun AgentPatchInstallProgressDialog(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-                if (state.done || state.error != null) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = onDismiss) {
-                            Text(stringResource(R.string.common_action_close))
-                        }
-                    }
-                }
             }
-        }
-    }
+        },
+        confirmButton = {
+            if (!working) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_action_close)) }
+            }
+        },
+    )
     if (state.done) {
         LaunchedEffect(state.patch.patchModId) {
             delay(1200)
@@ -1204,38 +1202,37 @@ private fun AgentPatchUploadDialog(
 ) {
     val busy = phase == AgentPatchUploadPhase.UPLOADING
     val patchName = patch.name.ifBlank { stringResource(R.string.main_mod_agent_patch_unnamed) }
-    Dialog(
+    AlertDialog(
         onDismissRequest = { if (!busy) onDismissRequest() },
+        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
         properties = DialogProperties(
             dismissOnBackPress = !busy,
             dismissOnClickOutside = !busy,
         ),
-    ) {
-        Card(
-            modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        ) {
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        title = {
+            AnimatedContent(
+                targetState = phase,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "agent_patch_upload_title",
+            ) { current ->
+                Text(
+                    when (current) {
+                        AgentPatchUploadPhase.FORM -> stringResource(R.string.main_mod_agent_patch_upload_author_title)
+                        AgentPatchUploadPhase.UPLOADING -> stringResource(R.string.main_mod_agent_patch_uploading_title)
+                        AgentPatchUploadPhase.THANKS -> stringResource(R.string.main_mod_agent_patch_upload_thanks_title)
+                        AgentPatchUploadPhase.ERROR -> stringResource(R.string.main_mod_agent_patch_upload_failed_title)
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        },
+        text = {
             Column(
-                modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                AnimatedContent(
-                    targetState = phase,
-                    transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
-                    label = "agent_patch_upload_title",
-                ) { current ->
-                    Text(
-                        when (current) {
-                            AgentPatchUploadPhase.FORM -> stringResource(R.string.main_mod_agent_patch_upload_author_title)
-                            AgentPatchUploadPhase.UPLOADING -> stringResource(R.string.main_mod_agent_patch_uploading_title)
-                            AgentPatchUploadPhase.THANKS -> stringResource(R.string.main_mod_agent_patch_upload_thanks_title)
-                            AgentPatchUploadPhase.ERROR -> stringResource(R.string.main_mod_agent_patch_upload_failed_title)
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
                 Text(
                     patchName,
                     style = MaterialTheme.typography.bodySmall,
@@ -1259,24 +1256,39 @@ private fun AgentPatchUploadDialog(
                             onEmailChange = onEmailChange,
                             consent = consent,
                             onConsentChange = onConsentChange,
-                            onCancel = onClose,
-                            onUpload = onStartUpload,
                         )
                         AgentPatchUploadPhase.UPLOADING -> AgentPatchUploadProgressContent(progress, checkpointProgress)
                         AgentPatchUploadPhase.THANKS -> AgentPatchUploadThanksContent(
                             result = result,
-                            onClose = onClose,
                         )
                         AgentPatchUploadPhase.ERROR -> AgentPatchUploadErrorContent(
                             error = error.orEmpty(),
-                            onBack = onBackToForm,
-                            onClose = onClose,
                         )
                     }
                 }
             }
-        }
-    }
+        },
+        confirmButton = {
+            when (phase) {
+                AgentPatchUploadPhase.FORM -> Button(
+                    onClick = onStartUpload,
+                    enabled = consent && username.isNotBlank() && email.isNotBlank(),
+                ) { Text(stringResource(R.string.main_mod_agent_patch_upload_confirm)) }
+                AgentPatchUploadPhase.THANKS -> Button(onClick = onClose) {
+                    Text(stringResource(R.string.common_action_close))
+                }
+                AgentPatchUploadPhase.ERROR -> Button(onClick = onBackToForm) {
+                    Text(stringResource(R.string.main_mod_agent_patch_upload_back))
+                }
+                AgentPatchUploadPhase.UPLOADING -> Unit
+            }
+        },
+        dismissButton = {
+            if (phase == AgentPatchUploadPhase.FORM || phase == AgentPatchUploadPhase.ERROR) {
+                TextButton(onClick = onClose) { Text(stringResource(R.string.common_action_close)) }
+            }
+        },
+    )
 }
 
 @Composable
@@ -1287,67 +1299,47 @@ private fun AgentPatchUploadForm(
     onEmailChange: (String) -> Unit,
     consent: Boolean,
     onConsentChange: (Boolean) -> Unit,
-    onCancel: () -> Unit,
-    onUpload: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Column(
-            modifier = Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
-            Text(stringResource(R.string.main_mod_agent_patch_upload_author_prompt), style = MaterialTheme.typography.bodySmall)
-            Text(
-                stringResource(R.string.main_mod_agent_patch_upload_identity_note),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedTextField(
-                value = username,
-                onValueChange = onUsernameChange,
-                label = { Text(stringResource(R.string.main_mod_agent_patch_upload_username)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = email,
-                onValueChange = onEmailChange,
-                label = { Text(stringResource(R.string.main_mod_agent_patch_upload_email)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(stringResource(R.string.main_mod_agent_patch_upload_no_email), style = MaterialTheme.typography.labelSmall)
-            Text(
-                stringResource(R.string.main_mod_agent_patch_upload_public_identity),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                stringResource(R.string.main_mod_agent_patch_upload_password_warning),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.clickable { onConsentChange(!consent) },
-            ) {
-                androidx.compose.material3.Checkbox(checked = consent, onCheckedChange = onConsentChange)
-                Text(stringResource(R.string.main_mod_agent_patch_upload_consent), style = MaterialTheme.typography.labelSmall)
-            }
-        }
-        Row(
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Text(stringResource(R.string.main_mod_agent_patch_upload_author_prompt), style = MaterialTheme.typography.bodySmall)
+        Text(
+            stringResource(R.string.main_mod_agent_patch_upload_identity_note),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = username,
+            onValueChange = onUsernameChange,
+            label = { Text(stringResource(R.string.main_mod_agent_patch_upload_username)) },
+            singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        )
+        OutlinedTextField(
+            value = email,
+            onValueChange = onEmailChange,
+            label = { Text(stringResource(R.string.main_mod_agent_patch_upload_email)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(stringResource(R.string.main_mod_agent_patch_upload_no_email), style = MaterialTheme.typography.labelSmall)
+        Text(
+            stringResource(R.string.main_mod_agent_patch_upload_public_identity),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            stringResource(R.string.main_mod_agent_patch_upload_password_warning),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+        Row(
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.clickable { onConsentChange(!consent) },
         ) {
-            TextButton(onClick = onCancel) { Text(stringResource(R.string.common_action_close)) }
-            Button(
-                onClick = onUpload,
-                enabled = consent && username.isNotBlank() && email.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.main_mod_agent_patch_upload_confirm))
-            }
+            androidx.compose.material3.Checkbox(checked = consent, onCheckedChange = onConsentChange)
+            Text(stringResource(R.string.main_mod_agent_patch_upload_consent), style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -1434,7 +1426,6 @@ private fun AgentPatchUploadProgressContent(
 @Composable
 private fun AgentPatchUploadThanksContent(
     result: AgentPatchUploadResult?,
-    onClose: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     Column(
@@ -1463,32 +1454,18 @@ private fun AgentPatchUploadThanksContent(
                 }
             }
         }
-        Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.common_action_close))
-        }
     }
 }
 
 @Composable
 private fun AgentPatchUploadErrorContent(
     error: String,
-    onBack: () -> Unit,
-    onClose: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            stringResource(R.string.main_mod_agent_patch_upload_failed, error),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-        ) {
-            TextButton(onClick = onClose) { Text(stringResource(R.string.common_action_close)) }
-            Button(onClick = onBack) { Text(stringResource(R.string.main_mod_agent_patch_upload_back)) }
-        }
-    }
+    Text(
+        stringResource(R.string.main_mod_agent_patch_upload_failed, error),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+    )
 }
 
 @Composable

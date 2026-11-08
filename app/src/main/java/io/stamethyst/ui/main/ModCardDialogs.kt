@@ -110,6 +110,7 @@ internal fun ModActionsDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .weight(1f, fill = false)
                         .heightIn(max = 520.dp)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -254,6 +255,7 @@ internal fun AssociateModPickerDialog(
                 )
             )
         },
+        scrollableText = false,
         text = {
             Column(
                 modifier = Modifier
@@ -326,6 +328,7 @@ internal fun ModAssociationManageDialog(
                 )
             )
         },
+        scrollableText = false,
         text = {
             Column(
                 modifier = Modifier
@@ -663,6 +666,7 @@ internal fun MoveModToFolderDialog(
                 )
             )
         },
+        scrollableText = false,
         text = {
             Column(
                 modifier = Modifier
@@ -718,6 +722,7 @@ internal fun MoveSelectedModsToFolderDialog(
                 )
             )
         },
+        scrollableText = false,
         text = {
             Column(
                 modifier = Modifier

@@ -45,6 +45,7 @@ internal fun SlingBreakDependencyDialogs(
     if (progress != null || failure != null) {
         var selectedMirror by remember { mutableStateOf(UpdateMirrorManager.current(context)) }
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = { if (progress == null) onDismissFailure() },
             properties = DialogProperties(
                 dismissOnBackPress = progress == null,

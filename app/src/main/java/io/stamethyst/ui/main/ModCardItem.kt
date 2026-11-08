@@ -614,6 +614,7 @@ internal fun ModCard(
 
     if (showWorkshopUpdateConfirmDialog && mod.workshop?.state == WorkshopModState.UpdateAvailable) {
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = { showWorkshopUpdateConfirmDialog = false },
             title = { Text(stringResource(R.string.main_mod_workshop_update_dialog_title)) },
             text = {
