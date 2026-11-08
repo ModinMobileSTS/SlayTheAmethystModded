@@ -69,6 +69,7 @@ import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.render.VirtualResolutionPolicy
 import io.stamethyst.ui.LauncherAlertDialog
 import io.stamethyst.ui.settings.common.SettingsActionListItem
+import io.stamethyst.ui.settings.common.settingsControlEnabled
 import io.stamethyst.ui.settings.core.SettingsScreenViewModel
 import kotlin.math.roundToInt
 
@@ -117,23 +118,24 @@ internal fun GameDisplayRegionDialog(
     val region = GameDisplayRegion.fromPersistedValue(serializedDraft) ?: initialRegion
     val rect = region.toPixels(geometry.width, geometry.height)
     LauncherAlertDialog(
+        scrollableText = false,
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag("game_display_region_dialog"),
         title = { Text(stringResource(R.string.settings_game_display_size_title)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 GameDisplayRegionPreview(
-                    region, geometry, resolutionMode, enabled,
+                    region, geometry, resolutionMode, settingsControlEnabled(enabled),
                     onRegionChange = { serializedDraft = it.persistedValue() },
                 )
                 Text(stringResource(R.string.settings_game_display_size_pixels,
                     rect.width, rect.height, geometry.width, geometry.height), style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(enabled = enabled, onClick = { serializedDraft = GameDisplayRegion.FULLSCREEN.persistedValue() }) {
+                    TextButton(enabled = settingsControlEnabled(enabled), onClick = { serializedDraft = GameDisplayRegion.FULLSCREEN.persistedValue() }) {
                         Text(stringResource(R.string.settings_game_display_reset))
                     }
                     if (geometry.cutoutBounds.isNotEmpty()) {
-                        TextButton(enabled = enabled, onClick = {
+                        TextButton(enabled = settingsControlEnabled(enabled), onClick = {
                             serializedDraft = geometry.legacyRegion(true, false).persistedValue()
                         }) { Text(stringResource(R.string.settings_game_display_avoid_cutout)) }
                     }
@@ -141,7 +143,7 @@ internal fun GameDisplayRegionDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = enabled, onClick = { onSave(region) }) { Text(stringResource(R.string.common_action_save)) }
+            TextButton(enabled = settingsControlEnabled(enabled), onClick = { onSave(region) }) { Text(stringResource(R.string.common_action_save)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.main_folder_dialog_cancel)) }

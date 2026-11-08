@@ -105,9 +105,11 @@ fun LauncherSteamCloudLoginScreen(
         loginAttempted,
         uiState.busy,
         uiState.steamCloudRefreshTokenConfigured,
+        uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT),
         loginChallenge
     ) {
         if (loginAttempted &&
+            uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT) == SettingsLoadState.READY &&
             !uiState.busy &&
             loginChallenge == null &&
             uiState.steamCloudRefreshTokenConfigured
@@ -185,7 +187,7 @@ fun LauncherSteamCloudLoginScreen(
                     onValueChange = { username = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    enabled = !uiState.busy && loginChallenge == null,
+                    enabled = savedCredentialsLoaded && !uiState.busy && loginChallenge == null,
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.AccountCircle,
@@ -201,7 +203,7 @@ fun LauncherSteamCloudLoginScreen(
                     onValueChange = { password = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    enabled = !uiState.busy && loginChallenge == null,
+                    enabled = savedCredentialsLoaded && !uiState.busy && loginChallenge == null,
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Lock,
@@ -226,7 +228,7 @@ fun LauncherSteamCloudLoginScreen(
                             loginAttempted = true
                         }
                     },
-                    enabled = !loginLoading && loginChallenge == null,
+                    enabled = savedCredentialsLoaded && !loginLoading && loginChallenge == null,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (loginLoading) {

@@ -181,7 +181,7 @@ internal fun SettingsAppearanceSection(
                         LauncherPreferences.MIN_CHROME_BACKGROUND_OPACITY) / 0.05f)
                         .roundToInt() - 1
                     ).coerceAtLeast(0),
-                enabled = !uiState.busy,
+                enabled = settingsControlEnabled(!uiState.busy),
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -257,6 +257,7 @@ internal fun SettingsAppearanceSection(
     if (showBootOverlayCustomImageDialog) {
         AlertDialog(
             onDismissRequest = {},
+            scrollableText = false,
             title = { Text(stringResource(R.string.settings_boot_overlay_custom_image_dialog_title)) },
             text = {
                 BootOverlayCustomImageDialogContent(
@@ -310,6 +311,7 @@ internal fun SettingsAppearanceSection(
             loadingAnimationDisplayName(animation)
         }
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = { showBootOverlayAnimationDialog = false },
             title = { Text(stringResource(R.string.settings_loading_animation_dialog_title)) },
             text = {
@@ -602,7 +604,7 @@ internal fun BootOverlayImageModeOption(
         RadioButton(
             selected = selected,
             onClick = null,
-            enabled = enabled,
+            enabled = settingsControlEnabled(enabled),
             modifier = Modifier.size(28.dp)
         )
         Spacer(modifier = Modifier.width(4.dp))
@@ -794,7 +796,7 @@ internal fun BootOverlayStyleOption(
                 RadioButton(
                     selected = selected,
                     onClick = null,
-                    enabled = enabled,
+                    enabled = settingsControlEnabled(enabled),
                     modifier = Modifier.size(28.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
@@ -922,7 +924,7 @@ internal fun ThemeColorOptionRow(
         RadioButton(
             selected = selected,
             onClick = null,
-            enabled = enabled
+            enabled = settingsControlEnabled(enabled)
         )
         Spacer(modifier = Modifier.width(10.dp))
         ThemeColorSwatch(themeColor = themeColor, selected = selected)

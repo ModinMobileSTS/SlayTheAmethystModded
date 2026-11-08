@@ -119,6 +119,8 @@ internal fun SteamCloudSaveSettingsCards(
     onSteamCloudSaveModeChanged: (SteamCloudSaveMode) -> Unit,
     onOpenSteamCloudSyncBlacklistSettings: () -> Unit,
     onForceIndependentSaveOverwriteCloud: () -> Unit,
+) = SettingsDependencyContent(
+    uiState, SettingsLoadDomain.CONFIGURATION, SettingsLoadDomain.STEAM_ACCOUNT, SettingsLoadDomain.STEAM_SAVES,
 ) {
     val loggedIn = uiState.steamCloudRefreshTokenConfigured
     var showForceOverwriteConfirmDialog by rememberSaveable { mutableStateOf(false) }
@@ -174,7 +176,7 @@ internal fun SteamCloudSaveSettingsCards(
             },
             confirmButton = {
                 Button(
-                    enabled = overwriteConfirmEnabled,
+                    enabled = settingsControlEnabled(overwriteConfirmEnabled),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError,
@@ -260,19 +262,20 @@ private fun SteamCloudSaveModeOptionRow(
     description: String,
     onSelect: () -> Unit,
 ) {
+    val controlEnabled = settingsControlEnabled(enabled)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(enabled = enabled, onClick = onSelect)
+            .clickable(enabled = controlEnabled, onClick = onSelect)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         RadioButton(
             selected = selected,
-            enabled = enabled,
+            enabled = controlEnabled,
             onClick = null,
         )
         Column(
@@ -282,7 +285,7 @@ private fun SteamCloudSaveModeOptionRow(
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (enabled) {
+                color = if (controlEnabled) {
                     MaterialTheme.colorScheme.onSurface
                 } else {
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -291,7 +294,7 @@ private fun SteamCloudSaveModeOptionRow(
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (enabled) {
+                color = if (controlEnabled) {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
@@ -346,7 +349,7 @@ private fun SteamCloudForceIndependentOverwritePanel(
             color = MaterialTheme.colorScheme.onErrorContainer,
         )
         Button(
-            enabled = !busy,
+            enabled = settingsControlEnabled(!busy),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.error,
                 contentColor = MaterialTheme.colorScheme.onError,

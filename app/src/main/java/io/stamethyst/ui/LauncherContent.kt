@@ -538,6 +538,9 @@ fun LauncherContent(
         LocalNavigator provides navigator,
         LocalChromeBackgroundOpacity provides chromeBackgroundOpacity,
         LocalLauncherBannerState provides launcherBannerState,
+        io.stamethyst.ui.settings.common.LocalSettingsLoadRetry provides { domain ->
+            settingsViewModel.retrySettingsLoad(activity, domain)
+        },
     ) {
         SettingsEffectsHandler(viewModel = settingsViewModel)
         LaunchedEffect(activity) {
@@ -1246,6 +1249,7 @@ fun LauncherContent(
                     }
                     if (showDownloadChoiceDialog) {
                         AlertDialog(
+                            scrollableText = false,
                             onDismissRequest = { showDownloadChoiceDialog = false },
                             title = {
                                 Text(stringResource(R.string.update_download_choice_dialog_title))
@@ -1300,6 +1304,7 @@ fun LauncherContent(
                         )
                     } else {
                         AlertDialog(
+                            scrollableText = false,
                             onDismissRequest = settingsViewModel::dismissUpdatePrompt,
                             title = { Text(stringResource(R.string.update_dialog_title)) },
                             text = {

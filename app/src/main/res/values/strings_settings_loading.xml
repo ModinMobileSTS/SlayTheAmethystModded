@@ -1,0 +1,5 @@
+<resources>
+    <string name="settings_value_loading">Loading…</string>
+    <string name="settings_value_load_failed">Could not load this setting. Your saved configuration has not been reset.</string>
+    <string name="settings_value_retry">Retry</string>
+</resources>

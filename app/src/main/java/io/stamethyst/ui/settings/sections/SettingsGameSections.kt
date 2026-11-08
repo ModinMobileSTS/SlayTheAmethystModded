@@ -548,7 +548,7 @@ internal fun SettingsPlayerNameAction(
                         value = pendingPlayerName,
                         onValueChange = { pendingPlayerName = it },
                         singleLine = true,
-                        enabled = !uiState.busy,
+                        enabled = settingsControlEnabled(!uiState.busy),
                         label = { Text(stringResource(R.string.settings_player_name_hint)) }
                     )
                     Text(

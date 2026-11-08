@@ -107,7 +107,7 @@ internal data class MarketSettingsActions(
 @Composable
 internal fun SettingsEasyTierSection(
     uiState: SettingsScreenViewModel.UiState,
-) {
+) = SettingsDependencyContent(uiState, SettingsLoadDomain.EASYTIER) {
     val settings = uiState.easyTierSettings
     val statusText = when {
         settings.canConnect -> stringResource(R.string.settings_easytier_status_ready)
@@ -189,7 +189,7 @@ private fun EasyTierSettingsInfoCard(
             )
             SelectionContainer {
                 Text(
-                    text = value,
+                    text = value.takeIf { settingsControlEnabled() }.orEmpty(),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -222,15 +222,17 @@ internal fun SettingsSteamCloudSection(
     )
 
     Spacer(modifier = Modifier.size(8.dp))
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_steam_cloud_save_settings_title),
-        supportingText = stringResource(
-            R.string.settings_steam_cloud_save_settings_summary,
-            currentSaveModeText,
-        ),
-        enabled = !uiState.busy,
-        onClick = actions.onOpenSteamCloudSaveSettings,
-    )
+    SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_SAVES) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_steam_cloud_save_settings_title),
+            supportingText = stringResource(
+                R.string.settings_steam_cloud_save_settings_summary,
+                currentSaveModeText,
+            ),
+            enabled = !uiState.busy,
+            onClick = actions.onOpenSteamCloudSaveSettings,
+        )
+    }
 
     Spacer(modifier = Modifier.size(8.dp))
     SettingsSwitchItem(
@@ -288,7 +290,7 @@ internal fun SteamNetworkSection(
 internal fun SteamAccountSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: SteamCloudSettingsActions,
-) {
+) = SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_ACCOUNT) {
     var showLogoutConfirmDialog by rememberSaveable { mutableStateOf(false) }
     val accountName = uiState.steamCloudAccountName.ifBlank {
         stringResource(R.string.settings_steam_cloud_account_unknown)
@@ -326,7 +328,8 @@ internal fun SteamAccountSection(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
-                        text = if (uiState.steamCloudRefreshTokenConfigured) accountDisplayName
+                        text = if (!settingsControlEnabled()) ""
+                               else if (uiState.steamCloudRefreshTokenConfigured) accountDisplayName
                                else stringResource(R.string.settings_steam_cloud_account_not_signed_in),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -334,7 +337,8 @@ internal fun SteamAccountSection(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = if (uiState.steamCloudRefreshTokenConfigured)
+                        text = if (!settingsControlEnabled()) ""
+                               else if (uiState.steamCloudRefreshTokenConfigured)
                                    stringResource(R.string.settings_steam_cloud_account_signed_in)
                                else stringResource(R.string.settings_steam_cloud_account_login_hint),
                         style = MaterialTheme.typography.bodySmall,
@@ -355,7 +359,7 @@ internal fun SteamAccountSection(
                     }
                 } else {
                     Button(
-                        enabled = !uiState.busy,
+                        enabled = settingsControlEnabled(!uiState.busy),
                         onClick = actions.onOpenSteamCloudLogin,
                     ) {
                         Text(stringResource(R.string.settings_steam_cloud_login_action))
@@ -407,18 +411,20 @@ internal fun SteamGamePresenceSection(
     var showRiskWarning by rememberSaveable { mutableStateOf(false) }
     var showRichPresenceEditor by rememberSaveable { mutableStateOf(false) }
 
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.steamGamePresenceEnabled,
-            enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
-            title = stringResource(R.string.settings_steam_services_presence_enabled_title),
-            description = stringResource(R.string.settings_steam_services_presence_desc),
-            onCheckedChange = { enabled ->
-                if (enabled) showRiskWarning = true
-                else actions.onSteamGamePresenceChanged(false)
-            },
+    SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_ACCOUNT) {
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.steamGamePresenceEnabled,
+                enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
+                title = stringResource(R.string.settings_steam_services_presence_enabled_title),
+                description = stringResource(R.string.settings_steam_services_presence_desc),
+                onCheckedChange = { enabled ->
+                    if (enabled) showRiskWarning = true
+                    else actions.onSteamGamePresenceChanged(false)
+                },
+            )
         )
-    )
+    }
 
     Spacer(modifier = Modifier.size(8.dp))
     SettingsActionListItem(
@@ -439,7 +445,7 @@ internal fun SteamGamePresenceSection(
         )
     }
 
-    if (showRiskWarning) {
+    if (showRiskWarning && uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT) == SettingsLoadState.READY) {
         AlertDialog(
             onDismissRequest = { showRiskWarning = false },
             title = { Text(stringResource(R.string.settings_steam_services_risk_warning_title)) },
@@ -476,6 +482,7 @@ private fun RichPresenceDisplayEditorDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_steam_services_rich_presence_display_title)) },
+        scrollableText = false,
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -576,18 +583,20 @@ internal fun SteamAchievementSection(
 ) {
     var showRiskWarning by rememberSaveable { mutableStateOf(false) }
 
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.steamAchievementSyncEnabled,
-            enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
-            title = stringResource(R.string.settings_steam_services_achievement_enabled_title),
-            description = stringResource(R.string.settings_steam_services_achievement_desc),
-            onCheckedChange = { enabled ->
-                if (enabled) showRiskWarning = true
-                else actions.onSteamAchievementSyncChanged(false)
-            },
+    SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_ACCOUNT) {
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.steamAchievementSyncEnabled,
+                enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
+                title = stringResource(R.string.settings_steam_services_achievement_enabled_title),
+                description = stringResource(R.string.settings_steam_services_achievement_desc),
+                onCheckedChange = { enabled ->
+                    if (enabled) showRiskWarning = true
+                    else actions.onSteamAchievementSyncChanged(false)
+                },
+            )
         )
-    )
+    }
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
@@ -599,7 +608,7 @@ internal fun SteamAchievementSection(
         )
     )
 
-    if (showRiskWarning) {
+    if (showRiskWarning && uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT) == SettingsLoadState.READY) {
         AlertDialog(
             onDismissRequest = { showRiskWarning = false },
             title = { Text(stringResource(R.string.settings_steam_services_risk_warning_title)) },
@@ -695,18 +704,20 @@ internal fun SettingsMarketSection(
         onClick = actions.onOpenWorkshopAutoImportDefaults,
     )
     Spacer(modifier = Modifier.size(8.dp))
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_baidu_translation_credentials_title),
-        supportingText = stringResource(
-            if (uiState.baiduTranslationCredentialsConfigured) {
-                R.string.settings_baidu_translation_credentials_configured
-            } else {
-                R.string.settings_baidu_translation_credentials_not_configured
-            }
-        ),
-        enabled = !uiState.busy,
-        onClick = actions.onOpenBaiduTranslationCredentials,
-    )
+    SettingsDependencyContent(uiState, SettingsLoadDomain.TRANSLATION) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_baidu_translation_credentials_title),
+            supportingText = stringResource(
+                if (uiState.baiduTranslationCredentialsConfigured) {
+                    R.string.settings_baidu_translation_credentials_configured
+                } else {
+                    R.string.settings_baidu_translation_credentials_not_configured
+                }
+            ),
+            enabled = !uiState.busy,
+            onClick = actions.onOpenBaiduTranslationCredentials,
+        )
+    }
     Spacer(modifier = Modifier.size(8.dp))
     SettingsActionListItem(
         title = stringResource(R.string.settings_market_clear_preview_cache_title),
@@ -828,7 +839,7 @@ internal fun SteamCloudAccountCard(
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(
-                text = if (loggedIn) {
+                text = if (!settingsControlEnabled()) "" else if (loggedIn) {
                     accountName
                 } else {
                     stringResource(R.string.settings_steam_cloud_account_not_signed_in)
@@ -838,7 +849,7 @@ internal fun SteamCloudAccountCard(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = if (loggedIn) {
+                text = if (!settingsControlEnabled()) "" else if (loggedIn) {
                     stringResource(R.string.settings_steam_cloud_account_signed_in)
                 } else {
                     stringResource(R.string.settings_steam_cloud_account_login_hint)
@@ -858,7 +869,7 @@ internal fun SteamCloudAccountCard(
             }
         } else {
             Button(
-                enabled = !busy,
+                enabled = settingsControlEnabled(!busy),
                 onClick = onLogin
             ) {
                 Text(stringResource(R.string.settings_steam_cloud_login_action))

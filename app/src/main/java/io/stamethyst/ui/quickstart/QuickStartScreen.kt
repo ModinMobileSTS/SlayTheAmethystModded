@@ -41,7 +41,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -67,6 +67,10 @@ import io.stamethyst.ui.icon.Pause
 import io.stamethyst.ui.icon.PlayArrow
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.settings.core.SettingsScreenViewModel
+import io.stamethyst.ui.settings.core.SettingsLoadDomain
+import io.stamethyst.ui.settings.core.SettingsLoadState
+import io.stamethyst.ui.settings.common.SettingsDependencyContent
+import io.stamethyst.ui.settings.common.settingsControlEnabled
 import java.util.Locale
 import kotlinx.coroutines.delay
 
@@ -127,7 +131,7 @@ private fun QuickStartImportContent(
     }
 
     fun startSteamImport() {
-        if (uiState.busy) {
+        if (uiState.busy || uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT) != SettingsLoadState.READY) {
             return
         }
         if (!uiState.steamCloudRefreshTokenConfigured) {
@@ -231,12 +235,14 @@ private fun QuickStartImportContent(
                             enabled = !uiState.busy,
                             onClick = onOpenJarImport
                         )
-                        QuickStartChoiceCard(
-                            title = stringResource(R.string.quick_start_start_from_steam_title),
-                            subtitle = stringResource(R.string.quick_start_start_from_steam_subtitle),
-                            enabled = !uiState.busy,
-                            onClick = ::startSteamImport
-                        )
+                        SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_ACCOUNT) {
+                            QuickStartChoiceCard(
+                                title = stringResource(R.string.quick_start_start_from_steam_title),
+                                subtitle = stringResource(R.string.quick_start_start_from_steam_subtitle),
+                                enabled = settingsControlEnabled(!uiState.busy),
+                                onClick = ::startSteamImport
+                            )
+                        }
                     }
                 }
 
@@ -556,12 +562,14 @@ fun QuickStartSteamDownloadScreen(
 
     LaunchedEffect(
         uiState.steamCloudRefreshTokenConfigured,
+        uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT),
         uiState.busy,
         uiState.quickStartSteamFailed,
         imported,
         downloadStarted,
     ) {
-        if (uiState.steamCloudRefreshTokenConfigured &&
+        if (uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT) == SettingsLoadState.READY &&
+            uiState.steamCloudRefreshTokenConfigured &&
             !uiState.busy &&
             !uiState.quickStartSteamFailed &&
             !downloadStarted &&

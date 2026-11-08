@@ -16,6 +16,7 @@ import android.app.ActivityManager
 import android.os.Build
 import android.net.Uri
 import android.text.format.Formatter
+import android.util.Log
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
@@ -85,9 +86,7 @@ import io.stamethyst.backend.nativelib.NativeLibraryMarketPackageState
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.resources.ArthasResourcePackService
-import io.stamethyst.backend.resources.ArthasResourcePackState
 import io.stamethyst.backend.resources.ResourcePackStore
-import io.stamethyst.backend.resources.ResourcePackInspection
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -101,6 +100,9 @@ import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererAvailability
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
+import io.stamethyst.backend.render.RendererBackendResolver
+import io.stamethyst.backend.render.AndroidGameModeSnapshot
+import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.launch.JvmLogRotationManager
@@ -180,7 +182,6 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.FutureTask
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.Condition
 import java.util.concurrent.locks.ReentrantLock
 import java.util.jar.Manifest
@@ -329,6 +330,7 @@ class SettingsScreenViewModel : ViewModel() {
     )
 
     data class UiState(
+        val loadStates: Map<SettingsLoadDomain, SettingsLoadState> = emptyMap(),
         val saveSlotDialogState: SaveSlotDialogState? = null,
         val saveImportConfirmation: SaveImportConfirmationState? = null,
         val busy: Boolean = false,
@@ -458,6 +460,8 @@ class SettingsScreenViewModel : ViewModel() {
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
         val gameDisplayRegion: io.stamethyst.backend.render.GameDisplayRegion? = null,
         val ramSaverEnabled: Boolean = LauncherPreferences.DEFAULT_RAM_SAVER_ENABLED,
+        val ramSaverOptimizations: Map<io.stamethyst.config.RamSaverOptimization, Boolean> =
+            io.stamethyst.config.RamSaverOptimization.entries.associateWith { it.defaultEnabled },
         val mtsPatchCacheEnabled: Boolean = LauncherPreferences.DEFAULT_MTS_PATCH_CACHE_ENABLED,
         val mtsCacheStartupOptimizations: Map<io.stamethyst.config.MtsCacheStartupOptimization, Boolean> =
             io.stamethyst.config.MtsCacheStartupOptimization.entries.associateWith { false },
@@ -559,7 +563,13 @@ class SettingsScreenViewModel : ViewModel() {
         val steamCloudUploadConfirmPlan: SteamCloudUploadPlan? = null,
         val steamCloudLoginChallenge: SteamCloudLoginChallenge? = null,
         val easyTierSettings: EasyTierSettingsUiState = EasyTierSettingsUiState(),
-    )
+    ) {
+        fun loadState(domain: SettingsLoadDomain): SettingsLoadState =
+            loadStates[domain] ?: SettingsLoadState.READY
+
+        fun loadState(vararg domains: SettingsLoadDomain): SettingsLoadState =
+            SettingsLoadState.combine(domains.map(::loadState))
+    }
 
     private data class CoreDependencyStatus(
         val label: String,
@@ -582,37 +592,23 @@ class SettingsScreenViewModel : ViewModel() {
         val totalMemoryBytes: Long
     )
 
-    private data class StatusRefreshResult(
-        val snapshot: SettingsRepository.SettingsSnapshot,
-        val targetFpsOptions: List<Float>,
-        val selectedTargetFps: Float,
-        val statusText: String,
-        val logPathText: String,
-        val resourcePack: ResourcePackInspection,
-        val arthasResource: ArthasResourcePackState,
+    private data class SteamAccountResult(
+        val auth: SteamCloudAuthStore.AuthSnapshot,
         val steamCloudAccountName: String,
         val steamCloudRefreshTokenConfigured: Boolean,
         val steamCloudGuardDataConfigured: Boolean,
         val steamCloudPersonaName: String,
         val steamCloudAvatarUrl: String,
-        val steamCloudSaveMode: SteamCloudSaveMode,
-        val steamCloudSyncBlacklistPaths: Set<String>,
-        val steamCloudSyncBlacklistCandidates: List<String>,
-        val steamCloudWattAccelerationEnabled: Boolean,
-        val steamCloudAutoLaunchAfterSyncEnabled: Boolean,
-        val steamCloudSyncDisabled: Boolean,
-        val steamGamePresenceEnabled: Boolean,
-        val richPresenceDisplayPreferences: RichPresenceDisplayPreferences,
-        val steamAchievementSyncEnabled: Boolean,
-        val achievementUnlockNotificationEnabled: Boolean,
-        val workshopMaxConcurrentDownloads: Int,
-        val workshopDownloadThreads: Int,
-        val workshopWattAccelerationEnabled: Boolean,
         val steamCloudCredentialsSummary: String,
-        val steamCloudStatusText: String,
-        val steamCloudManifestSummary: String,
-        val steamCloudManifestAvailable: Boolean,
-        val easyTierSettings: EasyTierSettingsUiState,
+    )
+
+    private data class SteamSavesResult(
+        val mode: SteamCloudSaveMode,
+        val blacklist: Set<String>,
+        val candidates: List<String>,
+        val statusText: String,
+        val manifestSummary: String,
+        val manifestAvailable: Boolean,
     )
 
     private class PauseController {
@@ -660,15 +656,20 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val statusRefreshExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val refreshExecutors = SettingsLoadDomain.entries.associateWith {
+        Executors.newSingleThreadExecutor()
+    }
+    private val refreshTasks = refreshExecutors.mapValues { SettingsRefreshTask(it.value) }
+    private val steamProfileExecutor = Executors.newSingleThreadExecutor()
+    private val steamProfileTask = SettingsRefreshTask(steamProfileExecutor)
     private val steamCloudLoginCleanupExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     // Control writes may wait for a save transaction in :steamcloud. Never do so on main,
     // or behind a network operation on the general settings executor. Preserve toggle order.
     private val steamCloudControlExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var steamCloudControlGeneration = 0L
-    // A slow refresh must not overwrite a newer setting change with its older snapshot.
-    private val statusRefreshGeneration = AtomicLong(0L)
-    private var statusRefreshTask: Future<*>? = null
+    private var pendingSteamCloudSyncDisabled: Boolean? = null
+    private var steamIdentityChangeInProgress = false
+    private var busyGeneration = 0L
     private val statusRefreshBusyTracker = StatusRefreshBusyTracker()
     private var boundActivityReference: WeakReference<Activity>? = null
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
@@ -692,7 +693,9 @@ class SettingsScreenViewModel : ViewModel() {
 
     private val automaticallyPromptedUpdateVersions = LinkedHashSet<String>()
 
-    var uiState by mutableStateOf(UiState())
+    var uiState by mutableStateOf(
+        UiState(loadStates = SettingsLoadDomain.entries.associateWith { SettingsLoadState.LOADING })
+    )
         private set
 
     val effects = _effects.asSharedFlow()
@@ -709,39 +712,17 @@ class SettingsScreenViewModel : ViewModel() {
         // Standalone play can install/update while this launcher's ViewModel stays alive.
         uiState = uiState.copy(slingBreakInstalledVersion = SlingBreakInstallation.read(activity)?.rawTagName.orEmpty())
         if (boundActivityReference?.get() === activity) {
+            // Re-entering a page retries failed domains, without restarting healthy checks.
+            SettingsLoadDomain.entries.filter { uiState.loadState(it) == SettingsLoadState.ERROR }
+                .forEach { retrySettingsLoad(activity, it) }
             return
         }
         boundActivityReference = WeakReference(activity)
 
-        // LauncherActivity synchronizes the theme before composing the root content. The
-        // remaining settings snapshot is loaded by refreshStatus so entering settings does
-        // not synchronously scan storage on the UI thread.
+        // Each domain publishes independently; storage/network checks never hold back
+        // the user's saved preferences or run on the UI thread.
         syncStoredUpdateState(activity)
-        seedSteamCloudIdentityFromStore(activity)
         refreshStatus(activity, clearBusy = false)
-    }
-
-    /**
-     * Publishes the stored Steam Cloud credentials to the UI synchronously so the
-     * screen renders signed-in (with any cached avatar) on its first frame instead
-     * of flashing "not signed in" until the async refresh or a CM logon completes.
-     * A single unlocked attempt keeps this off the critical path; failures fall
-     * back to the normal async refresh.
-     */
-    private fun seedSteamCloudIdentityFromStore(host: Activity) {
-        val snapshot = runCatching {
-            SteamCloudAuthStore.readSnapshotWithStatus(host, attempts = 1)
-        }.getOrNull()?.takeIf { !it.readFailed }?.snapshot ?: return
-        if (!snapshot.isComplete) {
-            return
-        }
-        uiState = uiState.copy(
-            steamCloudAccountName = snapshot.accountName,
-            steamCloudRefreshTokenConfigured = true,
-            steamCloudGuardDataConfigured = snapshot.guardDataConfigured,
-            steamCloudPersonaName = snapshot.personaName,
-            steamCloudAvatarUrl = snapshot.avatarUrl,
-        )
     }
 
     fun startGameReturnAutoUpdateCheck(host: Activity) {
@@ -774,11 +755,13 @@ class SettingsScreenViewModel : ViewModel() {
     fun onThemeModeChanged(host: Activity, themeMode: LauncherThemeMode) {
         saveThemeModeSelection(host, themeMode)
         syncThemeAppearance(host)
+        refreshConfiguration(host)
     }
 
     fun onThemeColorChanged(host: Activity, themeColor: LauncherThemeColor) {
         saveThemeColorSelection(host, themeColor)
         syncThemeAppearance(host)
+        refreshConfiguration(host)
     }
 
     fun onLauncherIconModeChanged(host: Activity, iconMode: LauncherIconMode) {
@@ -787,6 +770,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         saveLauncherIconModeSelection(host, iconMode)
         syncThemeAppearance(host)
+        refreshConfiguration(host)
     }
 
     fun onChromeBackgroundOpacityChanged(host: Activity, opacity: Float) {
@@ -796,6 +780,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(chromeBackgroundOpacity = normalized)
         saveChromeBackgroundOpacitySelection(host, normalized)
+        refreshConfiguration(host)
     }
 
     fun onBootOverlayAnimationChanged(host: Activity, animation: BootOverlayAnimation) {
@@ -804,7 +789,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(bootOverlayAnimation = animation)
         saveBootOverlayAnimationSelection(host, animation)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onBootOverlayStyleChanged(host: Activity, style: BootOverlayStyle) {
@@ -817,7 +802,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(bootOverlayStyle = style)
         saveBootOverlayStyleSelection(host, style)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     private val slingBreakMirrorSwitchController = ResourcePackDownloadMirrorSwitchController()
@@ -903,6 +888,7 @@ class SettingsScreenViewModel : ViewModel() {
                     SlingBreakInstallation.read(context)?.rawTagName.orEmpty()) else uiState.slingBreakUpdateStatus,
                 slingBreakUpdateRelease = if (failure == null) null else uiState.slingBreakUpdateRelease,
             )
+            refreshConfiguration(host)
         })
     }
 
@@ -918,7 +904,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         val nextConfig = BootOverlayImageService.saveMode(host, mode)
         uiState = uiState.copy(bootOverlayImageConfig = nextConfig)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onPickBootOverlayImage(slot: BootOverlayImageSlot) {
@@ -936,7 +922,7 @@ class SettingsScreenViewModel : ViewModel() {
             val nextConfig = BootOverlayImageService.importImage(host, slot, uri)
             uiState = uiState.copy(bootOverlayImageConfig = nextConfig)
             showToast(host, UiText.StringResource(R.string.settings_boot_overlay_custom_image_saved), Toast.LENGTH_SHORT)
-            refreshStatus(host)
+            refreshConfiguration(host)
         } catch (error: Throwable) {
             showToast(
                 host,
@@ -946,7 +932,7 @@ class SettingsScreenViewModel : ViewModel() {
                 ),
                 Toast.LENGTH_LONG
             )
-            refreshStatus(host)
+            refreshConfiguration(host)
         }
     }
 
@@ -962,7 +948,7 @@ class SettingsScreenViewModel : ViewModel() {
             ),
             Toast.LENGTH_LONG
         )
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onResetBootOverlayImages(host: Activity) {
@@ -972,7 +958,7 @@ class SettingsScreenViewModel : ViewModel() {
         val nextConfig = BootOverlayImageService.reset(host)
         uiState = uiState.copy(bootOverlayImageConfig = nextConfig)
         showToast(host, UiText.StringResource(R.string.settings_boot_overlay_custom_image_reset), Toast.LENGTH_SHORT)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onPreferredUpdateMirrorChanged(host: Activity, source: UpdateSource) {
@@ -1443,327 +1429,322 @@ class SettingsScreenViewModel : ViewModel() {
         return StsJarValidator.isValid(RuntimePaths.importedStsJar(host))
     }
 
+    /** Full refresh is reserved for binding and operations that change installed data. */
     fun refreshStatus(host: Activity, clearBusy: Boolean = true) {
-        val refreshGeneration = statusRefreshGeneration.incrementAndGet()
-        val refreshClearBusy = statusRefreshBusyTracker.begin(clearBusy)
-        val previousUiState = uiState
-        statusRefreshTask?.cancel(true)
-        statusRefreshTask = statusRefreshExecutor.submit {
-            try {
-                throwIfStatusRefreshStale(refreshGeneration)
-                val hasJar = hasValidImportedStsJar(host)
-                val loadedSnapshot = SettingsRepository.loadSettingsSnapshot(host)
-                throwIfStatusRefreshStale(refreshGeneration)
-                val selectedTargetFps = loadedSnapshot.rendering.targetFps
-                val targetFpsOptions = resolveTargetFpsOptions()
-                val snapshot = loadedSnapshot
+        host.runOnUiThread {
+            refreshConfiguration(host, clearBusy)
+            SettingsLoadDomain.entries.filter { it != SettingsLoadDomain.CONFIGURATION }
+                .forEach { retrySettingsLoad(host, it) }
+        }
+    }
 
-                val mods = ModManager.listInstalledMods(host)
-                var optionalTotal = 0
-                var optionalEnabled = 0
-                mods.forEach { mod ->
-                    if (!mod.required) {
-                        optionalTotal++
-                        if (mod.enabled) {
-                            optionalEnabled++
-                        }
-                    }
+    private fun setLoadState(domain: SettingsLoadDomain, state: SettingsLoadState) {
+        uiState = uiState.copy(loadStates = uiState.loadStates + (domain to state))
+    }
+
+    private fun <T> loadDomain(
+        host: Activity,
+        domain: SettingsLoadDomain,
+        load: (checkCurrent: () -> Unit) -> T,
+        onComplete: () -> Unit = {},
+        publish: (T) -> Unit,
+    ) {
+        if (domain != SettingsLoadDomain.CONFIGURATION ||
+            uiState.loadState(domain) != SettingsLoadState.READY
+        ) {
+            setLoadState(domain, SettingsLoadState.LOADING)
+        }
+        refreshTasks.getValue(domain).submit(
+            dispatch = { callback -> host.runOnUiThread { callback() } },
+            load = load,
+            onSuccess = { result ->
+                try {
+                    publish(result)
+                    setLoadState(domain, SettingsLoadState.READY)
+                } catch (error: Exception) {
+                    Log.w("SettingsRefresh", "Unable to display $domain", error)
+                    setLoadState(domain, SettingsLoadState.ERROR)
+                } finally {
+                    onComplete()
                 }
-
-                val coreMtsStatus = resolveCoreDependencyStatus(
-                    host = host,
-                    label = "ModTheSpire",
-                    importedJar = RuntimePaths.importedMtsJar(host),
-                    bundledAssetPath = "components/mods/ModTheSpire.jar"
-                )
-                val coreBaseModStatus = resolveCoreDependencyStatus(
-                    host = host,
-                    label = "BaseMod",
-                    importedJar = RuntimePaths.importedBaseModJar(host),
-                    bundledAssetPath = "components/mods/BaseMod.jar"
-                )
-                val coreStsLibStatus = resolveCoreDependencyStatus(
-                    host = host,
-                    label = "StSLib",
-                    importedJar = RuntimePaths.importedStsLibJar(host),
-                    bundledAssetPath = "components/mods/StSLib.jar"
-                )
-                val coreRuntimeCompatStatus = resolveCoreDependencyStatus(
-                    host = host,
-                    label = "Amethyst Runtime Compat",
-                    importedJar = RuntimePaths.importedAmethystRuntimeCompatJar(host),
-                    bundledAssetPath = "components/mods/AmethystRuntimeCompat.jar"
-                )
-                val coreFloatingToolsStatus = resolveCoreDependencyStatus(
-                    host = host,
-                    label = "Amethyst Floating Tools",
-                    importedJar = RuntimePaths.importedAmethystFloatingToolsJar(host),
-                    bundledAssetPath = "components/mods/AmethystFloatingTools.jar"
-                )
-                val coreRamSaverStatus = resolveCoreDependencyStatus(
-                    host = host,
-                    label = "Ram Saver",
-                    importedJar = RuntimePaths.importedRamSaverJar(host),
-                    bundledAssetPath = "components/mods/RamSaver.jar"
-                )
-                val deviceRuntimeStatus = collectDeviceRuntimeStatus(host)
-                val resourcePack = ResourcePackStore.inspectQuick(host)
-                val arthasResource = ArthasResourcePackService.stateQuick(host)
-                throwIfStatusRefreshStale(refreshGeneration)
-                val steamCloudAuthRead = runCatching {
-                    SteamCloudAuthStore.readSnapshotWithStatus(host)
-                }.getOrElse { error ->
-                    SteamCloudAuthStore.AuthSnapshotRead(
-                        snapshot = SteamCloudAuthStore.AuthSnapshot(
-                            accountName = "",
-                            refreshTokenConfigured = false,
-                            guardDataConfigured = false,
-                            steamId64 = "",
-                            personaName = "",
-                            avatarUrl = "",
-                            lastAuthAtMs = null,
-                            lastManifestAtMs = null,
-                            lastPullAtMs = null,
-                            lastPushAtMs = null,
-                            lastError = summarizeSteamCloudError(host, error)
-                        ),
-                        readFailed = true,
-                    )
+                // Formatting diagnostics is not a prerequisite for displaying saved settings.
+                runCatching { rebuildStatusText(host) }.onFailure { error ->
+                    Log.w("SettingsRefresh", "Unable to compose diagnostics", error)
+                    setLoadState(SettingsLoadDomain.DIAGNOSTICS, SettingsLoadState.ERROR)
                 }
-                val steamCloudAuthSnapshot =
-                    maybeBackfillSteamCloudProfile(host, steamCloudAuthRead.snapshot)
-                // A failed auth-state read (e.g. KeyStore contention while the
-                // :steamcloud process syncs) is not proof of being logged out;
-                // keep the last known signed-in display instead of flashing it away.
-                val preserveSteamCloudDisplay =
-                    steamCloudAuthRead.readFailed && previousUiState.steamCloudRefreshTokenConfigured
-                val steamCloudManifestSnapshot = runCatching {
-                    SteamCloudManifestStore.readSnapshot(host, steamCloudAuthSnapshot.steamId64)
-                }.getOrNull()
-                val steamCloudBaselineSnapshot = runCatching {
-                    SteamCloudBaselineStore.readSnapshot(host, steamCloudAuthSnapshot.steamId64)
-                }.getOrNull()
-                var steamCloudSaveMode = LauncherPreferences.readSteamCloudSaveMode(host)
-                val steamCloudIndependentSwitchPending =
-                    LauncherConfig.isSteamCloudIndependentSwitchPending(host)
-                val steamCloudSyncBlacklistPaths =
-                    LauncherPreferences.readSteamCloudSyncBlacklistPaths(host)
-                val steamCloudSyncBlacklistCandidates =
-                    runCatching {
-                        SteamCloudSyncBlacklist.listSelectableLocalRelativePaths(
-                            stsRoot = RuntimePaths.stsRoot(host),
-                            configuredBlacklist = steamCloudSyncBlacklistPaths,
-                        )
-                    }.getOrElse {
-                        steamCloudSyncBlacklistPaths.toList().sorted()
-                    }
-                if (!steamCloudAuthRead.readFailed &&
-                    (!steamCloudAuthSnapshot.isComplete || steamCloudIndependentSwitchPending) &&
-                    steamCloudSaveMode == SteamCloudSaveMode.STEAM_CLOUD
-                ) {
-                    runCatching {
-                        SteamCloudOperationMutex.runExclusive(host) {
-                            val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
-                            val pendingSwitch =
-                                LauncherConfig.isSteamCloudIndependentSwitchPending(host)
-                            val authoritativeRead = SteamCloudAuthStore.readSnapshotWithStatus(
-                                host,
-                                attempts = 1,
-                            )
-                            if (!pendingSwitch &&
-                                (authoritativeRead.readFailed || authoritativeRead.snapshot.isComplete)
-                            ) {
-                                steamCloudSaveMode = currentMode
-                                return@runExclusive
-                            }
-                            if (currentMode != SteamCloudSaveMode.STEAM_CLOUD) {
-                                steamCloudSaveMode = currentMode
-                                return@runExclusive
-                            }
-                            if (pendingSwitch) {
-                                SteamCloudSaveProfileManager.completeDeferredIndependentSwitch(host)
-                            } else {
-                                SteamCloudSaveProfileManager.switchMode(
-                                    context = host,
-                                    fromMode = currentMode,
-                                    toMode = SteamCloudSaveMode.INDEPENDENT,
-                                )
-                            }
-                            steamCloudSaveMode = SteamCloudSaveMode.INDEPENDENT
-                        }
-                    }
-                }
+            },
+            onFailure = { error ->
+                Log.w("SettingsRefresh", "Unable to load $domain", error)
+                setLoadState(domain, SettingsLoadState.ERROR)
+                onComplete()
+            },
+        )
+    }
 
-                if (!arthasResource.valid && snapshot.diagnostics.arthasAnalysisEnabled) {
-                    saveArthasAnalysisSelection(host, false)
-                }
-
-                val status = buildStatusText(
-                    host = host,
-                    snapshot = snapshot,
-                    hasJar = hasJar,
-                    optionalEnabled = optionalEnabled,
-                    optionalTotal = optionalTotal,
-                    coreMtsStatus = coreMtsStatus,
-                    coreBaseModStatus = coreBaseModStatus,
-                    coreStsLibStatus = coreStsLibStatus,
-                    coreRuntimeCompatStatus = coreRuntimeCompatStatus,
-                    coreFloatingToolsStatus = coreFloatingToolsStatus,
-                    coreRamSaverStatus = coreRamSaverStatus,
-                    deviceRuntimeStatus = deviceRuntimeStatus
-                )
-                val steamCloudStatusText = buildSteamCloudStatusText(
-                    host,
-                    steamCloudAuthSnapshot,
-                    steamCloudManifestSnapshot,
-                    steamCloudBaselineSnapshot,
-                )
-                val easyTierSettings = buildEasyTierSettingsUiState()
-                val logPathText = buildLogPathText(
-                    host = host,
-                    logs = JvmLogRotationManager.listLogFiles(host),
-                )
-
-                val displayedAccountName =
-                    if (preserveSteamCloudDisplay) previousUiState.steamCloudAccountName
-                    else steamCloudAuthSnapshot.accountName
-                val displayedRefreshTokenConfigured =
-                    if (preserveSteamCloudDisplay) previousUiState.steamCloudRefreshTokenConfigured
-                    else steamCloudAuthSnapshot.isComplete
-                val displayedGuardDataConfigured =
-                    if (preserveSteamCloudDisplay) previousUiState.steamCloudGuardDataConfigured
-                    else steamCloudAuthSnapshot.guardDataConfigured
-                val displayedPersonaName =
-                    if (preserveSteamCloudDisplay) previousUiState.steamCloudPersonaName
-                    else steamCloudAuthSnapshot.personaName
-                val displayedAvatarUrl =
-                    if (preserveSteamCloudDisplay) previousUiState.steamCloudAvatarUrl
-                    else steamCloudAuthSnapshot.avatarUrl
-                val displayedCredentialsSummary =
-                    if (preserveSteamCloudDisplay) previousUiState.steamCloudCredentialsSummary
-                    else buildSteamCloudCredentialsSummary(host, steamCloudAuthSnapshot)
-                val displayedStatusText =
-                    if (preserveSteamCloudDisplay) previousUiState.steamCloudStatusText
-                    else steamCloudStatusText
-                val displayedManifestSummary =
-                    if (preserveSteamCloudDisplay) previousUiState.steamCloudManifestSummary
-                    else buildSteamCloudManifestSummary(host, steamCloudManifestSnapshot)
-                val displayedManifestAvailable =
-                    if (preserveSteamCloudDisplay) previousUiState.steamCloudManifestAvailable
-                    else steamCloudManifestSnapshot != null
-
-                val result = StatusRefreshResult(
-                    snapshot = snapshot,
-                    targetFpsOptions = targetFpsOptions,
-                    selectedTargetFps = selectedTargetFps,
-                    statusText = status,
-                    logPathText = logPathText,
-                    resourcePack = resourcePack,
-                    arthasResource = arthasResource,
-                    steamCloudAccountName = displayedAccountName,
-                    steamCloudRefreshTokenConfigured = displayedRefreshTokenConfigured,
-                    steamCloudGuardDataConfigured = displayedGuardDataConfigured,
-                    steamCloudPersonaName = displayedPersonaName,
-                    steamCloudAvatarUrl = displayedAvatarUrl,
-                    steamCloudSaveMode = steamCloudSaveMode,
-                    steamCloudSyncBlacklistPaths = steamCloudSyncBlacklistPaths,
-                    steamCloudSyncBlacklistCandidates = steamCloudSyncBlacklistCandidates,
-                    steamCloudWattAccelerationEnabled =
-                        LauncherPreferences.isSteamCloudWattAccelerationEnabled(host),
-                    steamCloudAutoLaunchAfterSyncEnabled =
-                        LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host),
-                    steamCloudSyncDisabled = LauncherPreferences.isSteamCloudSyncDisabled(host),
-                    steamGamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(host),
-                    richPresenceDisplayPreferences =
-                        LauncherPreferences.readRichPresenceDisplayPreferences(host),
-                    steamAchievementSyncEnabled = LauncherPreferences.isSteamAchievementSyncEnabled(host),
-                    achievementUnlockNotificationEnabled =
-                        LauncherPreferences.isAchievementUnlockNotificationEnabled(host),
-                    workshopMaxConcurrentDownloads = snapshot.market.workshopMaxConcurrentDownloads,
-                    workshopDownloadThreads = snapshot.market.workshopDownloadThreads,
-                    workshopWattAccelerationEnabled = snapshot.market.workshopWattAccelerationEnabled,
-                    steamCloudCredentialsSummary = displayedCredentialsSummary,
-                    steamCloudStatusText = displayedStatusText,
-                    steamCloudManifestSummary = displayedManifestSummary,
-                    steamCloudManifestAvailable = displayedManifestAvailable,
-                    easyTierSettings = easyTierSettings,
-                )
-
-                host.runOnUiThread {
-                    if (refreshGeneration != statusRefreshGeneration.get()) {
-                        return@runOnUiThread
-                    }
-                    applySnapshot(host, result.snapshot)
-                    uiState = uiState.copy(
-                        busy = if (refreshClearBusy) false else uiState.busy,
-                        busyOperation = if (refreshClearBusy) UiBusyOperation.NONE else uiState.busyOperation,
-                        busyMessage = if (refreshClearBusy) null else uiState.busyMessage,
-                        busyProgressPercent = if (refreshClearBusy) null else uiState.busyProgressPercent,
-                        targetFpsOptions = result.targetFpsOptions,
-                        selectedTargetFps = result.selectedTargetFps,
-                        statusText = result.statusText,
-                        logPathText = result.logPathText,
-                        steamCloudAccountName = result.steamCloudAccountName,
-                        steamCloudRefreshTokenConfigured = result.steamCloudRefreshTokenConfigured,
-                        steamCloudGuardDataConfigured = result.steamCloudGuardDataConfigured,
-                        steamCloudPersonaName = result.steamCloudPersonaName,
-                        steamCloudAvatarUrl = result.steamCloudAvatarUrl,
-                        steamCloudSaveMode = result.steamCloudSaveMode,
-                        steamCloudSyncBlacklistPaths = result.steamCloudSyncBlacklistPaths,
-                        steamCloudSyncBlacklistCandidates = result.steamCloudSyncBlacklistCandidates,
-                        steamCloudWattAccelerationEnabled = result.steamCloudWattAccelerationEnabled,
-                        steamCloudAutoLaunchAfterSyncEnabled = result.steamCloudAutoLaunchAfterSyncEnabled,
-                        steamCloudSyncDisabled = result.steamCloudSyncDisabled,
-                        steamGamePresenceEnabled = result.steamGamePresenceEnabled,
-                        richPresenceDisplayPreferences = result.richPresenceDisplayPreferences,
-                        steamAchievementSyncEnabled = result.steamAchievementSyncEnabled,
-                        achievementUnlockNotificationEnabled = result.achievementUnlockNotificationEnabled,
-                        workshopMaxConcurrentDownloads = result.workshopMaxConcurrentDownloads,
-                        workshopDownloadThreads = result.workshopDownloadThreads,
-                        workshopWattAccelerationEnabled = result.workshopWattAccelerationEnabled,
-                        steamCloudCredentialsSummary = result.steamCloudCredentialsSummary,
-                        steamCloudStatusText = result.steamCloudStatusText,
-                        steamCloudManifestSummary = result.steamCloudManifestSummary,
-                        steamCloudManifestAvailable = result.steamCloudManifestAvailable,
-                        slingBreakAudioDebugModeEnabled = LauncherPreferences
-                            .isSlingBreakAudioDebugModeEnabled(host),
-                        arthasAnalysisEnabled = uiState.arthasAnalysisEnabled &&
-                            result.arthasResource.valid,
-                        arthasResourceInstalled = result.arthasResource.valid,
-                        arthasResourceVersion = result.arthasResource.version,
-                        resourcePackReady = result.resourcePack.ready,
-                        resourcePackVersion = result.resourcePack.version.orEmpty(),
-                        resourcePackId = result.resourcePack.packId.orEmpty(),
-                        resourcePackIssues = result.resourcePack.issues.joinToString("; "),
-                        easyTierSettings = result.easyTierSettings,
-                    )
+    fun refreshConfiguration(host: Activity, clearBusy: Boolean = false) {
+        host.runOnUiThread {
+            val refreshClearBusy = statusRefreshBusyTracker.begin(clearBusy)
+            val refreshBusyGeneration = busyGeneration
+            loadDomain(
+                host, SettingsLoadDomain.CONFIGURATION,
+                load = { SettingsRepository.loadSettingsSnapshot(host) },
+                onComplete = {
+                    if (refreshClearBusy && refreshBusyGeneration == busyGeneration) setBusy(false, null)
                     statusRefreshBusyTracker.complete()
-                }
-            } catch (_: Throwable) {
-                host.runOnUiThread {
-                    if (refreshGeneration != statusRefreshGeneration.get()) {
-                        return@runOnUiThread
-                    }
-                    if (refreshClearBusy) {
-                        uiState = uiState.copy(
-                            busy = false,
-                            busyOperation = UiBusyOperation.NONE,
-                            busyMessage = null,
-                            busyProgressPercent = null
-                        )
-                    }
-                    statusRefreshBusyTracker.complete()
-                }
+                },
+            ) { snapshot ->
+                latestSettingsSnapshot = snapshot
+                applySnapshot(snapshot)
+                uiState = uiState.copy(targetFpsOptions = resolveTargetFpsOptions())
             }
         }
     }
 
-    private fun throwIfStatusRefreshStale(refreshGeneration: Long) {
-        if (refreshGeneration != statusRefreshGeneration.get() ||
-            Thread.currentThread().isInterrupted
-        ) {
-            throw CancellationException("Settings status refresh was superseded")
+    fun retrySettingsLoad(host: Activity, domain: SettingsLoadDomain) {
+        host.runOnUiThread {
+            when (domain) {
+                SettingsLoadDomain.CONFIGURATION -> refreshConfiguration(host)
+                SettingsLoadDomain.RENDERER -> refreshRenderer(host)
+                SettingsLoadDomain.RESOURCES -> refreshResources(host)
+                SettingsLoadDomain.STEAM_ACCOUNT -> refreshSteamAccount(host)
+                SettingsLoadDomain.STEAM_SAVES -> refreshSteamSaves(host)
+                SettingsLoadDomain.DIAGNOSTICS -> refreshDiagnostics(host)
+                SettingsLoadDomain.GAME_MODE -> loadDomain(host, domain, {
+                    AndroidGameModeSupport.readCurrentMode(host)
+                }) { mode ->
+                    latestSystemGameMode = mode
+                    uiState = uiState.copy(
+                        systemGameModeDisplayName = host.getString(mode.displayNameResId),
+                        systemGameModeDescription = host.getString(mode.descriptionResId),
+                    )
+                }
+                SettingsLoadDomain.EASYTIER -> loadDomain(host, domain, {
+                    buildEasyTierSettingsUiState()
+                }) { uiState = uiState.copy(easyTierSettings = it) }
+                SettingsLoadDomain.TRANSLATION -> loadDomain(host, domain, {
+                    BaiduTranslationCredentialsRepository(host).hasConfiguredCredentials()
+                }) { uiState = uiState.copy(baiduTranslationCredentialsConfigured = it) }
+            }
         }
+    }
+
+    private fun refreshRenderer(host: Activity) {
+        loadDomain(host, SettingsLoadDomain.RENDERER, {
+            RendererBackendResolver.resolve(
+                context = host,
+                requestedSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(host),
+                selectionMode = LauncherPreferences.readRendererSelectionMode(host),
+                manualBackend = LauncherPreferences.readManualRendererBackend(host),
+            )
+        }) { decision ->
+            latestRendererDecision = decision
+            uiState = uiState.copy(
+                autoSelectedRendererBackend = decision.automaticBackend,
+                effectiveRendererBackend = decision.effectiveBackend,
+                effectiveRenderSurfaceBackend = decision.effectiveSurfaceBackend,
+                rendererBackendOptions = decision.availableBackends.map {
+                    RendererBackendOptionState(it.backend, it.available, it.describeUnavailable(host))
+                },
+                rendererFallbackText = decision.fallbackSummary(host),
+                surfaceBackendForcedByRenderer = decision.surfaceBackendForced,
+            )
+        }
+    }
+
+    private fun refreshResources(host: Activity) {
+        loadDomain(host, SettingsLoadDomain.RESOURCES, { checkCurrent ->
+            val pack = ResourcePackStore.inspectQuick(host)
+            checkCurrent()
+            val arthas = ArthasResourcePackService.stateQuick(host)
+            checkCurrent()
+            // Keep the resource-dependent safety correction, not a dependency of all settings.
+            val corrected = !arthas.valid && LauncherPreferences.isArthasAnalysisEnabled(host)
+            if (corrected) {
+                saveArthasAnalysisSelection(host, false)
+            }
+            Triple(pack, arthas, corrected)
+        }) { (pack, arthas, corrected) ->
+            uiState = uiState.copy(
+                arthasAnalysisEnabled = uiState.arthasAnalysisEnabled && arthas.valid,
+                arthasResourceInstalled = arthas.valid,
+                arthasResourceVersion = arthas.version,
+                resourcePackReady = pack.ready,
+                resourcePackVersion = pack.version.orEmpty(),
+                resourcePackId = pack.packId.orEmpty(),
+                resourcePackIssues = pack.issues.joinToString("; "),
+            )
+            if (corrected) refreshConfiguration(host)
+        }
+    }
+
+    private fun refreshSteamAccount(host: Activity) {
+        if (steamIdentityChangeInProgress) return
+        steamProfileTask.cancel()
+        loadDomain(host, SettingsLoadDomain.STEAM_ACCOUNT, { checkCurrent ->
+            val read = SteamCloudAuthStore.readSnapshotWithStatus(host)
+            check(!read.readFailed) { "Steam account state is temporarily unavailable" }
+            val auth = read.snapshot
+            checkCurrent()
+            SteamAccountResult(
+                auth = auth,
+                steamCloudAccountName = auth.accountName,
+                steamCloudRefreshTokenConfigured = auth.isComplete,
+                steamCloudGuardDataConfigured = auth.guardDataConfigured,
+                steamCloudPersonaName = auth.personaName,
+                steamCloudAvatarUrl = auth.avatarUrl,
+                steamCloudCredentialsSummary = buildSteamCloudCredentialsSummary(host, auth),
+            )
+        }) { result ->
+            uiState = uiState.copy(
+                steamCloudAccountName = result.steamCloudAccountName,
+                steamCloudRefreshTokenConfigured = result.steamCloudRefreshTokenConfigured,
+                steamCloudGuardDataConfigured = result.steamCloudGuardDataConfigured,
+                steamCloudPersonaName = result.steamCloudPersonaName,
+                steamCloudAvatarUrl = result.steamCloudAvatarUrl,
+                steamCloudCredentialsSummary = result.steamCloudCredentialsSummary,
+            )
+            // Profile HTTP is cosmetic and cannot hold account/save controls in loading.
+            steamProfileTask.submit(
+                dispatch = { callback -> host.runOnUiThread { callback() } },
+                load = { checkCurrent -> maybeBackfillSteamCloudProfile(host, result.auth, checkCurrent) },
+                onSuccess = { profile ->
+                    uiState = uiState.copy(
+                        steamCloudPersonaName = profile.personaName,
+                        steamCloudAvatarUrl = profile.avatarUrl,
+                    )
+                },
+                onFailure = { Log.w("SettingsRefresh", "Unable to refresh Steam profile", it) },
+            )
+        }
+    }
+
+    private fun refreshSteamSaves(host: Activity) {
+        if (steamIdentityChangeInProgress) return
+        loadDomain(host, SettingsLoadDomain.STEAM_SAVES, { checkCurrent ->
+            val read = SteamCloudAuthStore.readSnapshotWithStatus(host)
+            check(!read.readFailed) { "Steam save account state is temporarily unavailable" }
+            checkCurrent()
+            var mode = LauncherPreferences.readSteamCloudSaveMode(host)
+            if (mode == SteamCloudSaveMode.STEAM_CLOUD) {
+                if (!read.snapshot.isComplete || LauncherConfig.isSteamCloudIndependentSwitchPending(host)) {
+                    SteamCloudOperationMutex.runExclusive(host) {
+                        checkCurrent()
+                        val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
+                        val pending = LauncherConfig.isSteamCloudIndependentSwitchPending(host)
+                        val authoritative = SteamCloudAuthStore.readSnapshotWithStatus(host, attempts = 1)
+                        check(!authoritative.readFailed) { "Steam save account state is temporarily unavailable" }
+                        if (currentMode == SteamCloudSaveMode.STEAM_CLOUD &&
+                            (pending || !authoritative.snapshot.isComplete)
+                        ) {
+                            if (pending) SteamCloudSaveProfileManager.completeDeferredIndependentSwitch(host)
+                            else SteamCloudSaveProfileManager.switchMode(host, currentMode, SteamCloudSaveMode.INDEPENDENT)
+                        }
+                        mode = LauncherPreferences.readSteamCloudSaveMode(host)
+                    }
+                }
+            }
+            checkCurrent()
+            val blacklist = LauncherPreferences.readSteamCloudSyncBlacklistPaths(host)
+            // These readers use the save transaction lock. They must not hold up
+            // the account card or account-dependent switches during a cloud sync.
+            val manifest = SteamCloudManifestStore.readSnapshot(host, read.snapshot.steamId64)
+            checkCurrent()
+            val baseline = SteamCloudBaselineStore.readSnapshot(host, read.snapshot.steamId64)
+            SteamSavesResult(
+                mode = mode,
+                blacklist = blacklist,
+                candidates = SteamCloudSyncBlacklist.listSelectableLocalRelativePaths(RuntimePaths.stsRoot(host), blacklist),
+                statusText = buildSteamCloudStatusText(host, read.snapshot, manifest, baseline),
+                manifestSummary = buildSteamCloudManifestSummary(host, manifest),
+                manifestAvailable = manifest != null,
+            )
+        }) { result ->
+            uiState = uiState.copy(
+                steamCloudSaveMode = result.mode,
+                steamCloudSyncBlacklistPaths = result.blacklist,
+                steamCloudSyncBlacklistCandidates = result.candidates,
+                steamCloudStatusText = result.statusText,
+                steamCloudManifestSummary = result.manifestSummary,
+                steamCloudManifestAvailable = result.manifestAvailable,
+            )
+        }
+    }
+
+    private fun beginSteamIdentityChange() {
+        steamIdentityChangeInProgress = true
+        steamProfileTask.cancel()
+        listOf(SettingsLoadDomain.STEAM_ACCOUNT, SettingsLoadDomain.STEAM_SAVES).forEach { domain ->
+            refreshTasks.getValue(domain).cancel()
+            setLoadState(domain, SettingsLoadState.LOADING)
+        }
+    }
+
+    /** Save operations may also change gameplay preferences; unrelated inspections stay untouched. */
+    private fun refreshSteamState(host: Activity, clearBusy: Boolean = true) {
+        host.runOnUiThread {
+            refreshConfiguration(host, clearBusy)
+            refreshSteamAccount(host)
+            refreshSteamSaves(host)
+        }
+    }
+
+    private fun finishSteamIdentityChange(host: Activity, clearBusy: Boolean = true) {
+        steamIdentityChangeInProgress = false
+        refreshSteamState(host, clearBusy)
+    }
+
+    private data class DiagnosticsEnvironment(
+        val hasJar: Boolean,
+        val optionalEnabled: Int,
+        val optionalTotal: Int,
+        val dependencies: List<CoreDependencyStatus>,
+        val device: DeviceRuntimeStatus,
+        val logPathText: String,
+    )
+
+    private var latestSettingsSnapshot: SettingsRepository.SettingsSnapshot? = null
+    private var latestRendererDecision: RendererDecision? = null
+    private var latestSystemGameMode: AndroidGameModeSnapshot? = null
+    private var latestDiagnostics: DiagnosticsEnvironment? = null
+
+    private fun refreshDiagnostics(host: Activity) {
+        loadDomain(host, SettingsLoadDomain.DIAGNOSTICS, { checkCurrent ->
+            val hasJar = hasValidImportedStsJar(host)
+            val mods = ModManager.listInstalledMods(host).filterNot { it.required }
+            val dependencies = listOf(
+                Triple("ModTheSpire", RuntimePaths.importedMtsJar(host), "ModTheSpire.jar"),
+                Triple("BaseMod", RuntimePaths.importedBaseModJar(host), "BaseMod.jar"),
+                Triple("StSLib", RuntimePaths.importedStsLibJar(host), "StSLib.jar"),
+                Triple("Amethyst Runtime Compat", RuntimePaths.importedAmethystRuntimeCompatJar(host), "AmethystRuntimeCompat.jar"),
+                Triple("Amethyst Floating Tools", RuntimePaths.importedAmethystFloatingToolsJar(host), "AmethystFloatingTools.jar"),
+                Triple("Ram Saver", RuntimePaths.importedRamSaverJar(host), "RamSaver.jar"),
+            ).map { (label, file, asset) ->
+                checkCurrent()
+                resolveCoreDependencyStatus(host, label, file, "components/mods/$asset")
+            }
+            DiagnosticsEnvironment(
+                hasJar, mods.count { it.enabled }, mods.size, dependencies,
+                collectDeviceRuntimeStatus(host),
+                buildLogPathText(host, JvmLogRotationManager.listLogFiles(host)),
+            )
+        }) { result ->
+            latestDiagnostics = result
+            uiState = uiState.copy(logPathText = result.logPathText)
+        }
+    }
+
+    private fun rebuildStatusText(host: Activity) {
+        val snapshot = latestSettingsSnapshot ?: return
+        val renderer = latestRendererDecision ?: return
+        val gameMode = latestSystemGameMode ?: return
+        val environment = latestDiagnostics ?: return
+        uiState = uiState.copy(statusText = buildStatusText(
+            host, snapshot, renderer, gameMode, environment.hasJar,
+            environment.optionalEnabled, environment.optionalTotal,
+            environment.dependencies[0], environment.dependencies[1], environment.dependencies[2],
+            environment.dependencies[3], environment.dependencies[4], environment.dependencies[5],
+            environment.device,
+        ))
     }
 
     /**
@@ -1775,6 +1756,7 @@ class SettingsScreenViewModel : ViewModel() {
     private fun maybeBackfillSteamCloudProfile(
         host: Activity,
         snapshot: SteamCloudAuthStore.AuthSnapshot,
+        checkCurrent: () -> Unit,
     ): SteamCloudAuthStore.AuthSnapshot {
         if (!snapshot.isComplete || snapshot.avatarUrl.isNotBlank()) {
             return snapshot
@@ -1787,6 +1769,7 @@ class SettingsScreenViewModel : ViewModel() {
         val profile = runCatching {
             SteamCloudProfileService.fetchProfile(host, snapshot.steamId64)
         }.getOrNull() ?: return snapshot
+        checkCurrent()
         runCatching {
             SteamCloudAuthStore.recordProfile(
                 context = host,
@@ -1831,6 +1814,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
 
         cancelActiveSteamCloudLogin("Steam Cloud login restarted.", clearBusy = false)
+        beginSteamIdentityChange()
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_login))
         val cancellationHandle = SteamCloudAuthCoordinator.CancellationHandle()
         val loginGeneration = steamCloudLoginGeneration + 1L
@@ -1921,35 +1905,10 @@ class SettingsScreenViewModel : ViewModel() {
                     loginDiagnosticsExtraLines +=
                         "Stored guard data was cleared and the credential login was retried without it after Steam rejected the remembered device state."
                 }
-                val profileResult = if (authResult.steamId64.isNotBlank()) {
-                    cancellationHandle.throwIfCancellationRequested()
-                    runCatching {
-                        SteamCloudProfileService.fetchProfile(host, authResult.steamId64)
-                    }
-                } else {
-                    null
-                }
-                if (profileResult != null) {
-                    profileResult.getOrNull()?.let { profile ->
-                        loginDiagnosticsExtraLines +=
-                            "Profile fetch result: success for ${profile.steamId64.ifBlank { "<blank>" }}"
-                        loginDiagnosticsExtraLines +=
-                            "Profile persona name: ${profile.personaName.ifBlank { "<blank>" }}"
-                        loginDiagnosticsExtraLines +=
-                            "Profile avatar URL: ${profile.avatarUrl.ifBlank { "<blank>" }}"
-                    }
-                    profileResult.exceptionOrNull()?.let { profileError ->
-                        loginDiagnosticsExtraLines +=
-                            "Profile fetch result: failed (${summarizeSteamCloudError(host, profileError)})"
-                    }
-                    if (profileResult.isSuccess && profileResult.getOrNull() == null) {
-                        loginDiagnosticsExtraLines += "Profile fetch result: returned no matching public profile"
-                    }
-                } else {
-                    loginDiagnosticsExtraLines += "Profile fetch skipped: SteamID64 was blank after refresh-token logon"
-                }
+                // Identity is usable once authentication completes. Cosmetic HTTP requests
+                // run through steamProfileTask after the account state is published.
+                loginDiagnosticsExtraLines += "Profile fetch deferred to the independent profile refresh."
                 cancellationHandle.throwIfCancellationRequested()
-                val profile = profileResult?.getOrNull()
                 SteamCloudOperationMutex.runExclusive(host) {
                     cancellationHandle.throwIfCancellationRequested()
                     SteamCloudAuthStore.recordAuthSuccess(
@@ -1960,8 +1919,8 @@ class SettingsScreenViewModel : ViewModel() {
                         refreshToken = authResult.refreshToken,
                         guardData = authResult.guardData,
                         steamId64 = authResult.steamId64,
-                        personaName = profile?.personaName.orEmpty(),
-                        avatarUrl = profile?.avatarUrl.orEmpty(),
+                        personaName = "",
+                        avatarUrl = "",
                     )
                 }
                 SteamAuthenticationCircuitBreaker.reset()
@@ -2005,7 +1964,7 @@ class SettingsScreenViewModel : ViewModel() {
                             )
                         )
                     }
-                    refreshStatus(host, clearBusy = false)
+                    finishSteamIdentityChange(host, clearBusy = false)
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
@@ -2071,7 +2030,7 @@ class SettingsScreenViewModel : ViewModel() {
                             )
                         )
                     }
-                    refreshStatus(host)
+                    finishSteamIdentityChange(host)
                 }
             } finally {
                 runCatching {
@@ -2139,7 +2098,7 @@ class SettingsScreenViewModel : ViewModel() {
                             snapshot.fileCount
                         )
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
@@ -2152,7 +2111,7 @@ class SettingsScreenViewModel : ViewModel() {
                             summary
                         )
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             }
         }
@@ -2206,7 +2165,7 @@ class SettingsScreenViewModel : ViewModel() {
                 host.runOnUiThread {
                     dismissSteamCloudPushConfirmDialog()
                     uiState = uiState.copy(steamCloudUploadPlanDialogSnapshot = plan)
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
@@ -2219,7 +2178,7 @@ class SettingsScreenViewModel : ViewModel() {
                             summary
                         )
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             }
         }
@@ -2276,7 +2235,7 @@ class SettingsScreenViewModel : ViewModel() {
                             uiState = uiState.copy(steamCloudUploadConfirmPlan = plan)
                         }
                     }
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
@@ -2289,7 +2248,7 @@ class SettingsScreenViewModel : ViewModel() {
                             summary
                         )
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             }
         }
@@ -2327,7 +2286,7 @@ class SettingsScreenViewModel : ViewModel() {
                             result.deletedRemoteFileCount
                         )
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
@@ -2340,7 +2299,7 @@ class SettingsScreenViewModel : ViewModel() {
                             summary
                         )
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             }
         }
@@ -2385,7 +2344,7 @@ class SettingsScreenViewModel : ViewModel() {
                             result.appliedFileCount
                         )
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
@@ -2398,7 +2357,7 @@ class SettingsScreenViewModel : ViewModel() {
                             summary
                         )
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             }
         }
@@ -2411,7 +2370,7 @@ class SettingsScreenViewModel : ViewModel() {
             steamCloudWattAccelerationEnabled = effectiveEnabled,
             workshopWattAccelerationEnabled = effectiveEnabled,
         )
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     private fun rejectDisabledSteamCloudSync(host: Activity): Boolean {
@@ -2421,7 +2380,9 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     fun onSteamCloudSyncDisabledChanged(host: Activity, disabled: Boolean) {
+        refreshTasks.getValue(SettingsLoadDomain.CONFIGURATION).cancel()
         val generation = ++steamCloudControlGeneration
+        pendingSteamCloudSyncDisabled = disabled
         val context = host.applicationContext
         uiState = uiState.copy(steamCloudSyncDisabled = disabled)
         steamCloudControlExecutor.execute {
@@ -2430,9 +2391,12 @@ class SettingsScreenViewModel : ViewModel() {
                 if (disabled) SteamCloudSyncProcessService.cancel(context)
             }
             host.runOnUiThread {
-                if (generation != steamCloudControlGeneration || host.isFinishing || host.isDestroyed) return@runOnUiThread
+                if (generation != steamCloudControlGeneration) return@runOnUiThread
+                // A different configuration read may have captured the pre-write control value.
+                refreshTasks.getValue(SettingsLoadDomain.CONFIGURATION).cancel()
+                pendingSteamCloudSyncDisabled = null
                 result.exceptionOrNull()?.let { showToast(host, UiText.DynamicString(summarizeSteamCloudError(host, it))) }
-                refreshStatus(host, clearBusy = false)
+                refreshConfiguration(host, clearBusy = false)
             }
         }
     }
@@ -2440,7 +2404,7 @@ class SettingsScreenViewModel : ViewModel() {
     fun onSteamCloudAutoLaunchAfterSyncChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamCloudAutoLaunchAfterSyncEnabled(host, enabled)
         uiState = uiState.copy(steamCloudAutoLaunchAfterSyncEnabled = enabled)
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onSteamGamePresenceChanged(host: Activity, enabled: Boolean) {
@@ -2451,7 +2415,7 @@ class SettingsScreenViewModel : ViewModel() {
         } else {
             SteamGamePresenceService.stop(host)
         }
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onRichPresenceDisplayPreferencesChanged(
@@ -2460,19 +2424,19 @@ class SettingsScreenViewModel : ViewModel() {
     ) {
         LauncherPreferences.saveRichPresenceDisplayPreferences(host, settings)
         uiState = uiState.copy(richPresenceDisplayPreferences = settings)
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onSteamAchievementSyncChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamAchievementSyncEnabled(host, enabled)
         uiState = uiState.copy(steamAchievementSyncEnabled = enabled)
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onAchievementUnlockNotificationChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setAchievementUnlockNotificationEnabled(host, enabled)
         uiState = uiState.copy(achievementUnlockNotificationEnabled = enabled)
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onClearSteamCloudNetworkCache(host: Activity) {
@@ -2485,7 +2449,8 @@ class SettingsScreenViewModel : ViewModel() {
             SteamCloudAvatarCacheStore.clear(host)
             host.runOnUiThread {
                 showToast(host, UiText.StringResource(R.string.settings_steam_cloud_network_cache_cleared))
-                refreshStatus(host)
+                setBusy(false, null)
+                refreshSteamAccount(host)
             }
         }
     }
@@ -2495,7 +2460,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             workshopMaxConcurrentDownloads = LauncherConfig.normalizeWorkshopMaxConcurrentDownloads(value)
         )
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onWorkshopDownloadThreadsChanged(host: Activity, value: Int) {
@@ -2503,7 +2468,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             workshopDownloadThreads = LauncherConfig.normalizeWorkshopDownloadThreads(value)
         )
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onWorkshopWattAccelerationChanged(host: Activity, enabled: Boolean) {
@@ -2513,7 +2478,7 @@ class SettingsScreenViewModel : ViewModel() {
             steamCloudWattAccelerationEnabled = effectiveEnabled,
             workshopWattAccelerationEnabled = effectiveEnabled,
         )
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onQuickStartSteamAccelerationChanged(host: Activity, enabled: Boolean) {
@@ -2530,7 +2495,7 @@ class SettingsScreenViewModel : ViewModel() {
         quickStartSteamImportTask = executor.submit {
             LauncherPreferences.setWorkshopWattAccelerationEnabled(host, enabled)
             host.runOnUiThread {
-                refreshStatus(host)
+                refreshConfiguration(host)
             }
             runQuickStartSteamImport(
                 host = host,
@@ -2602,25 +2567,25 @@ class SettingsScreenViewModel : ViewModel() {
     fun onWorkshopSteamLanguageChanged(host: Activity, language: SteamLanguagePreference) {
         LauncherPreferences.saveWorkshopSteamLanguage(host, language)
         uiState = uiState.copy(workshopSteamLanguage = language)
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onWorkshopDefaultSortChanged(host: Activity, sort: WorkshopBrowseSort) {
         LauncherPreferences.saveWorkshopDefaultSort(host, sort)
         uiState = uiState.copy(workshopDefaultSort = sort)
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onWorkshopAutoImportChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setWorkshopAutoImportEnabled(host, enabled)
         uiState = uiState.copy(workshopAutoImportEnabled = enabled)
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onWorkshopAutoImportAtlasDownscaleChanged(host: Activity, enabled: Boolean) {
         ImportPatchRegistry.setEnabled(host, AtlasOfflineDownscalePatchModule.id, enabled)
         uiState = uiState.copy(workshopAutoImportAtlasDownscaleEnabled = enabled)
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onWorkshopAutoImportAtlasDownscaleMaxEdgeChanged(host: Activity, maxEdgePx: Int) {
@@ -2629,7 +2594,7 @@ class SettingsScreenViewModel : ViewModel() {
             workshopAutoImportAtlasDownscaleMaxEdgePx =
                 LauncherConfig.normalizeWorkshopAutoImportAtlasDownscaleMaxEdgePx(maxEdgePx)
         )
-        refreshStatus(host, clearBusy = false)
+        refreshConfiguration(host, clearBusy = false)
     }
 
     fun onClearWorkshopPreviewCache(host: Activity) {
@@ -2682,12 +2647,14 @@ class SettingsScreenViewModel : ViewModel() {
         appId: String,
         apiKey: String,
     ) {
+        refreshTasks.getValue(SettingsLoadDomain.TRANSLATION).cancel()
         val repository = BaiduTranslationCredentialsRepository(host)
         repository.setCredentials(BaiduTranslationCredentials(appId = appId, apiKey = apiKey))
         val savedCredentials = repository.getCredentials()
         uiState = uiState.copy(
             baiduTranslationCredentialsConfigured = savedCredentials.isConfigured(),
         )
+        setLoadState(SettingsLoadDomain.TRANSLATION, SettingsLoadState.READY)
         showToast(
             host,
             UiText.DynamicString(
@@ -2712,14 +2679,14 @@ class SettingsScreenViewModel : ViewModel() {
             }.getOrDefault(false)
             if (!loggedIn) {
                 showToast(host, UiText.StringResource(R.string.settings_steam_cloud_save_mode_cloud_requires_login))
-                refreshStatus(host)
+                refreshSteamState(host, clearBusy = false)
                 return
             }
         }
 
         val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
         if (currentMode == targetMode) {
-            refreshStatus(host)
+            refreshSteamState(host, clearBusy = false)
             return
         }
         if (targetMode == SteamCloudSaveMode.STEAM_CLOUD &&
@@ -2730,6 +2697,8 @@ class SettingsScreenViewModel : ViewModel() {
         }
 
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_save_mode_switch))
+        refreshTasks.getValue(SettingsLoadDomain.STEAM_SAVES).cancel()
+        setLoadState(SettingsLoadDomain.STEAM_SAVES, SettingsLoadState.LOADING)
         executor.execute {
             try {
                 SteamCloudOperationMutex.runExclusive(host) {
@@ -2757,7 +2726,7 @@ class SettingsScreenViewModel : ViewModel() {
                             targetMode.displayName(host),
                         )
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
@@ -2769,7 +2738,7 @@ class SettingsScreenViewModel : ViewModel() {
                         ),
                         Toast.LENGTH_LONG
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             }
         }
@@ -2785,21 +2754,27 @@ class SettingsScreenViewModel : ViewModel() {
         }
         val normalizedPath = SteamCloudSyncBlacklist.normalizeLocalRelativePath(localRelativePath)
             ?: run {
-                refreshStatus(host)
+                retrySettingsLoad(host, SettingsLoadDomain.STEAM_SAVES)
                 return
             }
+        refreshTasks.getValue(SettingsLoadDomain.STEAM_SAVES).cancel()
+        setLoadState(SettingsLoadDomain.STEAM_SAVES, SettingsLoadState.LOADING)
         executor.execute {
-            SteamCloudOperationMutex.runExclusive(host) {
-                val nextPaths = LauncherPreferences.readSteamCloudSyncBlacklistPaths(host)
-                    .toMutableSet()
-                if (selected) {
-                    nextPaths += normalizedPath
-                } else {
-                    nextPaths -= normalizedPath
+            runCatching {
+                SteamCloudOperationMutex.runExclusive(host) {
+                    val nextPaths = LauncherPreferences.readSteamCloudSyncBlacklistPaths(host)
+                        .toMutableSet()
+                    if (selected) {
+                        nextPaths += normalizedPath
+                    } else {
+                        nextPaths -= normalizedPath
+                    }
+                    LauncherPreferences.saveSteamCloudSyncBlacklistPaths(host, nextPaths)
                 }
-                LauncherPreferences.saveSteamCloudSyncBlacklistPaths(host, nextPaths)
+            }.onFailure { error ->
+                host.runOnUiThread { showToast(host, UiText.DynamicString(summarizeSteamCloudError(host, error))) }
             }
-            refreshStatus(host)
+            retrySettingsLoad(host, SettingsLoadDomain.STEAM_SAVES)
         }
     }
 
@@ -2809,18 +2784,18 @@ class SettingsScreenViewModel : ViewModel() {
         }
         if (rejectDisabledSteamCloudSync(host)) return
         if (LauncherPreferences.readSteamCloudSaveMode(host) != SteamCloudSaveMode.STEAM_CLOUD) {
-            refreshStatus(host)
+            refreshSteamState(host, clearBusy = false)
             return
         }
         val authMaterial = runCatching { SteamCloudAuthStore.readAuthMaterial(host) }.getOrNull()
         if (authMaterial == null) {
             showToast(host, UiText.StringResource(R.string.settings_steam_cloud_credentials_missing))
-            refreshStatus(host)
+            refreshSteamState(host, clearBusy = false)
             return
         }
         if (!SteamCloudSaveProfileManager.profileHasRegularFiles(host, SteamCloudSaveMode.INDEPENDENT)) {
             showToast(host, UiText.StringResource(R.string.settings_steam_cloud_independent_profile_missing))
-            refreshStatus(host)
+            refreshSteamState(host, clearBusy = false)
             return
         }
 
@@ -2873,7 +2848,7 @@ class SettingsScreenViewModel : ViewModel() {
                         ),
                         Toast.LENGTH_LONG,
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
@@ -2887,7 +2862,7 @@ class SettingsScreenViewModel : ViewModel() {
                         ),
                         Toast.LENGTH_LONG,
                     )
-                    refreshStatus(host)
+                    refreshSteamState(host)
                 }
             }
         }
@@ -2898,6 +2873,7 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         cancelActiveSteamCloudLogin("Steam Cloud credentials cleared.", clearBusy = false)
+        beginSteamIdentityChange()
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_save_mode_switch))
         executor.execute {
             try {
@@ -2910,7 +2886,7 @@ class SettingsScreenViewModel : ViewModel() {
                     dismissSteamCloudUploadPlanDialog()
                     dismissSteamCloudPushConfirmDialog()
                     showToast(host, UiText.StringResource(R.string.settings_steam_cloud_credentials_cleared))
-                    refreshStatus(host)
+                    finishSteamIdentityChange(host)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
@@ -2922,7 +2898,7 @@ class SettingsScreenViewModel : ViewModel() {
                         ),
                         Toast.LENGTH_LONG
                     )
-                    refreshStatus(host)
+                    finishSteamIdentityChange(host)
                 }
             }
         }
@@ -2956,6 +2932,7 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onCancelSteamCloudChallenge(host: Activity? = null) {
         cancelActiveSteamCloudLogin("Steam Cloud login cancelled by user.", clearBusy = true)
+        (host ?: boundActivityReference?.get())?.let { finishSteamIdentityChange(it, clearBusy = false) }
         host?.let {
             showToast(it, UiText.StringResource(R.string.settings_steam_cloud_login_cancelled))
         }
@@ -2986,7 +2963,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         val normalizedValue = normalized.toFloatOrNull() ?: clampedValue
         uiState = uiState.copy(selectedRenderScale = normalizedValue)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onImportJar() {
@@ -3094,7 +3071,7 @@ class SettingsScreenViewModel : ViewModel() {
                             )
                         )
                     )
-                    refreshStatus(host)
+                    refreshDiagnostics(host)
                 }
             }
         }
@@ -3292,7 +3269,8 @@ class SettingsScreenViewModel : ViewModel() {
                     } else {
                         showToast(host, UiText.StringResource(R.string.settings_logs_exported_empty))
                     }
-                    refreshStatus(host)
+                    setBusy(false, null)
+                    refreshDiagnostics(host)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
@@ -3307,7 +3285,7 @@ class SettingsScreenViewModel : ViewModel() {
                             )
                         )
                     )
-                    refreshStatus(host)
+                    refreshDiagnostics(host)
                 }
             }
         }
@@ -3373,7 +3351,7 @@ class SettingsScreenViewModel : ViewModel() {
                     } else {
                         showToast(host, UiText.StringResource(R.string.settings_mods_exported_empty))
                     }
-                    refreshStatus(host)
+                    setBusy(false, null)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
@@ -3387,7 +3365,7 @@ class SettingsScreenViewModel : ViewModel() {
                             )
                         )
                     )
-                    refreshStatus(host)
+                    setBusy(false, null)
                 }
             }
         }
@@ -3399,7 +3377,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(selectedTargetFps = targetFps)
         saveTargetFpsSelection(host, targetFps)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onVirtualResolutionModeChanged(host: Activity, mode: VirtualResolutionMode) {
@@ -3408,7 +3386,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(virtualResolutionMode = mode)
         saveVirtualResolutionModeSelection(host, mode)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onRenderSurfaceBackendChanged(host: Activity, backend: RenderSurfaceBackend) {
@@ -3417,7 +3395,8 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(renderSurfaceBackend = backend)
         saveRenderSurfaceBackendSelection(host, backend)
-        refreshStatus(host)
+        refreshConfiguration(host)
+        refreshRenderer(host)
     }
 
     fun onRendererSelectionModeChanged(host: Activity, mode: RendererSelectionMode) {
@@ -3426,7 +3405,8 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(rendererSelectionMode = mode)
         saveRendererSelectionModeSelection(host, mode)
-        refreshStatus(host)
+        refreshConfiguration(host)
+        refreshRenderer(host)
     }
 
     fun onManualRendererBackendChanged(host: Activity, backend: RendererBackend) {
@@ -3435,7 +3415,8 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(manualRendererBackend = backend)
         saveManualRendererBackendSelection(host, backend)
-        refreshStatus(host)
+        refreshConfiguration(host)
+        refreshRenderer(host)
     }
 
     fun onGpuResourceGuardianModeChanged(host: Activity, mode: GpuResourceGuardianMode) {
@@ -3444,7 +3425,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(gpuResourceGuardianMode = mode)
         saveGpuResourceGuardianModeSelection(host, mode)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onGpuResourceGuardianPressureDownscaleChanged(host: Activity, enabled: Boolean) {
@@ -3453,7 +3434,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(gpuResourceGuardianPressureDownscaleEnabled = enabled)
         LauncherPreferences.setGpuResourceGuardianPressureDownscaleEnabled(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onAccelerationStrategyChanged(host: Activity, strategy: AccelerationStrategy) {
@@ -3462,7 +3443,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(accelerationStrategy = strategy)
         saveAccelerationStrategySelection(host, strategy)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesAnglePolicyChanged(host: Activity, policy: MobileGluesAnglePolicy) {
@@ -3474,7 +3455,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(anglePolicy = policy) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesNoErrorPolicyChanged(host: Activity, policy: MobileGluesNoErrorPolicy) {
@@ -3486,7 +3467,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(noErrorPolicy = policy) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesMultidrawModeChanged(host: Activity, mode: MobileGluesMultidrawMode) {
@@ -3498,7 +3479,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(multidrawMode = mode) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesExtComputeShaderChanged(host: Activity, enabled: Boolean) {
@@ -3510,7 +3491,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(extComputeShaderEnabled = enabled) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesExtTimerQueryChanged(host: Activity, enabled: Boolean) {
@@ -3522,7 +3503,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(extTimerQueryEnabled = enabled) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesExtDirectStateAccessChanged(host: Activity, enabled: Boolean) {
@@ -3534,7 +3515,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(extDirectStateAccessEnabled = enabled) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesGlslCacheSizePresetChanged(
@@ -3549,7 +3530,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(glslCacheSizePreset = preset) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesAngleDepthClearFixModeChanged(
@@ -3564,7 +3545,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(angleDepthClearFixMode = mode) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesCustomGlVersionChanged(
@@ -3579,7 +3560,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(customGlVersion = version) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileGluesFsr1QualityPresetChanged(
@@ -3594,7 +3575,7 @@ class SettingsScreenViewModel : ViewModel() {
             host = host,
             failureMessageResId = R.string.settings_mobileglues_save_failed
         ) { it.copy(fsr1QualityPreset = preset) }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onApplyMobileGluesPreset(host: Activity, preset: MobileGluesPreset) {
@@ -3606,7 +3587,7 @@ class SettingsScreenViewModel : ViewModel() {
             settings = preset.settings,
             failureMessageResId = R.string.settings_mobileglues_apply_preset_failed
         )
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onResetMobileGluesSettings(host: Activity) {
@@ -3629,7 +3610,7 @@ class SettingsScreenViewModel : ViewModel() {
             ),
             failureMessageResId = R.string.settings_mobileglues_reset_failed
         )
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onJvmHeapMaxSelected(host: Activity, heapMaxMb: Int) {
@@ -3642,7 +3623,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(selectedJvmHeapMaxMb = normalizedHeapMax)
         saveJvmHeapMaxSelection(host, normalizedHeapMax)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onJvmTieredStopAtLevelChanged(host: Activity, level: Int) {
@@ -3655,7 +3636,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(jvmTieredStopAtLevel = normalized)
         LauncherPreferences.saveJvmTieredStopAtLevel(host, normalized)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onJvmCompressedPointersChanged(host: Activity, enabled: Boolean) {
@@ -3667,7 +3648,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(compressedPointersEnabled = enabled)
         saveJvmCompressedPointersSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onJvmStringDeduplicationChanged(host: Activity, enabled: Boolean) {
@@ -3679,7 +3660,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(stringDeduplicationEnabled = enabled)
         saveJvmStringDeduplicationSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onPlayerNameChanged(host: Activity, name: String): Boolean {
@@ -3694,7 +3675,7 @@ class SettingsScreenViewModel : ViewModel() {
             return false
         }
         uiState = uiState.copy(playerName = normalizedPlayerName)
-        refreshStatus(host)
+        refreshConfiguration(host)
         return true
     }
 
@@ -3704,7 +3685,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(backBehavior = behavior)
         saveBackBehaviorSelection(host, behavior)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onManualDismissBootOverlayChanged(host: Activity, enabled: Boolean) {
@@ -3713,7 +3694,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(manualDismissBootOverlay = enabled)
         saveManualDismissBootOverlaySelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onSpecialKeyInputModeChanged(host: Activity, mode: SpecialKeyInputMode) {
@@ -3725,7 +3706,7 @@ class SettingsScreenViewModel : ViewModel() {
             showFloatingMouseWindow = mode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW
         )
         saveSpecialKeyInputModeSelection(host, mode)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onTouchMouseInteractionModeChanged(host: Activity, mode: TouchMouseInteractionMode) {
@@ -3734,7 +3715,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(touchMouseInteractionMode = mode)
         saveTouchMouseInteractionModeSelection(host, mode)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onTouchDoubleClickAsRightClickChanged(host: Activity, enabled: Boolean) {
@@ -3743,7 +3724,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(touchDoubleClickAsRightClick = enabled)
         saveTouchDoubleClickAsRightClickSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onIgnoreLongPressRightClickWhilePlayingCardChanged(host: Activity, enabled: Boolean) {
@@ -3752,7 +3733,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(ignoreLongPressRightClickWhilePlayingCard = enabled)
         saveIgnoreLongPressRightClickWhilePlayingCardSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onBuiltInSoftKeyboardChanged(host: Activity, enabled: Boolean) {
@@ -3761,7 +3742,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(builtInSoftKeyboardEnabled = enabled)
         saveBuiltInSoftKeyboardSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onAutoPopupKeyboardChanged(host: Activity, enabled: Boolean) {
@@ -3770,7 +3751,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(autoPopupKeyboardEnabled = enabled)
         saveAutoPopupKeyboardSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onFloatingToolButtonChanged(host: Activity, buttonId: String, enabled: Boolean) {
@@ -3782,7 +3763,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(floatingToolButtons = buttons)
         LauncherPreferences.saveFloatingToolButtons(host, buttons)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onHapticFeedbackChanged(host: Activity, enabled: Boolean) {
@@ -3791,7 +3772,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(hapticFeedbackEnabled = enabled)
         saveHapticFeedbackSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onAutoSwitchLeftAfterRightClickChanged(host: Activity, enabled: Boolean) {
@@ -3800,7 +3781,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(autoSwitchLeftAfterRightClick = enabled)
         saveAutoSwitchLeftAfterRightClickSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onShowModFileNameChanged(host: Activity, enabled: Boolean) {
@@ -3809,7 +3790,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(showModFileName = enabled)
         saveShowModFileNameSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onApplyModFileNameAliases(host: Activity) {
@@ -3903,7 +3884,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(lwjglDebugEnabled = enabled)
         saveLwjglDebugSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onPreloadAllJreLibrariesChanged(host: Activity, enabled: Boolean) {
@@ -3912,7 +3893,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(preloadAllJreLibrariesEnabled = enabled)
         savePreloadAllJreLibrariesSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onLogcatCaptureChanged(host: Activity, enabled: Boolean) {
@@ -3924,7 +3905,7 @@ class SettingsScreenViewModel : ViewModel() {
         if (!enabled) {
             LogcatCaptureProcessClient.stopAndClearCapture(host)
         }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onLauncherLogcatCaptureChanged(host: Activity, enabled: Boolean) {
@@ -3938,7 +3919,7 @@ class SettingsScreenViewModel : ViewModel() {
         } else {
             LauncherLogcatCaptureProcessClient.stopAndClearCapture(host)
         }
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onJvmLogcatMirrorChanged(host: Activity, enabled: Boolean) {
@@ -3947,7 +3928,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(jvmLogcatMirrorEnabled = enabled)
         saveJvmLogcatMirrorSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onGpuResourceDiagChanged(host: Activity, enabled: Boolean) {
@@ -3959,7 +3940,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(gpuResourceDiagEnabled = enabled)
         saveGpuResourceDiagSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onArthasAnalysisChanged(host: Activity, enabled: Boolean) {
@@ -3971,11 +3952,13 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(arthasAnalysisEnabled = enabled)
         saveArthasAnalysisSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onInstallArthasResourceRequested(host: Activity) {
         if (uiState.busy) return
+        refreshTasks.getValue(SettingsLoadDomain.RESOURCES).cancel()
+        setLoadState(SettingsLoadDomain.RESOURCES, SettingsLoadState.LOADING)
         setBusy(true, UiText.StringResource(R.string.settings_busy_installing_arthas_resource))
         val preferredSource = UpdateMirrorManager.current(host)
         executor.execute {
@@ -4003,7 +3986,7 @@ class SettingsScreenViewModel : ViewModel() {
                     )
                     setBusy(false, null)
                     showToast(host, UiText.StringResource(R.string.settings_arthas_resource_installed))
-                    refreshStatus(host)
+                    refreshResources(host)
                 }
             } catch (error: Throwable) {
                 host.runOnUiThread {
@@ -4018,7 +4001,7 @@ class SettingsScreenViewModel : ViewModel() {
                         ),
                         Toast.LENGTH_LONG
                     )
-                    refreshStatus(host)
+                    refreshResources(host)
                 }
             }
         }
@@ -4030,7 +4013,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(gdxPadCursorDebugEnabled = enabled)
         saveGdxPadCursorDebugSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onGlBridgeSwapHeartbeatDebugChanged(host: Activity, enabled: Boolean) {
@@ -4039,7 +4022,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(glBridgeSwapHeartbeatDebugEnabled = enabled)
         saveGlBridgeSwapHeartbeatDebugSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMobileHudEnabledChanged(host: Activity, enabled: Boolean) {
@@ -4048,7 +4031,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(mobileHudEnabled = enabled)
         saveMobileHudEnabledSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onCompendiumUpgradeTouchFixEnabledChanged(host: Activity, enabled: Boolean) {
@@ -4057,7 +4040,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(compendiumUpgradeTouchFixEnabled = enabled)
         saveCompendiumUpgradeTouchFixSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onTogetherInSpireRouteLockEnabledChanged(host: Activity, enabled: Boolean) {
@@ -4066,7 +4049,18 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(togetherInSpireRouteLockEnabled = enabled)
         LauncherPreferences.setTogetherInSpireRouteLockEnabled(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
+    }
+
+    fun onRamSaverOptimizationChanged(
+        host: Activity,
+        optimization: io.stamethyst.config.RamSaverOptimization,
+        enabled: Boolean,
+    ) {
+        if (uiState.busy) return
+        LauncherPreferences.setRamSaverOptimization(host, optimization, enabled)
+        uiState = uiState.copy(ramSaverOptimizations = uiState.ramSaverOptimizations + (optimization to enabled))
+        refreshConfiguration(host)
     }
 
     fun onTogetherInSpireEasyTierAutofillEnabledChanged(host: Activity, enabled: Boolean) {
@@ -4075,7 +4069,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(togetherInSpireEasyTierAutofillEnabled = enabled)
         LauncherPreferences.setTogetherInSpireEasyTierAutofillEnabled(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onLocalTestCloudControlEnabledChanged(host: Activity, enabled: Boolean) {
@@ -4084,7 +4078,8 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(localTestCloudControlEnabled = enabled)
         CloudControlConfig.setLocalTestChannelEnabled(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
+        retrySettingsLoad(host, SettingsLoadDomain.EASYTIER)
     }
 
     fun onSteamAchievementDebugModeEnabledChanged(host: Activity, enabled: Boolean) {
@@ -4093,7 +4088,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(steamAchievementDebugModeEnabled = enabled)
         LauncherPreferences.setSteamAchievementDebugModeEnabled(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onSlingBreakAudioDebugModeChanged(host: Activity, enabled: Boolean) {
@@ -4102,7 +4097,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(slingBreakAudioDebugModeEnabled = enabled)
         LauncherPreferences.setSlingBreakAudioDebugModeEnabled(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onLocalTestEndpointsChanged(
@@ -4126,7 +4121,8 @@ class SettingsScreenViewModel : ViewModel() {
                 localTestConfigServerUrl = LauncherPreferences.readLocalTestConfigServerUrl(host),
                 localTestEntryNodeUrl = LauncherPreferences.readLocalTestEntryNodeUrl(host),
             )
-            refreshStatus(host)
+            refreshConfiguration(host)
+            retrySettingsLoad(host, SettingsLoadDomain.EASYTIER)
         }
         return saved
     }
@@ -4140,7 +4136,7 @@ class SettingsScreenViewModel : ViewModel() {
             cropScreenBottom = false,
         )
         LauncherPreferences.saveGameDisplayRegion(host, normalized)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onRamSaverEnabledChanged(host: Activity, enabled: Boolean) {
@@ -4149,7 +4145,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(ramSaverEnabled = enabled)
         saveRamSaverEnabledSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMtsPatchCacheEnabledChanged(host: Activity, enabled: Boolean) {
@@ -4158,7 +4154,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(mtsPatchCacheEnabled = enabled)
         saveMtsPatchCacheEnabledSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onMtsCacheStartupOptimizationChanged(
@@ -4171,6 +4167,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             mtsCacheStartupOptimizations = uiState.mtsCacheStartupOptimizations + (optimization to enabled)
         )
+        refreshConfiguration(host)
     }
 
     fun onFramePacingModeChanged(host: Activity, mode: FramePacingMode) {
@@ -4179,7 +4176,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(framePacingMode = mode)
         LauncherPreferences.saveFramePacingMode(host, mode)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onKeepScreenOnTimeoutSelected(host: Activity, timeoutMinutes: Int) {
@@ -4192,7 +4189,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(keepScreenOnTimeoutMinutes = normalizedTimeout)
         saveKeepScreenOnTimeoutSelection(host, normalizedTimeout)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onGamePerformanceOverlayChanged(host: Activity, enabled: Boolean) {
@@ -4201,7 +4198,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(showGamePerformanceOverlay = enabled)
         saveGamePerformanceOverlaySelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onSustainedPerformanceModeChanged(host: Activity, enabled: Boolean) {
@@ -4210,7 +4207,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(sustainedPerformanceModeEnabled = enabled)
         saveSustainedPerformanceModeSelection(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onTouchscreenInputModeChanged(host: Activity, mode: TouchscreenInputMode) {
@@ -4221,7 +4218,7 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         uiState = uiState.copy(touchscreenInputMode = mode)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onCardPlayOptimizationModeChanged(host: Activity, mode: CardPlayOptimizationMode) {
@@ -4232,7 +4229,7 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         uiState = uiState.copy(cardPlayOptimizationMode = mode)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onTouchIndicatorEnabledChanged(host: Activity, enabled: Boolean) {
@@ -4241,14 +4238,14 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(touchIndicatorEnabled = enabled)
         GameplaySettingsService.setTouchIndicatorEnabled(host, enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onHideEnemyPanelWhileTargetingChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) return
         GameplaySettingsService.setHideEnemyPanelWhileTargeting(host, enabled)
         uiState = uiState.copy(hideEnemyPanelWhileTargeting = enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onGameplayFontScaleChanged(host: Activity, value: Float) {
@@ -4260,7 +4257,7 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         uiState = uiState.copy(gameplayFontScale = normalized)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onGameplayLargerUiChanged(host: Activity, enabled: Boolean) {
@@ -4271,7 +4268,7 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         uiState = uiState.copy(gameplayLargerUiEnabled = enabled)
-        refreshStatus(host)
+        refreshConfiguration(host)
     }
 
     fun onOpenCompatibility() {
@@ -4717,7 +4714,6 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun applySnapshot(
-        host: Activity,
         snapshot: SettingsRepository.SettingsSnapshot
     ) {
         val rendering = snapshot.rendering
@@ -4726,23 +4722,14 @@ class SettingsScreenViewModel : ViewModel() {
         val diagnostics = snapshot.diagnostics
         val market = snapshot.market
         val compatibility = snapshot.compatibility
-        val rendererDecision = rendering.rendererDecision
         val mobileGluesSettings = rendering.mobileGluesSettings
-        val rendererBackendOptions = rendererDecision.availableBackends.map { availability ->
-            RendererBackendOptionState(
-                backend = availability.backend,
-                available = availability.available,
-                reasonText = availability.describeUnavailable(host)
-            )
-        }
         uiState = uiState.copy(
             themeMode = snapshot.themeMode,
             themeColor = snapshot.themeColor,
             launcherIconMode = snapshot.launcherIconMode,
             chromeBackgroundOpacity = snapshot.chromeBackgroundOpacity,
             bootOverlayStyle = snapshot.bootOverlayStyle,
-            slingBreakEngineMode = LauncherPreferences.readSlingBreakEngineMode(host),
-            slingBreakInstalledVersion = SlingBreakInstallation.read(host)?.rawTagName.orEmpty(),
+            slingBreakEngineMode = snapshot.slingBreakEngineMode,
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
             bootOverlayImageConfig = snapshot.bootOverlayImageConfig,
             playerName = snapshot.playerName,
@@ -4764,16 +4751,10 @@ class SettingsScreenViewModel : ViewModel() {
             mobileGluesAngleDepthClearFixMode = mobileGluesSettings.angleDepthClearFixMode,
             mobileGluesCustomGlVersion = mobileGluesSettings.customGlVersion,
             mobileGluesFsr1QualityPreset = mobileGluesSettings.fsr1QualityPreset,
-            autoSelectedRendererBackend = rendererDecision.automaticBackend,
-            effectiveRendererBackend = rendererDecision.effectiveBackend,
-            effectiveRenderSurfaceBackend = rendererDecision.effectiveSurfaceBackend,
-            rendererBackendOptions = rendererBackendOptions,
-            rendererFallbackText = rendererDecision.fallbackSummary(host),
-            surfaceBackendForcedByRenderer = rendererDecision.surfaceBackendForced,
             gpuResourceGuardianMode = rendering.gpuResourceGuardianMode,
             gpuResourceGuardianPressureDownscaleEnabled =
                 rendering.gpuResourceGuardianPressureDownscaleEnabled,
-            accelerationStrategy = LauncherPreferences.readAccelerationStrategy(host),
+            accelerationStrategy = snapshot.accelerationStrategy,
             selectedJvmHeapMaxMb = jvm.heapMaxMb,
             jvmTieredStopAtLevel = jvm.tieredStopAtLevel,
             compressedPointersEnabled = jvm.compressedPointersEnabled,
@@ -4796,29 +4777,30 @@ class SettingsScreenViewModel : ViewModel() {
             togetherInSpireRouteLockEnabled = input.togetherInSpireRouteLockEnabled,
             togetherInSpireEasyTierAutofillEnabled =
                 input.togetherInSpireEasyTierAutofillEnabled,
-            localTestCloudControlEnabled = LauncherPreferences.isLocalTestCloudControlEnabled(host),
-            steamAchievementDebugModeEnabled = LauncherPreferences.isSteamAchievementDebugModeEnabled(host),
-            localTestOnlineServiceBaseUrl = LauncherPreferences.readLocalTestOnlineServiceBaseUrl(host),
-            localTestConfigServerUrl = LauncherPreferences.readLocalTestConfigServerUrl(host),
-            localTestEntryNodeUrl = LauncherPreferences.readLocalTestEntryNodeUrl(host),
+            localTestCloudControlEnabled = snapshot.localTestCloudControlEnabled,
+            steamAchievementDebugModeEnabled = snapshot.steamAchievementDebugModeEnabled,
+            slingBreakAudioDebugModeEnabled = snapshot.slingBreakAudioDebugModeEnabled,
+            localTestOnlineServiceBaseUrl = snapshot.localTestOnlineServiceBaseUrl,
+            localTestConfigServerUrl = snapshot.localTestConfigServerUrl,
+            localTestEntryNodeUrl = snapshot.localTestEntryNodeUrl,
             avoidDisplayCutout = input.avoidDisplayCutout,
             cropScreenBottom = input.cropScreenBottom,
             gameDisplayRegion = input.gameDisplayRegion,
             ramSaverEnabled = input.ramSaverEnabled,
+            ramSaverOptimizations = input.ramSaverOptimizations,
             mtsPatchCacheEnabled = input.mtsPatchCacheEnabled,
             mtsCacheStartupOptimizations = input.mtsCacheStartupOptimizations,
             keepScreenOnTimeoutMinutes = input.keepScreenOnTimeoutMinutes,
             showGamePerformanceOverlay = diagnostics.showGamePerformanceOverlay,
             sustainedPerformanceModeEnabled = diagnostics.sustainedPerformanceModeEnabled,
-            systemGameModeDisplayName = host.getString(diagnostics.systemGameMode.displayNameResId),
-            systemGameModeDescription = host.getString(diagnostics.systemGameMode.descriptionResId),
             lwjglDebugEnabled = diagnostics.lwjglDebugEnabled,
             preloadAllJreLibrariesEnabled = diagnostics.preloadAllJreLibrariesEnabled,
             logcatCaptureEnabled = diagnostics.logcatCaptureEnabled,
             launcherLogcatCaptureEnabled = diagnostics.launcherLogcatCaptureEnabled,
             jvmLogcatMirrorEnabled = diagnostics.jvmLogcatMirrorEnabled,
             gpuResourceDiagEnabled = diagnostics.gpuResourceDiagEnabled,
-            arthasAnalysisEnabled = diagnostics.arthasAnalysisEnabled,
+            arthasAnalysisEnabled = diagnostics.arthasAnalysisEnabled &&
+                (uiState.loadState(SettingsLoadDomain.RESOURCES) != SettingsLoadState.READY || uiState.arthasResourceInstalled),
             gdxPadCursorDebugEnabled = diagnostics.gdxPadCursorDebugEnabled,
             glBridgeSwapHeartbeatDebugEnabled = diagnostics.glBridgeSwapHeartbeatDebugEnabled,
             touchscreenInputMode = TouchscreenInputMode.fromSettings(
@@ -4839,7 +4821,13 @@ class SettingsScreenViewModel : ViewModel() {
             workshopAutoImportEnabled = market.workshopAutoImportEnabled,
             workshopAutoImportAtlasDownscaleEnabled = market.workshopAutoImportAtlasDownscaleEnabled,
             workshopAutoImportAtlasDownscaleMaxEdgePx = market.workshopAutoImportAtlasDownscaleMaxEdgePx,
-            baiduTranslationCredentialsConfigured = market.baiduTranslationCredentialsConfigured,
+            steamCloudWattAccelerationEnabled = snapshot.steam.wattAccelerationEnabled,
+            steamCloudAutoLaunchAfterSyncEnabled = snapshot.steam.autoLaunchAfterSyncEnabled,
+            steamCloudSyncDisabled = pendingSteamCloudSyncDisabled ?: snapshot.steam.syncDisabled,
+            steamGamePresenceEnabled = snapshot.steam.gamePresenceEnabled,
+            richPresenceDisplayPreferences = snapshot.steam.richPresenceDisplayPreferences,
+            steamAchievementSyncEnabled = snapshot.steam.achievementSyncEnabled,
+            achievementUnlockNotificationEnabled = snapshot.steam.achievementUnlockNotificationEnabled,
         )
     }
 
@@ -5139,6 +5127,9 @@ class SettingsScreenViewModel : ViewModel() {
         operation: UiBusyOperation = UiBusyOperation.OTHER_BUSY,
         progressPercent: Int? = null
     ) {
+        busyGeneration++
+        // A refresh finishing the previous operation must never unlock a new operation.
+        if (busy) statusRefreshBusyTracker.complete()
         uiState = if (busy) {
             uiState.copy(
                 busy = true,
@@ -5405,6 +5396,8 @@ class SettingsScreenViewModel : ViewModel() {
     private fun buildStatusText(
         host: Activity,
         snapshot: SettingsRepository.SettingsSnapshot,
+        rendererDecision: RendererDecision,
+        systemGameMode: AndroidGameModeSnapshot,
         hasJar: Boolean,
         optionalEnabled: Int,
         optionalTotal: Int,
@@ -5421,7 +5414,6 @@ class SettingsScreenViewModel : ViewModel() {
         val input = snapshot.input
         val diagnostics = snapshot.diagnostics
         val compatibility = snapshot.compatibility
-        val rendererDecision = rendering.rendererDecision
         val lines = mutableListOf<String>()
 
         lines += host.getString(R.string.settings_status_section_core_dependencies)
@@ -5579,7 +5571,7 @@ class SettingsScreenViewModel : ViewModel() {
         )
         lines += host.getString(
             R.string.settings_status_acceleration_strategy,
-            LauncherPreferences.readAccelerationStrategy(host).displayName(host)
+            snapshot.accelerationStrategy.displayName(host)
         )
         lines += host.getString(
             R.string.settings_status_back_behavior,
@@ -5630,11 +5622,11 @@ class SettingsScreenViewModel : ViewModel() {
         )
         lines += host.getString(
             R.string.settings_status_system_game_mode,
-            host.getString(diagnostics.systemGameMode.displayNameResId)
+            host.getString(systemGameMode.displayNameResId)
         )
         lines += host.getString(
             R.string.settings_status_system_game_mode_detail,
-            host.getString(diagnostics.systemGameMode.descriptionResId)
+            host.getString(systemGameMode.descriptionResId)
         )
         lines += host.getString(
             R.string.settings_status_manual_dismiss_boot_overlay,
@@ -6573,9 +6565,10 @@ class SettingsScreenViewModel : ViewModel() {
     override fun onCleared() {
         uiState.saveImportConfirmation?.archive?.delete()
         cancelActiveSteamCloudLogin("Settings screen cleared.", clearBusy = false)
-        statusRefreshGeneration.incrementAndGet()
-        statusRefreshTask?.cancel(true)
-        statusRefreshExecutor.shutdownNow()
+        refreshTasks.values.forEach { it.cancel() }
+        refreshExecutors.values.forEach { it.shutdownNow() }
+        steamProfileTask.cancel()
+        steamProfileExecutor.shutdownNow()
         executor.shutdownNow()
         steamCloudLoginCleanupExecutor.shutdown()
         steamCloudControlExecutor.shutdown()

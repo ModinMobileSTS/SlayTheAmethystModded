@@ -1,0 +1,5 @@
+<resources>
+    <string name="settings_value_loading">加载中…</string>
+    <string name="settings_value_load_failed">此项加载失败，已保存的配置未被重置。</string>
+    <string name="settings_value_retry">重试</string>
+</resources>

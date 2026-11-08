@@ -118,247 +118,251 @@ fun LauncherMobileGluesSettingsScreen(
         ) {
             SettingsBusyIndicator(uiState = uiState)
 
-            SettingsSectionCard(title = stringResource(R.string.mobileglues_section_info_title)) {
-                Text(
-                    text = stringResource(R.string.mobileglues_info_body),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-
-            SettingsSectionCard(title = stringResource(R.string.mobileglues_section_preset_title)) {
-                Text(
-                    text = if (exactPreset != null) {
-                        stringResource(
-                            R.string.mobileglues_preset_current_exact,
-                            exactPreset.title(activity)
-                        )
-                    } else {
-                        stringResource(
-                            R.string.mobileglues_preset_current_custom,
-                            nearestPreset.title(activity)
-                        )
-                    },
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = stringResource(R.string.mobileglues_preset_intro),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            SettingsDependencyContent(uiState, SettingsLoadDomain.CONFIGURATION) {
+                SettingsSectionCard(title = stringResource(R.string.mobileglues_section_info_title)) {
                     Text(
-                        text = stringResource(R.string.mobileglues_preset_slider_left),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text(
-                        text = stringResource(R.string.mobileglues_preset_slider_right),
+                        text = stringResource(R.string.mobileglues_info_body),
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
-                Slider(
-                    value = presetSliderValue,
-                    onValueChange = { presetSliderValue = it },
-                    onValueChangeFinished = {
-                        viewModel.onApplyMobileGluesPreset(
-                            activity,
-                            MobileGluesPreset.fromSliderIndex(presetSliderValue.roundToInt())
-                        )
-                    },
-                    valueRange = 0f..MobileGluesPreset.entries.lastIndex.toFloat(),
-                    steps = (MobileGluesPreset.entries.size - 2).coerceAtLeast(0),
-                    enabled = !uiState.busy,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    text = stringResource(
-                        R.string.mobileglues_preset_slider_position,
-                        MobileGluesPreset.fromSliderIndex(
-                            presetSliderValue.roundToInt()
-                        ).title(activity)
-                    ),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    text = "${selectedPreset.shortLabel(activity)} | ${selectedPreset.title(activity)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-                Text(
-                    text = selectedPreset.description(activity),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
 
-            SettingsSectionCard(title = stringResource(R.string.mobileglues_section_current_params_title)) {
-                currentMobileGluesParameterLines(activity, currentSettings).forEach { line ->
+                SettingsSectionCard(title = stringResource(R.string.mobileglues_section_preset_title)) {
                     Text(
-                        text = line,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(bottom = 4.dp)
+                        text = if (exactPreset != null) {
+                            stringResource(
+                                R.string.mobileglues_preset_current_exact,
+                                exactPreset.title(activity)
+                            )
+                        } else {
+                            stringResource(
+                                R.string.mobileglues_preset_current_custom,
+                                nearestPreset.title(activity)
+                            )
+                        },
+                        style = MaterialTheme.typography.bodyMedium
                     )
-                }
-                SettingsSwitchItem(
-                    SettingsSwitchSpec(
-                        checked = showCustomSettings,
-                        enabled = !uiState.busy,
-                        title = stringResource(R.string.mobileglues_custom_settings_enabled),
-                        description = stringResource(R.string.mobileglues_custom_settings_desc),
-                        onCheckedChange = { showCustomSettings = it }
+                    Text(
+                        text = stringResource(R.string.mobileglues_preset_intro),
+                        style = MaterialTheme.typography.bodySmall
                     )
-                )
-                TextButton(
-                    onClick = { viewModel.onResetMobileGluesSettings(activity) },
-                    enabled = !uiState.busy
-                ) {
-                    Text(stringResource(R.string.mobileglues_reset_defaults))
-                }
-            }
-
-            if (showCustomSettings) {
-                SettingsSectionCard(title = stringResource(R.string.mobileglues_section_driver_title)) {
-                    SettingsDropdownField(
-                        label = stringResource(R.string.mobileglues_field_angle_policy_label),
-                        valueText = uiState.mobileGluesAnglePolicy.displayName(activity),
-                        enabled = !uiState.busy,
-                        supportingText = stringResource(
-                            R.string.mobileglues_field_angle_policy_supporting
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.mobileglues_preset_slider_left),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = stringResource(R.string.mobileglues_preset_slider_right),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Slider(
+                        value = presetSliderValue,
+                        onValueChange = { presetSliderValue = it },
+                        onValueChangeFinished = {
+                            viewModel.onApplyMobileGluesPreset(
+                                activity,
+                                MobileGluesPreset.fromSliderIndex(presetSliderValue.roundToInt())
+                            )
+                        },
+                        valueRange = 0f..MobileGluesPreset.entries.lastIndex.toFloat(),
+                        steps = (MobileGluesPreset.entries.size - 2).coerceAtLeast(0),
+                        enabled = settingsControlEnabled(!uiState.busy),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.mobileglues_preset_slider_position,
+                            MobileGluesPreset.fromSliderIndex(
+                                presetSliderValue.roundToInt()
+                            ).title(activity)
                         ),
-                        options = MobileGluesAnglePolicy.entries,
-                        optionLabel = { it.displayName(activity) },
-                        optionDescription = { it.description(activity) },
-                        onOptionSelected = { viewModel.onMobileGluesAnglePolicyChanged(activity, it) }
+                        style = MaterialTheme.typography.bodySmall
                     )
-                    SettingsDropdownField(
-                        label = stringResource(R.string.mobileglues_field_multidraw_label),
-                        valueText = uiState.mobileGluesMultidrawMode.displayName(activity),
-                        enabled = !uiState.busy,
-                        supportingText = stringResource(
-                            R.string.mobileglues_field_multidraw_supporting
-                        ),
-                        options = MobileGluesMultidrawMode.entries,
-                        optionLabel = { it.displayName(activity) },
-                        optionDescription = { it.description(activity) },
-                        onOptionSelected = { viewModel.onMobileGluesMultidrawModeChanged(activity, it) }
+                    Text(
+                        text = "${selectedPreset.shortLabel(activity)} | ${selectedPreset.title(activity)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 6.dp)
                     )
-                    SettingsDropdownField(
-                        label = stringResource(R.string.mobileglues_field_no_error_label),
-                        valueText = uiState.mobileGluesNoErrorPolicy.displayName(activity),
-                        enabled = !uiState.busy,
-                        supportingText = stringResource(
-                            R.string.mobileglues_field_no_error_supporting
-                        ),
-                        options = MobileGluesNoErrorPolicy.entries,
-                        optionLabel = { it.displayName(activity) },
-                        optionDescription = { it.description(activity) },
-                        onOptionSelected = { viewModel.onMobileGluesNoErrorPolicyChanged(activity, it) }
-                    )
-                    SettingsDropdownField(
-                        label = stringResource(R.string.mobileglues_field_custom_gl_label),
-                        valueText = uiState.mobileGluesCustomGlVersion.displayName(activity),
-                        enabled = !uiState.busy,
-                        supportingText = stringResource(
-                            R.string.mobileglues_field_custom_gl_supporting
-                        ),
-                        options = MobileGluesCustomGlVersion.entries,
-                        optionLabel = { it.displayName(activity) },
-                        optionDescription = { it.description(activity) },
-                        onOptionSelected = { viewModel.onMobileGluesCustomGlVersionChanged(activity, it) }
+                    Text(
+                        text = selectedPreset.description(activity),
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
 
-                SettingsSectionCard(title = stringResource(R.string.mobileglues_section_extension_title)) {
+                SettingsSectionCard(title = stringResource(R.string.mobileglues_section_current_params_title)) {
+                    currentMobileGluesParameterLines(activity, currentSettings).forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
                     SettingsSwitchItem(
                         SettingsSwitchSpec(
-                            checked = uiState.mobileGluesExtComputeShaderEnabled,
+                            checked = showCustomSettings,
                             enabled = !uiState.busy,
-                            title = stringResource(R.string.mobileglues_compute_shader_enabled),
-                            description = stringResource(R.string.mobileglues_compute_shader_desc),
-                            onCheckedChange = {
-                                viewModel.onMobileGluesExtComputeShaderChanged(activity, it)
-                            }
+                            title = stringResource(R.string.mobileglues_custom_settings_enabled),
+                            description = stringResource(R.string.mobileglues_custom_settings_desc),
+                            onCheckedChange = { showCustomSettings = it }
                         )
                     )
-                    SettingsSwitchItem(
-                        SettingsSwitchSpec(
-                            checked = uiState.mobileGluesExtTimerQueryEnabled,
+                    TextButton(
+                        onClick = { viewModel.onResetMobileGluesSettings(activity) },
+                        enabled = settingsControlEnabled(!uiState.busy)
+                    ) {
+                        Text(stringResource(R.string.mobileglues_reset_defaults))
+                    }
+                }
+
+                if (showCustomSettings) {
+                    SettingsSectionCard(title = stringResource(R.string.mobileglues_section_driver_title)) {
+                        SettingsDropdownField(
+                            label = stringResource(R.string.mobileglues_field_angle_policy_label),
+                            valueText = uiState.mobileGluesAnglePolicy.displayName(activity),
                             enabled = !uiState.busy,
-                            title = stringResource(R.string.mobileglues_timer_query_enabled),
-                            description = stringResource(R.string.mobileglues_timer_query_desc),
-                            onCheckedChange = {
-                                viewModel.onMobileGluesExtTimerQueryChanged(activity, it)
-                            }
-                        )
-                    )
-                    SettingsSwitchItem(
-                        SettingsSwitchSpec(
-                            checked = uiState.mobileGluesExtDirectStateAccessEnabled,
-                            enabled = !uiState.busy,
-                            title = stringResource(
-                                R.string.mobileglues_direct_state_access_enabled
+                            supportingText = stringResource(
+                                R.string.mobileglues_field_angle_policy_supporting
                             ),
-                            description = stringResource(R.string.mobileglues_direct_state_access_desc),
-                            onCheckedChange = {
-                                viewModel.onMobileGluesExtDirectStateAccessChanged(activity, it)
+                            options = MobileGluesAnglePolicy.entries,
+                            optionLabel = { it.displayName(activity) },
+                            optionDescription = { it.description(activity) },
+                            onOptionSelected = { viewModel.onMobileGluesAnglePolicyChanged(activity, it) }
+                        )
+                        SettingsDropdownField(
+                            label = stringResource(R.string.mobileglues_field_multidraw_label),
+                            valueText = uiState.mobileGluesMultidrawMode.displayName(activity),
+                            enabled = !uiState.busy,
+                            supportingText = stringResource(
+                                R.string.mobileglues_field_multidraw_supporting
+                            ),
+                            options = MobileGluesMultidrawMode.entries,
+                            optionLabel = { it.displayName(activity) },
+                            optionDescription = { it.description(activity) },
+                            onOptionSelected = { viewModel.onMobileGluesMultidrawModeChanged(activity, it) }
+                        )
+                        SettingsDropdownField(
+                            label = stringResource(R.string.mobileglues_field_no_error_label),
+                            valueText = uiState.mobileGluesNoErrorPolicy.displayName(activity),
+                            enabled = !uiState.busy,
+                            supportingText = stringResource(
+                                R.string.mobileglues_field_no_error_supporting
+                            ),
+                            options = MobileGluesNoErrorPolicy.entries,
+                            optionLabel = { it.displayName(activity) },
+                            optionDescription = { it.description(activity) },
+                            onOptionSelected = { viewModel.onMobileGluesNoErrorPolicyChanged(activity, it) }
+                        )
+                        SettingsDropdownField(
+                            label = stringResource(R.string.mobileglues_field_custom_gl_label),
+                            valueText = uiState.mobileGluesCustomGlVersion.displayName(activity),
+                            enabled = !uiState.busy,
+                            supportingText = stringResource(
+                                R.string.mobileglues_field_custom_gl_supporting
+                            ),
+                            options = MobileGluesCustomGlVersion.entries,
+                            optionLabel = { it.displayName(activity) },
+                            optionDescription = { it.description(activity) },
+                            onOptionSelected = { viewModel.onMobileGluesCustomGlVersionChanged(activity, it) }
+                        )
+                    }
+
+                    SettingsSectionCard(title = stringResource(R.string.mobileglues_section_extension_title)) {
+                        SettingsSwitchItem(
+                            SettingsSwitchSpec(
+                                checked = uiState.mobileGluesExtComputeShaderEnabled,
+                                enabled = !uiState.busy,
+                                title = stringResource(R.string.mobileglues_compute_shader_enabled),
+                                description = stringResource(R.string.mobileglues_compute_shader_desc),
+                                onCheckedChange = {
+                                    viewModel.onMobileGluesExtComputeShaderChanged(activity, it)
+                                }
+                            )
+                        )
+                        SettingsSwitchItem(
+                            SettingsSwitchSpec(
+                                checked = uiState.mobileGluesExtTimerQueryEnabled,
+                                enabled = !uiState.busy,
+                                title = stringResource(R.string.mobileglues_timer_query_enabled),
+                                description = stringResource(R.string.mobileglues_timer_query_desc),
+                                onCheckedChange = {
+                                    viewModel.onMobileGluesExtTimerQueryChanged(activity, it)
+                                }
+                            )
+                        )
+                        SettingsSwitchItem(
+                            SettingsSwitchSpec(
+                                checked = uiState.mobileGluesExtDirectStateAccessEnabled,
+                                enabled = !uiState.busy,
+                                title = stringResource(
+                                    R.string.mobileglues_direct_state_access_enabled
+                                ),
+                                description = stringResource(R.string.mobileglues_direct_state_access_desc),
+                                onCheckedChange = {
+                                    viewModel.onMobileGluesExtDirectStateAccessChanged(activity, it)
+                                }
+                            )
+                        )
+                        SettingsDropdownField(
+                            label = stringResource(R.string.mobileglues_field_angle_depth_clear_label),
+                            valueText = uiState.mobileGluesAngleDepthClearFixMode.displayName(activity),
+                            enabled = !uiState.busy,
+                            supportingText = stringResource(
+                                R.string.mobileglues_field_angle_depth_clear_supporting
+                            ),
+                            options = MobileGluesAngleDepthClearFixMode.entries,
+                            optionLabel = { it.displayName(activity) },
+                            optionDescription = { it.description(activity) },
+                            onOptionSelected = {
+                                viewModel.onMobileGluesAngleDepthClearFixModeChanged(activity, it)
                             }
                         )
-                    )
-                    SettingsDropdownField(
-                        label = stringResource(R.string.mobileglues_field_angle_depth_clear_label),
-                        valueText = uiState.mobileGluesAngleDepthClearFixMode.displayName(activity),
-                        enabled = !uiState.busy,
-                        supportingText = stringResource(
-                            R.string.mobileglues_field_angle_depth_clear_supporting
-                        ),
-                        options = MobileGluesAngleDepthClearFixMode.entries,
-                        optionLabel = { it.displayName(activity) },
-                        optionDescription = { it.description(activity) },
-                        onOptionSelected = {
-                            viewModel.onMobileGluesAngleDepthClearFixModeChanged(activity, it)
-                        }
-                    )
+                    }
+
+                    SettingsSectionCard(title = stringResource(R.string.mobileglues_section_cache_image_title)) {
+                        SettingsDropdownField(
+                            label = stringResource(R.string.mobileglues_field_glsl_cache_label),
+                            valueText = uiState.mobileGluesGlslCacheSizePreset.displayName(activity),
+                            enabled = !uiState.busy,
+                            supportingText = stringResource(
+                                R.string.mobileglues_field_glsl_cache_supporting
+                            ),
+                            options = MobileGluesGlslCacheSizePreset.entries,
+                            optionLabel = { it.displayName(activity) },
+                            optionDescription = { it.description(activity) },
+                            onOptionSelected = {
+                                viewModel.onMobileGluesGlslCacheSizePresetChanged(activity, it)
+                            }
+                        )
+                        SettingsDropdownField(
+                            label = stringResource(R.string.mobileglues_field_fsr1_label),
+                            valueText = uiState.mobileGluesFsr1QualityPreset.displayName(activity),
+                            enabled = !uiState.busy,
+                            supportingText = stringResource(R.string.mobileglues_field_fsr1_supporting),
+                            options = MobileGluesFsr1QualityPreset.entries,
+                            optionLabel = { it.displayName(activity) },
+                            optionDescription = { it.description(activity) },
+                            onOptionSelected = {
+                                viewModel.onMobileGluesFsr1QualityPresetChanged(activity, it)
+                            }
+                        )
+                    }
                 }
 
-                SettingsSectionCard(title = stringResource(R.string.mobileglues_section_cache_image_title)) {
-                    SettingsDropdownField(
-                        label = stringResource(R.string.mobileglues_field_glsl_cache_label),
-                        valueText = uiState.mobileGluesGlslCacheSizePreset.displayName(activity),
-                        enabled = !uiState.busy,
-                        supportingText = stringResource(
-                            R.string.mobileglues_field_glsl_cache_supporting
+                SettingsDependencyContent(uiState, SettingsLoadDomain.RENDERER) {
+                    Text(
+                        text = stringResource(
+                            R.string.mobileglues_effective_renderer,
+                            uiState.effectiveRendererBackend.displayName
                         ),
-                        options = MobileGluesGlslCacheSizePreset.entries,
-                        optionLabel = { it.displayName(activity) },
-                        optionDescription = { it.description(activity) },
-                        onOptionSelected = {
-                            viewModel.onMobileGluesGlslCacheSizePresetChanged(activity, it)
-                        }
-                    )
-                    SettingsDropdownField(
-                        label = stringResource(R.string.mobileglues_field_fsr1_label),
-                        valueText = uiState.mobileGluesFsr1QualityPreset.displayName(activity),
-                        enabled = !uiState.busy,
-                        supportingText = stringResource(R.string.mobileglues_field_fsr1_supporting),
-                        options = MobileGluesFsr1QualityPreset.entries,
-                        optionLabel = { it.displayName(activity) },
-                        optionDescription = { it.description(activity) },
-                        onOptionSelected = {
-                            viewModel.onMobileGluesFsr1QualityPresetChanged(activity, it)
-                        }
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
-
-            Text(
-                text = stringResource(
-                    R.string.mobileglues_effective_renderer,
-                    uiState.effectiveRendererBackend.displayName
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 

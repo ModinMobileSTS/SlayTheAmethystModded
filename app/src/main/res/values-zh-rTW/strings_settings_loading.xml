@@ -1,0 +1,5 @@
+<resources>
+    <string name="settings_value_loading">載入中…</string>
+    <string name="settings_value_load_failed">此項載入失敗，已儲存的設定未被重設。</string>
+    <string name="settings_value_retry">重試</string>
+</resources>

@@ -21,19 +21,14 @@ import io.stamethyst.backend.mods.importing.patches.ImportPatchSettings
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
 import io.stamethyst.backend.launch.MtsPatchCacheCoordinator
-import io.stamethyst.backend.render.AndroidGameModeSnapshot
-import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.MobileGluesConfigFile
 import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.backend.render.RendererBackend
-import io.stamethyst.backend.render.RendererBackendResolver
-import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.LauncherUpdateVersioning
 import io.stamethyst.backend.update.UpdateSource
-import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.config.BackBehavior
@@ -48,6 +43,7 @@ import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.RichPresenceDisplayPreferences
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -64,12 +60,21 @@ internal object SettingsRepository {
         val bootOverlayStyle: BootOverlayStyle,
         val bootOverlayAnimation: BootOverlayAnimation,
         val bootOverlayImageConfig: BootOverlayImageConfig,
+        val slingBreakEngineMode: SlingBreakEngineMode,
+        val accelerationStrategy: io.stamethyst.backend.network.AccelerationStrategy,
+        val localTestCloudControlEnabled: Boolean,
+        val steamAchievementDebugModeEnabled: Boolean,
+        val slingBreakAudioDebugModeEnabled: Boolean,
+        val localTestOnlineServiceBaseUrl: String,
+        val localTestConfigServerUrl: String,
+        val localTestEntryNodeUrl: String,
         val playerName: String,
         val rendering: RenderingSnapshot,
         val jvm: JvmSnapshot,
         val input: InputSnapshot,
         val diagnostics: DiagnosticsSnapshot,
         val market: MarketSnapshot,
+        val steam: SteamPreferencesSnapshot,
         val compatibility: CompatibilitySnapshot
     )
 
@@ -83,7 +88,6 @@ internal object SettingsRepository {
         val rendererSelectionMode: RendererSelectionMode,
         val manualRendererBackend: RendererBackend,
         val mobileGluesSettings: MobileGluesSettings,
-        val rendererDecision: RendererDecision,
         val gpuResourceGuardianMode: GpuResourceGuardianMode,
         val gpuResourceGuardianPressureDownscaleEnabled: Boolean
     )
@@ -118,6 +122,7 @@ internal object SettingsRepository {
         val cropScreenBottom: Boolean,
         val gameDisplayRegion: io.stamethyst.backend.render.GameDisplayRegion?,
         val ramSaverEnabled: Boolean,
+        val ramSaverOptimizations: Map<io.stamethyst.config.RamSaverOptimization, Boolean>,
         val mtsPatchCacheEnabled: Boolean,
         val mtsCacheStartupOptimizations: Map<io.stamethyst.config.MtsCacheStartupOptimization, Boolean>,
         val keepScreenOnTimeoutMinutes: Int,
@@ -133,7 +138,6 @@ internal object SettingsRepository {
     data class DiagnosticsSnapshot(
         val showGamePerformanceOverlay: Boolean,
         val sustainedPerformanceModeEnabled: Boolean,
-        val systemGameMode: AndroidGameModeSnapshot,
         val lwjglDebugEnabled: Boolean,
         val preloadAllJreLibrariesEnabled: Boolean,
         val logcatCaptureEnabled: Boolean,
@@ -154,7 +158,16 @@ internal object SettingsRepository {
         val workshopAutoImportEnabled: Boolean,
         val workshopAutoImportAtlasDownscaleEnabled: Boolean,
         val workshopAutoImportAtlasDownscaleMaxEdgePx: Int,
-        val baiduTranslationCredentialsConfigured: Boolean,
+    )
+
+    data class SteamPreferencesSnapshot(
+        val wattAccelerationEnabled: Boolean,
+        val autoLaunchAfterSyncEnabled: Boolean,
+        val syncDisabled: Boolean,
+        val gamePresenceEnabled: Boolean,
+        val richPresenceDisplayPreferences: RichPresenceDisplayPreferences,
+        val achievementSyncEnabled: Boolean,
+        val achievementUnlockNotificationEnabled: Boolean,
     )
 
     data class CompatibilitySnapshot(
@@ -209,12 +222,6 @@ internal object SettingsRepository {
         val rendererSelectionMode = LauncherPreferences.readRendererSelectionMode(context)
         val manualRendererBackend = LauncherPreferences.readManualRendererBackend(context)
         val mobileGluesSettings = LauncherPreferences.readMobileGluesSettings(context)
-        val rendererDecision = RendererBackendResolver.resolve(
-            context = context,
-            requestedSurfaceBackend = renderSurfaceBackend,
-            selectionMode = rendererSelectionMode,
-            manualBackend = manualRendererBackend
-        )
         val heapMaxMb = LauncherPreferences.readJvmHeapMaxMb(context)
         return SettingsSnapshot(
             themeMode = LauncherPreferences.readThemeMode(context),
@@ -224,6 +231,14 @@ internal object SettingsRepository {
             bootOverlayStyle = LauncherPreferences.readBootOverlayStyle(context),
             bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
             bootOverlayImageConfig = LauncherPreferences.readBootOverlayImageConfig(context),
+            slingBreakEngineMode = LauncherPreferences.readSlingBreakEngineMode(context),
+            accelerationStrategy = LauncherPreferences.readAccelerationStrategy(context),
+            localTestCloudControlEnabled = LauncherPreferences.isLocalTestCloudControlEnabled(context),
+            steamAchievementDebugModeEnabled = LauncherPreferences.isSteamAchievementDebugModeEnabled(context),
+            slingBreakAudioDebugModeEnabled = LauncherPreferences.isSlingBreakAudioDebugModeEnabled(context),
+            localTestOnlineServiceBaseUrl = LauncherPreferences.readLocalTestOnlineServiceBaseUrl(context),
+            localTestConfigServerUrl = LauncherPreferences.readLocalTestConfigServerUrl(context),
+            localTestEntryNodeUrl = LauncherPreferences.readLocalTestEntryNodeUrl(context),
             playerName = LauncherPreferences.readPlayerName(context),
             rendering = RenderingSnapshot(
                 renderScale = RenderScaleService.readValue(context),
@@ -235,7 +250,6 @@ internal object SettingsRepository {
                 rendererSelectionMode = rendererSelectionMode,
                 manualRendererBackend = manualRendererBackend,
                 mobileGluesSettings = mobileGluesSettings,
-                rendererDecision = rendererDecision,
                 gpuResourceGuardianMode = LauncherPreferences.readGpuResourceGuardianMode(context),
                 gpuResourceGuardianPressureDownscaleEnabled =
                     LauncherPreferences.isGpuResourceGuardianPressureDownscaleEnabled(context)
@@ -275,6 +289,7 @@ internal object SettingsRepository {
                 cropScreenBottom = LauncherPreferences.isScreenBottomCropEnabled(context),
                 gameDisplayRegion = LauncherPreferences.readGameDisplayRegion(context),
                 ramSaverEnabled = LauncherPreferences.isRamSaverEnabled(context),
+                ramSaverOptimizations = LauncherPreferences.readRamSaverOptimizations(context),
                 mtsPatchCacheEnabled = LauncherPreferences.isMtsPatchCacheEnabled(context),
                 mtsCacheStartupOptimizations = io.stamethyst.config.LauncherConfig.readMtsCacheStartupOptimizations(context),
                 keepScreenOnTimeoutMinutes = LauncherPreferences.readKeepScreenOnTimeoutMinutes(context),
@@ -290,7 +305,6 @@ internal object SettingsRepository {
                 showGamePerformanceOverlay = LauncherPreferences.isGamePerformanceOverlayEnabled(context),
                 sustainedPerformanceModeEnabled =
                     LauncherPreferences.isSustainedPerformanceModeEnabled(context),
-                systemGameMode = AndroidGameModeSupport.readCurrentMode(context),
                 lwjglDebugEnabled = LauncherPreferences.isLwjglDebugEnabled(context),
                 preloadAllJreLibrariesEnabled =
                     LauncherPreferences.isPreloadAllJreLibrariesEnabled(context),
@@ -315,7 +329,15 @@ internal object SettingsRepository {
                     ImportPatchRegistry.isEnabled(context, AtlasOfflineDownscalePatchModule.id),
                 workshopAutoImportAtlasDownscaleMaxEdgePx =
                     LauncherPreferences.readWorkshopAutoImportAtlasDownscaleMaxEdgePx(context),
-                baiduTranslationCredentialsConfigured = BaiduTranslationCredentialsRepository(context).hasConfiguredCredentials(),
+            ),
+            steam = SteamPreferencesSnapshot(
+                wattAccelerationEnabled = LauncherPreferences.isSteamCloudWattAccelerationEnabled(context),
+                autoLaunchAfterSyncEnabled = LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(context),
+                syncDisabled = LauncherPreferences.isSteamCloudSyncDisabled(context),
+                gamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(context),
+                richPresenceDisplayPreferences = LauncherPreferences.readRichPresenceDisplayPreferences(context),
+                achievementSyncEnabled = LauncherPreferences.isSteamAchievementSyncEnabled(context),
+                achievementUnlockNotificationEnabled = LauncherPreferences.isAchievementUnlockNotificationEnabled(context),
             ),
             compatibility = CompatibilitySnapshot(
                 globalAtlasFilterCompatEnabled =

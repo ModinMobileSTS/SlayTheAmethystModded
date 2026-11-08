@@ -65,6 +65,7 @@ import io.stamethyst.backend.llm.DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
 import io.stamethyst.backend.llm.MAX_LLM_REQUEST_TIMEOUT_SECONDS
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.settings.common.SettingsRouteScaffold
+import io.stamethyst.ui.settings.common.settingsControlEnabled
 import io.stamethyst.ui.settings.common.SettingsLlmRouteSpec
 import io.stamethyst.ui.settings.common.SettingsSectionCard
 import io.stamethyst.ui.settings.common.SettingsActionListItem
@@ -309,6 +310,7 @@ fun LauncherLlmSettingsScreen(
             SettingsSectionCard(title = stringResource(R.string.llm_connection), iconResId = R.drawable.ic_link) {
                 OutlinedTextField(
                     value = baseUrl,
+                    enabled = settingsControlEnabled(),
                     onValueChange = { baseUrl = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.settings_llm_base_url)) },
@@ -324,6 +326,7 @@ fun LauncherLlmSettingsScreen(
             SettingsSectionCard(title = stringResource(R.string.llm_credentials), iconResId = R.drawable.ic_lan_room_key) {
                 OutlinedTextField(
                     value = apiKey,
+                    enabled = settingsControlEnabled(),
                     onValueChange = { apiKey = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.settings_llm_api_key)) },
@@ -355,7 +358,9 @@ fun LauncherLlmSettingsScreen(
                             ),
                         )
                     },
-                    enabled = !viewModel.testingModel && effectiveKey.isNotBlank() && validUrl && modelName.isNotBlank(),
+                    enabled = settingsControlEnabled(
+                        !viewModel.testingModel && effectiveKey.isNotBlank() && validUrl && modelName.isNotBlank(),
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Icon(painterResource(R.drawable.ic_play_arrow), null, Modifier.size(18.dp))
@@ -403,6 +408,7 @@ fun LauncherLlmSettingsScreen(
 
     if (showModels) {
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = { showModels = false },
             title = { Text(stringResource(R.string.llm_manage_models, models.size)) },
             confirmButton = {

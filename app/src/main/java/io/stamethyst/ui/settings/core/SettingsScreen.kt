@@ -424,6 +424,9 @@ fun LauncherDeveloperSettingsScreen(
         onCompendiumUpgradeTouchFixEnabledChanged = { enabled ->
             viewModel.onCompendiumUpgradeTouchFixEnabledChanged(activity, enabled)
         },
+        onRamSaverOptimizationChanged = { optimization, enabled ->
+            viewModel.onRamSaverOptimizationChanged(activity, optimization, enabled)
+        },
         onTogetherInSpireRouteLockEnabledChanged = { enabled ->
             viewModel.onTogetherInSpireRouteLockEnabledChanged(activity, enabled)
         },

@@ -103,8 +103,10 @@ fun LauncherSteamCloudGuardScreen(
         }
     }
 
-    LaunchedEffect(challenge, uiState.busy, uiState.steamCloudRefreshTokenConfigured) {
-        if (challenge == null && !uiState.busy) {
+    LaunchedEffect(challenge, uiState.busy, uiState.steamCloudRefreshTokenConfigured,
+        uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT)) {
+        if (challenge == null && !uiState.busy &&
+            uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT) == SettingsLoadState.READY) {
             if (uiState.steamCloudRefreshTokenConfigured) {
                 if (onLoginCompleted != null) {
                     onLoginCompleted()
@@ -267,6 +269,8 @@ fun LauncherSteamCloudGuardScreen(
                         )
                     }
                 }
+            } else {
+                SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_ACCOUNT) {}
             }
         }
     }
@@ -379,6 +383,8 @@ fun LauncherSteamCloudLoginMethodScreen(
                         CircularProgressIndicator(modifier = Modifier.size(28.dp))
                     }
                 }
+            } else {
+                SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_ACCOUNT) {}
             }
         }
     }

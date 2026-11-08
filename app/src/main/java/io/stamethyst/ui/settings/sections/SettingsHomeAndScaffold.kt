@@ -445,6 +445,7 @@ internal fun SettingsApplyModFileNameAliasesAction(
             text = { Text(stringResource(R.string.settings_mod_alias_apply_file_names_confirm_message)) },
             confirmButton = {
                 TextButton(
+                    enabled = settingsControlEnabled(!busy),
                     onClick = {
                         showApplyModFileNameAliasesDialog = false
                         onApplyModFileNameAliases()

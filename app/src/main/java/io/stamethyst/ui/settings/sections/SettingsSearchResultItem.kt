@@ -9,6 +9,8 @@ import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.navigation.Route
 import io.stamethyst.ui.settings.common.SettingsActionListItem
 import io.stamethyst.ui.settings.common.SettingsSearchEntry
+import io.stamethyst.ui.settings.common.SettingsDependencyContent
+import io.stamethyst.ui.settings.core.SettingsLoadDomain
 import io.stamethyst.ui.settings.core.SettingsScreenViewModel
 
 internal data class SettingsSearchActions(
@@ -100,14 +102,20 @@ private fun SettingsSearchResultControl(
         title == R.string.settings_market_workshop_language_title ->
             SettingsWorkshopLanguageSetting(uiState, actions.market)
         title == R.string.settings_system_game_mode_title ->
-            SettingsSystemGameModeSetting(uiState)
+            SettingsDependencyContent(uiState, SettingsLoadDomain.GAME_MODE) {
+                SettingsSystemGameModeSetting(uiState)
+            }
         title == R.string.settings_developer_acceleration_strategy_title ->
             SettingsAccelerationSection(uiState, actions.acceleration)
         title == R.string.settings_renderer_backend_title &&
             uiState.rendererSelectionMode == RendererSelectionMode.MANUAL ->
-            SettingsManualRendererSetting(uiState, actions.advancedRender)
+            SettingsDependencyContent(uiState, SettingsLoadDomain.RENDERER) {
+                SettingsManualRendererSetting(uiState, actions.advancedRender)
+            }
         title == R.string.settings_render_surface_backend_title ->
-            SettingsRenderSurfaceBackendSetting(uiState, actions.advancedRender)
+            SettingsDependencyContent(uiState, SettingsLoadDomain.RENDERER) {
+                SettingsRenderSurfaceBackendSetting(uiState, actions.advancedRender)
+            }
         title == R.string.settings_gpu_resource_guardian_title ->
             SettingsGpuResourceGuardianSetting(uiState, actions.advancedRender)
         title == R.string.settings_jvm_tiered_stop_at_level_title ->

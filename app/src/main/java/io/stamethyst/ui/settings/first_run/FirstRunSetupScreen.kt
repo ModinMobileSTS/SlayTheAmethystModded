@@ -292,7 +292,8 @@ fun LauncherFirstRunSetupScreen(
                                 currentStepIndex++
                             }
                         },
-                        enabled = !blockingInteractionLocked,
+                        enabled = !blockingInteractionLocked &&
+                            uiState.loadState(SettingsLoadDomain.CONFIGURATION) == SettingsLoadState.READY,
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
@@ -318,118 +319,120 @@ fun LauncherFirstRunSetupScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             SettingsBusyIndicator(uiState = uiState)
-            AnimatedContent(
-                targetState = currentStepIndex,
-                transitionSpec = {
-                    val isForward = targetState > initialState
-                    (
-                        slideInHorizontally(
-                            animationSpec = tween(durationMillis = 320),
-                            initialOffsetX = { fullWidth ->
-                                if (isForward) fullWidth / 3 else -fullWidth / 3
+            SettingsDependencyContent(uiState, SettingsLoadDomain.CONFIGURATION) {
+                AnimatedContent(
+                    targetState = currentStepIndex,
+                    transitionSpec = {
+                        val isForward = targetState > initialState
+                        (
+                            slideInHorizontally(
+                                animationSpec = tween(durationMillis = 320),
+                                initialOffsetX = { fullWidth ->
+                                    if (isForward) fullWidth / 3 else -fullWidth / 3
+                                }
+                            ) + fadeIn(animationSpec = tween(durationMillis = 320))
+                            ).togetherWith(
+                            slideOutHorizontally(
+                                animationSpec = tween(durationMillis = 260),
+                                targetOffsetX = { fullWidth ->
+                                    if (isForward) -fullWidth / 4 else fullWidth / 4
+                                }
+                            ) + fadeOut(animationSpec = tween(durationMillis = 220))
+                        ).using(SizeTransform(clip = false))
+                    },
+                    label = "firstRunSetupStepTransition",
+                ) { stepIndex ->
+                    val animatedStep = steps[stepIndex]
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        FirstRunSetupHeader(
+                            currentStepIndex = stepIndex,
+                            totalSteps = steps.size,
+                            step = animatedStep,
+                        )
+                        when (animatedStep) {
+                            FirstRunSetupStep.APPEARANCE -> {
+                                FirstRunAppearanceStep(
+                                    uiState = uiState,
+                                    onThemeColorChanged = { themeColor ->
+                                        viewModel.onThemeColorChanged(activity, themeColor)
+                                    },
+                                )
                             }
-                        ) + fadeIn(animationSpec = tween(durationMillis = 320))
-                        ).togetherWith(
-                        slideOutHorizontally(
-                            animationSpec = tween(durationMillis = 260),
-                            targetOffsetX = { fullWidth ->
-                                if (isForward) -fullWidth / 4 else fullWidth / 4
+
+                            FirstRunSetupStep.RENDER -> {
+                                FirstRunRenderStep(
+                                    uiState = uiState,
+                                    onGameDisplayRegionChanged = { region ->
+                                        viewModel.onGameDisplayRegionChanged(activity, region)
+                                    },
+                                    onGameplayFontScaleChanged = { value ->
+                                        viewModel.onGameplayFontScaleChanged(activity, value)
+                                    },
+                                    onGameplayLargerUiChanged = { enabled ->
+                                        viewModel.onGameplayLargerUiChanged(activity, enabled)
+                                    },
+                                )
                             }
-                        ) + fadeOut(animationSpec = tween(durationMillis = 220))
-                    ).using(SizeTransform(clip = false))
-                },
-                label = "firstRunSetupStepTransition",
-            ) { stepIndex ->
-                val animatedStep = steps[stepIndex]
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    FirstRunSetupHeader(
-                        currentStepIndex = stepIndex,
-                        totalSteps = steps.size,
-                        step = animatedStep,
-                    )
-                    when (animatedStep) {
-                        FirstRunSetupStep.APPEARANCE -> {
-                            FirstRunAppearanceStep(
-                                uiState = uiState,
-                                onThemeColorChanged = { themeColor ->
-                                    viewModel.onThemeColorChanged(activity, themeColor)
-                                },
-                            )
-                        }
 
-                        FirstRunSetupStep.RENDER -> {
-                        FirstRunRenderStep(
-                            uiState = uiState,
-                            onGameDisplayRegionChanged = { region ->
-                                viewModel.onGameDisplayRegionChanged(activity, region)
-                            },
-                            onGameplayFontScaleChanged = { value ->
-                                viewModel.onGameplayFontScaleChanged(activity, value)
-                            },
-                                onGameplayLargerUiChanged = { enabled ->
-                                    viewModel.onGameplayLargerUiChanged(activity, enabled)
-                                },
-                            )
-                        }
+                            FirstRunSetupStep.INPUT -> {
+                                FirstRunInputStep(
+                                    uiState = uiState,
+                                    playerName = pendingPlayerName,
+                                    playerNameDirty = pendingPlayerNameDirty,
+                                    onPlayerNameChanged = { name ->
+                                        pendingPlayerName = name
+                                        pendingPlayerNameDirty = name != uiState.playerName
+                                    },
+                                    onSavePlayerName = ::savePendingPlayerNameIfNeeded,
+                                    onTouchscreenInputModeChanged = { mode ->
+                                        viewModel.onTouchscreenInputModeChanged(activity, mode)
+                                    },
+                                    onSpecialKeyInputModeChanged = { mode ->
+                                        viewModel.onSpecialKeyInputModeChanged(activity, mode)
+                                    },
+                                    onTouchMouseInteractionModeChanged = { mode ->
+                                        viewModel.onTouchMouseInteractionModeChanged(activity, mode)
+                                    },
+                                    onTouchDoubleClickAsRightClickChanged = { enabled ->
+                                        viewModel.onTouchDoubleClickAsRightClickChanged(activity, enabled)
+                                    },
+                                )
+                            }
 
-                        FirstRunSetupStep.INPUT -> {
-                            FirstRunInputStep(
-                                uiState = uiState,
-                                playerName = pendingPlayerName,
-                                playerNameDirty = pendingPlayerNameDirty,
-                                onPlayerNameChanged = { name ->
-                                    pendingPlayerName = name
-                                    pendingPlayerNameDirty = name != uiState.playerName
-                                },
-                                onSavePlayerName = ::savePendingPlayerNameIfNeeded,
-                                onTouchscreenInputModeChanged = { mode ->
-                                    viewModel.onTouchscreenInputModeChanged(activity, mode)
-                                },
-                                onSpecialKeyInputModeChanged = { mode ->
-                                    viewModel.onSpecialKeyInputModeChanged(activity, mode)
-                                },
-                                onTouchMouseInteractionModeChanged = { mode ->
-                                    viewModel.onTouchMouseInteractionModeChanged(activity, mode)
-                                },
-                                onTouchDoubleClickAsRightClickChanged = { enabled ->
-                                    viewModel.onTouchDoubleClickAsRightClickChanged(activity, enabled)
-                                },
-                            )
-                        }
+                            FirstRunSetupStep.UPDATES -> {
+                                FirstRunUpdatesStep(
+                                    uiState = uiState,
+                                    onAutoCheckUpdatesChanged = { enabled ->
+                                        viewModel.onAutoCheckUpdatesChanged(activity, enabled)
+                                    },
+                                    onPreferredUpdateMirrorChanged = { source ->
+                                        viewModel.onPreferredUpdateMirrorChanged(activity, source)
+                                    },
+                                    onManualCheckUpdates = {
+                                        viewModel.onManualCheckUpdates(activity)
+                                    },
+                                    onOpenReleaseHistory = {
+                                        viewModel.onOpenReleaseHistory(activity)
+                                    },
+                                    onDismissReleaseHistoryDialog = viewModel::dismissReleaseHistoryDialog,
+                                )
+                            }
 
-                FirstRunSetupStep.UPDATES -> {
-                    FirstRunUpdatesStep(
-                        uiState = uiState,
-                        onAutoCheckUpdatesChanged = { enabled ->
-                            viewModel.onAutoCheckUpdatesChanged(activity, enabled)
-                        },
-                        onPreferredUpdateMirrorChanged = { source ->
-                            viewModel.onPreferredUpdateMirrorChanged(activity, source)
-                        },
-                        onManualCheckUpdates = {
-                            viewModel.onManualCheckUpdates(activity)
-                        },
-                        onOpenReleaseHistory = {
-                            viewModel.onOpenReleaseHistory(activity)
-                        },
-                        onDismissReleaseHistoryDialog = viewModel::dismissReleaseHistoryDialog,
-                    )
-                }
-
-                        FirstRunSetupStep.STEAM_CLOUD -> {
-                            FirstRunSetupSteamCloudStep(
-                                uiState = uiState,
-                                onOpenSteamCloudLogin = { navigator.push(Route.SteamCloudLogin) },
-                                onClearSteamCloudCredentials = {
-                                    viewModel.onClearSteamCloudCredentials(activity)
-                                },
-                                onSteamCloudWattAccelerationChanged = { enabled ->
-                                    viewModel.onSteamCloudWattAccelerationChanged(activity, enabled)
-                                },
-                            )
+                            FirstRunSetupStep.STEAM_CLOUD -> {
+                                FirstRunSetupSteamCloudStep(
+                                    uiState = uiState,
+                                    onOpenSteamCloudLogin = { navigator.push(Route.SteamCloudLogin) },
+                                    onClearSteamCloudCredentials = {
+                                        viewModel.onClearSteamCloudCredentials(activity)
+                                    },
+                                    onSteamCloudWattAccelerationChanged = { enabled ->
+                                        viewModel.onSteamCloudWattAccelerationChanged(activity, enabled)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -530,14 +533,14 @@ private fun FirstRunThemeColorOption(
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .border(width = 1.dp, color = borderColor, shape = shape)
-            .clickable(enabled = enabled, onClick = onSelect)
+            .clickable(enabled = settingsControlEnabled(enabled), onClick = onSelect)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         RadioButton(
             selected = selected,
             onClick = null,
-            enabled = enabled,
+            enabled = settingsControlEnabled(enabled),
         )
         Spacer(modifier = Modifier.width(12.dp))
         Box(
@@ -620,7 +623,7 @@ private fun FirstRunRenderStep(
                 (GameplaySettingsService.MAX_FONT_SCALE - GameplaySettingsService.MIN_FONT_SCALE) /
                     GameplaySettingsService.FONT_SCALE_STEP
                 ).roundToInt() - 1,
-            enabled = !uiState.busy,
+            enabled = settingsControlEnabled(!uiState.busy),
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -646,14 +649,14 @@ private fun FirstRunInputStep(
             onValueChange = onPlayerNameChanged,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            enabled = !uiState.busy,
+            enabled = settingsControlEnabled(!uiState.busy),
             label = { Text(stringResource(R.string.settings_player_name_hint)) },
         )
         FirstRunSupportingText(stringResource(R.string.settings_player_name_desc))
         FirstRunSupportingText(stringResource(R.string.settings_player_name_dialog_message))
         Button(
             onClick = { onSavePlayerName() },
-            enabled = !uiState.busy && playerNameDirty,
+            enabled = settingsControlEnabled(!uiState.busy && playerNameDirty),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(stringResource(R.string.common_action_save))
@@ -804,6 +807,7 @@ private fun FirstRunUpdatesStep(
 
     uiState.releaseHistoryDialogState?.let { dialogState ->
         AlertDialog(
+            scrollableText = false,
             onDismissRequest = onDismissReleaseHistoryDialog,
             title = { Text(stringResource(R.string.update_history_dialog_title)) },
             text = {
@@ -893,13 +897,15 @@ private fun FirstRunSetupSteamCloudStep(
         title = stringResource(R.string.settings_steam_cloud_title)
     ) {
         FirstRunSupportingText(stringResource(R.string.settings_first_run_steam_cloud_login_desc))
-        FirstRunSteamCloudAccountCard(
-            loggedIn = uiState.steamCloudRefreshTokenConfigured,
-            accountName = accountDisplayName,
-            busy = uiState.busy,
-            onLogin = onOpenSteamCloudLogin,
-            onLogout = { showLogoutConfirmDialog = true },
-        )
+        SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_ACCOUNT) {
+            FirstRunSteamCloudAccountCard(
+                loggedIn = uiState.steamCloudRefreshTokenConfigured,
+                accountName = accountDisplayName,
+                busy = uiState.busy,
+                onLogin = onOpenSteamCloudLogin,
+                onLogout = { showLogoutConfirmDialog = true },
+            )
+        }
         SettingsSwitchItem(
             SettingsSwitchSpec(
                 checked = uiState.steamCloudWattAccelerationEnabled,
@@ -911,7 +917,7 @@ private fun FirstRunSetupSteamCloudStep(
         )
     }
 
-    if (showLogoutConfirmDialog) {
+    if (showLogoutConfirmDialog && uiState.loadState(SettingsLoadDomain.STEAM_ACCOUNT) == SettingsLoadState.READY) {
         AlertDialog(
             onDismissRequest = { showLogoutConfirmDialog = false },
             title = { Text(stringResource(R.string.settings_first_run_steam_cloud_logout_title)) },
@@ -923,7 +929,7 @@ private fun FirstRunSetupSteamCloudStep(
             },
             confirmButton = {
                 Button(
-                    enabled = !uiState.busy,
+                    enabled = settingsControlEnabled(!uiState.busy),
                     onClick = {
                         showLogoutConfirmDialog = false
                         onClearSteamCloudCredentials()
@@ -934,7 +940,7 @@ private fun FirstRunSetupSteamCloudStep(
             },
             dismissButton = {
                 TextButton(
-                    enabled = !uiState.busy,
+                    enabled = settingsControlEnabled(!uiState.busy),
                     onClick = { showLogoutConfirmDialog = false }
                 ) {
                     Text(stringResource(android.R.string.cancel))
@@ -995,7 +1001,7 @@ private fun FirstRunSteamCloudAccountCard(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = if (loggedIn) {
+                text = if (!settingsControlEnabled()) "" else if (loggedIn) {
                     accountName
                 } else {
                     stringResource(R.string.settings_steam_cloud_account_not_signed_in)
@@ -1007,14 +1013,14 @@ private fun FirstRunSteamCloudAccountCard(
         }
         if (loggedIn) {
             TextButton(
-                enabled = !busy,
+                enabled = settingsControlEnabled(!busy),
                 onClick = onLogout,
             ) {
                 Text(stringResource(R.string.settings_steam_cloud_logout_action))
             }
         } else {
             Button(
-                enabled = !busy,
+                enabled = settingsControlEnabled(!busy),
                 onClick = onLogin,
             ) {
                 Text(stringResource(R.string.settings_steam_cloud_login_action))

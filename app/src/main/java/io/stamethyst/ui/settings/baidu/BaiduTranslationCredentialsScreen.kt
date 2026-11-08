@@ -41,8 +41,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import io.stamethyst.ui.LauncherTopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,6 +68,9 @@ import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.LauncherTransientNoticeDuration
 import io.stamethyst.ui.icon.ArrowBack
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,13 +86,26 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
     val translationClient = remember { BaiduAiTextTranslationClient() }
     var appIdInput by remember { mutableStateOf("") }
     var apiKeyInput by remember { mutableStateOf("") }
+    var credentialsLoadState by remember { mutableStateOf(SettingsLoadState.LOADING) }
+    var credentialsLoadAttempt by remember { mutableIntStateOf(0) }
     var isTesting by remember { mutableStateOf(false) }
     var pendingNotice by remember(notice) { mutableStateOf(notice?.takeIf(String::isNotBlank)) }
 
-    LaunchedEffect(activity) {
-        val credentials = viewModel.readBaiduTranslationCredentials(activity)
-        appIdInput = credentials.appId
-        apiKeyInput = credentials.apiKey
+    LaunchedEffect(activity, credentialsLoadAttempt) {
+        viewModel.bind(activity)
+        credentialsLoadState = SettingsLoadState.LOADING
+        try {
+            val credentials = withContext(Dispatchers.IO) {
+                viewModel.readBaiduTranslationCredentials(activity)
+            }
+            appIdInput = credentials.appId
+            apiKeyInput = credentials.apiKey
+            credentialsLoadState = SettingsLoadState.READY
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            credentialsLoadState = SettingsLoadState.ERROR
+        }
     }
 
     pendingNotice?.let { message ->
@@ -132,18 +150,32 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
                     text = stringResource(R.string.settings_baidu_translation_credentials_title),
                     style = MaterialTheme.typography.titleLarge,
                 )
-                Text(
-                    text = if (viewModel.uiState.baiduTranslationCredentialsConfigured) {
-                        stringResource(R.string.settings_baidu_translation_credentials_page_configured_desc)
-                    } else {
-                        stringResource(R.string.settings_baidu_translation_credentials_page_not_configured_desc)
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (credentialsLoadState == SettingsLoadState.ERROR) {
+                    CompositionLocalProvider(LocalSettingsLoadRetry provides { credentialsLoadAttempt++ }) {
+                        SettingsDependencyContent(
+                            SettingsScreenViewModel.UiState(loadStates = mapOf(
+                                SettingsLoadDomain.TRANSLATION to credentialsLoadState,
+                            )),
+                            SettingsLoadDomain.TRANSLATION,
+                        ) {}
+                    }
+                }
+                if (credentialsLoadState == SettingsLoadState.READY &&
+                    viewModel.uiState.loadState(SettingsLoadDomain.TRANSLATION) == SettingsLoadState.READY) {
+                    Text(
+                        text = if (viewModel.uiState.baiduTranslationCredentialsConfigured) {
+                            stringResource(R.string.settings_baidu_translation_credentials_page_configured_desc)
+                        } else {
+                            stringResource(R.string.settings_baidu_translation_credentials_page_not_configured_desc)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 OutlinedTextField(
                     value = appIdInput,
+                    enabled = credentialsLoadState == SettingsLoadState.READY && !isTesting,
                     onValueChange = { appIdInput = it.trim() },
                     label = { Text(stringResource(R.string.settings_baidu_translation_app_id_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
@@ -153,6 +185,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
 
                 OutlinedTextField(
                     value = apiKeyInput,
+                    enabled = credentialsLoadState == SettingsLoadState.READY && !isTesting,
                     onValueChange = { apiKeyInput = it.trim() },
                     label = { Text(stringResource(R.string.settings_baidu_translation_api_key_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -162,6 +195,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
                 )
 
                 Button(
+                    enabled = credentialsLoadState == SettingsLoadState.READY && !isTesting,
                     onClick = {
                         viewModel.onSaveBaiduTranslationCredentials(activity, appIdInput, apiKeyInput)
                     },
@@ -221,7 +255,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
                             }
                         }
                     },
-                    enabled = !isTesting,
+                    enabled = credentialsLoadState == SettingsLoadState.READY && !isTesting,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     if (isTesting) {

@@ -39,7 +39,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -302,7 +302,7 @@ internal fun SwitchSettingRow(
     ) {
         Switch(
             checked = checked,
-            enabled = enabled,
+            enabled = settingsControlEnabled(enabled),
             onCheckedChange = { changed ->
                 onCheckedChange(changed)
                 performTapHapticFeedback(view)
@@ -358,6 +358,8 @@ internal fun SettingsActionListItem(
     onClick: () -> Unit,
 ) {
     val actionGate = LocalSettingsActionGate.current
+    val controlEnabled = settingsControlEnabled(enabled)
+    val dependenciesReady = LocalSettingsControlsEnabled.current
     ListItem(
         headlineContent = {
             Text(text = title)
@@ -365,7 +367,7 @@ internal fun SettingsActionListItem(
         supportingContent = supportingText?.let { value ->
             {
                 Text(
-                    text = value,
+                    text = value.takeIf { dependenciesReady }.orEmpty(),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -378,14 +380,17 @@ internal fun SettingsActionListItem(
             )
         },
         colors = ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            headlineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (controlEnabled) 1f else 0.38f),
+            supportingColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (controlEnabled) 1f else 0.38f),
+            trailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (controlEnabled) 1f else 0.38f),
         ),
         modifier = Modifier
             .fillMaxWidth()
             .shadow(2.dp, RoundedCornerShape(12.dp), clip = false)
             .clip(RoundedCornerShape(12.dp))
             .hapticClickable(
-                enabled = enabled,
+                enabled = controlEnabled,
                 onClick = { if (actionGate != null) actionGate(onClick) else onClick() }
             )
     )
@@ -400,11 +405,12 @@ internal fun SettingsDangerActionListItem(
     onClick: () -> Unit,
 ) {
     val actionGate = LocalSettingsActionGate.current
+    val controlEnabled = settingsControlEnabled(enabled)
     ListItem(
         headlineContent = {
             Text(
                 text = title,
-                color = MaterialTheme.colorScheme.error,
+                color = MaterialTheme.colorScheme.error.copy(alpha = if (controlEnabled) 1f else 0.38f),
             )
         },
         supportingContent = supportingText?.let { value ->
@@ -420,7 +426,7 @@ internal fun SettingsDangerActionListItem(
             Text(
                 text = ">",
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.error,
+                color = MaterialTheme.colorScheme.error.copy(alpha = if (controlEnabled) 1f else 0.38f),
             )
         },
         colors = ListItemDefaults.colors(
@@ -431,7 +437,7 @@ internal fun SettingsDangerActionListItem(
             .shadow(2.dp, RoundedCornerShape(12.dp), clip = false)
             .clip(RoundedCornerShape(12.dp))
             .hapticClickable(
-                enabled = enabled,
+                enabled = controlEnabled,
                 onClick = { if (actionGate != null) actionGate(onClick) else onClick() }
             )
     )
@@ -459,7 +465,7 @@ internal fun SettingsRadioOptionRow(
         RadioButton(
             selected = selected,
             onClick = null,
-            enabled = enabled
+            enabled = settingsControlEnabled(enabled)
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
@@ -560,7 +566,7 @@ internal fun HapticIconButton(
             performTapHapticFeedback(view)
             onClick()
         },
-        enabled = enabled,
+        enabled = settingsControlEnabled(enabled),
         content = content
     )
 }
@@ -578,7 +584,7 @@ internal fun HapticTextButton(
             performTapHapticFeedback(view)
             onClick()
         },
-        enabled = enabled,
+        enabled = settingsControlEnabled(enabled),
         content = content
     )
 }
@@ -590,7 +596,7 @@ internal fun Modifier.hapticClickable(
 ): Modifier = composed {
     val view = LocalView.current
     clickable(
-        enabled = enabled,
+        enabled = settingsControlEnabled(enabled),
         onClick = {
             performTapHapticFeedback(view)
             onClick()
@@ -607,7 +613,7 @@ internal fun Modifier.hapticToggleable(
     val view = LocalView.current
     toggleable(
         value = value,
-        enabled = enabled,
+        enabled = settingsControlEnabled(enabled),
         onValueChange = { changed ->
             performTapHapticFeedback(view)
             onValueChange(changed)

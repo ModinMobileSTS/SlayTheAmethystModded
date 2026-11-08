@@ -103,7 +103,7 @@ fun LauncherSteamCloudSyncBlacklistSettingsScreen(
 internal fun SteamCloudSyncBlacklistSettingsContent(
     uiState: SettingsScreenViewModel.UiState,
     onSteamCloudSyncBlacklistPathChanged: (String, Boolean) -> Unit,
-) {
+) = SettingsDependencyContent(uiState, SettingsLoadDomain.CONFIGURATION, SettingsLoadDomain.STEAM_SAVES) {
     Text(
         text = stringResource(R.string.settings_steam_cloud_sync_blacklist_desc),
         style = MaterialTheme.typography.bodySmall,
@@ -137,19 +137,20 @@ private fun SteamCloudSyncBlacklistOptionRow(
     description: String?,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    val controlEnabled = settingsControlEnabled(enabled)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .clickable(enabled = enabled) { onCheckedChange(!selected) }
+            .clickable(enabled = controlEnabled) { onCheckedChange(!selected) }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Checkbox(
             checked = selected,
-            enabled = enabled,
+            enabled = controlEnabled,
             onCheckedChange = null,
         )
         Column(
@@ -159,7 +160,7 @@ private fun SteamCloudSyncBlacklistOptionRow(
             Text(
                 text = localRelativePath,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (enabled) {
+                color = if (controlEnabled) {
                     MaterialTheme.colorScheme.onSurface
                 } else {
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -169,7 +170,7 @@ private fun SteamCloudSyncBlacklistOptionRow(
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (enabled) {
+                    color = if (controlEnabled) {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)

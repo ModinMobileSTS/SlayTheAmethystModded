@@ -36,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,26 +101,37 @@ internal fun SettingsRouteScaffold(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .hazeSource(state = headerHazeState),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                top = 18.dp,
-                end = 16.dp,
-                bottom = bottomContentInset,
+        CompositionLocalProvider(
+            LocalSettingsControlsEnabled provides settingsControlEnabled(
+                uiState.loadState(SettingsLoadDomain.CONFIGURATION) == SettingsLoadState.READY,
             ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                Spacer(modifier = Modifier.height(headerContentTopInset))
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .hazeSource(state = headerHazeState),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    top = 18.dp,
+                    end = 16.dp,
+                    bottom = bottomContentInset,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    Spacer(modifier = Modifier.height(headerContentTopInset))
+                }
+                item {
+                    SettingsBusyIndicator(uiState = uiState)
+                }
+                content()
+                if (uiState.loadState(SettingsLoadDomain.CONFIGURATION) == SettingsLoadState.ERROR) {
+                    item {
+                        SettingsDependencyContent(uiState, SettingsLoadDomain.CONFIGURATION) {}
+                    }
+                }
             }
-            item {
-                SettingsBusyIndicator(uiState = uiState)
-            }
-            content()
         }
 
         FloatingGlassHeader(
