@@ -13,18 +13,16 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.mods.AgentPatchCatalogueService
 import io.stamethyst.backend.mods.AgentPatchCatalogueSnapshot
-import io.stamethyst.backend.mods.AgentPatchContributionStore
 import io.stamethyst.backend.mods.RemoteAgentPatch
 import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
@@ -66,12 +63,6 @@ internal fun ModDetailsAiSection(
     var snapshot by remember(parentId) { mutableStateOf<AgentPatchCatalogueSnapshot?>(null) }
     var loading by remember(parentId) { mutableStateOf(false) }
     var error by remember(parentId) { mutableStateOf<String?>(null) }
-    val revision by AgentPatchContributionStore.revision.collectAsState()
-    val receipts by produceState<Map<String, String?>>(emptyMap(), parentId, mod.agentPatchMods, revision) {
-        value = withContext(Dispatchers.IO) {
-            mod.agentPatchMods.associate { it.patchModId to AgentPatchContributionStore.uploadedVersion(context, parentId, it.patchModId) }
-        }
-    }
     // The installed tab stays entirely local. Network work starts only when requested.
     LaunchedEffect(parentId, communitySelected, retryToken) {
         if (!communitySelected) return@LaunchedEffect
@@ -120,7 +111,6 @@ internal fun ModDetailsAiSection(
                     patch = patch,
                     parentEnabled = mod.enabled,
                     controlsEnabled = controlsEnabled,
-                    contributed = receipts[patch.patchModId] == patch.version,
                     onToggle = { onToggle(patch, it) },
                     onDetails = { onDetails(patch) },
                     onManage = { onManage(patch) },
@@ -148,7 +138,6 @@ private fun LocalDetailsAiModRow(
     patch: AgentPatchModUi,
     parentEnabled: Boolean,
     controlsEnabled: Boolean,
-    contributed: Boolean,
     onToggle: (Boolean) -> Unit,
     onDetails: () -> Unit,
     onManage: () -> Unit,
@@ -171,15 +160,7 @@ private fun LocalDetailsAiModRow(
             Text(patch.description.ifBlank { stringResource(R.string.main_mod_agent_patch_description_empty) },
                 maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val state = when {
-                    patch.enabled && !parentEnabled -> R.string.mod_details_ai_paused
-                    patch.enabled -> R.string.mod_details_ai_on
-                    else -> R.string.mod_details_ai_off
-                }
-                Text(stringResource(state) + " · " + stringResource(if (contributed) R.string.mod_details_ai_shared else R.string.mod_details_ai_local),
-                    modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
-                    color = if (patch.enabled && parentEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
                 val description = stringResource(R.string.mod_details_ai_manage_description, name)
                 TextButton(onClick = onManage, enabled = controlsEnabled,
                     modifier = Modifier.semantics { contentDescription = description }) {
