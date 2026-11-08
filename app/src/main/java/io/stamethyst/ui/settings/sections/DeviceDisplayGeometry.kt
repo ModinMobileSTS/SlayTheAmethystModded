@@ -7,6 +7,7 @@ import android.os.Build
 import android.util.DisplayMetrics
 import android.view.RoundedCorner
 import android.view.View
+import android.view.WindowInsets
 import io.stamethyst.backend.render.DisplayGeometryRotation
 import io.stamethyst.backend.render.DisplayPixelRect
 import io.stamethyst.backend.render.GameDisplayRegion
@@ -46,29 +47,38 @@ internal data class DeviceDisplayGeometry(
             val display = if (Build.VERSION.SDK_INT >= 30) activity.display else activity.windowManager.defaultDisplay
             val metrics = DisplayMetrics()
             display?.getRealMetrics(metrics)
-            val windowMetrics = if (Build.VERSION.SDK_INT >= 30) activity.windowManager.maximumWindowMetrics else null
-            val width = (windowMetrics?.bounds?.width() ?: metrics.widthPixels).coerceAtLeast(1)
-            val height = (windowMetrics?.bounds?.height() ?: metrics.heightPixels).coerceAtLeast(1)
-            val insets = windowMetrics?.windowInsets ?: hostView.rootWindowInsets
+            val width: Int
+            val height: Int
+            val insets: WindowInsets?
+            if (Build.VERSION.SDK_INT >= 30) {
+                val windowMetrics = activity.windowManager.maximumWindowMetrics
+                width = windowMetrics.bounds.width().coerceAtLeast(1)
+                height = windowMetrics.bounds.height().coerceAtLeast(1)
+                insets = windowMetrics.windowInsets
+            } else {
+                width = metrics.widthPixels.coerceAtLeast(1)
+                height = metrics.heightPixels.coerceAtLeast(1)
+                insets = hostView.rootWindowInsets
+            }
             val rotation = display?.rotation ?: 0
             val target = DisplayGeometryRotation.canonicalLandscapeRotation(width, height, rotation)
             val turns = (target - rotation + 4) % 4
             val cutout = when {
-                windowMetrics != null -> windowMetrics.windowInsets.displayCutout
+                Build.VERSION.SDK_INT >= 30 -> insets?.displayCutout
                 Build.VERSION.SDK_INT >= 29 -> display?.cutout ?: insets?.displayCutout
                 Build.VERSION.SDK_INT >= 28 -> insets?.displayCutout
                 else -> null
             }
-            val bounds = cutout?.boundingRects.orEmpty().filter { !it.isEmpty }.map {
+            val bounds = if (Build.VERSION.SDK_INT >= 28) cutout?.boundingRects.orEmpty().filter { !it.isEmpty }.map {
                 DisplayGeometryRotation.rotateRect(
                     DisplayPixelRect(it.left, it.top, it.right, it.bottom), width, height, turns
                 )
-            }
-            val safeRect = cutout?.let {
+            } else emptyList()
+            val safeRect = if (Build.VERSION.SDK_INT >= 28) cutout?.let {
                 DisplayGeometryRotation.rotateRect(DisplayPixelRect(
                     it.safeInsetLeft, it.safeInsetTop, width - it.safeInsetRight, height - it.safeInsetBottom
                 ), width, height, turns)
-            }
+            } else null
             val landscapeWidth = if (turns % 2 == 0) width else height
             val landscapeHeight = if (turns % 2 == 0) height else width
             val radii = if (Build.VERSION.SDK_INT >= 31) {
