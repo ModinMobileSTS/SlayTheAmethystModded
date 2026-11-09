@@ -40,6 +40,11 @@ class PerformanceDiagnosticsArchiveTest {
         File(RuntimePaths.jvmHistogramsDir(context).apply { mkdirs() }, "gc_histo_1_combat.txt")
             .writeText("histogram")
         RuntimePaths.arthasBridgeLog(context).writeText("[arthas-bridge] ready")
+        RuntimePaths.resourceTimingsDir(context).apply {
+            mkdirs()
+            File(this, "events.jsonl").writeText("{\"type\":\"event\",\"blocking_ns\":123}\n")
+            File(this, "summary.json").writeText("{\"closed_cleanly\":true}")
+        }
         File(RuntimePaths.offlineArthasOutputDir(context).apply { mkdirs() }, "arthas-offline-status.txt")
             .writeText("state=completed")
         File(RuntimePaths.offlineArthasOutputDir(context), "arthas-stack-flush.txt")
@@ -57,7 +62,10 @@ class PerformanceDiagnosticsArchiveTest {
             }
         }
 
-        assertEquals(17, count)
+        assertEquals(20, count)
+        assertTrue(entries.contains("sts/performance/resource_timings/events.jsonl"))
+        assertTrue(entries.contains("sts/performance/resource_timings/summary.json"))
+        assertTrue(entries.contains("sts/performance/resource_timings/export_status.json"))
         assertTrue(entries.contains("sts/performance/frame-probe-incidents.jsonl"))
         assertTrue(entries.contains("sts/performance/frame-probe-incidents.prev.jsonl"))
         assertTrue(entries.contains("sts/performance/latest.log"))

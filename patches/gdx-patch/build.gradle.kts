@@ -16,6 +16,7 @@ dependencies {
     compileOnly(files(rootProject.file("build-deps/desktop.jar")))
     compileOnly(files(appProjectRef.layout.buildDirectory.file("generated/callbackBridgeRuntimeJar/lwjgl-glfw-classes.jar")))
     testImplementation(libs.junit4)
+    testImplementation(files(rootProject.file("build-deps/desktop.jar")))
 }
 
 tasks.compileJava {

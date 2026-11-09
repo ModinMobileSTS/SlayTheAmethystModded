@@ -44,7 +44,7 @@ public class RealTexture extends Texture {
     }
 
     public RealTexture(TextureData data) {
-        this(3553, Gdx.gl.glGenTexture(), data);
+        this(3553, createTextureHandle(), data);
         if (RamSaverDiag.enabled()) {
             RamSaverDiag.logStackRepeat("real_texture_construct", dataKey(data), dataDetails(data) + " texture=" + diagTexture(this));
         }
@@ -70,6 +70,18 @@ public class RealTexture extends Texture {
     }
 
     public void load(TextureData data) {
+        long timing = ResourceLifecycleTimings.ENABLED ? ResourceLifecycleTimings.begin("texture", "prepare_upload",
+                file == null ? data.getClass().getName() : file.path(), "load") : 0L;
+        boolean success = false;
+        try {
+            loadImpl(data);
+            success = true;
+        } finally {
+            if (timing != 0L) ResourceLifecycleTimings.end(timing, glHandle, 0L, success);
+        }
+    }
+
+    private void loadImpl(TextureData data) {
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
         if (this.data != null && data.isManaged() != this.data.isManaged()) {
@@ -103,7 +115,7 @@ public class RealTexture extends Texture {
         if (!this.isManaged()) {
             throw new GdxRuntimeException("Tried to reload unmanaged Texture");
         } else {
-            this.glHandle = Gdx.gl.glGenTexture();
+            this.glHandle = createTextureHandle();
             this.load(this.data);
             if (RamSaverDiag.enabled()) {
                 RamSaverDiag.logStackRepeat("real_texture_reload", dataKey(this.data), diagTexture(this));

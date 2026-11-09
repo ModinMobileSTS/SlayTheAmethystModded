@@ -13,6 +13,7 @@ import com.megacrit.cardcrawl.characters.AbstractPlayer;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
 import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
 import com.megacrit.cardcrawl.rooms.AbstractRoom;
+import optispire.HandTextureResidency;
 import optispire.RamSaver;
 import optispire.RamSaverDiag;
 import optispire.RunTextureResidency;
@@ -27,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Own only resources reachable from this run's cards, never BaseMod's global image library. */
 public final class PlayerCardTextureResidency {
@@ -36,6 +38,8 @@ public final class PlayerCardTextureResidency {
     private static final LinkedHashMap<String, Long> candidates = new LinkedHashMap<>();
     private static final LinkedHashMap<String, Long> drawTextures = new LinkedHashMap<>();
     private static final LinkedHashMap<String, Long> upcomingTextures = new LinkedHashMap<>();
+    private static final Set<AbstractCard> handSeen = Collections.newSetFromMap(new IdentityHashMap<AbstractCard, Boolean>());
+    private static final Consumer<Texture> PROTECT_HAND_TEXTURE = HandTextureResidency::protect;
     private static DrawCardAction lastDrawAction;
     private static DrawCardAction waitingDraw;
     private static long drawWaitStarted;
@@ -163,7 +167,7 @@ public final class PlayerCardTextureResidency {
     }
 
     static void reconcile(AbstractPlayer player, boolean combat, boolean active) {
-        if (!RunTextureResidency.enabled() || !active || player == null) {
+        if (!active || player == null) {
             if (owner != null) clear();
             return;
         }
@@ -172,6 +176,20 @@ public final class PlayerCardTextureResidency {
             clear();
             owner = player;
         }
+        // Hand ownership is independent of run admission, pressure, room phase and the slow rescan.
+        // Observe direct group edits, late card fields and sampler changes on every game update.
+        HandTextureResidency.beginUpdate();
+        try {
+            if (player.hand != null && player.hand.group != null && !player.hand.group.isEmpty()) {
+                registerCoreTextures();
+                for (String key : coreTextures.keySet()) HandTextureResidency.protect(key);
+                collectGroup(player.hand, PROTECT_HAND_TEXTURE, handSeen);
+            }
+        } finally {
+            handSeen.clear(); // Never retain cards or their preview graphs between updates.
+            HandTextureResidency.endUpdate();
+        }
+        if (!RunTextureResidency.enabled()) return;
         dirty |= combat != lastCombat;
         if (!dirty && now < nextScan) return;
         dirty = false;
@@ -217,21 +235,33 @@ public final class PlayerCardTextureResidency {
     }
 
     private static void collectGroup(CardGroup group, Map<String, Long> target, Set<AbstractCard> seen) {
+        collectGroup(group, texture -> collectTexture(texture, target), seen);
+    }
+
+    private static void collectGroup(CardGroup group, Consumer<Texture> collector, Set<AbstractCard> seen) {
         if (group != null && group.group != null) {
-            for (AbstractCard card : group.group) collectCard(card, target, seen, 0);
+            for (AbstractCard card : group.group) collectCard(card, collector, seen, 0);
         }
     }
 
     private static void collectCard(AbstractCard card, Map<String, Long> target, Set<AbstractCard> seen, int depth) {
+        collectCard(card, texture -> collectTexture(texture, target), seen, depth);
+    }
+
+    private static void collectCard(AbstractCard card, Consumer<Texture> collector, Set<AbstractCard> seen, int depth) {
         if (card == null || !seen.add(card)) return;
-        collectFields(card, target);
-        if (BASEMOD_AVAILABLE) BaseModSmallUi.collect(card, target);
+        collectFields(card, collector);
+        if (BASEMOD_AVAILABLE) BaseModSmallUi.collect(card, collector);
         // Mods can form preview cycles. The identity guard also deduplicates shared card instances.
-        if (depth < 8) collectCard(card.cardsToPreview, target, seen, depth + 1);
+        if (depth < 8) collectCard(card.cardsToPreview, collector, seen, depth + 1);
     }
 
     /** Instance Texture/TextureRegion fields only: no static caches and no arbitrary mod getters. */
     static void collectFields(Object card, Map<String, Long> target) {
+        collectFields(card, texture -> collectTexture(texture, target));
+    }
+
+    private static void collectFields(Object card, Consumer<Texture> collector) {
         List<Field> fields = TEXTURE_FIELDS.get(card.getClass());
         if (fields == null) {
             fields = new ArrayList<>();
@@ -250,8 +280,8 @@ public final class PlayerCardTextureResidency {
         for (Field field : fields) {
             try {
                 Object value = field.get(card);
-                collectTexture(value instanceof TextureRegion ? ((TextureRegion) value).getTexture()
-                        : (Texture) value, target);
+                collector.accept(value instanceof TextureRegion ? ((TextureRegion) value).getTexture()
+                        : (Texture) value);
             } catch (IllegalAccessException | RuntimeException error) {
                 RamSaverDiag.logRepeat("run_card_field_failed", field.getName(), error.toString());
             }
@@ -284,14 +314,14 @@ public final class PlayerCardTextureResidency {
 
     /** Keep the optional BaseMod class reference out of the vanilla card tracking path. */
     private static final class BaseModSmallUi {
-        static void collect(AbstractCard card, Map<String, Long> target) {
+        static void collect(AbstractCard card, Consumer<Texture> collector) {
             if (!(card instanceof CustomCard)) return;
             CustomCard custom = (CustomCard) card;
             // These are the small, combat-visible variants; never request the 500x380 portrait.
             try {
-                collectTexture(custom.getBackgroundSmallTexture(), target);
-                collectTexture(custom.getOrbSmallTexture(), target);
-                collectTexture(custom.getBannerSmallTexture(), target);
+                collector.accept(custom.getBackgroundSmallTexture());
+                collector.accept(custom.getOrbSmallTexture());
+                collector.accept(custom.getBannerSmallTexture());
             } catch (RuntimeException error) {
                 RamSaverDiag.logRepeat("run_card_ui_failed", card.cardID, error.toString());
             }
@@ -299,6 +329,8 @@ public final class PlayerCardTextureResidency {
     }
 
     private static void clear() {
+        HandTextureResidency.clear();
+        handSeen.clear();
         RunTextureResidency.clear();
         candidates.clear();
         drawTextures.clear();

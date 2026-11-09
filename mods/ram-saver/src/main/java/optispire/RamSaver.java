@@ -72,6 +72,7 @@ import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.RealTexture;
 import com.badlogic.gdx.graphics.RamSaverReleaseEvents;
+import com.badlogic.gdx.graphics.ResourceLifecycleTimings;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas;
 import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
@@ -146,7 +147,7 @@ public class RamSaver {
                     loadedAssets.remove(id);
                     set.remove(id);
                 }
-                else if (RunTextureResidency.isProtected(id) || asset.isHotPinned()) {
+                else if (asset.isAutomaticallyProtected()) {
                     keptFreshAssets++;
                     asset.refresh();
                 }
@@ -345,6 +346,7 @@ public class RamSaver {
     }
     public static class FileTextureSupplier implements Supplier<Texture> {
         final FileHandle file;
+        final String sourceKey;
         final Pixmap.Format format;
         final boolean useMipMaps;
         private String cacheKey;
@@ -356,6 +358,7 @@ public class RamSaver {
 
         public FileTextureSupplier(FileHandle file, Pixmap.Format format, boolean useMipMaps) {
             this.file = file;
+            this.sourceKey = file.type() + ":" + file.path();
             this.format = format;
             this.useMipMaps = useMipMaps;
         }
@@ -824,6 +827,21 @@ public class RamSaver {
 
     //Load methods can be called either fresh, or with an old invalid version still within maps
     public static Texture loadTexture(String id, boolean canAge) {
+        if (!ResourceLifecycleTimings.ENABLED || id == null || !textures.containsKey(id)) return loadTextureImpl(id, canAge);
+        long timing = ResourceLifecycleTimings.ENABLED
+                ? ResourceLifecycleTimings.begin("managed_texture", "create", id, "materialize") : 0L;
+        Texture result = null;
+        try {
+            result = loadTextureImpl(id, canAge);
+            return result;
+        } finally {
+            if (timing != 0L) ResourceLifecycleTimings.end(timing,
+                    result == null ? 0 : result.peekTextureObjectHandle(),
+                    result == null ? 0L : result.getRamSaverEstimatedBytes(), result != null);
+        }
+    }
+
+    private static Texture loadTextureImpl(String id, boolean canAge) {
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
         if (id == null) {
@@ -938,6 +956,25 @@ public class RamSaver {
     }
 
     public static TextureAtlas.AtlasRegion loadRegion(String id, TextureAtlas.AtlasRegion region, ManagedAsset parent, boolean canAge) {
+        long timing = ResourceLifecycleTimings.ENABLED
+                ? ResourceLifecycleTimings.begin("region", "create", id, "register") : 0L;
+        boolean success = false;
+        try {
+            TextureAtlas.AtlasRegion result = loadRegionImpl(id, region, parent, canAge);
+            success = true;
+            if (RamSaverReleaseEvents.ENABLED && result != null) {
+                FileTextureSupplier source = parent == null ? null : textures.get(parent.ID);
+                RamSaverReleaseEvents.recordCreated(Gdx.graphics == null ? -1L : Gdx.graphics.getFrameId(),
+                        id, source == null || source.file == null ? id : source.file.path(),
+                        RamSaverReleaseEvents.REGION, "register", 0L, 0);
+            }
+            return result;
+        } finally {
+            if (timing != 0L) ResourceLifecycleTimings.end(timing, 0, 0L, success);
+        }
+    }
+
+    private static TextureAtlas.AtlasRegion loadRegionImpl(String id, TextureAtlas.AtlasRegion region, ManagedAsset parent, boolean canAge) {
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
         ManagedAsset holder = managedAssetPool.obtain();
@@ -1238,6 +1275,20 @@ public class RamSaver {
     }
     private static void dispose(ManagedAsset asset, boolean removeKey, String reason) {
         if (asset.retired) return;
+        long timing = ResourceLifecycleTimings.ENABLED ? ResourceLifecycleTimings.begin(
+                asset.type == ManagedAsset.AssetType.REGION ? "region" : "managed_texture", "release", asset.ID, reason) : 0L;
+        int handle = timing == 0L || asset.texture == null ? 0 : asset.texture.peekTextureObjectHandle();
+        long bytes = handle == 0 ? 0L : asset.texture.getRamSaverEstimatedBytes();
+        boolean success = false;
+        try {
+            disposeImpl(asset, removeKey, reason);
+            success = true;
+        } finally {
+            if (timing != 0L) ResourceLifecycleTimings.end(timing, handle, bytes, success);
+        }
+    }
+
+    private static void disposeImpl(ManagedAsset asset, boolean removeKey, String reason) {
         agingCandidates.remove(asset.asset);
         asset.retired = true;
         boolean diag = RamSaverDiag.enabled();
@@ -1620,7 +1671,7 @@ public class RamSaver {
         }
 
         public boolean isAutomaticallyProtected() {
-            return RunTextureResidency.isProtected(ID) || isHotPinned()
+            return HandTextureResidency.isProtected(ID) || RunTextureResidency.isProtected(ID) || isHotPinned()
                     || (parent != null && parent.isAutomaticallyProtected());
         }
 

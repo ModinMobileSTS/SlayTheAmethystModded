@@ -9,6 +9,19 @@ import org.junit.Test
 
 class StsDesktopJarPatcherTest {
     @Test
+    fun resourceTimingBridgeAndAllNestedClasses_areRequiredAndInjected() {
+        assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_RESOURCE_LIFECYCLE_TIMINGS_CLASS))
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry", String::class.java
+        ).apply { isAccessible = true }
+        for (name in listOf("", "Recorder", "Span", "Stack", "Event", "Totals")) {
+            val entry = if (name.isEmpty()) STS_PATCH_RESOURCE_LIFECYCLE_TIMINGS_CLASS
+                else "$STS_PATCH_RESOURCE_LIFECYCLE_TIMINGS_PREFIX$name.class"
+            assertTrue(entry, method.invoke(StsDesktopJarPatcher, entry) as Boolean)
+        }
+    }
+
+    @Test
     fun visualReleaseBridgeAndNestedClasses_areInjectedIntoTheGameJar() {
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_RAM_SAVER_RELEASE_EVENTS_CLASS))
         val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(

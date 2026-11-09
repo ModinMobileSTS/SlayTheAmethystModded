@@ -307,6 +307,8 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS == entryName ||
             STS_PATCH_RAM_SAVER_RELEASE_EVENTS_CLASS == entryName ||
             entryName.startsWith(STS_PATCH_RAM_SAVER_RELEASE_EVENTS_PREFIX) ||
+            STS_PATCH_RESOURCE_LIFECYCLE_TIMINGS_CLASS == entryName ||
+            entryName.startsWith(STS_PATCH_RESOURCE_LIFECYCLE_TIMINGS_PREFIX) ||
             STS_PATCH_GPU_RESOURCE_GUARDIAN_CLASS == entryName ||
             entryName.startsWith(STS_PATCH_GPU_RESOURCE_GUARDIAN_INNER_PREFIX) ||
             STS_PATCH_GPU_LEAK_INJECTOR_CLASS == entryName ||

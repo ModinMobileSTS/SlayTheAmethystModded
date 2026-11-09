@@ -51,7 +51,10 @@ tasks.test {
     systemProperty("ramsaver.decode.enabled", "true")
     systemProperty("ramsaver.debug.visual", "false")
     exclude("**/VisualReleaseDebugTest.class")
+    exclude("**/ReleaseOverlayInputTest.class")
+    exclude("**/ReleaseOverlayRenderTest.class")
     exclude("**/RamSaverOptimizationDefaultsTest.class")
+    exclude("**/ResourceLifecycleTimingIntegrationTest.class")
 }
 
 val optimizationDefaultsTest by tasks.registering(Test::class) {
@@ -74,10 +77,39 @@ val visualReleaseDebugTest by tasks.registering(Test::class) {
     workingDir = rootProject.file("agent-tmp")
     systemProperties(tasks.test.get().systemProperties)
     systemProperty("ramsaver.debug.visual", "true")
-    include("**/VisualReleaseDebugTest.class")
+    include("**/VisualReleaseDebugTest.class", "**/ReleaseOverlayInputTest.class", "**/ReleaseOverlayRenderTest.class")
 }
 
-tasks.check { dependsOn(visualReleaseDebugTest, optimizationDefaultsTest) }
+val handTextureResidencyTest by tasks.registering(Test::class) {
+    description = "Checks hand protection with run residency disabled and both optimizations OFF."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = tasks.test.get().classpath
+    workingDir = rootProject.file("agent-tmp")
+    systemProperties(tasks.test.get().systemProperties)
+    systemProperty("ramsaver.run.budget_mb", "0")
+    systemProperty("ramsaver.release.shared_budget_enabled", "false")
+    systemProperty("ramsaver.decode.enabled", "false")
+    include("**/HandTextureResidencyTest.class", "**/PlayerCardTextureResidencyTest.class")
+    filter {
+        includeTestsMatching("com.badlogic.gdx.graphics.HandTextureResidencyTest.*")
+        includeTestsMatching("optispire.patches.PlayerCardTextureResidencyTest.hand*")
+    }
+}
+
+val resourceLifecycleTimingTest by tasks.registering(Test::class) {
+    description = "Checks every-event persisted lifecycle timings without verbose/visual diagnostics."
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = tasks.test.get().classpath
+    workingDir = rootProject.file("agent-tmp")
+    systemProperties(tasks.test.get().systemProperties)
+    systemProperty("amethyst.gdx.resource_timings", "true")
+    systemProperty("amethyst.gdx.resource_timings.dir", rootProject.file("agent-tmp/resource-timings/integration").absolutePath)
+    include("**/ResourceLifecycleTimingIntegrationTest.class")
+}
+
+tasks.check { dependsOn(visualReleaseDebugTest, optimizationDefaultsTest, handTextureResidencyTest, resourceLifecycleTimingTest) }
 
 tasks.jar {
     archiveFileName = "RamSaver.jar"

@@ -1,4 +1,4 @@
 <resources>
-    <string name="settings_ram_saver_visual_debug">RamSaver visual release debug</string>
-    <string name="settings_ram_saver_visual_debug_desc">Off by default. When RamSaver is active, shows each release in a bounded in-game feed with resource, reason and estimated size. Deep performance diagnostics + Performance overlay adds matching resource colors above the frame chart; normal green/yellow/red timing bars remain unchanged. Does not enable verbose logs. Restart the game after changing. Diagnostic rendering adds overhead; use briefly.</string>
+    <string name="settings_ram_saver_visual_debug">RamSaver resource lifecycle debug</string>
+    <string name="settings_ram_saver_visual_debug_desc">Off by default. When RamSaver is active, keeps a resource event panel visible at the upper left: blue for creation, orange for destruction. New events replace old rows; drag, use the mouse wheel or scrollbar to browse the last 512 events, and tap Latest to return. Deep performance diagnostics + Performance overlay adds the same creation/destruction colors above the frame chart; green/yellow/red timing bars remain unchanged. Does not enable verbose logs. Restart the game after changing. Diagnostic rendering adds overhead; use briefly.</string>
 </resources>

@@ -53,6 +53,8 @@ object StsLaunchSpec {
         "amethyst.bridge.launcher_perf_snapshot",
         "amethyst.gdx.gpu_resource_summary",
         "amethyst.gdx.gpu_resource_diag",
+        "amethyst.gdx.resource_timings",
+        "amethyst.gdx.resource_timings.dir",
         "ramsaver.release.shared_budget_enabled",
         "ramsaver.decode.enabled",
         "ramsaver.debug.visual"
@@ -85,6 +87,11 @@ object StsLaunchSpec {
     const val LAUNCH_MODE_MTS = "mts"
     // Legacy alias kept only so old debug scripts still resolve to the single MTS mode.
     const val LAUNCH_MODE_MTS_BASEMOD = "mts_basemod"
+
+    internal fun resourceTimingArgs(enabled: Boolean, directory: File): List<String> = listOf(
+        "-Damethyst.gdx.resource_timings=$enabled",
+        "-Damethyst.gdx.resource_timings.dir=${directory.absolutePath}"
+    )
 
     @JvmStatic
     fun isMtsLaunchMode(launchMode: String?): Boolean {
@@ -217,6 +224,7 @@ object StsLaunchSpec {
             }
         }
         args.add("-XX:ErrorFile=/dev/null")
+        args.addAll(resourceTimingArgs(performanceDeepDiagnostics, RuntimePaths.resourceTimingsDir(context)))
         if (performanceDeepDiagnostics) {
             args.add("-XX:+UnlockDiagnosticVMOptions")
             args.add("-verbose:gc")

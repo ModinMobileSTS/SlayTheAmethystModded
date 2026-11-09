@@ -7,6 +7,7 @@ import com.badlogic.gdx.Graphics;
 import com.badlogic.gdx.files.FileHandle;
 import optispire.RamSaver;
 import optispire.RunTextureResidency;
+import optispire.HandTextureResidency;
 import org.junit.After;
 import org.junit.Before;
 
@@ -63,6 +64,7 @@ public abstract class RamSaverTestSupport {
     }
 
     @After public void tearDownGL() throws Exception {
+        HandTextureResidency.clear();
         RunTextureResidency.clear();
         set(RunTextureResidency.class, "nextPressureSample", 0L);
         Map<String, ?> loaded = map("loadedAssets");

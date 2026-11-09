@@ -20,6 +20,7 @@ import com.megacrit.cardcrawl.monsters.AbstractMonster;
 import com.megacrit.cardcrawl.powers.AbstractPower;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
 import optispire.RamSaver;
+import optispire.HandTextureResidency;
 import optispire.RunTextureResidency;
 import org.junit.After;
 import org.junit.Before;
@@ -395,6 +396,149 @@ public class PlayerCardTextureResidencyTest extends RamSaverTestSupport {
         } finally {
             CustomCard.imgMap.remove("unrelated-card");
         }
+    }
+
+    @Test public void handSurvivesBudgetDenialAndPressureWithoutDrawing() throws Exception {
+        Texture portrait = texture("hand-over-budget.png", 1024);
+        player.hand.group.add(card(portrait));
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        assertFalse(RunTextureResidency.isProtected(portrait.getRamSaverKey()));
+        assertTrue(HandTextureResidency.isProtected(portrait.getRamSaverKey()));
+        Texture real = portrait.getRealTexture();
+        int handle = real.getTextureObjectHandle();
+        RunTextureResidency.updatePressure(Long.MAX_VALUE, 95, 100, 0L);
+        for (int i = 0; i < 200; i++) tick();
+        assertTrue(live.contains(handle));
+        assertEquals(1, generated);
+        assertTrue(deleted.isEmpty());
+    }
+
+    @Test public void handOwnershipTracksDirectEditsBeforeTheNextRunRescan() throws Exception {
+        Texture first = texture("hand-direct-first.png", 1024);
+        Texture next = texture("hand-direct-next.png", 1024);
+        player.hand.group.add(card(first));
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        first.getRealTexture(); next.getRealTexture();
+        // Mimic mods that bypass every patched CardGroup method, within the 500 ms run scan interval.
+        set(PlayerCardTextureResidency.class, "nextScan", Long.MAX_VALUE);
+        player.hand.group.clear(); player.hand.group.add(card(next));
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        assertFalse(HandTextureResidency.isProtected(first.getRamSaverKey()));
+        assertTrue(HandTextureResidency.isProtected(next.getRamSaverKey()));
+        for (int i = 0; i < 20; i++) tick();
+        assertNull(RamSaver.getAsset(first.getRamSaverKey(), false));
+        assertNotNull(RamSaver.getAsset(next.getRamSaverKey(), false));
+    }
+
+    @Test public void handProtectionPersistsOutsideCombatAndReleasesAfterLastSharedOwnerLeaves() throws Exception {
+        Texture portrait = texture("hand-shared-outside-combat.png", 1024);
+        TestCard first = card(portrait), second = card(portrait);
+        player.hand.group.add(first); player.hand.group.add(second);
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        Texture real = portrait.getRealTexture(); int handle = real.getTextureObjectHandle();
+        PlayerCardTextureResidency.reconcile(player, false, true);
+        assertTrue(HandTextureResidency.isProtected(portrait.getRamSaverKey()));
+        player.hand.group.remove(first);
+        PlayerCardTextureResidency.reconcile(player, false, true);
+        for (int i = 0; i < 20; i++) tick();
+        assertTrue(live.contains(handle));
+        player.hand.group.clear();
+        PlayerCardTextureResidency.reconcile(player, false, true);
+        assertFalse(HandTextureResidency.isProtected(portrait.getRamSaverKey()));
+        for (int i = 0; i < 20; i++) tick();
+        assertFalse(live.contains(handle));
+    }
+
+    @Test public void handLatePortraitAndSamplerChangesAreProtectedWithoutWaiting() throws Exception {
+        Texture first = texture("hand-before-field-change.png", 1024);
+        Texture next = texture("hand-after-field-change.png", 1024);
+        TestCard card = card(first); player.hand.group.add(card);
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        set(PlayerCardTextureResidency.class, "nextScan", Long.MAX_VALUE);
+        card.portrait = new TextureAtlas.AtlasRegion(next, 0, 0, 16, 16);
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        assertFalse(HandTextureResidency.isProtected(first.getRamSaverKey()));
+        next.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+        assertTrue("The source protects a newly registered sampler key before any further scan",
+                HandTextureResidency.isProtected(next.getRamSaverKey()));
+    }
+
+    @Test public void handScopeEndsOnPlayerChangeDeathAndLeavingGameplay() throws Exception {
+        Texture portrait = texture("hand-scope.png", 1024);
+        player.hand.group.add(card(portrait));
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        assertTrue(HandTextureResidency.isProtected(portrait.getRamSaverKey()));
+        AbstractPlayer other = (AbstractPlayer) unsafe.allocateInstance(Ironclad.class);
+        other.hand = group();
+        PlayerCardTextureResidency.reconcile(other, true, true);
+        assertFalse(HandTextureResidency.isProtected(portrait.getRamSaverKey()));
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        PlayerCardTextureResidency.reconcile(player, true, false);
+        assertFalse(HandTextureResidency.isProtected(portrait.getRamSaverKey()));
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        CardCrawlGame.mode = CardCrawlGame.GameMode.CHAR_SELECT;
+        PlayerCardTextureResidency.UpdatePatch.Postfix();
+        assertFalse(HandTextureResidency.isProtected(portrait.getRamSaverKey()));
+    }
+
+    @Test public void handCustomUiAndPreviewCyclesAreLazyAndDoNotRetainPopupOrLibraryTextures() throws Exception {
+        Texture portrait = texture("hand-custom-portrait.png", 1024);
+        Texture background = texture("hand-custom-background.png", 1024);
+        Texture orb = texture("hand-custom-orb.png", 1024);
+        Texture banner = texture("hand-custom-banner.png", 1024);
+        Texture large = texture("hand-custom-popup.png", 1024);
+        Texture preview = texture("hand-custom-preview.png", 1024);
+        Texture library = texture("hand-custom-library.png", 1024);
+        TestCustomCard card = (TestCustomCard) unsafe.allocateInstance(TestCustomCard.class);
+        card.portrait = new TextureAtlas.AtlasRegion(portrait, 0, 0, 16, 16);
+        card.frameLargeRegion = new TextureAtlas.AtlasRegion(large, 0, 0, 16, 16);
+        card.small = new Texture[] {background, orb, banner};
+        TestCard previewCard = card(preview);
+        card.cardsToPreview = previewCard; previewCard.cardsToPreview = card;
+        TestCard.library = library;
+        try {
+            player.hand.group.add(card);
+            RunTextureResidency.updatePressure(Long.MAX_VALUE, 95, 100, 0L);
+            PlayerCardTextureResidency.reconcile(player, true, true);
+            for (Texture texture : new Texture[] {portrait, background, orb, banner, preview})
+                assertTrue(HandTextureResidency.isProtected(texture.getRamSaverKey()));
+            assertFalse(HandTextureResidency.isProtected(large.getRamSaverKey()));
+            assertFalse(HandTextureResidency.isProtected(library.getRamSaverKey()));
+            assertEquals("Collecting the hand must not upload textures", 0, generated);
+            assertTrue(((java.util.Set<?>) field(PlayerCardTextureResidency.class, "handSeen")).isEmpty());
+        } finally { TestCard.library = null; }
+    }
+
+    @Test public void handWithUnknownImageDimensionsIsProtectedBeforeDemandUpload() throws Exception {
+        Texture portrait = new Texture(new MemoryFile("hand-unknown.gif", new byte[0]));
+        TestCard card = (TestCard) unsafe.allocateInstance(TestCard.class);
+        Field field = AbstractCard.class.getDeclaredField("portraitImg");
+        field.setAccessible(true); field.set(card, portrait);
+        player.hand.group.add(card);
+        PlayerCardTextureResidency.reconcile(player, true, true);
+        assertEquals(0L, portrait.getRamSaverEstimatedBytes());
+        assertTrue(HandTextureResidency.isProtected(portrait.getRamSaverKey()));
+        assertEquals(0, generated);
+    }
+
+    @Test public void handCoreAtlasPagesRemainProtectedUntilHandBecomesEmpty() throws Exception {
+        Map<String, Long> core = (Map<String, Long>) field(PlayerCardTextureResidency.class, "coreTextures");
+        Map<String, Long> saved = new LinkedHashMap<>(core);
+        Texture ui = texture("hand-core-atlas.png", 2048);
+        try {
+            core.put(ui.getRamSaverKey(), ui.getRamSaverEstimatedBytes());
+            player.hand.group.add(card(texture("hand-with-core.png", 1024)));
+            PlayerCardTextureResidency.reconcile(player, true, true);
+            Texture real = ui.getRealTexture(); int handle = real.getTextureObjectHandle();
+            RunTextureResidency.updatePressure(Long.MAX_VALUE, 95, 100, 0L);
+            for (int i = 0; i < 20; i++) tick();
+            assertTrue(live.contains(handle));
+            player.hand.group.clear();
+            PlayerCardTextureResidency.reconcile(player, true, true);
+            assertFalse(HandTextureResidency.isProtected(ui.getRamSaverKey()));
+            for (int i = 0; i < 20; i++) tick();
+            assertFalse(live.contains(handle));
+        } finally { core.clear(); core.putAll(saved); }
     }
 
     public static class FieldsFixture {

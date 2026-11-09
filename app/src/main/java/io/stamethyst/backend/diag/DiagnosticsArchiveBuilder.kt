@@ -183,7 +183,8 @@ internal object DiagnosticsArchiveBuilder {
             exportedCount += writeTextEntryAndCount(
                 zipOutput,
                 "sts/performance/readme.txt",
-                "Performance diagnostics captured on-device. Missing files were not generated in the latest session.\n"
+                "Performance diagnostics captured on-device. Missing files were not generated in the latest session.\n" +
+                    "resource_timings/ contains per-operation JSONL, session summaries and export completeness status.\n"
             )
             exportedCount += writeTextEntryAndCount(
                 zipOutput,
@@ -209,6 +210,9 @@ internal object DiagnosticsArchiveBuilder {
                     "sts/performance/${file.name}"
                 )
             }
+            exportedCount += ResourceTimingArchive.write(
+                zipOutput, RuntimePaths.resourceTimingsDir(context), "sts/performance/resource_timings"
+            )
             RuntimePaths.listMemoryDiagnosticsFiles(context).forEach { file ->
                 exportedCount += writeOptionalFile(
                     zipOutput,
@@ -345,6 +349,9 @@ internal object DiagnosticsArchiveBuilder {
             )
             progress?.onProgress(PROGRESS_STEAM_DONE)
             val writtenJvmEntries = LinkedHashSet<String>()
+            exportedCount += ResourceTimingArchive.write(
+                zipOutput, RuntimePaths.resourceTimingsDir(context), "sts/resource_timings"
+            )
             JvmLogRotationManager.listLogFiles(context).forEach { logFile ->
                 val entryName = "sts/logs/${logFile.name}"
                 if (writtenJvmEntries.add(entryName) && logFile.isFile) {
@@ -449,6 +456,7 @@ internal object DiagnosticsArchiveBuilder {
         - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
         - info/：设备信息，以及启动器设置导出（launcher_settings.txt 英文机器键值、launcher_settings.zh.txt 中文可读版，末尾均含原始 SharedPreferences 全量转储）。
         - resource_pack/：资源包 active generation、版本、校验和迁移状态。
+        - resource_timings/：逐次资源创建/回收阻塞耗时 JSONL、会话汇总和导出完整性状态（深度性能诊断开启时生成）。
          - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
          - webview/：内置小游戏 WebView 的页面生命周期、JavaScript 控制台、资源错误和 Android 桥接日志，最多保留 5 槽位。
         - achievement_sync/：成就请求解析、游戏内弹窗、Steam 查询、上传及失败事件，最多保留 3 槽位，不包含 Steam 凭据。

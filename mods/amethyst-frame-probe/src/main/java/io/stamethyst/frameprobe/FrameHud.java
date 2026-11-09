@@ -102,7 +102,7 @@ public final class FrameHud {
                     long guardian, long reclaim, long swap,
                     long heap, int flushes, int switches) {
                 ring[ringHead] = total;
-                // The completed frame ID, not the update/drain frame, owns each release marker.
+                // The completed frame ID, not the update/drain frame, owns each lifecycle marker.
                 if (releaseColors != null) releaseColors[ringHead] = RamSaverReleaseEvents.colorsForFrame(fid);
                 ringHead = (ringHead + 1) % WINDOW;
                 if (ringSize < WINDOW) ringSize++;
@@ -203,7 +203,7 @@ public final class FrameHud {
             java.util.Locale.US,
             "last:%.1fms  p99:%.1fms  over:%d/%d%s",
             lastMs, p99Ms, budgetBreaches, ringSize,
-            releaseColors == null ? "" : "  RS: colored release markers");
+            releaseColors == null ? "" : "  RS: blue +create / orange -destroy");
         // p99 超预算时用红色提示
         Color frameColor = p99Ms > (budgetNs / 1_000_000f) ? RED : WHITE;
         FontHelper.renderFontLeftTopAligned(sb, FontHelper.tipBodyFont,
@@ -222,13 +222,12 @@ public final class FrameHud {
             sb.draw(ownTexture(), bx, oy, bw, Math.max(barH, 1f));
             if (releaseColors != null) {
                 int mask = releaseColors[slot];
-                int count = Integer.bitCount(mask);
-                int stripe = 0;
                 for (int color = 0; color < releasePalette.length; color++) {
                     if ((mask & (1 << color)) == 0) continue;
                     sb.setColor(releasePalette[color]);
-                    sb.draw(ownTexture(), bx, oy + maxH + stripe++ * markerH / count,
-                            bw, markerH / count);
+                    // Fixed lanes: creation above destruction, even when only one action occurred.
+                    sb.draw(ownTexture(), bx, oy + maxH + (1 - color) * markerH / 2f,
+                            bw, markerH / 2f);
                 }
             }
         }
@@ -239,13 +238,17 @@ public final class FrameHud {
     /** Returns the HUD's own 1×1 white texture, creating it on first call. */
     private com.badlogic.gdx.graphics.Texture ownTexture() {
         if (ownTexture == null) {
-            com.badlogic.gdx.graphics.Pixmap pm =
-                new com.badlogic.gdx.graphics.Pixmap(1, 1,
-                    com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-            pm.setColor(1f, 1f, 1f, 1f);
-            pm.fill();
-            ownTexture = new com.badlogic.gdx.graphics.Texture(pm);
-            pm.dispose();
+            RamSaverReleaseEvents.beginInternalResources();
+            try {
+                com.badlogic.gdx.graphics.Pixmap pm =
+                    new com.badlogic.gdx.graphics.Pixmap(1, 1,
+                        com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
+                try {
+                    pm.setColor(1f, 1f, 1f, 1f);
+                    pm.fill();
+                    ownTexture = new com.badlogic.gdx.graphics.Texture(pm);
+                } finally { pm.dispose(); }
+            } finally { RamSaverReleaseEvents.endInternalResources(); }
         }
         return ownTexture;
     }
@@ -253,7 +256,11 @@ public final class FrameHud {
     /** @deprecated Called by BaseMod when the mod is unloaded (not actually called in StS,
      *  but good practice to release the texture). */
     public void dispose() {
-        if (ownTexture != null) { ownTexture.dispose(); ownTexture = null; }
+        if (ownTexture != null) {
+            RamSaverReleaseEvents.beginInternalResources();
+            try { ownTexture.dispose(); ownTexture = null; }
+            finally { RamSaverReleaseEvents.endInternalResources(); }
+        }
     }
 
     /**

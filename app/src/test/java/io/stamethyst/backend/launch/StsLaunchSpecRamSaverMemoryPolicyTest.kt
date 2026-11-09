@@ -9,6 +9,17 @@ import org.junit.Test
 
 class StsLaunchSpecRamSaverMemoryPolicyTest {
     @Test
+    fun resourceTimingArgs_tracksDeepDiagnosticsWithoutEnablingIntrusiveRamSaverLogs() {
+        val directory = java.io.File("/storage/emulated/0/Android/data/test/files/sts/resource_timings")
+        for (enabled in listOf(false, true)) {
+            val args = StsLaunchSpec.resourceTimingArgs(enabled, directory)
+            assertTrue(args.contains("-Damethyst.gdx.resource_timings=$enabled"))
+            assertTrue(args.contains("-Damethyst.gdx.resource_timings.dir=${directory.absolutePath}"))
+            assertFalse(args.any { it.startsWith("-Dramsaver.diag") || it.contains("stacks=true") })
+        }
+    }
+
+    @Test
     fun resolveTexturePressureDownscaleEnabled_preservesProtectionWhenRamSaverEnabled() {
         assertTrue(
             StsLaunchSpec.resolveTexturePressureDownscaleEnabled(

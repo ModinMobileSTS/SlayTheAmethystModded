@@ -434,6 +434,27 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	}
 
 	private void build () {
+		if (disposed || nativeResourcesAllocated || buildInProgress) {
+			buildImpl();
+			return;
+		}
+		long timing = com.badlogic.gdx.graphics.ResourceLifecycleTimings.ENABLED
+			? com.badlogic.gdx.graphics.ResourceLifecycleTimings.begin("framebuffer", "create", getClass().getName(), "build") : 0L;
+		boolean success = false;
+		try {
+			buildImpl();
+			success = true;
+			if (com.badlogic.gdx.graphics.RamSaverReleaseEvents.ENABLED)
+				com.badlogic.gdx.graphics.RamSaverReleaseEvents.recordCreated(
+					Gdx.graphics == null ? -1L : Gdx.graphics.getFrameId(), getClass().getName(), getClass().getName(),
+					com.badlogic.gdx.graphics.RamSaverReleaseEvents.FRAMEBUFFER, "build", estimatedNativeBytes, framebufferHandle);
+		} finally {
+			if (timing != 0L) com.badlogic.gdx.graphics.ResourceLifecycleTimings.end(timing, framebufferHandle,
+				estimatedNativeBytes, success);
+		}
+	}
+
+	private void buildImpl () {
 		if (disposed) {
 			throw new IllegalStateException("frame buffer has been disposed");
 		}
@@ -832,6 +853,31 @@ public abstract class GLFrameBuffer<T extends GLTexture> implements Disposable {
 	}
 
 	private boolean releaseNativeResources (String reason, boolean permanentDispose, boolean deleteGlHandles) {
+		if (!com.badlogic.gdx.graphics.ResourceLifecycleTimings.ENABLED
+			&& !com.badlogic.gdx.graphics.RamSaverReleaseEvents.ENABLED)
+			return releaseNativeResourcesImpl(reason, permanentDispose, deleteGlHandles);
+		boolean allocated = framebufferHandle != 0 || depthbufferHandle != 0 || stencilbufferHandle != 0
+			|| depthStencilPackedBufferHandle != 0 || (colorTexture != null && colorTexture.hasTextureObjectHandle());
+		long timing = com.badlogic.gdx.graphics.ResourceLifecycleTimings.ENABLED && allocated
+			? com.badlogic.gdx.graphics.ResourceLifecycleTimings.begin("framebuffer", deleteGlHandles ? "release" : "invalidate",
+				getClass().getName(), reason) : 0L;
+		int handle = framebufferHandle;
+		long bytes = estimatedNativeBytes;
+		boolean success = false;
+		try {
+			boolean released = releaseNativeResourcesImpl(reason, permanentDispose, deleteGlHandles);
+			success = true;
+			if (com.badlogic.gdx.graphics.RamSaverReleaseEvents.ENABLED && released && deleteGlHandles)
+				com.badlogic.gdx.graphics.RamSaverReleaseEvents.record(
+					Gdx.graphics == null ? -1L : Gdx.graphics.getFrameId(), getClass().getName(), getClass().getName(),
+					com.badlogic.gdx.graphics.RamSaverReleaseEvents.FRAMEBUFFER, reason, bytes, handle);
+			return released;
+		} finally {
+			if (timing != 0L) com.badlogic.gdx.graphics.ResourceLifecycleTimings.end(timing, handle, bytes, success);
+		}
+	}
+
+	private boolean releaseNativeResourcesImpl (String reason, boolean permanentDispose, boolean deleteGlHandles) {
 		boolean released = false;
 		GL20 gl = Gdx.gl20;
 		int releasedFramebufferHandle = framebufferHandle;

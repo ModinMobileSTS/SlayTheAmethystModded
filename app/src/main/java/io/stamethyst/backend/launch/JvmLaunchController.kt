@@ -89,6 +89,8 @@ class JvmLaunchController(
             "amethyst.gdx.frame_hud",
             "amethyst.gdx.gpu_resource_summary",
             "amethyst.gdx.gpu_resource_diag",
+            "amethyst.gdx.resource_timings",
+            "amethyst.gdx.resource_timings.dir",
             "amethyst.bridge.heap_snapshot",
             "amethyst.bridge.gc_histogram_dir",
             "amethyst.mts.patch_cache.enabled",

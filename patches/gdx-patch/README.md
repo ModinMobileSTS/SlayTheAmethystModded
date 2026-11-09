@@ -2,6 +2,21 @@
 
 启动器使用的 libGDX 兼容层补丁。
 
+## 资源创建/销毁可视事件
+
+- **症状：** 原释放提示和时序图缺少图像创建事件，颜色不能区分创建与销毁，提示超时消失且无法滚动。
+- **实现：** `RamSaverReleaseEvents` 增加创建/销毁动作与共享蓝/橙颜色；`GLTexture` 在成功上传后发出创建事件，补齐非受管纹理的真实销毁事件；受管纹理仍由 RamSaver 保留原销毁原因、避免重复。`GLFrameBuffer` 发出构建与释放事件，Region 注册/解绑由 RamSaver 发出，零 GPU 字节。
+- **视图：** RamSaver 的独立事件窗常驻左上角，最新六条替换旧行，可滚动查看最近 512 条；`FrameHud` 以固定创建/销毁双色带对应实际完成帧，保留耗时柱。窗口输入遮罩由独立 `VisualResourceInputPatches` 实现。调试窗口自身的白色像素通过可嵌套内部资源作用域排除。
+- **边界：** 沿用默认关闭的 `ramsaver.debug.visual`，不改变持久化耗时诊断、回收预算、手牌保护或 GPU 同步语义。失败上传/未物化假纹理不冒充图像创建。参见 `mods/ram-saver/README.md` 第 44 项和对应事件、生命周期、滚动输入、FrameHud 测试。
+
+## 逐资源生命周期阻塞耗时
+
+- **症状：** 原有慢事件/重复抑制日志无法逐条回答创建、上传、回收各自阻塞多久，诊断日志导出也不包含完整耗时明细。
+- **实现：** `ResourceLifecycleTimings` 提供独立诊断门控、可复用固定容量队列和后台 JSONL 写盘；`GLTexture` 记录上传、GL 名称创建和真实释放/上下文失效，`GLFrameBuffer` 记录构建、回收、重建和销毁。RamSaver 自己的资源所有权/Region 入口补齐外层耗时及父子关系，详见其 README 第 43 项。不会为计时调用 GPU fence/`glFinish`，也不额外查询上传绑定。
+- **取舍：** 用户确认逐条完整优先，4096 槽满时生产者等待，不采样/覆盖；排队等待单列。所有格式化与磁盘 I/O 在后台。关闭诊断不分配记录器或调用新计时点。磁盘错误、崩溃、强制退出的未落盘风险会显式报告，不宣称断电持久化或 GPU 执行时间。
+- **接线：** `StsLaunchSpec` 随深度性能诊断启用开关并设置路径；`StsDesktopJarPatcher` 注入主类及全部嵌套类；`ResourceTimingArchive` 在普通/性能/反馈导出链路打包当前与上一会话 JSONL、汇总和导出状态。
+- **验证：** `ResourceLifecycleTimingsTest`、RamSaver `ResourceLifecycleTimingIntegrationTest`、app `ResourceTimingArchiveTest`、`PerformanceDiagnosticsArchiveTest`、launch policy 和 desktop patcher 测试覆盖记录、阻塞、失败、生命周期及归档边界。Android 驱动延迟与帧率仍需实机验证。
+
 ## 纹理上传临时像素清理
 
 - **症状：** 纹理上传失败时格式转换/缩放产生的 native Pixmap 未释放；libGDX 1.9.5 软件 mipmap 路径也会保留最后一级临时像素，削弱 RamSaver 后台解码 staging 的有界生命周期。

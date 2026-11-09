@@ -459,6 +459,9 @@ object RuntimePaths {
         File(stsRoot(context), FRAME_PROBE_PREVIOUS_INCIDENTS_FILE_NAME)
 
     @JvmStatic
+    fun resourceTimingsDir(context: Context): File = File(stsRoot(context), "resource_timings")
+
+    @JvmStatic
     fun jvmSignalDump(context: Context): File = File(stsRoot(context), JVM_SIGNAL_DUMP_FILE_NAME)
 
     @JvmStatic

@@ -6,36 +6,58 @@ public final class RamSaverReleaseEvents {
     public static final boolean ENABLED = Boolean.getBoolean(PROPERTY);
     public static final int TEXTURE = 1;
     public static final int REGION = 2;
+    public static final int FRAMEBUFFER = 3;
+    public static final int CREATE = 1;
+    public static final int DESTROY = 2;
     public static final int CAPACITY = 512;
-    public static final int COLOR_COUNT = 12;
+    public static final int COLOR_COUNT = 2;
     private static final int FRAME_CAPACITY = 1800;
     private static final int[] COLORS = {
-            0x45CFFFFF, 0xFF80BFFF, 0xB39DFFFF, 0xFFAD66FF,
-            0x66E0C2FF, 0xA8D86AFF, 0x82B1FFFF, 0xE6B3FFFF,
-            0xFFCF80FF, 0xB0E0E6FF, 0xFF8A80FF, 0xD4E157FF
+            0x55C8FFFF, 0xFFA45CFF
     };
     // Disabled launches do not even allocate history arrays.
     private static final History HISTORY = ENABLED ? new History() : null;
+    private static final ThreadLocal<Integer> INTERNAL = ENABLED ? new ThreadLocal<Integer>() : null;
 
     private RamSaverReleaseEvents() { }
 
-    public static int colorIndex(String key) {
-        int hash = key == null ? 0 : key.hashCode();
-        hash ^= hash >>> 16;
-        return (hash & Integer.MAX_VALUE) % COLOR_COUNT;
-    }
+    public static int colorIndex(int action) { return action == CREATE ? 0 : 1; }
 
     public static int colorRgba(int index) { return COLORS[index % COLOR_COUNT]; }
 
     public static void record(long frame, String key, String resource, int kind,
                               String reason, long estimatedBytes, int oldHandle) {
+        recordAction(frame, key, resource, kind, DESTROY, reason, estimatedBytes, oldHandle);
+    }
+
+    public static void recordCreated(long frame, String key, String resource, int kind,
+                                     String reason, long estimatedBytes, int handle) {
+        recordAction(frame, key, resource, kind, CREATE, reason, estimatedBytes, handle);
+    }
+
+    /** Diagnostic pixels must not produce notices/markers about the diagnostics themselves. */
+    public static void beginInternalResources() {
         if (!ENABLED) return;
+        Integer depth = INTERNAL.get();
+        INTERNAL.set(depth == null ? 1 : depth + 1);
+    }
+
+    public static void endInternalResources() {
+        if (!ENABLED) return;
+        Integer depth = INTERNAL.get();
+        if (depth == null || depth <= 1) INTERNAL.remove();
+        else INTERNAL.set(depth - 1);
+    }
+
+    private static void recordAction(long frame, String key, String resource, int kind, int action,
+                                     String reason, long estimatedBytes, int handle) {
+        if (!ENABLED || INTERNAL.get() != null) return;
         synchronized (HISTORY) {
             long sequence = ++HISTORY.sequence;
-            Event event = new Event(sequence, frame, key, resource, kind, reason,
-                    Math.max(0L, estimatedBytes), oldHandle);
+            Event event = new Event(sequence, frame, key, resource, kind, action, reason,
+                    Math.max(0L, estimatedBytes), handle);
             HISTORY.events[(int) ((sequence - 1L) % CAPACITY)] = event;
-            if (frame < 0L) return; // Initialisation releases have no matching rendered frame.
+            if (frame < 0L) return; // Initialisation events have no matching rendered frame.
             int slot = (int) (frame % FRAME_CAPACITY);
             if (HISTORY.frameSequences[slot] != frame + 1L) {
                 HISTORY.frameSequences[slot] = frame + 1L;
@@ -74,19 +96,21 @@ public final class RamSaverReleaseEvents {
     public static final class Event {
         public final long sequence, frame, estimatedBytes;
         public final String key, resource, reason;
-        public final int kind, oldHandle, color;
+        public final int kind, action, handle, oldHandle, color;
 
-        private Event(long sequence, long frame, String key, String resource, int kind,
-                      String reason, long estimatedBytes, int oldHandle) {
+        private Event(long sequence, long frame, String key, String resource, int kind, int action,
+                      String reason, long estimatedBytes, int handle) {
             this.sequence = sequence;
             this.frame = frame;
             this.key = bounded(key);
             this.resource = bounded(resource);
             this.kind = kind;
+            this.action = action;
             this.reason = reason;
-            this.estimatedBytes = kind == TEXTURE ? estimatedBytes : 0L;
-            this.oldHandle = oldHandle;
-            this.color = colorIndex(key);
+            this.estimatedBytes = kind == REGION ? 0L : estimatedBytes;
+            this.handle = handle;
+            this.oldHandle = action == DESTROY ? handle : 0;
+            this.color = colorIndex(action);
         }
 
         private static String bounded(String text) {

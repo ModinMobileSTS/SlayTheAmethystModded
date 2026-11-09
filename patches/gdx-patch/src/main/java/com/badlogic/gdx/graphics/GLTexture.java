@@ -366,7 +366,7 @@ public abstract class GLTexture implements Disposable {
 	public abstract int getDepth ();
 
 	public GLTexture (int glTarget) {
-		this(glTarget, Gdx.gl.glGenTexture());
+		this(glTarget, createTextureHandle());
 	}
 
 	public GLTexture (int glTarget, int glHandle) {
@@ -511,6 +511,19 @@ public abstract class GLTexture implements Disposable {
 		handleReclaimPending = false;
 		guardianReclaimPending = false;
 		releaseHandle("delete", true);
+	}
+
+	/** Used by RamSaver's Texture replacements; measures GL name allocation without waiting for GPU work. */
+	protected static int createTextureHandle () {
+		long timing = ResourceLifecycleTimings.ENABLED
+			? ResourceLifecycleTimings.begin("texture", "create_handle", null, "glGenTexture") : 0L;
+		int handle = 0;
+		try {
+			handle = Gdx.gl.glGenTexture();
+			return handle;
+		} finally {
+			if (timing != 0L) ResourceLifecycleTimings.end(timing, handle, 0L, handle != 0);
+		}
 	}
 
 
@@ -961,6 +974,28 @@ public abstract class GLTexture implements Disposable {
 
 	private int releaseHandle (String reason, boolean deleteGlHandle) {
 		if (glHandle == 0) return 0;
+		boolean visual = RamSaverReleaseEvents.ENABLED && deleteGlHandle && !hasManagedVisualRelease();
+		String visualSource = visual ? TEXTURE_HANDLE_LIVE_SAMPLES.get(glHandle) : null;
+		long timing = ResourceLifecycleTimings.ENABLED ? ResourceLifecycleTimings.begin("texture",
+			deleteGlHandle ? "release" : "invalidate", TEXTURE_HANDLE_LIVE_SAMPLES.get(glHandle), reason) : 0L;
+		int oldHandle = glHandle;
+		long bytes = ResourceLifecycleTimings.ENABLED || visual ? captureTrackedHandleBytes() : 0L;
+		boolean success = false;
+		try {
+			int released = releaseHandleImpl(reason, deleteGlHandle);
+			success = true;
+			if (visual) RamSaverReleaseEvents.record(Gdx.graphics == null ? -1L : Gdx.graphics.getFrameId(),
+				visualSource, visualSource, RamSaverReleaseEvents.TEXTURE, reason, bytes, oldHandle);
+			return released;
+		} finally {
+			if (timing != 0L) ResourceLifecycleTimings.end(timing, oldHandle, bytes, success);
+		}
+	}
+
+	/** RamSaver reports its owned texture deletion after successful cache bookkeeping. */
+	protected boolean hasManagedVisualRelease () { return false; }
+
+	private int releaseHandleImpl (String reason, boolean deleteGlHandle) {
 		int deletedHandle = glHandle;
 		captureResidencySnapshot(deletedHandle);
 		forgetTrackedTextureBytes(deletedHandle);
@@ -997,7 +1032,7 @@ public abstract class GLTexture implements Disposable {
 
 		long restoreStartNanos = FRAME_PROFILER_RESOURCE_ENABLED ? nowMonotonicNanos() : 0L;
 		try {
-			newHandle = Gdx.gl.glGenTexture();
+			newHandle = createTextureHandle();
 			if (newHandle == 0) return;
 			restoreHandleForReuse(newHandle, "texture_residency_restore_" + reason);
 			texture.load(data);
@@ -1519,6 +1554,19 @@ public abstract class GLTexture implements Disposable {
 	/** This method can be used to upload TextureData to a texture. The call must be preceded by calls to {@link GL20#glBindTexture(int, int)}
 	 * and perhaps {@link GL20#glPixelStorei(int, int)} to configure how the pixel data should be interpreted. */
 	public static void uploadImageData (int target, TextureData data, int miplevel) {
+		if (data == null) return;
+		long timing = ResourceLifecycleTimings.ENABLED ? ResourceLifecycleTimings.begin("texture", "upload",
+			resolveTextureSourcePath(data), miplevel == 0 ? "base-level" : "mip-level") : 0L;
+		boolean success = false;
+		try {
+			uploadImageDataImpl(target, data, miplevel);
+			success = true;
+		} finally {
+			if (timing != 0L) ResourceLifecycleTimings.end(timing, -1, -1L, success);
+		}
+	}
+
+	private static void uploadImageDataImpl (int target, TextureData data, int miplevel) {
 		if (data == null) {
 			return;
 		}
@@ -2369,6 +2417,10 @@ public abstract class GLTexture implements Disposable {
 			estimatedBytes = Math.max(estimatedBytes, (estimatedBytes * 4L) / 3L);
 		}
 		TextureAttribution attribution = resolveTextureAttribution(sourcePath, stackKey);
+		if (ResourceLifecycleTimings.ENABLED) ResourceLifecycleTimings.uploaded(handle, estimatedBytes);
+		if (RamSaverReleaseEvents.ENABLED) RamSaverReleaseEvents.recordCreated(
+			Gdx.graphics == null ? -1L : Gdx.graphics.getFrameId(), sourcePath, sourcePath,
+			RamSaverReleaseEvents.TEXTURE, "upload", estimatedBytes, handle);
 		recordTextureUploadActivity(attribution, estimatedBytes);
 		updateLiveTextureSourceAttribution(handle, estimatedBytes, attribution);
 		Long previousBytes = TEXTURE_HANDLE_ESTIMATED_BYTES.put(handle, estimatedBytes);

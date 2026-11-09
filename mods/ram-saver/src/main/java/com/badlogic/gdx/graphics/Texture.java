@@ -127,7 +127,7 @@ public class Texture extends GLTexture {
     }
 
     public Texture(TextureData data) {
-        this(3553, Gdx.gl.glGenTexture(), data);
+        this(3553, createTextureHandle(), data);
     }
 
     //Useless constructor for filepath textures
@@ -278,6 +278,19 @@ public class Texture extends GLTexture {
 
 
     public void load(TextureData data) {
+        long timing = ResourceLifecycleTimings.ENABLED && !isFake
+                ? ResourceLifecycleTimings.begin("texture", "prepare_upload",
+                    file == null ? data.getClass().getName() : file.path(), "load") : 0L;
+        boolean success = false;
+        try {
+            loadImpl(data);
+            success = true;
+        } finally {
+            if (timing != 0L) ResourceLifecycleTimings.end(timing, glHandle, 0L, success);
+        }
+    }
+
+    private void loadImpl(TextureData data) {
         boolean diag = RamSaverDiag.enabled();
         long started = diag ? System.nanoTime() : 0L;
         if (!isFake) {
@@ -346,7 +359,7 @@ public class Texture extends GLTexture {
             if (!this.isManaged()) {
                 throw new GdxRuntimeException("Tried to reload unmanaged Texture");
             } else {
-                this.glHandle = Gdx.gl.glGenTexture();
+                this.glHandle = createTextureHandle();
                 this.load(this.data);
                 if (RamSaverDiag.enabled()) {
                     RamSaverDiag.logStackRepeat("real_texture_reload", dataKey(this.data), diagTexture(this));
@@ -571,6 +584,19 @@ public class Texture extends GLTexture {
 
     @Override
     public void dispose() {
+        long timing = ResourceLifecycleTimings.ENABLED && !isFake && glHandle != 0
+                ? ResourceLifecycleTimings.begin("texture", "dispose", cacheKey, "caller-dispose") : 0L;
+        int handle = glHandle;
+        boolean success = false;
+        try {
+            disposeImpl();
+            success = true;
+        } finally {
+            if (timing != 0L) ResourceLifecycleTimings.end(timing, handle, 0L, success);
+        }
+    }
+
+    private void disposeImpl() {
         optispire.TextureDecodeService.cancel(cacheKey);
         int releasedHandle = RamSaverReleaseEvents.ENABLED && !isFake && cacheKey != null ? glHandle : 0;
         long releasedBytes = releasedHandle == 0 ? 0L : getRamSaverEstimatedBytes();
@@ -595,6 +621,9 @@ public class Texture extends GLTexture {
             }
         }
     }
+
+    @Override
+    protected boolean hasManagedVisualRelease() { return cacheKey != null; }
 
     /** Releases a managed real texture without re-entering RamSaver's cache bookkeeping. */
     public void disposeForRamSaver() {
@@ -740,7 +769,7 @@ public class Texture extends GLTexture {
                             }
                         };
                         assetManager.unload(fileName);
-                        texture.glHandle = Gdx.gl.glGenTexture();
+                        texture.glHandle = createTextureHandle();
                         assetManager.load(fileName, Texture.class, params);
                     }
                 }

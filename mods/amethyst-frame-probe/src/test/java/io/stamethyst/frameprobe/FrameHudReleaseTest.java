@@ -7,13 +7,12 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class FrameHudReleaseTest {
-    @Test public void markersUseCompletedFrameNotDrainTimeAndKeepEveryColorInOneFrame() throws Exception {
+    @Test public void markersUseCompletedFrameNotDrainTimeAndKeepBothActionsInOneFrame() throws Exception {
         FrameHud hud = new FrameHud(null, Long.MAX_VALUE, null, false);
         String first = "first.png";
         String second = "second.png";
-        while (RamSaverReleaseEvents.colorIndex(first) == RamSaverReleaseEvents.colorIndex(second)) second += "x";
         release(701L, first);
-        release(701L, second);
+        RamSaverReleaseEvents.recordCreated(701L, second, second, RamSaverReleaseEvents.TEXTURE, "upload", 64, 1);
         recordFrame(700L);
         recordFrame(701L);
         recordFrame(702L);
@@ -21,9 +20,23 @@ public class FrameHudReleaseTest {
         int[] colors = (int[]) field(hud, "releaseColors");
         long[] times = (long[]) field(hud, "ring");
         assertEquals(0, colors[0]);
-        assertEquals((1 << RamSaverReleaseEvents.colorIndex(first)) | (1 << RamSaverReleaseEvents.colorIndex(second)), colors[1]);
+        assertEquals((1 << RamSaverReleaseEvents.colorIndex(RamSaverReleaseEvents.CREATE))
+                | (1 << RamSaverReleaseEvents.colorIndex(RamSaverReleaseEvents.DESTROY)), colors[1]);
         assertEquals(0, colors[2]);
         assertEquals("Timing values must not be replaced by release data", 42L, times[1]);
+    }
+
+    @Test public void creationOnlyAndDestructionOnlyHaveDifferentMarkersWithoutChangingTiming() throws Exception {
+        FrameHud hud = new FrameHud(null, Long.MAX_VALUE, null, false);
+        RamSaverReleaseEvents.recordCreated(713L, "image", "image.png", RamSaverReleaseEvents.TEXTURE, "upload", 64, 2);
+        release(714L, "image");
+        recordFrame(713L); recordFrame(714L);
+        hud.update();
+        int[] colors = (int[]) field(hud, "releaseColors");
+        assertEquals(1, colors[0]);
+        assertEquals(2, colors[1]);
+        long[] times = (long[]) field(hud, "ring");
+        assertEquals(42L, times[0]); assertEquals(42L, times[1]);
     }
 
     @Test public void frameSlotsCannotMistakeOldEventsForNewFramesAfterWrap() throws Exception {

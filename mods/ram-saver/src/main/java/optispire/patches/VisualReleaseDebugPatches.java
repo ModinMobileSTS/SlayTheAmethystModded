@@ -12,6 +12,10 @@ import optispire.debug.ReleaseDebugOverlay;
 public final class VisualReleaseDebugPatches {
     private static ReleaseDebugOverlay overlay;
 
+    public static void beforeGameInput() {
+        if (RamSaverReleaseEvents.ENABLED && overlay != null) overlay.beforeGameInput();
+    }
+
     @SpirePatch2(clz = CardCrawlGame.class, method = "render")
     public static class Render {
         @SpirePostfixPatch
