@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,17 +68,20 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.R
 import io.stamethyst.backend.mods.AgentPatchCatalogueService
 import io.stamethyst.backend.mods.CatalogueLoadProgressReporter
 import io.stamethyst.backend.mods.CatalogueRequestPhase
 import io.stamethyst.backend.mods.CommunityPatchMod
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
+import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.ui.LauncherTopAppBar
 import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.loadStageProgressBarHeight
 import io.stamethyst.ui.rememberLoadingSkeletonStyle
+import io.stamethyst.ui.workshop.WorkshopViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
@@ -89,11 +93,13 @@ private val communityPreviewRequests = Semaphore(4)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CommunityPatchesScreen(
+    workshopViewModel: WorkshopViewModel,
     modId: String? = null,
     onBack: () -> Unit,
     onOpenMod: (String) -> Unit = {},
     onOpenLlmSettings: () -> Unit = {},
     onOpenLlmTutorial: () -> Unit = {},
+    onOpenWorkshopDetails: (WorkshopItemSummary) -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
     val service = remember(context) { WorkshopService(context) }
@@ -103,7 +109,9 @@ internal fun CommunityPatchesScreen(
     val mods = requestState.data?.mods ?: cachedMods
     val refreshing = requestState.phase == CatalogueRequestPhase.FETCHING
     val error = requestState.error
-    var refreshToken by remember { mutableIntStateOf(0) }
+    var refreshToken by rememberSaveable { mutableIntStateOf(0) }
+    // A restored token keeps the entry's market request stable; returning is not a forced refresh.
+    val initialRefreshToken = remember { refreshToken }
 
     // Mirror the market header: the slot and everything below it grow from one animated value, and
     // the bar keeps its last snapshot while collapsing so the text fades instead of blanking out.
@@ -119,7 +127,7 @@ internal fun CommunityPatchesScreen(
     LaunchedEffect(refreshToken) {
         try {
             if (mods == null) cachedMods = withContext(Dispatchers.IO) { AgentPatchCatalogueService.readCachedMods(context) }
-            AgentPatchCatalogueService.refreshMods(context, force = refreshToken > 0)
+            AgentPatchCatalogueService.refreshMods(context, force = refreshToken != initialRefreshToken)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -127,13 +135,16 @@ internal fun CommunityPatchesScreen(
         }
     }
     val selected = mods?.firstOrNull { it.modId == modId }
+    val marketViewModel = if (modId != null) {
+        viewModel<CommunityPatchMarketViewModel>(key = "community_market_$modId")
+    } else null
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             LauncherTopAppBar(
                 title = {
                     Text(
-                        selected?.name ?: stringResource(R.string.community_patches_title),
+                        marketViewModel?.state?.summary?.title ?: selected?.name ?: stringResource(R.string.community_patches_title),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -214,39 +225,14 @@ internal fun CommunityPatchesScreen(
                         Text(stringResource(R.string.community_patches_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    item {
-                        Text(
-                            stringResource(R.string.community_patches_count, selected.patches.size),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    items(selected.patches, key = { it.patchModId + ":" + it.sha256 }) { patch ->
-                        Column(communityModCardModifier().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(patch.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                            if (patch.authorName.isNotBlank()) {
-                                Text(patch.authorName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text(stringResource(R.string.main_mod_agent_patch_version_format, patch.version), style = MaterialTheme.typography.labelSmall)
-                            Text(
-                                stringResource(R.string.community_patches_target_versions, patch.targetVersions.joinToString().ifBlank { "*" }),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                patch.description.ifBlank { stringResource(R.string.main_mod_agent_patch_description_empty) },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.secondary,
-                            )
-                        }
-                    }
-                }
+                else -> CommunityPatchDetail(
+                    mod = selected,
+                    service = service,
+                    marketViewModel = requireNotNull(marketViewModel),
+                    workshopViewModel = workshopViewModel,
+                    refreshToken = refreshToken,
+                    onOpenDetails = onOpenWorkshopDetails,
+                )
             }
         }
     }

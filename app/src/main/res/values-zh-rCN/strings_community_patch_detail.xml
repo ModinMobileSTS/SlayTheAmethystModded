@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="community_patch_section_subtitle">由社区玩家制作与分享</string>
+    <string name="community_patch_entry_count">%1$d 个补丁</string>
+    <string name="community_patch_contributor">贡献者 · %1$s</string>
+    <string name="community_patch_target_label">适用模组</string>
+    <string name="community_patch_expand">展开说明</string>
+    <string name="community_patch_collapse">收起说明</string>
+    <string name="community_patch_description_expanded">说明已展开</string>
+    <string name="community_patch_description_collapsed">说明已收起</string>
+    <string name="community_patch_install_hint">先下载对应模组，再从本地模组卡片的「AI 补丁」入口安装。</string>
+    <string name="community_patch_market_failed">市场信息暂时无法获取，下面的 AI 补丁仍可查看。</string>
+    <string name="community_patch_market_retry">重试市场信息</string>
+    <string name="community_patch_market_unlinked">该模组未关联创意工坊，无法提供市场详情或下载。</string>
+</resources>

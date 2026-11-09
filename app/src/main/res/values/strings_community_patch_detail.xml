@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="community_patch_section_subtitle">Made and shared by community players</string>
+    <string name="community_patch_entry_count">%1$d patches</string>
+    <string name="community_patch_contributor">Contributor · %1$s</string>
+    <string name="community_patch_target_label">Mod version</string>
+    <string name="community_patch_expand">Show more</string>
+    <string name="community_patch_collapse">Show less</string>
+    <string name="community_patch_description_expanded">Description expanded</string>
+    <string name="community_patch_description_collapsed">Description collapsed</string>
+    <string name="community_patch_install_hint">Download the mod first, then install patches from “AI Patches” on its local mod card.</string>
+    <string name="community_patch_market_failed">Mod market information is unavailable. You can still browse the AI patches below.</string>
+    <string name="community_patch_market_retry">Retry market information</string>
+    <string name="community_patch_market_unlinked">This mod is not linked to the Workshop. Market details and downloads are unavailable.</string>
+</resources>

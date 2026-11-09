@@ -812,6 +812,7 @@ fun LauncherContent(
 
                         entry<Route.CommunityPatches> {
                             io.stamethyst.ui.main.CommunityPatchesScreen(
+                                workshopViewModel = workshopViewModel,
                                 onBack = { navigator.goBack() },
                                 onOpenMod = { navigator.push(Route.CommunityModPatches(it)) },
                                 onOpenLlmSettings = { navigator.push(Route.SettingsLlm) },
@@ -821,8 +822,10 @@ fun LauncherContent(
 
                         entry<Route.CommunityModPatches> { route ->
                             io.stamethyst.ui.main.CommunityPatchesScreen(
+                                workshopViewModel = workshopViewModel,
                                 modId = route.modId,
                                 onBack = { navigator.goBack() },
+                                onOpenWorkshopDetails = ::openWorkshopItemDetails,
                             )
                         }
 

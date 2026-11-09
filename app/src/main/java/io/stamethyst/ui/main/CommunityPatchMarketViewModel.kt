@@ -1,0 +1,96 @@
+package io.stamethyst.ui.main
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import io.stamethyst.backend.mods.CommunityPatchMod
+import io.stamethyst.backend.workshop.WorkshopItemSummary
+import io.stamethyst.backend.workshop.WorkshopService
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
+
+internal data class CommunityPatchMarketState(
+    val summary: WorkshopItemSummary? = null,
+    val loading: Boolean = false,
+    val error: String? = null,
+)
+
+internal fun CommunityPatchMod.workshopFallback(): WorkshopItemSummary? = workshopId
+    ?.takeIf { it > 0uL }
+    ?.let { id ->
+        WorkshopItemSummary(
+            publishedFileId = id,
+            appId = 646570u,
+            title = name.ifBlank { modId },
+            previewUrl = "",
+            description = "",
+        )
+    }
+
+/** Entry-scoped: loading a community card must not change the market's selected detail or browse list. */
+internal class CommunityPatchMarketViewModel : ViewModel() {
+    var state by mutableStateOf(CommunityPatchMarketState())
+        private set
+    private var requestKey: String? = null
+    private var requestGeneration = 0L
+    private var lastRefreshToken = 0
+    private var job: Job? = null
+
+    fun load(mod: CommunityPatchMod, service: WorkshopService, refreshToken: Int = 0, force: Boolean = false) {
+        val fallback = mod.workshopFallback() ?: run {
+            requestGeneration++
+            job?.cancel()
+            requestKey = null
+            state = CommunityPatchMarketState()
+            return
+        }
+        val key = "${mod.modId}:${fallback.publishedFileId}"
+        val refreshRequested = force || refreshToken != lastRefreshToken
+        if (key == requestKey && !refreshRequested) return
+        val generation = ++requestGeneration
+        job?.cancel()
+        if (key != requestKey) state = CommunityPatchMarketState()
+        requestKey = key
+        lastRefreshToken = refreshToken
+        state = state.copy(loading = true, error = null)
+        val retainedSummary = state.summary ?: fallback
+        job = viewModelScope.launch {
+            try {
+                val details = service.getDetails(
+                    appId = fallback.appId,
+                    publishedFileId = fallback.publishedFileId,
+                    fallbackSummary = retainedSummary,
+                    includeCommunityData = true,
+                    includeDependencyData = false,
+                    onUpdate = { update ->
+                        // getDetails publishes from its IO scope; Compose state belongs to Main.
+                        if (!update.metadataLoading && update.metadataErrorMessage == null) {
+                            withContext(Dispatchers.Main.immediate) {
+                                if (generation == requestGeneration) {
+                                    state = state.copy(summary = update.details.summary)
+                                }
+                            }
+                        }
+                    },
+                )
+                coroutineContext.ensureActive()
+                if (generation != requestGeneration) return@launch
+                state = CommunityPatchMarketState(summary = details.summary)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                coroutineContext.ensureActive()
+                if (generation != requestGeneration) return@launch
+                // A previous successful snapshot remains visible if a refresh fails.
+                state = state.copy(loading = false, error = error.message ?: error.javaClass.simpleName)
+            }
+        }
+    }
+}
