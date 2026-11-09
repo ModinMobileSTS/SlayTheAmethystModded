@@ -222,20 +222,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                     modifier = Modifier.padding(16.dp),
                 )
                 RamSaverOptimization.entries.forEach { optimization ->
-                    val (title, description) = when (optimization) {
-                        RamSaverOptimization.SHARED_RELEASE_BUDGET -> R.string.settings_ram_saver_shared_release to R.string.settings_ram_saver_shared_release_desc
-                        RamSaverOptimization.BACKGROUND_DECODE -> R.string.settings_ram_saver_background_decode to R.string.settings_ram_saver_background_decode_desc
-                        RamSaverOptimization.VISUAL_RELEASE_DEBUG -> R.string.settings_ram_saver_visual_debug to R.string.settings_ram_saver_visual_debug_desc
-                    }
-                    SettingsSwitchItem(
-                        SettingsSwitchSpec(
-                            checked = uiState.ramSaverOptimizations[optimization] ?: optimization.defaultEnabled,
-                            enabled = !uiState.busy,
-                            title = stringResource(title),
-                            description = stringResource(description),
-                            onCheckedChange = { onRamSaverOptimizationChanged(optimization, it) },
-                        )
-                    )
+                    SettingsRamSaverOptimizationSetting(uiState, optimization, onRamSaverOptimizationChanged)
                 }
             }
         }
@@ -264,15 +251,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
 
         item {
             SettingsSectionCard(title = stringResource(R.string.settings_cloud_control_test_title)) {
-                SettingsSwitchItem(
-                    SettingsSwitchSpec(
-                        checked = uiState.localTestCloudControlEnabled,
-                        enabled = !uiState.busy,
-                        title = stringResource(R.string.settings_cloud_control_test_enabled),
-                        description = stringResource(R.string.settings_cloud_control_test_desc),
-                        onCheckedChange = onLocalTestCloudControlEnabledChanged,
-                    )
-                )
+                SettingsLocalTestCloudControlSetting(uiState, onLocalTestCloudControlEnabledChanged)
                 AnimatedVisibility(
                     visible = uiState.localTestCloudControlEnabled,
                     enter = fadeIn(),
@@ -460,6 +439,44 @@ internal fun LauncherDeveloperSettingsScreenContent(
 }
 
 @Composable
+internal fun SettingsRamSaverOptimizationSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    optimization: RamSaverOptimization,
+    onChanged: (RamSaverOptimization, Boolean) -> Unit,
+) {
+    val (title, description) = when (optimization) {
+        RamSaverOptimization.SHARED_RELEASE_BUDGET -> R.string.settings_ram_saver_shared_release to R.string.settings_ram_saver_shared_release_desc
+        RamSaverOptimization.BACKGROUND_DECODE -> R.string.settings_ram_saver_background_decode to R.string.settings_ram_saver_background_decode_desc
+        RamSaverOptimization.VISUAL_RELEASE_DEBUG -> R.string.settings_ram_saver_visual_debug to R.string.settings_ram_saver_visual_debug_desc
+    }
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.ramSaverOptimizations[optimization] ?: optimization.defaultEnabled,
+            enabled = !uiState.busy,
+            title = stringResource(title),
+            description = stringResource(description),
+            onCheckedChange = { onChanged(optimization, it) },
+        )
+    )
+}
+
+@Composable
+internal fun SettingsLocalTestCloudControlSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    onChanged: (Boolean) -> Unit,
+) {
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.localTestCloudControlEnabled,
+            enabled = !uiState.busy,
+            title = stringResource(R.string.settings_cloud_control_test_enabled),
+            description = stringResource(R.string.settings_cloud_control_test_desc),
+            onCheckedChange = onChanged,
+        )
+    )
+}
+
+@Composable
 internal fun SettingsTogetherInSpireSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: TogetherInSpireSettingsActions,
@@ -632,10 +649,11 @@ internal fun SettingsDeveloperEntrySection(
 internal fun SettingsDeveloperRuntimeSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: DeveloperRuntimeSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
     var showPerformanceLogsDialog by rememberSaveable { mutableStateOf(false) }
 
-    SettingsDependencyContent(uiState, SettingsLoadDomain.RESOURCES) {
+    if (settingTitleResId == null) SettingsDependencyContent(uiState, SettingsLoadDomain.RESOURCES) {
         SettingsActionListItem(
             title = stringResource(R.string.settings_resource_pack_title),
             supportingText = if (uiState.resourcePackReady) {
@@ -655,7 +673,7 @@ internal fun SettingsDeveloperRuntimeSection(
         )
     }
 
-    SettingsDependencyContent(uiState, SettingsLoadDomain.RESOURCES) {
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_gpu_resource_diag_enabled) SettingsDependencyContent(uiState, SettingsLoadDomain.RESOURCES) {
         SettingsSwitchItem(
             SettingsSwitchSpec(
                 checked = uiState.gpuResourceDiagEnabled,
@@ -686,7 +704,7 @@ internal fun SettingsDeveloperRuntimeSection(
             }
         }
     }
-    if (uiState.gpuResourceDiagEnabled) {
+    if (settingTitleResId == null && uiState.gpuResourceDiagEnabled) {
         SettingsActionListItem(
             title = stringResource(R.string.settings_performance_logs_title),
             supportingText = stringResource(R.string.settings_performance_logs_desc),
@@ -695,7 +713,7 @@ internal fun SettingsDeveloperRuntimeSection(
         )
     }
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_sustained_performance_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.sustainedPerformanceModeEnabled,
             enabled = !uiState.busy,
@@ -705,7 +723,7 @@ internal fun SettingsDeveloperRuntimeSection(
         )
     )
 
-    SettingsDependencyContent(uiState, SettingsLoadDomain.GAME_MODE) {
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_system_game_mode_title) SettingsDependencyContent(uiState, SettingsLoadDomain.GAME_MODE) {
         SettingsSystemGameModeSetting(uiState)
         Text(
             text = uiState.systemGameModeDescription.takeIf { settingsControlEnabled() }.orEmpty(),
@@ -713,7 +731,7 @@ internal fun SettingsDeveloperRuntimeSection(
         )
     }
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_boot_overlay_manual_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.manualDismissBootOverlay,
             enabled = !uiState.busy,
@@ -723,7 +741,7 @@ internal fun SettingsDeveloperRuntimeSection(
         )
     )
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_compendium_upgrade_touch_fix_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.compendiumUpgradeTouchFixEnabled,
             enabled = !uiState.busy,
@@ -772,6 +790,7 @@ internal fun SettingsDeveloperRuntimeSection(
 internal fun SettingsAdvancedRenderSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: AdvancedRenderSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -792,71 +811,77 @@ internal fun SettingsAdvancedRenderSection(
         )
     }
 
-    Text(
-        text = stringResource(R.string.settings_renderer_backend_title),
-        style = MaterialTheme.typography.bodyMedium
-    )
-    SettingsDependencyContent(uiState, SettingsLoadDomain.RENDERER) {
-        SettingsSwitchItem(
-            SettingsSwitchSpec(
-                checked = uiState.rendererSelectionMode == RendererSelectionMode.AUTO,
-                enabled = !uiState.busy,
-                title = stringResource(R.string.settings_renderer_auto_enabled),
-                description = if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
-                    stringResource(
-                        R.string.settings_renderer_auto_current,
-                        uiState.autoSelectedRendererBackend.displayName,
-                        uiState.autoSelectedRendererBackend.briefProsCons(context)
-                    )
-                } else {
-                    stringResource(
-                        R.string.settings_renderer_manual_current,
-                        uiState.manualRendererBackend.displayName,
-                        uiState.manualRendererBackend.briefProsCons(context)
-                    )
-                },
-                onCheckedChange = { checked ->
-                    actions.onRendererSelectionModeChanged(
-                        if (checked) RendererSelectionMode.AUTO else RendererSelectionMode.MANUAL
-                    )
-                }
-            )
-        )
-        uiState.rendererFallbackText?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
-        }
-        if (uiState.rendererSelectionMode == RendererSelectionMode.MANUAL) {
-            SettingsManualRendererSetting(uiState, actions)
-        }
-
-        if (uiState.effectiveRendererBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
-            SettingsActionListItem(
-                title = stringResource(R.string.settings_mobileglues_entry_title),
-                supportingText = stringResource(
-                    R.string.settings_mobileglues_entry_summary,
-                    uiState.mobileGluesAnglePolicy.displayName(context),
-                    uiState.mobileGluesMultidrawMode.displayName(context),
-                    uiState.mobileGluesCustomGlVersion.displayName(context)
-                ),
-                enabled = !uiState.busy,
-                onClick = actions.onOpenMobileGluesSettings
-            )
-        }
-
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_renderer_backend_title) {
         Text(
-            text = stringResource(R.string.settings_render_surface_backend_title),
+            text = stringResource(R.string.settings_renderer_backend_title),
             style = MaterialTheme.typography.bodyMedium
         )
-        SettingsRenderSurfaceBackendSetting(uiState, actions)
+        SettingsDependencyContent(uiState, SettingsLoadDomain.RENDERER) {
+            SettingsSwitchItem(
+                SettingsSwitchSpec(
+                    checked = uiState.rendererSelectionMode == RendererSelectionMode.AUTO,
+                    enabled = !uiState.busy,
+                    title = stringResource(R.string.settings_renderer_auto_enabled),
+                    description = if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
+                        stringResource(
+                            R.string.settings_renderer_auto_current,
+                            uiState.autoSelectedRendererBackend.displayName,
+                            uiState.autoSelectedRendererBackend.briefProsCons(context)
+                        )
+                    } else {
+                        stringResource(
+                            R.string.settings_renderer_manual_current,
+                            uiState.manualRendererBackend.displayName,
+                            uiState.manualRendererBackend.briefProsCons(context)
+                        )
+                    },
+                    onCheckedChange = { checked ->
+                        actions.onRendererSelectionModeChanged(
+                            if (checked) RendererSelectionMode.AUTO else RendererSelectionMode.MANUAL
+                        )
+                    }
+                )
+            )
+            uiState.rendererFallbackText?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            if (uiState.rendererSelectionMode == RendererSelectionMode.MANUAL) {
+                SettingsManualRendererSetting(uiState, actions)
+            }
+
+            if (settingTitleResId == null && uiState.effectiveRendererBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
+                SettingsActionListItem(
+                    title = stringResource(R.string.settings_mobileglues_entry_title),
+                    supportingText = stringResource(
+                        R.string.settings_mobileglues_entry_summary,
+                        uiState.mobileGluesAnglePolicy.displayName(context),
+                        uiState.mobileGluesMultidrawMode.displayName(context),
+                        uiState.mobileGluesCustomGlVersion.displayName(context)
+                    ),
+                    enabled = !uiState.busy,
+                    onClick = actions.onOpenMobileGluesSettings
+                )
+            }
+
+            if (settingTitleResId == null) {
+                Text(
+                    text = stringResource(R.string.settings_render_surface_backend_title),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                SettingsRenderSurfaceBackendSetting(uiState, actions)
+            }
+        }
     }
 
-    SettingsGpuResourceGuardianSetting(uiState, actions)
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_gpu_resource_guardian_title) {
+        SettingsGpuResourceGuardianSetting(uiState, actions)
+    }
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.gpuResourceGuardianPressureDownscaleEnabled,
             enabled = !uiState.busy &&
@@ -872,43 +897,47 @@ internal fun SettingsAdvancedRenderSection(
         )
     )
 
-    Text(
-        text = stringResource(R.string.settings_jvm_heap_title),
-        style = MaterialTheme.typography.bodyMedium
-    )
-    Text(
-        text = stringResource(R.string.settings_jvm_heap_value_mb, heapSliderValue.roundToInt()),
-        style = MaterialTheme.typography.bodySmall
-    )
-    Slider(
-        value = heapSliderValue,
-        onValueChange = { value ->
-            heapSliderValue = value
-            val step = heapSliderToStep(
-                value = value,
-                min = uiState.jvmHeapMinMb,
-                step = uiState.jvmHeapStepMb,
-            )
-            if (step != lastHeapStep) {
-                lastHeapStep = step
-                performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
-            }
-        },
-        onValueChangeFinished = { actions.onJvmHeapMaxSelected(heapSliderValue.roundToInt()) },
-        valueRange = uiState.jvmHeapMinMb.toFloat()..uiState.jvmHeapMaxMb.toFloat(),
-        steps = ((uiState.jvmHeapMaxMb - uiState.jvmHeapMinMb) / uiState.jvmHeapStepMb - 1)
-            .coerceAtLeast(0),
-        enabled = settingsControlEnabled(!uiState.busy),
-        modifier = Modifier.fillMaxWidth()
-    )
-    Text(
-        text = stringResource(R.string.settings_jvm_heap_desc),
-        style = MaterialTheme.typography.bodySmall
-    )
+    if (settingTitleResId == null) {
+        Text(
+            text = stringResource(R.string.settings_jvm_heap_title),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = stringResource(R.string.settings_jvm_heap_value_mb, heapSliderValue.roundToInt()),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Slider(
+            value = heapSliderValue,
+            onValueChange = { value ->
+                heapSliderValue = value
+                val step = heapSliderToStep(
+                    value = value,
+                    min = uiState.jvmHeapMinMb,
+                    step = uiState.jvmHeapStepMb,
+                )
+                if (step != lastHeapStep) {
+                    lastHeapStep = step
+                    performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
+                }
+            },
+            onValueChangeFinished = { actions.onJvmHeapMaxSelected(heapSliderValue.roundToInt()) },
+            valueRange = uiState.jvmHeapMinMb.toFloat()..uiState.jvmHeapMaxMb.toFloat(),
+            steps = ((uiState.jvmHeapMaxMb - uiState.jvmHeapMinMb) / uiState.jvmHeapStepMb - 1)
+                .coerceAtLeast(0),
+            enabled = settingsControlEnabled(!uiState.busy),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = stringResource(R.string.settings_jvm_heap_desc),
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
 
-    SettingsJvmTieredStopAtLevelSetting(uiState, actions)
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_jvm_tiered_stop_at_level_title) {
+        SettingsJvmTieredStopAtLevelSetting(uiState, actions)
+    }
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_jvm_compressed_pointers_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.compressedPointersEnabled,
             enabled = !uiState.busy,
@@ -918,7 +947,7 @@ internal fun SettingsAdvancedRenderSection(
         )
     )
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_jvm_string_dedup_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.stringDeduplicationEnabled,
             enabled = !uiState.busy,
@@ -1096,6 +1125,7 @@ internal fun SettingsCompatibilitySection(
 internal fun SettingsStatusSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: StatusSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
     val statusPreview = remember(uiState.statusText) {
         uiState.statusText
@@ -1104,7 +1134,7 @@ internal fun SettingsStatusSection(
             .joinToString("\n")
     }
 
-    SettingsDependencyContent(uiState, SettingsLoadDomain.DIAGNOSTICS,
+    if (settingTitleResId == null) SettingsDependencyContent(uiState, SettingsLoadDomain.DIAGNOSTICS,
         SettingsLoadDomain.RENDERER, SettingsLoadDomain.GAME_MODE) {
         Text(
             text = statusPreview,
@@ -1114,7 +1144,7 @@ internal fun SettingsStatusSection(
         )
     }
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_lwjgl_debug_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.lwjglDebugEnabled,
             enabled = !uiState.busy,
@@ -1123,7 +1153,7 @@ internal fun SettingsStatusSection(
             onCheckedChange = actions.onLwjglDebugChanged
         )
     )
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_preload_all_jre_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.preloadAllJreLibrariesEnabled,
             enabled = !uiState.busy,
@@ -1132,7 +1162,7 @@ internal fun SettingsStatusSection(
             onCheckedChange = actions.onPreloadAllJreLibrariesChanged
         )
     )
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_logcat_capture_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.logcatCaptureEnabled,
             enabled = !uiState.busy,
@@ -1141,7 +1171,7 @@ internal fun SettingsStatusSection(
             onCheckedChange = actions.onLogcatCaptureChanged
         )
     )
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_launcher_logcat_capture_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.launcherLogcatCaptureEnabled,
             enabled = !uiState.busy,
@@ -1150,7 +1180,7 @@ internal fun SettingsStatusSection(
             onCheckedChange = actions.onLauncherLogcatCaptureChanged
         )
     )
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_jvm_logcat_mirror_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.jvmLogcatMirrorEnabled,
             enabled = !uiState.busy,
@@ -1159,7 +1189,7 @@ internal fun SettingsStatusSection(
             onCheckedChange = actions.onJvmLogcatMirrorChanged
         )
     )
-    SettingsSwitchItem(
+    if (settingTitleResId == null) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.gdxPadCursorDebugEnabled,
             enabled = !uiState.busy,
@@ -1168,7 +1198,7 @@ internal fun SettingsStatusSection(
             onCheckedChange = actions.onGdxPadCursorDebugChanged
         )
     )
-    SettingsSwitchItem(
+    if (settingTitleResId == null) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.glBridgeSwapHeartbeatDebugEnabled,
             enabled = !uiState.busy,
@@ -1178,17 +1208,17 @@ internal fun SettingsStatusSection(
         )
     )
 
-    HorizontalDivider()
+    if (settingTitleResId == null) HorizontalDivider()
 
-    SettingsStatusDialogActions(uiState)
+    SettingsStatusDialogActions(uiState, settingTitleResId)
 
-    SettingsActionListItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_agent_workspace_export_title) SettingsActionListItem(
         title = stringResource(R.string.settings_agent_workspace_export_title),
         supportingText = stringResource(R.string.settings_agent_workspace_export_desc),
         enabled = !uiState.busy,
         onClick = actions.onExportAgentWorkspace,
     )
-    SettingsActionListItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_developer_clear_junk_files_title) SettingsActionListItem(
         title = stringResource(R.string.settings_developer_clear_junk_files_title),
         supportingText = stringResource(R.string.settings_developer_clear_junk_files_desc),
         enabled = !uiState.busy,

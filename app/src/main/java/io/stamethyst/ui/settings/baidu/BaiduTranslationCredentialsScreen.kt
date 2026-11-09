@@ -17,29 +17,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import io.stamethyst.ui.LauncherAlertDialog as AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import io.stamethyst.ui.LauncherTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -63,10 +56,8 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.workshop.BaiduAiTextTranslationClient
 import io.stamethyst.backend.workshop.BaiduTranslationCredentials
-import io.stamethyst.ui.Icons
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.LauncherTransientNoticeDuration
-import io.stamethyst.ui.icon.ArrowBack
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -78,6 +69,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
     viewModel: SettingsScreenViewModel,
     modifier: Modifier = Modifier,
     notice: String? = null,
+    embedded: Boolean = false,
     onBack: () -> Unit,
 ) {
     val activity = requireNotNull(LocalActivity.current)
@@ -107,6 +99,9 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
             credentialsLoadState = SettingsLoadState.ERROR
         }
     }
+    val controlsEnabled = settingsControlEnabled(
+        credentialsLoadState == SettingsLoadState.READY && !isTesting && !viewModel.uiState.busy,
+    )
 
     pendingNotice?.let { message ->
         AlertDialog(
@@ -121,30 +116,14 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
         )
     }
 
-    Scaffold(
+    SettingsDetailLayout(
+        embedded = embedded,
         modifier = modifier,
-        topBar = {
-            LauncherTopAppBar(
-                title = { Text(stringResource(R.string.settings_baidu_translation_credentials_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.ArrowBack,
-                            contentDescription = stringResource(R.string.common_content_desc_back),
-                        )
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+        title = stringResource(R.string.settings_baidu_translation_credentials_title),
+        onGoBack = onBack,
+        spacing = 16.dp,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             SettingsPanelCard {
                 Text(
                     text = stringResource(R.string.settings_baidu_translation_credentials_title),
@@ -175,7 +154,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
 
                 OutlinedTextField(
                     value = appIdInput,
-                    enabled = credentialsLoadState == SettingsLoadState.READY && !isTesting,
+                    enabled = controlsEnabled,
                     onValueChange = { appIdInput = it.trim() },
                     label = { Text(stringResource(R.string.settings_baidu_translation_app_id_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
@@ -185,7 +164,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
 
                 OutlinedTextField(
                     value = apiKeyInput,
-                    enabled = credentialsLoadState == SettingsLoadState.READY && !isTesting,
+                    enabled = controlsEnabled,
                     onValueChange = { apiKeyInput = it.trim() },
                     label = { Text(stringResource(R.string.settings_baidu_translation_api_key_label)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -195,7 +174,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
                 )
 
                 Button(
-                    enabled = credentialsLoadState == SettingsLoadState.READY && !isTesting,
+                    enabled = controlsEnabled,
                     onClick = {
                         viewModel.onSaveBaiduTranslationCredentials(activity, appIdInput, apiKeyInput)
                     },
@@ -255,7 +234,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
                             }
                         }
                     },
-                    enabled = credentialsLoadState == SettingsLoadState.READY && !isTesting,
+                    enabled = controlsEnabled,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     if (isTesting) {
@@ -272,7 +251,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
                 }
             }
 
-            SettingsPanelCard {
+            if (!embedded) SettingsPanelCard {
                 Text(stringResource(R.string.settings_baidu_translation_sample_title), style = MaterialTheme.typography.titleMedium)
                 Text(
                     text = BAIDU_TRANSLATION_SAMPLE_TEXT,
@@ -281,7 +260,7 @@ internal fun LauncherBaiduTranslationCredentialsScreen(
                 )
             }
 
-            SettingsPanelCard {
+            if (!embedded) SettingsPanelCard {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(stringResource(R.string.settings_baidu_translation_tutorial_title), style = MaterialTheme.typography.titleLarge)
                     OutlinedButton(

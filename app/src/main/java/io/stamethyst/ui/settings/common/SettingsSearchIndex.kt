@@ -200,6 +200,12 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsPerformance,
     ),
     entry(
+        titleResId = R.string.settings_mts_cache_optimizations_title,
+        subtitleResId = R.string.settings_mts_cache_optimizations_desc,
+        categoryTitleResId = R.string.settings_category_performance_title,
+        route = Route.SettingsPerformance,
+    ),
+    entry(
         titleResId = R.string.settings_render_scale_title,
         subtitleResId = R.string.settings_render_scale_desc,
         categoryTitleResId = R.string.settings_category_performance_title,
@@ -372,12 +378,6 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
     ),
 
     // Developer
-    entry(
-        titleResId = R.string.settings_developer_title,
-        subtitleResId = R.string.settings_developer_summary,
-        categoryTitleResId = R.string.settings_developer_title,
-        route = Route.DeveloperSettings,
-    ),
     entry(
         titleResId = R.string.settings_together_in_spire_title,
         categoryTitleResId = R.string.settings_developer_title,

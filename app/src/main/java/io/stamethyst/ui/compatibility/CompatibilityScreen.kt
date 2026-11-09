@@ -4,23 +4,16 @@ import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Text
-import io.stamethyst.ui.LauncherTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -33,17 +26,19 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.R
 import io.stamethyst.backend.mods.RuntimeTextureAtlasDownscaleQuality
 import io.stamethyst.navigation.currentNavigator
-import io.stamethyst.ui.Icons
-import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.settings.common.SettingsDropdownField
+import io.stamethyst.ui.settings.common.SettingsDetailLayout
+import io.stamethyst.ui.settings.common.LocalSettingsActionGate
+import io.stamethyst.ui.settings.common.settingsControlEnabled
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherCompatibilityScreen(
     modifier: Modifier = Modifier,
+    embedded: Boolean = false,
 ) {
     val context = LocalContext.current
-    val navigator = currentNavigator
+    val navigator = if (embedded) null else currentNavigator
     val viewModel: CompatibilityScreenViewModel = viewModel()
     val uiState = viewModel.uiState
 
@@ -53,8 +48,9 @@ fun LauncherCompatibilityScreen(
 
     LauncherCompatibilityScreenContent(
         modifier = modifier,
+        embedded = embedded,
         uiState = uiState,
-        onGoBack = navigator::goBack,
+        onGoBack = { navigator?.goBack() },
         onGlobalAtlasFilterCompatToggled = { enabled -> viewModel.onGlobalAtlasFilterCompatToggled(context, enabled) },
         onModManifestRootCompatToggled = { enabled -> viewModel.onModManifestRootCompatToggled(context, enabled) },
         onFrierenModCompatToggled = { enabled -> viewModel.onFrierenModCompatToggled(context, enabled) },
@@ -180,6 +176,7 @@ private fun LauncherCompatibilityScreenPreview() {
 @Composable
 private fun LauncherCompatibilityScreenContent(
     modifier: Modifier = Modifier,
+    embedded: Boolean = false,
     uiState: CompatibilityScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
     onGlobalAtlasFilterCompatToggled: (Boolean) -> Unit = {},
@@ -220,30 +217,14 @@ private fun LauncherCompatibilityScreenContent(
 ) {
     val context = LocalContext.current
 
-    Scaffold(
-        topBar = {
-            LauncherTopAppBar(
-                title = { Text(stringResource(R.string.compat_settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onGoBack) {
-                        Icon(
-                            imageVector = Icons.ArrowBack,
-                            contentDescription = stringResource(R.string.common_content_desc_back)
-                        )
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (uiState.busy) {
+    SettingsDetailLayout(
+        embedded = embedded,
+        modifier = modifier,
+        title = stringResource(R.string.compat_settings_title),
+        onGoBack = onGoBack,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (uiState.busy && !embedded) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 uiState.busyMessage?.let {
                     Text(text = it, style = MaterialTheme.typography.bodyMedium)
@@ -618,6 +599,7 @@ private fun CompatibilitySwitchRow(
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val actionGate = LocalSettingsActionGate.current
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -636,8 +618,11 @@ private fun CompatibilitySwitchRow(
                 )
                 Switch(
                     checked = checked,
-                    enabled = enabled,
-                    onCheckedChange = onCheckedChange
+                    enabled = settingsControlEnabled(enabled),
+                    onCheckedChange = { changed ->
+                        val action = { onCheckedChange(changed) }
+                        if (actionGate != null) actionGate(action) else action()
+                    },
                 )
             }
             Text(

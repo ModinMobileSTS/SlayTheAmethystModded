@@ -50,20 +50,20 @@ internal data class UpdateSettingsActions(
 internal fun SettingsUpdateSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: UpdateSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
+    if (settingTitleResId == R.string.update_auto_check_enabled) {
+        SettingsAutoCheckUpdatesSetting(uiState, actions)
+        return
+    }
     val controlsEnabled =
         !uiState.busy && !uiState.updateCheckInProgress && !uiState.releaseHistoryLoading
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SettingsSwitchItem(
-            SettingsSwitchSpec(
-                checked = uiState.autoCheckUpdatesEnabled,
-                enabled = !uiState.busy,
-                title = stringResource(R.string.update_auto_check_enabled),
-                onCheckedChange = actions.onAutoCheckUpdatesChanged
-            )
-        )
-        SettingsUpdateMirrorSetting(uiState, actions)
+        if (settingTitleResId == null) {
+            SettingsAutoCheckUpdatesSetting(uiState, actions)
+            SettingsUpdateMirrorSetting(uiState, actions)
+        }
         if (uiState.updateCheckInProgress || uiState.releaseHistoryLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
@@ -182,6 +182,21 @@ internal fun SettingsUpdateSection(
 
 }
 
+
+@Composable
+private fun SettingsAutoCheckUpdatesSetting(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: UpdateSettingsActions,
+) {
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.autoCheckUpdatesEnabled,
+            enabled = !uiState.busy,
+            title = stringResource(R.string.update_auto_check_enabled),
+            onCheckedChange = actions.onAutoCheckUpdatesChanged,
+        )
+    )
+}
 
 @Composable
 internal fun UpdateHistoryEntryCard(

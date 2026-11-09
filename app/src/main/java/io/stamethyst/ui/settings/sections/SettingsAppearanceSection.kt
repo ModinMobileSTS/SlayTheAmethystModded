@@ -155,7 +155,7 @@ internal fun SettingsAppearanceSection(
             ThemeColorPreviewRow(selectedThemeColor = uiState.themeColor)
         }
 
-        if (settingTitleResId == null) {
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_chrome_background_opacity_title) {
             Text(
                 text = stringResource(R.string.settings_chrome_background_opacity_title),
                 style = MaterialTheme.typography.bodyMedium
@@ -196,22 +196,22 @@ internal fun SettingsAppearanceSection(
         }
 
 
-        if ((settingTitleResId == null || settingTitleResId == R.string.settings_boot_overlay_custom_image_title) &&
-            uiState.bootOverlayStyle == BootOverlayStyle.MODERN) {
+        if ((settingTitleResId == null && uiState.bootOverlayStyle == BootOverlayStyle.MODERN) ||
+            settingTitleResId == R.string.settings_boot_overlay_custom_image_title) {
             SettingsActionListItem(
                 title = stringResource(R.string.settings_boot_overlay_custom_image_title),
                 supportingText = bootOverlayCustomImageSummary(uiState.bootOverlayImageConfig),
-                enabled = !uiState.busy,
+                enabled = !uiState.busy && uiState.bootOverlayStyle == BootOverlayStyle.MODERN,
                 onClick = { showBootOverlayCustomImageDialog = true }
             )
         }
 
-        if ((settingTitleResId == null || settingTitleResId == R.string.settings_loading_animation_title) &&
-            uiState.bootOverlayStyle.supportsLoadingAnimation) {
+        if ((settingTitleResId == null && uiState.bootOverlayStyle.supportsLoadingAnimation) ||
+            settingTitleResId == R.string.settings_loading_animation_title) {
             SettingsActionListItem(
                 title = stringResource(R.string.settings_loading_animation_title),
                 supportingText = loadingAnimationDisplayName(uiState.bootOverlayAnimation),
-                enabled = !uiState.busy,
+                enabled = !uiState.busy && uiState.bootOverlayStyle.supportsLoadingAnimation,
                 onClick = { showBootOverlayAnimationDialog = true }
             )
         }

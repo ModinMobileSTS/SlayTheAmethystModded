@@ -73,21 +73,29 @@ internal fun SettingsMtsCacheOptimizationsScreenContent(
                 title = stringResource(R.string.settings_mts_cache_optimizations_title),
                 iconResId = R.drawable.ic_speed,
             ) {
-                if (!uiState.mtsPatchCacheEnabled) {
-                    Text(stringResource(R.string.settings_mts_cache_optimizations_inactive))
-                }
-                MtsCacheStartupOptimization.entries.forEach { optimization ->
-                    SettingsSwitchItem(
-                        SettingsSwitchSpec(
-                            checked = uiState.mtsCacheStartupOptimizations[optimization] ?: false,
-                            enabled = !uiState.busy,
-                            title = stringResource(optimization.titleResId),
-                            description = stringResource(optimization.descriptionResId),
-                            onCheckedChange = { onOptimizationChanged(optimization, it) },
-                        )
-                    )
-                }
+                SettingsMtsCacheOptimizationControls(uiState, onOptimizationChanged)
             }
         }
+    }
+}
+
+@Composable
+internal fun SettingsMtsCacheOptimizationControls(
+    uiState: SettingsScreenViewModel.UiState,
+    onOptimizationChanged: (MtsCacheStartupOptimization, Boolean) -> Unit,
+) {
+    if (!uiState.mtsPatchCacheEnabled) {
+        Text(stringResource(R.string.settings_mts_cache_optimizations_inactive))
+    }
+    MtsCacheStartupOptimization.entries.forEach { optimization ->
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.mtsCacheStartupOptimizations[optimization] ?: false,
+                enabled = !uiState.busy,
+                title = stringResource(optimization.titleResId),
+                description = stringResource(optimization.descriptionResId),
+                onCheckedChange = { onOptimizationChanged(optimization, it) },
+            )
+        )
     }
 }

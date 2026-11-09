@@ -12,30 +12,23 @@ import io.stamethyst.ui.settings.steamcloud.*
 
 import android.content.Context
 import androidx.activity.compose.LocalActivity
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import io.stamethyst.ui.LauncherAlertDialog as AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import io.stamethyst.ui.LauncherTopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,8 +46,6 @@ import io.stamethyst.backend.render.MobileGluesNoErrorPolicy
 import io.stamethyst.backend.render.MobileGluesPreset
 import io.stamethyst.backend.render.MobileGluesSettings
 import io.stamethyst.navigation.currentNavigator
-import io.stamethyst.ui.Icons
-import io.stamethyst.ui.icon.ArrowBack
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,11 +53,24 @@ import kotlin.math.roundToInt
 fun LauncherMobileGluesSettingsScreen(
     viewModel: SettingsScreenViewModel,
     modifier: Modifier = Modifier,
+    embedded: Boolean = false,
 ) {
     val activity = requireNotNull(LocalActivity.current)
-    val navigator = currentNavigator
+    val navigator = if (embedded) null else currentNavigator
     val uiState = viewModel.uiState
-    var showWarningDialog by rememberSaveable { mutableStateOf(true) }
+    var showWarningDialog by rememberSaveable { mutableStateOf(!embedded) }
+    var warningAccepted by rememberSaveable { mutableStateOf(false) }
+    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val parentActionGate = LocalSettingsActionGate.current
+    val actionGate: (() -> Unit) -> Unit = { action ->
+        val afterDeveloperWarning = {
+            if (warningAccepted) action() else {
+                pendingAction = action
+                showWarningDialog = true
+            }
+        }
+        if (parentActionGate != null) parentActionGate(afterDeveloperWarning) else afterDeveloperWarning()
+    }
     var showCustomSettings by rememberSaveable { mutableStateOf(false) }
     val currentSettings = currentMobileGluesSettings(uiState)
     val exactPreset = MobileGluesPreset.entries.firstOrNull { it.settings == currentSettings }
@@ -93,30 +97,14 @@ fun LauncherMobileGluesSettingsScreen(
         presetSliderValue = nearestPreset.ordinal.toFloat()
     }
 
-    Scaffold(
-        topBar = {
-            LauncherTopAppBar(
-                title = { Text(stringResource(R.string.settings_mobileglues_entry_title)) },
-                navigationIcon = {
-                    IconButton(onClick = navigator::goBack) {
-                        Icon(
-                            imageVector = Icons.ArrowBack,
-                            contentDescription = stringResource(R.string.common_content_desc_back)
-                        )
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+    CompositionLocalProvider(LocalSettingsActionGate provides actionGate) {
+        SettingsDetailLayout(
+            embedded = embedded,
+            modifier = modifier,
+            title = stringResource(R.string.settings_mobileglues_entry_title),
+            onGoBack = { navigator?.goBack() },
         ) {
-            SettingsBusyIndicator(uiState = uiState)
+            if (!embedded) SettingsBusyIndicator(uiState = uiState)
 
             SettingsDependencyContent(uiState, SettingsLoadDomain.CONFIGURATION) {
                 SettingsSectionCard(title = stringResource(R.string.mobileglues_section_info_title)) {
@@ -163,10 +151,8 @@ fun LauncherMobileGluesSettingsScreen(
                         value = presetSliderValue,
                         onValueChange = { presetSliderValue = it },
                         onValueChangeFinished = {
-                            viewModel.onApplyMobileGluesPreset(
-                                activity,
-                                MobileGluesPreset.fromSliderIndex(presetSliderValue.roundToInt())
-                            )
+                            val preset = MobileGluesPreset.fromSliderIndex(presetSliderValue.roundToInt())
+                            actionGate { viewModel.onApplyMobileGluesPreset(activity, preset) }
                         },
                         valueRange = 0f..MobileGluesPreset.entries.lastIndex.toFloat(),
                         steps = (MobileGluesPreset.entries.size - 2).coerceAtLeast(0),
@@ -211,7 +197,7 @@ fun LauncherMobileGluesSettingsScreen(
                         )
                     )
                     TextButton(
-                        onClick = { viewModel.onResetMobileGluesSettings(activity) },
+                        onClick = { actionGate { viewModel.onResetMobileGluesSettings(activity) } },
                         enabled = settingsControlEnabled(!uiState.busy)
                     ) {
                         Text(stringResource(R.string.mobileglues_reset_defaults))
@@ -377,7 +363,13 @@ fun LauncherMobileGluesSettingsScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showWarningDialog = false }) {
+                TextButton(onClick = {
+                    warningAccepted = true
+                    showWarningDialog = false
+                    val action = pendingAction
+                    pendingAction = null
+                    action?.invoke()
+                }) {
                     Text(stringResource(R.string.common_action_acknowledge))
                 }
             }

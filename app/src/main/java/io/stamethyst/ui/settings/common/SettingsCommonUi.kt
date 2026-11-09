@@ -296,6 +296,7 @@ internal fun SwitchSettingRow(
     chipText: String? = null,
 ) {
     val view = LocalView.current
+    val actionGate = LocalSettingsActionGate.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -304,7 +305,8 @@ internal fun SwitchSettingRow(
             checked = checked,
             enabled = settingsControlEnabled(enabled),
             onCheckedChange = { changed ->
-                onCheckedChange(changed)
+                val action = { onCheckedChange(changed) }
+                if (actionGate != null) actionGate(action) else action()
                 performTapHapticFeedback(view)
             }
         )
@@ -456,7 +458,7 @@ internal fun SettingsRadioOptionRow(
             .fillMaxWidth()
             .hapticToggleable(
                 value = selected,
-                enabled = enabled,
+                enabled = settingsControlEnabled(enabled),
                 onValueChange = { onSelect() }
             )
             .padding(vertical = 4.dp),

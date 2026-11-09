@@ -47,7 +47,7 @@ fun LauncherSettingsScreen(
         onGoBack = navigator::goBack,
         showBackButton = showBackButton,
         onOpenSettingsRoute = navigator::push,
-        searchActions = settingsSearchActions(viewModel, activity),
+        searchActions = settingsSearchActions(viewModel, activity, navigator::push),
         feedbackSubmissionNotice = feedbackSubmissionNotice,
         onDismissFeedbackSubmissionNotice = onDismissFeedbackSubmissionNotice,
     )

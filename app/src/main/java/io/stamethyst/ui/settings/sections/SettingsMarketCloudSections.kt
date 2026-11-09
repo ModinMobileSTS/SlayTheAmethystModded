@@ -212,49 +212,56 @@ private fun easyTierSettingsModeLabel(mode: EasyTierNetworkMode): String {
 internal fun SettingsSteamCloudSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: SteamCloudSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
     val currentSaveModeText = steamCloudSaveModeDisplayName(uiState.steamCloudSaveMode)
 
-    Text(
-        text = stringResource(R.string.settings_steam_cloud_intro),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
+    if (settingTitleResId == null) {
+        Text(
+            text = stringResource(R.string.settings_steam_cloud_intro),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_SAVES) {
-        SettingsActionListItem(
-            title = stringResource(R.string.settings_steam_cloud_save_settings_title),
-            supportingText = stringResource(
-                R.string.settings_steam_cloud_save_settings_summary,
-                currentSaveModeText,
-            ),
-            enabled = !uiState.busy,
-            onClick = actions.onOpenSteamCloudSaveSettings,
+        Spacer(modifier = Modifier.size(8.dp))
+        SettingsDependencyContent(uiState, SettingsLoadDomain.STEAM_SAVES) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_steam_cloud_save_settings_title),
+                supportingText = stringResource(
+                    R.string.settings_steam_cloud_save_settings_summary,
+                    currentSaveModeText,
+                ),
+                enabled = !uiState.busy,
+                onClick = actions.onOpenSteamCloudSaveSettings,
+            )
+        }
+    }
+
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_steam_cloud_sync_disabled_title) {
+        Spacer(modifier = Modifier.size(8.dp))
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.steamCloudSyncDisabled,
+                enabled = !uiState.busy,
+                title = stringResource(R.string.settings_steam_cloud_sync_disabled_title),
+                description = stringResource(R.string.settings_steam_cloud_sync_disabled_desc),
+                onCheckedChange = actions.onSteamCloudSyncDisabledChanged,
+            )
         )
     }
 
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.steamCloudSyncDisabled,
-            enabled = !uiState.busy,
-            title = stringResource(R.string.settings_steam_cloud_sync_disabled_title),
-            description = stringResource(R.string.settings_steam_cloud_sync_disabled_desc),
-            onCheckedChange = actions.onSteamCloudSyncDisabledChanged,
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_steam_cloud_auto_launch_after_sync_title) {
+        Spacer(modifier = Modifier.size(8.dp))
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.steamCloudAutoLaunchAfterSyncEnabled,
+                enabled = !uiState.busy && !uiState.steamCloudSyncDisabled,
+                title = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
+                description = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_desc),
+                onCheckedChange = actions.onSteamCloudAutoLaunchAfterSyncChanged,
+            )
         )
-    )
-
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.steamCloudAutoLaunchAfterSyncEnabled,
-            enabled = !uiState.busy && !uiState.steamCloudSyncDisabled,
-            title = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
-            description = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_desc),
-            onCheckedChange = actions.onSteamCloudAutoLaunchAfterSyncChanged,
-        )
-    )
+    }
 
 }
 
@@ -264,8 +271,9 @@ internal fun SettingsSteamCloudSection(
 internal fun SteamNetworkSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: SteamCloudSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_steam_cloud_watt_acceleration_enabled_title) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.steamCloudWattAccelerationEnabled,
             enabled = !uiState.busy,
@@ -275,13 +283,15 @@ internal fun SteamNetworkSection(
         )
     )
 
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_steam_cloud_clear_network_cache_title),
-        supportingText = stringResource(R.string.settings_steam_cloud_clear_network_cache_desc),
-        enabled = !uiState.busy,
-        onClick = actions.onClearSteamCloudNetworkCache,
-    )
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_steam_cloud_clear_network_cache_title) {
+        Spacer(modifier = Modifier.size(8.dp))
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_steam_cloud_clear_network_cache_title),
+            supportingText = stringResource(R.string.settings_steam_cloud_clear_network_cache_desc),
+            enabled = !uiState.busy,
+            onClick = actions.onClearSteamCloudNetworkCache,
+        )
+    }
 }
 
 
@@ -641,90 +651,116 @@ internal fun SteamAchievementSection(
 internal fun SettingsMarketSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: MarketSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
-    Text(
-        text = stringResource(R.string.settings_market_intro),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(modifier = Modifier.size(8.dp))
-    NumberStepperSettingRow(
-        title = stringResource(R.string.settings_market_concurrent_downloads_title),
-        value = uiState.workshopMaxConcurrentDownloads,
-        minValue = LauncherPreferences.MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS,
-        maxValue = LauncherPreferences.MAX_WORKSHOP_MAX_CONCURRENT_DOWNLOADS,
-        description = stringResource(R.string.settings_market_concurrent_downloads_desc),
-        enabled = !uiState.busy,
-        onValueChange = actions.onWorkshopMaxConcurrentDownloadsChanged,
-    )
-    Spacer(modifier = Modifier.size(8.dp))
-    NumberStepperSettingRow(
-        title = stringResource(R.string.settings_market_download_threads_title),
-        value = uiState.workshopDownloadThreads,
-        minValue = LauncherPreferences.MIN_WORKSHOP_DOWNLOAD_THREADS,
-        maxValue = LauncherPreferences.MAX_WORKSHOP_DOWNLOAD_THREADS,
-        description = stringResource(R.string.settings_market_download_threads_desc),
-        enabled = !uiState.busy,
-        onValueChange = actions.onWorkshopDownloadThreadsChanged,
-    )
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsWorkshopLanguageSetting(uiState, actions)
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsDropdownField(
-        label = stringResource(R.string.settings_market_workshop_default_sort_title),
-        valueText = workshopBrowseSortDisplayName(uiState.workshopDefaultSort),
-        enabled = !uiState.busy,
-        supportingText = stringResource(R.string.settings_market_workshop_default_sort_desc),
-        options = WorkshopBrowseSort.entries,
-        optionLabel = { workshopBrowseSortDisplayName(it) },
-        onOptionSelected = actions.onWorkshopDefaultSortChanged,
-    )
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.workshopAutoImportEnabled,
+    if (settingTitleResId == null) {
+        Text(
+            text = stringResource(R.string.settings_market_intro),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.size(8.dp))
+    }
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_market_concurrent_downloads_title) {
+        NumberStepperSettingRow(
+            title = stringResource(R.string.settings_market_concurrent_downloads_title),
+            value = uiState.workshopMaxConcurrentDownloads,
+            minValue = LauncherPreferences.MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS,
+            maxValue = LauncherPreferences.MAX_WORKSHOP_MAX_CONCURRENT_DOWNLOADS,
+            description = stringResource(R.string.settings_market_concurrent_downloads_desc),
             enabled = !uiState.busy,
-            title = stringResource(R.string.settings_market_workshop_auto_import_enabled_title),
-            description = stringResource(R.string.settings_market_workshop_auto_import_desc),
-            onCheckedChange = actions.onWorkshopAutoImportChanged,
+            onValueChange = actions.onWorkshopMaxConcurrentDownloadsChanged,
+        )
+        Spacer(modifier = Modifier.size(8.dp))
+    }
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_market_download_threads_title) {
+        NumberStepperSettingRow(
+            title = stringResource(R.string.settings_market_download_threads_title),
+            value = uiState.workshopDownloadThreads,
+            minValue = LauncherPreferences.MIN_WORKSHOP_DOWNLOAD_THREADS,
+            maxValue = LauncherPreferences.MAX_WORKSHOP_DOWNLOAD_THREADS,
+            description = stringResource(R.string.settings_market_download_threads_desc),
+            enabled = !uiState.busy,
+            onValueChange = actions.onWorkshopDownloadThreadsChanged,
+        )
+        Spacer(modifier = Modifier.size(8.dp))
+    }
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_market_workshop_language_title) {
+        SettingsWorkshopLanguageSetting(uiState, actions)
+        Spacer(modifier = Modifier.size(8.dp))
+    }
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_market_workshop_default_sort_title) {
+        SettingsDropdownField(
+            label = stringResource(R.string.settings_market_workshop_default_sort_title),
+            valueText = workshopBrowseSortDisplayName(uiState.workshopDefaultSort),
+            enabled = !uiState.busy,
+            supportingText = stringResource(R.string.settings_market_workshop_default_sort_desc),
+            options = WorkshopBrowseSort.entries,
+            optionLabel = { workshopBrowseSortDisplayName(it) },
+            onOptionSelected = actions.onWorkshopDefaultSortChanged,
+        )
+        Spacer(modifier = Modifier.size(8.dp))
+    }
+    if (settingTitleResId == R.string.settings_market_workshop_acceleration_enabled_title) SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.workshopWattAccelerationEnabled,
+            enabled = !uiState.busy,
+            title = stringResource(R.string.settings_market_workshop_acceleration_enabled_title),
+            description = stringResource(R.string.settings_market_workshop_acceleration_desc),
+            onCheckedChange = actions.onWorkshopWattAccelerationChanged,
         )
     )
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_market_workshop_auto_import_defaults_title),
-        supportingText = if (uiState.workshopAutoImportAtlasDownscaleEnabled) {
-            stringResource(
-                R.string.settings_market_workshop_auto_import_defaults_summary_enabled,
-                uiState.workshopAutoImportAtlasDownscaleMaxEdgePx,
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_market_workshop_auto_import_enabled_title) {
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.workshopAutoImportEnabled,
+                enabled = !uiState.busy,
+                title = stringResource(R.string.settings_market_workshop_auto_import_enabled_title),
+                description = stringResource(R.string.settings_market_workshop_auto_import_desc),
+                onCheckedChange = actions.onWorkshopAutoImportChanged,
             )
-        } else {
-            stringResource(R.string.settings_market_workshop_auto_import_defaults_summary_disabled)
-        },
-        enabled = !uiState.busy,
-        onClick = actions.onOpenWorkshopAutoImportDefaults,
-    )
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsDependencyContent(uiState, SettingsLoadDomain.TRANSLATION) {
+        )
+        Spacer(modifier = Modifier.size(8.dp))
+    }
+    if (settingTitleResId == null) {
         SettingsActionListItem(
-            title = stringResource(R.string.settings_baidu_translation_credentials_title),
-            supportingText = stringResource(
-                if (uiState.baiduTranslationCredentialsConfigured) {
-                    R.string.settings_baidu_translation_credentials_configured
-                } else {
-                    R.string.settings_baidu_translation_credentials_not_configured
-                }
-            ),
+            title = stringResource(R.string.settings_market_workshop_auto_import_defaults_title),
+            supportingText = if (uiState.workshopAutoImportAtlasDownscaleEnabled) {
+                stringResource(
+                    R.string.settings_market_workshop_auto_import_defaults_summary_enabled,
+                    uiState.workshopAutoImportAtlasDownscaleMaxEdgePx,
+                )
+            } else {
+                stringResource(R.string.settings_market_workshop_auto_import_defaults_summary_disabled)
+            },
             enabled = !uiState.busy,
-            onClick = actions.onOpenBaiduTranslationCredentials,
+            onClick = actions.onOpenWorkshopAutoImportDefaults,
+        )
+        Spacer(modifier = Modifier.size(8.dp))
+        SettingsDependencyContent(uiState, SettingsLoadDomain.TRANSLATION) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_baidu_translation_credentials_title),
+                supportingText = stringResource(
+                    if (uiState.baiduTranslationCredentialsConfigured) {
+                        R.string.settings_baidu_translation_credentials_configured
+                    } else {
+                        R.string.settings_baidu_translation_credentials_not_configured
+                    }
+                ),
+                enabled = !uiState.busy,
+                onClick = actions.onOpenBaiduTranslationCredentials,
+            )
+        }
+        Spacer(modifier = Modifier.size(8.dp))
+    }
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_market_clear_preview_cache_title) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_market_clear_preview_cache_title),
+            supportingText = stringResource(R.string.settings_market_clear_preview_cache_desc),
+            enabled = !uiState.busy,
+            onClick = actions.onClearWorkshopPreviewCache,
         )
     }
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_market_clear_preview_cache_title),
-        supportingText = stringResource(R.string.settings_market_clear_preview_cache_desc),
-        enabled = !uiState.busy,
-        onClick = actions.onClearWorkshopPreviewCache,
-    )
 
 }
 

@@ -64,7 +64,7 @@ import io.stamethyst.backend.llm.NewApiModelService
 import io.stamethyst.backend.llm.DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
 import io.stamethyst.backend.llm.MAX_LLM_REQUEST_TIMEOUT_SECONDS
 import io.stamethyst.navigation.currentNavigator
-import io.stamethyst.ui.settings.common.SettingsRouteScaffold
+import io.stamethyst.ui.settings.common.SettingsDetailRouteLayout
 import io.stamethyst.ui.settings.common.settingsControlEnabled
 import io.stamethyst.ui.settings.common.SettingsLlmRouteSpec
 import io.stamethyst.ui.settings.common.SettingsSectionCard
@@ -205,6 +205,24 @@ fun LauncherLlmSettingsScreen(
     modifier: Modifier = Modifier,
     uiState: SettingsScreenViewModel.UiState,
 ) {
+    val navigator = currentNavigator
+    LlmSettingsContent(
+        modifier = modifier,
+        uiState = uiState,
+        onGoBack = navigator::goBack,
+        onOpenTutorial = { navigator.push(Route.SettingsLlmTutorial) },
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun LlmSettingsContent(
+    modifier: Modifier = Modifier,
+    uiState: SettingsScreenViewModel.UiState,
+    embedded: Boolean = false,
+    onGoBack: () -> Unit = {},
+    onOpenTutorial: () -> Unit,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var batteryExempt by remember(context) { mutableStateOf(BatteryOptimization.isExempt(context)) }
@@ -217,7 +235,6 @@ fun LauncherLlmSettingsScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    val navigator = currentNavigator
     val viewModel: LlmSettingsViewModel = viewModel(factory = LlmSettingsViewModel.factory(context))
     val current = viewModel.settings
     var apiKey by remember { mutableStateOf("") }
@@ -263,21 +280,22 @@ fun LauncherLlmSettingsScreen(
         }
     }
 
-    SettingsRouteScaffold(
+    SettingsDetailRouteLayout(
+        embedded = embedded,
         modifier = modifier.imePadding(),
         uiState = uiState,
         spec = SettingsLlmRouteSpec,
-        onGoBack = navigator::goBack,
+        onGoBack = onGoBack,
     ) {
-        item {
+        Column {
             SettingsActionListItem(
                 title = stringResource(R.string.llm_tutorial_title),
                 supportingText = stringResource(R.string.llm_tutorial_entry_hint),
                 enabled = true,
-                onClick = { navigator.push(Route.SettingsLlmTutorial) },
+                onClick = onOpenTutorial,
             )
         }
-        item {
+        Column {
             // Doze suspends network access and ignores wake locks; the allowlist is the only
             // documented way to keep a background run reachable, so make it discoverable here.
             SettingsActionListItem(
@@ -301,16 +319,16 @@ fun LauncherLlmSettingsScreen(
             )
         }
         if (viewModel.saveError) {
-            item {
+            Column {
                 Text(stringResource(R.string.llm_save_failed), color = MaterialTheme.colorScheme.error)
                 TextButton(onClick = { viewModel.save(draft) }) { Text(stringResource(R.string.llm_retry)) }
             }
         }
-        item {
+        Column {
             SettingsSectionCard(title = stringResource(R.string.llm_connection), iconResId = R.drawable.ic_link) {
                 OutlinedTextField(
                     value = baseUrl,
-                    enabled = settingsControlEnabled(),
+                    enabled = settingsControlEnabled(!uiState.busy),
                     onValueChange = { baseUrl = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.settings_llm_base_url)) },
@@ -322,11 +340,11 @@ fun LauncherLlmSettingsScreen(
                 )
             }
         }
-        item {
+        Column {
             SettingsSectionCard(title = stringResource(R.string.llm_credentials), iconResId = R.drawable.ic_lan_room_key) {
                 OutlinedTextField(
                     value = apiKey,
-                    enabled = settingsControlEnabled(),
+                    enabled = settingsControlEnabled(!uiState.busy),
                     onValueChange = { apiKey = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.settings_llm_api_key)) },
@@ -336,7 +354,7 @@ fun LauncherLlmSettingsScreen(
                 )
             }
         }
-        item {
+        Column {
             SettingsSectionCard(title = stringResource(R.string.llm_models), iconResId = R.drawable.ic_llm_support) {
                 SettingsActionListItem(
                     title = stringResource(R.string.llm_manage_models, models.size),
@@ -369,7 +387,7 @@ fun LauncherLlmSettingsScreen(
                 if (viewModel.refreshingModels) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         }
-        item {
+        Column {
             SettingsSectionCard(title = stringResource(R.string.llm_request_options), iconResId = R.drawable.ic_settings_other) {
                 SettingsDropdownField(
                     label = stringResource(R.string.settings_llm_endpoint),

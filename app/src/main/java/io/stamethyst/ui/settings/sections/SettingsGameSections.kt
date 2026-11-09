@@ -64,6 +64,7 @@ internal data class PerformanceSettingsActions(
     val onRamSaverEnabledChanged: (Boolean) -> Unit,
     val onMtsPatchCacheEnabledChanged: (Boolean) -> Unit,
     val onOpenMtsCacheOptimizations: () -> Unit = {},
+    val onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
 )
 
 
@@ -116,6 +117,7 @@ internal data class FloatingMouseSettingsActions(
 internal fun SettingsPerformanceSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: PerformanceSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
     val context = LocalContext.current
     var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
@@ -128,8 +130,12 @@ internal fun SettingsPerformanceSection(
     var displayRefreshRateHz by remember(context) {
         mutableFloatStateOf(readDefaultDisplayRefreshRateHz(context))
     }
-    val displayManager = remember(context) {
-        context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+    val displayManager = remember(context, settingTitleResId) {
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_target_fps_title) {
+            context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+        } else {
+            null
+        }
     }
 
     DisposableEffect(displayManager, context) {
@@ -150,7 +156,7 @@ internal fun SettingsPerformanceSection(
         }
     }
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_ram_saver_title) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.ramSaverEnabled,
             enabled = !uiState.busy,
@@ -161,7 +167,7 @@ internal fun SettingsPerformanceSection(
         )
     )
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_mts_patch_cache_title) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.mtsPatchCacheEnabled,
             enabled = !uiState.busy,
@@ -172,7 +178,7 @@ internal fun SettingsPerformanceSection(
         )
     )
 
-    if (uiState.mtsPatchCacheEnabled) {
+    if (settingTitleResId == null && uiState.mtsPatchCacheEnabled) {
         SettingsActionListItem(
             title = stringResource(R.string.settings_mts_cache_optimizations_title),
             supportingText = stringResource(R.string.settings_mts_cache_optimizations_entry_desc),
@@ -181,127 +187,143 @@ internal fun SettingsPerformanceSection(
         )
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            text = stringResource(R.string.settings_render_scale_title),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        SlidingTextSwap(
-            text = RenderScaleService.format(renderScaleSliderValue),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    Text(
-        text = stringResource(R.string.settings_render_scale_desc),
-        style = MaterialTheme.typography.bodySmall,
-    )
-    SettingsDiscreteSlider(
-        value = renderScaleSliderValue,
-        onValueChange = { renderScaleSliderValue = it },
-        onValueChangeFinished = { actions.onRenderScaleSelected(renderScaleSliderValue) },
-        valueRange = RenderScaleService.MIN_RENDER_SCALE..RenderScaleService.MAX_RENDER_SCALE,
-        steps = ((RenderScaleService.MAX_RENDER_SCALE - RenderScaleService.MIN_RENDER_SCALE) / 0.01f)
-            .roundToInt() - 1,
-        enabled = !uiState.busy,
-        modifier = Modifier.fillMaxWidth()
-    )
-
-    val sliderTargetFps = targetFpsFromSliderValue(targetFpsSliderValue)
-    val targetFpsDescription = if (sliderTargetFps == LauncherConfig.UNLIMITED_TARGET_FPS) {
-        stringResource(R.string.settings_target_fps_unlimited)
-    } else {
-        stringResource(R.string.settings_target_fps_option, sliderTargetFps)
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_render_scale_title) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
             Text(
-                text = stringResource(R.string.settings_target_fps_title),
+                text = stringResource(R.string.settings_render_scale_title),
                 style = MaterialTheme.typography.bodyMedium,
             )
-            ModSuggestionInfoButton(
-                enabled = !uiState.busy && displayRefreshRateHz > 0f,
-                contentDescription = stringResource(R.string.settings_target_fps_recommendation_button),
-                onClick = { showFpsRecommendationDialog = true },
+            SlidingTextSwap(
+                text = RenderScaleService.format(renderScaleSliderValue),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        SlidingTextSwap(
-            text = targetFpsDescription,
+        Text(
+            text = stringResource(R.string.settings_render_scale_desc),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SettingsDiscreteSlider(
+            value = renderScaleSliderValue,
+            onValueChange = { renderScaleSliderValue = it },
+            onValueChangeFinished = { actions.onRenderScaleSelected(renderScaleSliderValue) },
+            valueRange = RenderScaleService.MIN_RENDER_SCALE..RenderScaleService.MAX_RENDER_SCALE,
+            steps = ((RenderScaleService.MAX_RENDER_SCALE - RenderScaleService.MIN_RENDER_SCALE) / 0.01f)
+                .roundToInt() - 1,
+            enabled = settingsControlEnabled(!uiState.busy),
+            modifier = Modifier.fillMaxWidth()
         )
     }
-    SettingsDiscreteSlider(
-        value = targetFpsSliderValue,
-        onValueChange = { targetFpsSliderValue = it },
-        onValueChangeFinished = {
-            actions.onTargetFpsSelected(targetFpsFromSliderValue(targetFpsSliderValue).toFloat())
-        },
-        valueRange = 0f..LauncherConfig.MAX_TARGET_FPS.toFloat(),
-        steps = LauncherConfig.MAX_TARGET_FPS / LauncherConfig.TARGET_FPS_STEP - 1,
-        enabled = !uiState.busy,
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics {
-                stateDescription = targetFpsDescription
-            },
-    )
-    if (showFpsRecommendationDialog) {
-        val recommendedTargetFps = recommendTargetFps(displayRefreshRateHz)
-        AlertDialog(
-            onDismissRequest = { showFpsRecommendationDialog = false },
-            title = { Text(stringResource(R.string.settings_target_fps_recommendation_title)) },
-            text = {
+
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_target_fps_title) {
+        val sliderTargetFps = targetFpsFromSliderValue(targetFpsSliderValue)
+        val targetFpsDescription = if (sliderTargetFps == LauncherConfig.UNLIMITED_TARGET_FPS) {
+            stringResource(R.string.settings_target_fps_unlimited)
+        } else {
+            stringResource(R.string.settings_target_fps_option, sliderTargetFps)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    stringResource(
-                        R.string.settings_target_fps_recommendation_message,
-                        displayRefreshRateHz,
-                        recommendedTargetFps,
-                    )
+                    text = stringResource(R.string.settings_target_fps_title),
+                    style = MaterialTheme.typography.bodyMedium,
                 )
+                ModSuggestionInfoButton(
+                    enabled = !uiState.busy && displayRefreshRateHz > 0f,
+                    contentDescription = stringResource(R.string.settings_target_fps_recommendation_button),
+                    onClick = { showFpsRecommendationDialog = true },
+                )
+            }
+            SlidingTextSwap(
+                text = targetFpsDescription,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        SettingsDiscreteSlider(
+            value = targetFpsSliderValue,
+            onValueChange = { targetFpsSliderValue = it },
+            onValueChangeFinished = {
+                actions.onTargetFpsSelected(targetFpsFromSliderValue(targetFpsSliderValue).toFloat())
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        actions.onTargetFpsSelected(recommendedTargetFps.toFloat())
-                        showFpsRecommendationDialog = false
-                    }
-                ) {
-                    Text(stringResource(R.string.settings_target_fps_set_recommended))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showFpsRecommendationDialog = false }) {
-                    Text(stringResource(R.string.settings_target_fps_recommendation_confirm))
-                }
-            },
+            valueRange = 0f..LauncherConfig.MAX_TARGET_FPS.toFloat(),
+            steps = LauncherConfig.MAX_TARGET_FPS / LauncherConfig.TARGET_FPS_STEP - 1,
+            enabled = settingsControlEnabled(!uiState.busy),
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    stateDescription = targetFpsDescription
+                },
         )
+        if (showFpsRecommendationDialog) {
+            val recommendedTargetFps = recommendTargetFps(displayRefreshRateHz)
+            AlertDialog(
+                onDismissRequest = { showFpsRecommendationDialog = false },
+                title = { Text(stringResource(R.string.settings_target_fps_recommendation_title)) },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.settings_target_fps_recommendation_message,
+                            displayRefreshRateHz,
+                            recommendedTargetFps,
+                        )
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            actions.onTargetFpsSelected(recommendedTargetFps.toFloat())
+                            showFpsRecommendationDialog = false
+                        }
+                    ) {
+                        Text(stringResource(R.string.settings_target_fps_set_recommended))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showFpsRecommendationDialog = false }) {
+                        Text(stringResource(R.string.settings_target_fps_recommendation_confirm))
+                    }
+                },
+            )
+        }
     }
 
-    SettingsVirtualResolutionModeSetting(uiState, actions)
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_virtual_resolution_mode_title) {
+        SettingsVirtualResolutionModeSetting(uiState, actions)
+    }
 
-    SettingsChoiceDialogItem(
-        SettingsChoiceSpec(
-            title = stringResource(R.string.settings_frame_pacing_mode_title),
-            valueText = framePacingModeDisplayName(uiState.framePacingMode),
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_frame_pacing_mode_title) {
+        SettingsChoiceDialogItem(
+            SettingsChoiceSpec(
+                title = stringResource(R.string.settings_frame_pacing_mode_title),
+                valueText = framePacingModeDisplayName(uiState.framePacingMode),
+                enabled = !uiState.busy,
+                selectedValue = uiState.framePacingMode,
+                options = FramePacingMode.entries,
+                optionLabel = { mode -> framePacingModeDisplayName(mode) },
+                onOptionSelected = actions.onFramePacingModeChanged,
+                description = stringResource(R.string.settings_frame_pacing_mode_hint),
+                dialogDescription = null,
+            )
+        )
+    }
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_performance_overlay_enabled) SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.showGamePerformanceOverlay,
             enabled = !uiState.busy,
-            selectedValue = uiState.framePacingMode,
-            options = FramePacingMode.entries,
-            optionLabel = { mode -> framePacingModeDisplayName(mode) },
-            onOptionSelected = actions.onFramePacingModeChanged,
-            description = stringResource(R.string.settings_frame_pacing_mode_hint),
-            dialogDescription = null,
+            title = stringResource(R.string.settings_performance_overlay_enabled),
+            description = stringResource(R.string.settings_performance_overlay_desc),
+            onCheckedChange = actions.onGamePerformanceOverlayChanged,
         )
     )
-
 }
 
 @Composable
@@ -415,7 +437,7 @@ internal fun SettingsTouchMouseInteractionSetting(
     SettingsDropdownField(
         label = stringResource(R.string.settings_touch_mouse_interaction_label),
         valueText = uiState.touchMouseInteractionMode.displayName(),
-        enabled = !uiState.busy,
+        enabled = !uiState.busy && uiState.specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,
         supportingText = stringResource(R.string.settings_touch_mouse_interaction_desc),
         options = TouchMouseInteractionMode.entries,
         optionLabel = { mode -> mode.displayName() },
@@ -462,12 +484,13 @@ private fun readDefaultDisplayRefreshRateHz(context: Context): Float {
 internal fun SettingsGameplayDisplaySection(
     uiState: SettingsScreenViewModel.UiState,
     actions: GameplayDisplaySettingsActions,
+    settingTitleResId: Int? = null,
 ) {
     var gameplayFontScaleSliderValue by remember(uiState.gameplayFontScale) {
         mutableFloatStateOf(uiState.gameplayFontScale)
     }
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_hide_enemy_panel_while_targeting) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.hideEnemyPanelWhileTargeting,
             enabled = !uiState.busy,
@@ -476,9 +499,11 @@ internal fun SettingsGameplayDisplaySection(
             onCheckedChange = actions.onHideEnemyPanelWhileTargetingChanged,
         )
     )
-    GameDisplayRegionSetting(uiState, actions.onGameDisplayRegionChanged)
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_game_display_size_title) {
+        GameDisplayRegionSetting(uiState, actions.onGameDisplayRegionChanged)
+    }
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_gameplay_larger_ui_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.gameplayLargerUiEnabled,
             enabled = !uiState.busy,
@@ -488,36 +513,40 @@ internal fun SettingsGameplayDisplaySection(
         )
     )
 
-    Text(
-        text = stringResource(R.string.settings_gameplay_font_scale_title),
-        style = MaterialTheme.typography.bodyMedium,
-    )
-    Text(
-        text = stringResource(
-            R.string.settings_gameplay_font_scale_value,
-            GameplaySettingsService.formatFontScale(gameplayFontScaleSliderValue),
-        ),
-        style = MaterialTheme.typography.bodySmall,
-    )
-    Text(
-        text = stringResource(R.string.settings_gameplay_font_scale_desc),
-        style = MaterialTheme.typography.bodySmall,
-    )
-    SettingsDiscreteSlider(
-        value = gameplayFontScaleSliderValue,
-        onValueChange = { value ->
-            gameplayFontScaleSliderValue = GameplaySettingsService.normalizeFontScale(value)
-        },
-        onValueChangeFinished = { actions.onGameplayFontScaleChanged(gameplayFontScaleSliderValue) },
-        valueRange = GameplaySettingsService.MIN_FONT_SCALE..GameplaySettingsService.MAX_FONT_SCALE,
-        steps = (
-            (GameplaySettingsService.MAX_FONT_SCALE - GameplaySettingsService.MIN_FONT_SCALE) /
-                GameplaySettingsService.FONT_SCALE_STEP
-            ).roundToInt() - 1,
-        enabled = !uiState.busy,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    SettingsKeepScreenOnTimeoutSetting(uiState, actions)
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_gameplay_font_scale_title) {
+        Text(
+            text = stringResource(R.string.settings_gameplay_font_scale_title),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            text = stringResource(
+                R.string.settings_gameplay_font_scale_value,
+                GameplaySettingsService.formatFontScale(gameplayFontScaleSliderValue),
+            ),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            text = stringResource(R.string.settings_gameplay_font_scale_desc),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        SettingsDiscreteSlider(
+            value = gameplayFontScaleSliderValue,
+            onValueChange = { value ->
+                gameplayFontScaleSliderValue = GameplaySettingsService.normalizeFontScale(value)
+            },
+            onValueChangeFinished = { actions.onGameplayFontScaleChanged(gameplayFontScaleSliderValue) },
+            valueRange = GameplaySettingsService.MIN_FONT_SCALE..GameplaySettingsService.MAX_FONT_SCALE,
+            steps = (
+                (GameplaySettingsService.MAX_FONT_SCALE - GameplaySettingsService.MIN_FONT_SCALE) /
+                    GameplaySettingsService.FONT_SCALE_STEP
+                ).roundToInt() - 1,
+            enabled = settingsControlEnabled(!uiState.busy),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_keep_screen_on_timeout_title) {
+        SettingsKeepScreenOnTimeoutSetting(uiState, actions)
+    }
 }
 
 @Composable
@@ -582,26 +611,34 @@ internal fun SettingsPlayerNameAction(
 internal fun SettingsInputSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: InputSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = stringResource(R.string.settings_input_basic_title),
-            style = MaterialTheme.typography.titleSmall
-        )
-        SettingsCardPlayOptimizationSetting(uiState, actions)
-        SettingsSwitchItem(
-            SettingsSwitchSpec(
-                checked = uiState.touchDoubleClickAsRightClick,
-                enabled = !uiState.busy,
-                title = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
-                onCheckedChange = actions.onTouchDoubleClickAsRightClickChanged,
+        if (settingTitleResId == null) {
+            Text(
+                text = stringResource(R.string.settings_input_basic_title),
+                style = MaterialTheme.typography.titleSmall
             )
-        )
-        if (uiState.touchDoubleClickAsRightClick) {
+        }
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_card_play_optimization_title) {
+            SettingsCardPlayOptimizationSetting(uiState, actions)
+        }
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_touch_double_click_as_right_click_enabled) {
+            SettingsSwitchItem(
+                SettingsSwitchSpec(
+                    checked = uiState.touchDoubleClickAsRightClick,
+                    enabled = !uiState.busy,
+                    title = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
+                    onCheckedChange = actions.onTouchDoubleClickAsRightClickChanged,
+                )
+            )
+        }
+        if ((settingTitleResId == null && uiState.touchDoubleClickAsRightClick) ||
+            settingTitleResId == R.string.settings_ignore_long_press_right_click_while_playing_card_enabled) {
             SettingsSwitchItem(
                 SettingsSwitchSpec(
                     checked = uiState.ignoreLongPressRightClickWhilePlayingCard,
-                    enabled = !uiState.busy,
+                    enabled = !uiState.busy && uiState.touchDoubleClickAsRightClick,
                     title = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_enabled),
                     description = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_desc),
                     onCheckedChange = actions.onIgnoreLongPressRightClickWhilePlayingCardChanged
@@ -610,6 +647,7 @@ internal fun SettingsInputSection(
         }
         SettingsFloatingMouseSection(
             uiState = uiState,
+            settingTitleResId = settingTitleResId,
             actions = FloatingMouseSettingsActions(
                 onSpecialKeyInputModeChanged = actions.onSpecialKeyInputModeChanged,
                 onTouchMouseInteractionModeChanged = actions.onTouchMouseInteractionModeChanged,
@@ -619,9 +657,10 @@ internal fun SettingsInputSection(
                 onAutoSwitchLeftAfterRightClickChanged = actions.onAutoSwitchLeftAfterRightClickChanged,
             ),
         )
-        HorizontalDivider()
+        if (settingTitleResId == null) HorizontalDivider()
         SettingsInputBasicsSection(
             uiState = uiState,
+            settingTitleResId = settingTitleResId,
             actions = InputBasicsSettingsActions(
                 onBackBehaviorChanged = actions.onBackBehaviorChanged,
                 onTouchscreenInputModeChanged = actions.onTouchscreenInputModeChanged,
@@ -640,13 +679,18 @@ internal fun SettingsInputSection(
 internal fun SettingsInputBasicsSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: InputBasicsSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
-    SettingsBackBehaviorSetting(uiState, actions.onBackBehaviorChanged)
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_back_behavior_title) {
+        SettingsBackBehaviorSetting(uiState, actions.onBackBehaviorChanged)
+    }
 
-    SettingsTouchscreenInputModeSetting(uiState, actions.onTouchscreenInputModeChanged)
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_touchscreen_mode_title) {
+        SettingsTouchscreenInputModeSetting(uiState, actions.onTouchscreenInputModeChanged)
+    }
 
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_touch_indicator_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.touchIndicatorEnabled,
             enabled = !uiState.busy && uiState.touchscreenInputMode.touchscreenEnabled,
@@ -656,7 +700,7 @@ internal fun SettingsInputBasicsSection(
         )
     )
 
-    SettingsSwitchItem(
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_haptic_feedback_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.hapticFeedbackEnabled,
             enabled = !uiState.busy,
@@ -673,43 +717,48 @@ internal fun SettingsInputBasicsSection(
 internal fun SettingsFloatingMouseSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: FloatingMouseSettingsActions,
+    settingTitleResId: Int? = null,
 ) {
-    SettingsSpecialKeyInputModeSetting(uiState, actions.onSpecialKeyInputModeChanged)
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_special_key_input_mode_title) {
+        SettingsSpecialKeyInputModeSetting(uiState, actions.onSpecialKeyInputModeChanged)
+    }
 
     val useLegacyFloatingWindow =
         uiState.specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW
     val useBuiltInTools =
         uiState.specialKeyInputMode == SpecialKeyInputMode.BUILT_IN_MOD
 
-    if (useLegacyFloatingWindow) {
+    if ((settingTitleResId == null && useLegacyFloatingWindow) ||
+        settingTitleResId == R.string.settings_touch_mouse_interaction_label) {
         SettingsTouchMouseInteractionSetting(uiState, actions.onTouchMouseInteractionModeChanged)
     }
 
-    if (useLegacyFloatingWindow || useBuiltInTools) {
-        SettingsSwitchItem(
+    if (settingTitleResId != null || useLegacyFloatingWindow || useBuiltInTools) {
+        val toolsEnabled = !uiState.busy && (useLegacyFloatingWindow || useBuiltInTools)
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_built_in_soft_keyboard_enabled) SettingsSwitchItem(
             SettingsSwitchSpec(
                 checked = uiState.builtInSoftKeyboardEnabled,
-                enabled = !uiState.busy,
+                enabled = toolsEnabled,
                 title = stringResource(R.string.settings_built_in_soft_keyboard_enabled),
                 description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
                 onCheckedChange = actions.onBuiltInSoftKeyboardChanged
             )
         )
 
-        SettingsSwitchItem(
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_auto_popup_keyboard_enabled) SettingsSwitchItem(
             SettingsSwitchSpec(
                 checked = uiState.autoPopupKeyboardEnabled,
-                enabled = !uiState.busy,
+                enabled = toolsEnabled,
                 title = stringResource(R.string.settings_auto_popup_keyboard_enabled),
                 description = stringResource(R.string.settings_auto_popup_keyboard_desc),
                 onCheckedChange = actions.onAutoPopupKeyboardChanged
             )
         )
 
-        SettingsSwitchItem(
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_auto_switch_left_enabled) SettingsSwitchItem(
             SettingsSwitchSpec(
                 checked = uiState.autoSwitchLeftAfterRightClick,
-                enabled = !uiState.busy,
+                enabled = toolsEnabled,
                 title = stringResource(R.string.settings_auto_switch_left_enabled),
                 onCheckedChange = actions.onAutoSwitchLeftAfterRightClickChanged
             )
@@ -717,7 +766,7 @@ internal fun SettingsFloatingMouseSection(
 
     }
 
-    if (useBuiltInTools) {
+    if (settingTitleResId == null && useBuiltInTools) {
         var showFloatingToolButtonDialog by rememberSaveable { mutableStateOf(false) }
         val optionalButtons = LauncherConfig.FLOATING_TOOL_BUTTON_IDS.map { buttonId ->
             buttonId to requireNotNull(FLOATING_TOOL_BUTTON_LABELS[buttonId]) {

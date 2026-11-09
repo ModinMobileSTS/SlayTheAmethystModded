@@ -182,7 +182,6 @@ internal fun LauncherSettingsScreenContent(
             entry = entry,
             title = stringResource(entry.titleResId),
             subtitle = entry.subtitleResId?.let { stringResource(it) },
-            categoryTitle = stringResource(entry.categoryTitleResId),
         )
     }
     val searchSections = if (searchActive) {
@@ -196,9 +195,9 @@ internal fun LauncherSettingsScreenContent(
             val matchingEntries = resolvedSearchEntries.filter { item ->
                 item.entry.categoryTitleResId == categoryTitleResId &&
                     (
-                        item.title.contains(filterKeyword, ignoreCase = true) ||
-                            item.subtitle?.contains(filterKeyword, ignoreCase = true) == true ||
-                            item.categoryTitle.contains(filterKeyword, ignoreCase = true)
+                        categoryMatched ||
+                            item.title.contains(filterKeyword, ignoreCase = true) ||
+                            item.subtitle?.contains(filterKeyword, ignoreCase = true) == true
                         )
             }
             if (!categoryMatched && matchingEntries.isEmpty()) {
@@ -260,25 +259,32 @@ internal fun LauncherSettingsScreenContent(
             }
             searchSections.forEach { section ->
                 item(key = "search_section_${section.destination.route}") {
-                    SettingsSectionCard(title = section.categoryTitle) {
-                        if (section.categoryMatched) {
-                            SettingsActionListItem(
-                                title = section.categoryTitle,
-                                supportingText = stringResource(section.destination.spec.subtitleResId),
-                                enabled = !blockingInteractionLocked,
-                                onClick = { onOpenSettingsRoute(section.destination.route) },
-                            )
-                        }
-                        section.entries.forEach { item ->
-                            key(item.entry.titleResId) {
-                                SettingsSearchResultItem(
-                                    entry = item.entry,
-                                    uiState = uiState,
-                                    actions = searchActions,
-                                    onOpenSettingsRoute = onOpenSettingsRoute,
+                    val sectionContent: @Composable () -> Unit = {
+                        SettingsSectionCard(title = section.categoryTitle) {
+                            if (section.categoryMatched && section.entries.isEmpty()) {
+                                SettingsActionListItem(
+                                    title = section.categoryTitle,
+                                    supportingText = stringResource(section.destination.spec.subtitleResId),
+                                    enabled = !blockingInteractionLocked,
+                                    onClick = { onOpenSettingsRoute(section.destination.route) },
                                 )
                             }
+                            section.entries.forEach { item ->
+                                key(item.entry.titleResId) {
+                                    SettingsSearchResultItem(
+                                        entry = item.entry,
+                                        uiState = uiState,
+                                        actions = searchActions,
+                                        onOpenSettingsRoute = onOpenSettingsRoute,
+                                    )
+                                }
+                            }
                         }
+                    }
+                    if (searchActions != null && section.destination.route == Route.DeveloperSettings) {
+                        SettingsSearchDeveloperWarning(sectionContent)
+                    } else {
+                        sectionContent()
                     }
                 }
             }
@@ -308,7 +314,6 @@ private data class ResolvedSettingsSearchEntry(
     val entry: SettingsSearchEntry,
     val title: String,
     val subtitle: String?,
-    val categoryTitle: String,
 )
 
 private data class SettingsSearchSection(
@@ -580,16 +585,8 @@ internal fun LauncherSettingsPerformanceScreenContent(
                         onRamSaverEnabledChanged = onRamSaverEnabledChanged,
                         onMtsPatchCacheEnabledChanged = onMtsPatchCacheEnabledChanged,
                         onOpenMtsCacheOptimizations = onOpenMtsCacheOptimizations,
+                        onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                     ),
-                )
-                SettingsSwitchItem(
-                    SettingsSwitchSpec(
-                        checked = uiState.showGamePerformanceOverlay,
-                        enabled = !uiState.busy,
-                        title = stringResource(R.string.settings_performance_overlay_enabled),
-                        description = stringResource(R.string.settings_performance_overlay_desc),
-                        onCheckedChange = onGamePerformanceOverlayChanged,
-                    )
                 )
             }
         }
@@ -749,57 +746,52 @@ internal fun LauncherSettingsWorkshopAutoImportDefaultsScreenContent(
             SettingsSectionCard(
                 title = stringResource(R.string.settings_workshop_auto_import_defaults_atlas_section_title)
             ) {
-                Text(
-                    text = stringResource(R.string.settings_workshop_auto_import_defaults_atlas_intro),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                SettingsSwitchItem(
-                    SettingsSwitchSpec(
-                        checked = uiState.workshopAutoImportAtlasDownscaleEnabled,
-                        enabled = !uiState.busy,
-                        title = stringResource(
-                            R.string.settings_workshop_auto_import_defaults_atlas_enabled_title
-                        ),
-                        description = stringResource(
-                            R.string.settings_workshop_auto_import_defaults_atlas_desc
-                        ),
-                        onCheckedChange = onAtlasDownscaleChanged,
-                    )
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                SettingsDropdownField(
-                    label = stringResource(
-                        R.string.settings_workshop_auto_import_defaults_atlas_level_title
-                    ),
-                    valueText = stringResource(
-                        R.string.mod_import_atlas_downscale_level_max_edge_label,
-                        uiState.workshopAutoImportAtlasDownscaleMaxEdgePx,
-                    ),
-                    enabled = !uiState.busy && uiState.workshopAutoImportAtlasDownscaleEnabled,
-                    supportingText = stringResource(
-                        R.string.mod_import_atlas_downscale_level_max_edge_desc,
-                        uiState.workshopAutoImportAtlasDownscaleMaxEdgePx,
-                    ),
-                    options = LauncherPreferences.WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_MAX_EDGE_OPTIONS.toList(),
-                    optionLabel = { maxEdgePx ->
-                        stringResource(
-                            R.string.mod_import_atlas_downscale_level_max_edge_label,
-                            maxEdgePx
-                        )
-                    },
-                    optionDescription = { maxEdgePx ->
-                        stringResource(
-                            R.string.mod_import_atlas_downscale_level_max_edge_desc,
-                            maxEdgePx
-                        )
-                    },
-                    onOptionSelected = onAtlasDownscaleMaxEdgeChanged,
+                SettingsWorkshopAutoImportDefaultsSection(
+                    uiState, onAtlasDownscaleChanged, onAtlasDownscaleMaxEdgeChanged,
                 )
             }
         }
     }
+}
+
+@Composable
+internal fun SettingsWorkshopAutoImportDefaultsSection(
+    uiState: SettingsScreenViewModel.UiState,
+    onAtlasDownscaleChanged: (Boolean) -> Unit,
+    onAtlasDownscaleMaxEdgeChanged: (Int) -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.settings_workshop_auto_import_defaults_atlas_intro),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.size(8.dp))
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.workshopAutoImportAtlasDownscaleEnabled,
+            enabled = !uiState.busy,
+            title = stringResource(R.string.settings_workshop_auto_import_defaults_atlas_enabled_title),
+            description = stringResource(R.string.settings_workshop_auto_import_defaults_atlas_desc),
+            onCheckedChange = onAtlasDownscaleChanged,
+        )
+    )
+    Spacer(modifier = Modifier.size(8.dp))
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_workshop_auto_import_defaults_atlas_level_title),
+        valueText = stringResource(
+            R.string.mod_import_atlas_downscale_level_max_edge_label,
+            uiState.workshopAutoImportAtlasDownscaleMaxEdgePx,
+        ),
+        enabled = !uiState.busy && uiState.workshopAutoImportAtlasDownscaleEnabled,
+        supportingText = stringResource(
+            R.string.mod_import_atlas_downscale_level_max_edge_desc,
+            uiState.workshopAutoImportAtlasDownscaleMaxEdgePx,
+        ),
+        options = LauncherPreferences.WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_MAX_EDGE_OPTIONS.toList(),
+        optionLabel = { stringResource(R.string.mod_import_atlas_downscale_level_max_edge_label, it) },
+        optionDescription = { stringResource(R.string.mod_import_atlas_downscale_level_max_edge_desc, it) },
+        onOptionSelected = onAtlasDownscaleMaxEdgeChanged,
+    )
 }
 
 
