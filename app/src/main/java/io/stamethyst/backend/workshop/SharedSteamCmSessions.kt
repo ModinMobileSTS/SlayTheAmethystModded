@@ -7,6 +7,7 @@ import io.stamethyst.backend.steam.SteamCmLoginFailureNotice
 import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
+import java.util.concurrent.TimeUnit
 import top.apricityx.workshop.steam.protocol.SharedSteamCmSession
 import top.apricityx.workshop.steam.protocol.SteamAccountSession
 import top.apricityx.workshop.steam.protocol.isSteamCmCredentialRejection
@@ -66,7 +67,10 @@ internal object SharedSteamCmSessions {
             connectTimeoutMs = 40_000L,
             readTimeoutMs = 60_000L,
             callTimeoutMs = 60_000L,
-        )
+        ).configure {
+            // Detect half-open sockets after Android suspends background networking.
+            pingInterval(30L, TimeUnit.SECONDS)
+        }
         return SharedSteamCmSession(
             sessionFactory = {
                 identity.createSession(

@@ -1,7 +1,14 @@
 package io.stamethyst.backend.steamcloud
 
-import kotlinx.coroutines.runBlocking
 import io.stamethyst.backend.github.webSocketClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.Call
 import top.apricityx.workshop.steam.protocol.OkHttpSteamCmSession
@@ -114,6 +121,18 @@ internal class SteamCloudProtocolClient(
     }
 
     fun isSessionActive(): Boolean = session.currentSession.value != null
+
+    val sessionIdentity: Any?
+        get() = session.currentSession.value
+
+    fun observeSessionChanges(onChange: Runnable): AutoCloseable {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        // Subscribe after logon, when a borrowed shared handle has its underlying transport.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            session.currentSession.drop(1).collect { onChange.run() }
+        }
+        return AutoCloseable { scope.cancel() }
+    }
 
     /**
      * Uploads rich presence key-value pairs via CMsgClientRichPresenceUpload (EMsg 7501).

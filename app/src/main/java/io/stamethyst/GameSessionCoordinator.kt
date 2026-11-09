@@ -347,6 +347,7 @@ internal class GameSessionCoordinator(
         userLeaveHintReceived = false
         if (jvmLaunchController.runtimeLifecycleReady && !backExitRequested) {
             resumeRuntimeRequestPolling()
+            SteamGamePresenceService.startIfEnabled(activity)
         }
         foregroundAudioPolicy.markActivityResumed(true)
         performanceOverlayController?.onResume()

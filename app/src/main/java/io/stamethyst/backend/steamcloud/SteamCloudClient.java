@@ -741,6 +741,14 @@ public final class SteamCloudClient implements AutoCloseable {
         return protocolClient.isSessionActive();
     }
 
+    public Object getCmSessionIdentity() {
+        return protocolClient.getSessionIdentity();
+    }
+
+    public AutoCloseable observeCmSessionChanges(Runnable onChange) {
+        return protocolClient.observeSessionChanges(onChange);
+    }
+
     public void setRichPresence(Map<String, String> kvPairs) {
         protocolClient.sendRichPresence(kvPairs);
         recordDiagnosticEvent("rich_presence_sent keys=" + kvPairs.size());

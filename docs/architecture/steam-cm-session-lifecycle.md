@@ -28,9 +28,21 @@
 
 新提示带 `classificationVersion=1`；没有分类版本的旧持久化提示不再显示，避免升级后仍弹出历史网络故障误报。后续收到明确凭据拒绝时可以覆盖旧记录，正常去重和关闭逻辑不变。
 
+## Steam 游玩状态恢复
+
+- 游戏运行时回到前台，`GameSessionCoordinator.onResume()` 会重新请求 `SteamGamePresenceService.startIfEnabled()`。已有工作线程只唤醒检查，不重复创建线程或登录；服务已停止时则重新启动。游戏尚未就绪或正在退出时不启动。
+- 上报服务在登录后监听当前 CM 会话变化，并每 30 秒检查一次空闲会话。断线恢复不依赖楼层、主菜单或 Rich Presence 文件发生变化。共享 CM WebSocket 每 30 秒发送 ping，以发现后台网络暂停后的半开连接；ping 不替代 Steam 协议心跳。
+- `SteamGamePresenceSession` 按 CM 会话身份去重。新会话按顺序重发在线状态、AppID 646570 和最新游戏详情；同一连接内的前台恢复不会重复发送，详情发生变化时只发详情。其他功能先重连了共享 CM，也必须重发该会话的游戏状态。
+- 网络/路由故障、限流以及单次 60 秒登录超时在原前台服务内重试，间隔为 30、60、120、240、300 秒，最高 5 分钟；成功后重置。回前台可缩短长退避，但保留至少 30 秒的共享登录冷却，文件变化不会绕过退避。登录超时只取消该次尝试，不关闭整个服务。
+- 每次重试重新读取当前凭据。游戏结束、关闭功能、账号被撤销、明确凭据拒绝或主动取消时停止，不复活旧凭据、不无限重试失效账号。正常结束仍清除 Steam 游戏状态，并取消连接观察。
+- 这里恢复的是 Steam 的“正在游玩”状态，没有断网期间累计时长的本地补报队列，不能保证补回已断开的时段。
+
 ## 验证
 
 - `SharedSteamCmSessionTest`：并发登录合并、旧账号快照、排队/进行中撤销、账号切换、匿名恢复、失败冷却。
 - `OkHttpSteamCmSessionLogonTest`：关闭后禁止复活、进行中 RPC/登录撤销、旧凭据禁止重连、明确凭据拒绝才通知；DNS/TLS/reset/超时/路由不可用/限流/未知返回码及重连网络失败均不通知；匿名及取消不通知。
 - `UgcWorkshopDownloaderRateLimitTest`：撤销不可降级至公共 CDN。
 - `SteamAccountRevocationInstrumentedTest`：隔离目录验证持久化撤销、登录提交竞态、提示去重与清理、忽略旧未分类提示并允许明确拒绝替换；不使用真实账号、不请求 Steam。
+- `SteamGamePresenceSessionTest`：首次上报顺序、前台重复检查去重、详情不变的断线恢复、共享连接被其他功能重连、首次借用必须登录、登录/详情失败和上传时断线。
+- `SteamGamePresenceRetryPolicyTest`：退避上限、成功重置、前台恢复仍保留冷却、网络/限流/登录超时可重试、凭据拒绝/撤销/取消终止。
+- `SteamCloudProtocolClientSessionObserverTest`：空闲时会话断开/重连立即通知及观察取消，不使用真实账号、不请求 Steam。
