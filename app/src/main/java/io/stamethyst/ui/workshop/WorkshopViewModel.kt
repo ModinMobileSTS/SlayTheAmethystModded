@@ -96,6 +96,9 @@ internal class WorkshopViewModel : ViewModel() {
     private val translationClient = BaiduAiTextTranslationClient()
     private val downloadTaskPersistenceMutex = Mutex()
 
+    internal fun socialService(context: Context) =
+        (service ?: WorkshopService(context.applicationContext).also { service = it }).social
+
     override fun onCleared() {
         if (progressListenerInstalled) WorkshopLoadProgressReporter.setListener(null)
         service?.close()
@@ -2283,6 +2286,7 @@ private fun WorkshopItemDetails.mergeCachedCommunityData(cached: WorkshopItemDet
         summary = summary.copy(
             description = if (useCachedDescription) cached.summary.description else summary.description,
             authorName = summary.authorName.ifBlank { cached.summary.authorName },
+            author = summary.author ?: cached.summary.author,
         ),
         fullDescriptionUnavailable = if (useCachedDescription) {
             cached.fullDescriptionUnavailable
@@ -2290,6 +2294,7 @@ private fun WorkshopItemDetails.mergeCachedCommunityData(cached: WorkshopItemDet
             fullDescriptionUnavailable
         },
         changeNotes = changeNotes.ifBlank { cached.changeNotes },
+        creators = creators.ifEmpty { cached.creators },
         changeNotesUrl = changeNotesUrl.ifBlank { cached.changeNotesUrl },
         dependencies = if (useCachedDependencies) cached.dependencies else dependencies,
         commentThreadContext = if (useCachedComments) cached.commentThreadContext else commentThreadContext,

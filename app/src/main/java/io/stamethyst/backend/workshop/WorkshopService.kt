@@ -91,6 +91,7 @@ internal class WorkshopService(
         .preparingHttpRequests { request ->
             request.newBuilder().header("Accept-Language", steamLanguagePreference.acceptLanguageValue).build()
         }
+    val social: WorkshopSocialService by lazy { WorkshopSocialService(workshopClient) }
     private val browseDetailClient = client.withHttpOptions {
         connectTimeout(5, TimeUnit.SECONDS)
         readTimeout(8, TimeUnit.SECONDS)
@@ -713,6 +714,13 @@ internal class WorkshopService(
         val description = localizedDescription.ifBlank { apiDescription }.ifBlank { fallbackDescription }
         val fullDescriptionUnavailable = localizedDescription.isBlank() &&
             apiDescription.isBlank() && fallbackDescription.isNotBlank() && description == fallbackDescription
+        val communityCreators = communityDetail?.creators.orEmpty()
+        val apiAuthor = WorkshopSocialParser.apiAuthor(detail.creator, detail.creatorName.orEmpty())
+        val matchingCreator = communityCreators.firstOrNull { it.steamId == apiAuthor?.steamId && apiAuthor != null }
+        val primaryAuthor = matchingCreator ?: apiAuthor?.copy(
+            name = apiAuthor.name.ifBlank { communityDetail?.authorName.orEmpty() }.ifBlank { cardSummary?.authorName.orEmpty() },
+        ) ?: communityCreators.firstOrNull() ?: cardSummary?.author
+        val creators = (listOfNotNull(primaryAuthor) + communityCreators).distinctBy(WorkshopAuthor::identity)
         val summary = WorkshopItemSummary(
             publishedFileId = publishedFileId,
             appId = appId,
@@ -725,7 +733,8 @@ internal class WorkshopService(
             fileSizeBytes = detail.fileSize ?: cardSummary?.fileSizeBytes ?: 0L,
             updatedAtMillis = apiUpdatedAtMillis ?: cardSummary?.updatedAtMillis ?: 0L,
             downloadCount = detail.subscriptions ?: cardSummary?.downloadCount ?: 0L,
-            rating = normalizedWorkshopRating(detail.voteData?.score) ?: cardSummary?.rating,
+            rating = communityDetail?.rating ?: normalizedWorkshopRating(detail.voteData?.score) ?: cardSummary?.rating,
+            author = primaryAuthor,
         )
         val dependencyIds = if (includeDependencyData) {
             (detail.children.mapNotNull { it.publishedFileId.toULongOrNull() } + communityDetail?.requiredItemIds.orEmpty()).distinct()
@@ -759,6 +768,7 @@ internal class WorkshopService(
             commentCount = commentCount,
             commentTotalPages = commentCount?.let(::resolveCommentTotalPages),
             hasNextCommentPage = commentCount?.let { count -> count > COMMENT_PAGE_SIZE } == true,
+            creators = creators,
         )
     }
 
@@ -890,6 +900,8 @@ internal class WorkshopService(
             val parsed = LocalizedWorkshopDetail(
                 description = extractWorkshopDescription(payload),
                 authorName = extractWorkshopAuthorName(payload),
+                creators = WorkshopSocialParser.creators(payload),
+                rating = WorkshopDetailRatingParser.parse(payload),
                 previewMedia = extractPreviewMediaItems(payload),
                 requiredItemIds = extractRequiredItemIds(payload),
                 commentThreadContext = extractCommentThreadContext(payload),
@@ -2308,6 +2320,7 @@ private fun PublishedFileDetailsDto.toSummary(appId: UInt, fallbackPublishedFile
     updatedAtMillis = (timeUpdated ?: 0L) * 1000L,
     downloadCount = subscriptions ?: 0L,
     rating = normalizedWorkshopRating(voteData?.score),
+    author = WorkshopSocialParser.apiAuthor(creator, creatorName.orEmpty()),
 )
 
 private fun PublishedFileDetailsDto.toCommentThreadContext(fallbackPublishedFileId: ULong): WorkshopCommentThreadContext? {
@@ -2359,6 +2372,8 @@ private data class LocalizedWorkshopDetail(
     val requiredItemIds: List<ULong> = emptyList(),
     val commentThreadContext: WorkshopCommentThreadContext? = null,
     val commentCount: Long? = null,
+    val creators: List<WorkshopAuthor> = emptyList(),
+    val rating: WorkshopItemRating? = null,
 )
 
 private data class PreviewVideoItem(
@@ -2383,6 +2398,7 @@ private class SteamCommunityRateLimitException(statusCode: Int) :
 private fun LocalizedWorkshopDetail.hasUsefulContent(): Boolean =
     description.isNotBlank() ||
         authorName.isNotBlank() ||
+        rating != null ||
         previewMedia.isNotEmpty() ||
         requiredItemIds.isNotEmpty() ||
         commentThreadContext != null ||

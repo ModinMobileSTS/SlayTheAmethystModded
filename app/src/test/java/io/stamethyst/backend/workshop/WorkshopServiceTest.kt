@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.toList
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -301,6 +302,84 @@ class WorkshopServiceTest {
         assertFalse(last.galleryLoading)
         assertFalse(last.commentContextLoading)
         assertFalse(last.dependenciesLoading)
+    }
+
+    @Test
+    fun detailUpdatesBackfillDisplayedRatingFromCommunityWithoutVoteData() = runBlocking {
+        val apiShown = CountDownLatch(1)
+        detailsServer.enqueue(detailApiResponse(description = "API description"))
+        browseServer.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                check(apiShown.await(5, TimeUnit.SECONDS))
+                return MockResponse.Builder().body(
+                    """<div class="fileRatingDetails"><img src="https://community.akamai.steamstatic.com/public/images/sharedfiles/4-star_large.png?v=2" /></div>""",
+                ).build()
+            }
+        }
+        val snapshots = mutableListOf<WorkshopDetailUpdate>()
+        val details = newService().getDetails(
+            646570u, 123456uL, includeDependencyData = false,
+            onUpdate = { update ->
+                snapshots += update
+                if (!update.metadataLoading && update.communityLoading) {
+                    assertNull(update.details.summary.rating)
+                    apiShown.countDown()
+                }
+            },
+        )
+
+        assertEquals(WorkshopItemRating(4, 5), details.summary.rating)
+        assertEquals(details.summary.rating, snapshots.last().details.summary.rating)
+        assertEquals(1, detailsServer.requestCount)
+        assertEquals(1, browseServer.requestCount)
+    }
+
+    @Test
+    fun detailRatingPrefersCurrentCommunityStarsOverApiAndCachedRating() = runBlocking {
+        detailsServer.enqueue(detailApiResponse(children = """, "vote_data":{"score":0.9}"""))
+        browseServer.enqueue(MockResponse.Builder().body(
+            """<div class="fileRatingDetails"><img src="/public/images/sharedfiles/3-star_large.png?v=2" /></div>""",
+        ).build())
+        val cached = WorkshopItemSummary(123456uL, 646570u, "Cached title", "", "", rating = WorkshopItemRating(2))
+
+        val details = newService().getDetails(646570u, 123456uL, fallbackSummary = cached, includeDependencyData = false)
+
+        assertEquals(WorkshopItemRating(3, 5), details.summary.rating)
+    }
+
+    @Test
+    fun detailRatingKeepsApiFallbackWhenCommunityHasNoRating() = runBlocking {
+        detailsServer.enqueue(detailApiResponse(description = "API description", children = """, "vote_data":{"score":0.8}"""))
+        browseServer.enqueue(MockResponse.Builder().body(
+            """<div class="fileRatingDetails"><img src="/public/images/sharedfiles/not-yet.png" /></div>""",
+        ).build())
+
+        val details = newService().getDetails(646570u, 123456uL, includeDependencyData = false)
+
+        assertEquals(WorkshopItemRating(4, 5), details.summary.rating)
+    }
+
+    @Test
+    fun detailRatingRetainsCachedValueWhenCommunityRequestFails() = runBlocking {
+        detailsServer.enqueue(detailApiResponse())
+        browseServer.enqueue(MockResponse.Builder().code(429).build())
+        val cached = WorkshopItemSummary(123456uL, 646570u, "Cached title", "", "", rating = WorkshopItemRating(5))
+
+        val details = newService().getDetails(646570u, 123456uL, fallbackSummary = cached, includeDependencyData = false)
+
+        assertEquals(cached.rating, details.summary.rating)
+    }
+
+    @Test
+    fun detailRatingRemainsUnknownWhenNeitherSourceHasRatings() = runBlocking {
+        detailsServer.enqueue(detailApiResponse(description = "Description without votes"))
+        browseServer.enqueue(MockResponse.Builder().body(
+            """<div class="fileRatingDetails"><img src="/public/images/sharedfiles/not-yet.png" /></div>""",
+        ).build())
+
+        val details = newService().getDetails(646570u, 123456uL, includeDependencyData = false)
+
+        assertNull(details.summary.rating)
     }
 
     private fun detailApiResponse(description: String = "", children: String = ""): MockResponse =

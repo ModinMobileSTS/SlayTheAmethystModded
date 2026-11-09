@@ -61,6 +61,7 @@ tasks.matching { it.name == "assembleDebug" }.configureEach {
 
 dependencies {
     implementation(libs.androidx.games.frame.pacing)
+    implementation(libs.jsoup)
 }
 
 // Applies to every variant, not just slim builds. Neither external Gecko nor retired X5 may be bundled.

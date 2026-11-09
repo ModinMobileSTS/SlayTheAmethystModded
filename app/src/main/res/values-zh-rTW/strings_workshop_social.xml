@@ -1,0 +1,17 @@
+<resources>
+    <string name="workshop_author_view_works">查看作者全部作品</string>
+    <string name="workshop_author_works_title">作者作品</string>
+    <string name="workshop_author_game_scope">殺戮尖塔 · 全部公開作品</string>
+    <string name="workshop_author_all_works">全部作品</string>
+    <string name="workshop_author_total_format">全部作品 · %1$d</string>
+    <string name="workshop_author_empty">此作者在目前遊戲下暫無公開作品。</string>
+    <string name="workshop_discussions_title">討論</string>
+    <string name="workshop_discussions_total_format">全部主題 · %1$d</string>
+    <string name="workshop_discussions_empty">暫無討論。</string>
+    <string name="workshop_discussion_detail_title">討論詳情</string>
+    <string name="workshop_discussion_replies_format">回覆 · %1$d</string>
+    <string name="workshop_discussion_no_replies">還沒有回覆。</string>
+    <string name="workshop_discussion_developer">開發者</string>
+    <string name="workshop_discussion_reply_on_steam">在 Steam 中回覆 ↗</string>
+    <string name="workshop_social_open_steam">Steam ↗</string>
+</resources>

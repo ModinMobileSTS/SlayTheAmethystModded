@@ -1,0 +1,17 @@
+<resources>
+    <string name="workshop_author_view_works">View all works by this author</string>
+    <string name="workshop_author_works_title">Author works</string>
+    <string name="workshop_author_game_scope">All public works for Slay the Spire</string>
+    <string name="workshop_author_all_works">All works</string>
+    <string name="workshop_author_total_format">All works · %1$d</string>
+    <string name="workshop_author_empty">No public works for this game.</string>
+    <string name="workshop_discussions_title">Discussions</string>
+    <string name="workshop_discussions_total_format">All topics · %1$d</string>
+    <string name="workshop_discussions_empty">No discussions yet.</string>
+    <string name="workshop_discussion_detail_title">Discussion</string>
+    <string name="workshop_discussion_replies_format">Replies · %1$d</string>
+    <string name="workshop_discussion_no_replies">No replies yet.</string>
+    <string name="workshop_discussion_developer">Developer</string>
+    <string name="workshop_discussion_reply_on_steam">Reply on Steam ↗</string>
+    <string name="workshop_social_open_steam">Steam ↗</string>
+</resources>

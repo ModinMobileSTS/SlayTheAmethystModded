@@ -1113,6 +1113,7 @@ internal fun WorkshopItemCard(
     onDownload: () -> Unit,
     localPreviewImagePath: String? = null,
     downloadEnabled: Boolean = true,
+    showDescriptionFallback: Boolean = true,
 ) {
     WorkshopSummaryCard(
         modifier = modifier,
@@ -1121,7 +1122,11 @@ internal fun WorkshopItemCard(
         localPreviewImagePath = localPreviewImagePath,
         title = item.title,
         supportingText = item.authorName.ifBlank {
-            item.description.ifBlank { stringResource(R.string.workshop_open_detail_hint) }
+            if (showDescriptionFallback) {
+                item.description.ifBlank { stringResource(R.string.workshop_open_detail_hint) }
+            } else {
+                item.author?.name.orEmpty().ifBlank { stringResource(R.string.workshop_unknown_author) }
+            }
         },
         onClick = onClick,
         footerContent = {

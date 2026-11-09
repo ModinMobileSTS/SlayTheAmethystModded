@@ -111,6 +111,7 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import io.stamethyst.R
 import io.stamethyst.backend.workshop.WorkshopChangeNotes
+import io.stamethyst.backend.workshop.WorkshopAuthor
 import io.stamethyst.backend.workshop.WorkshopComment
 import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopItemSummary
@@ -138,7 +139,7 @@ import me.saket.telephoto.zoomable.ZoomableImageSource
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-internal fun WorkshopDetailScreen(
+internal fun WorkshopDetailContent(
     appId: UInt,
     publishedFileId: ULong,
     viewModel: WorkshopViewModel,
@@ -146,6 +147,9 @@ internal fun WorkshopDetailScreen(
     onBack: () -> Unit,
     onOpenBaiduTranslationCredentials: (String) -> Unit,
     onOpenDetails: (WorkshopItemSummary) -> Unit,
+    fallbackSummary: WorkshopItemSummary? = null,
+    onOpenAuthor: (WorkshopAuthor) -> Unit,
+    onOpenDiscussions: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val state = viewModel.uiState
@@ -160,7 +164,7 @@ internal fun WorkshopDetailScreen(
 
     LaunchedEffect(appId, publishedFileId) {
         viewModel.load(context.applicationContext)
-        viewModel.loadDetails(context.applicationContext, appId, publishedFileId)
+        viewModel.loadDetails(context.applicationContext, appId, publishedFileId, fallbackSummary)
     }
 
     LaunchedEffect(state.downloadInProgress) {
@@ -374,6 +378,7 @@ internal fun WorkshopDetailScreen(
                                         requestNotificationPermissionIfNeeded()
                                         viewModel.downloadSelected(context.applicationContext)
                                     },
+                                    onOpenAuthor = onOpenAuthor,
                                     onViewChangeNotes = {
                                         showChangeNotesDialog = true
                                         viewModel.loadSelectedChangeNotes(context.applicationContext)
@@ -393,6 +398,12 @@ internal fun WorkshopDetailScreen(
                                 )
                             } ?: WorkshopDetailPrimaryLoadingSkeleton()
                         }
+                    }
+                }
+
+                if (selectedDetails != null) {
+                    item(key = "workshop-detail-discussions") {
+                        WorkshopDiscussionsEntry(onClick = { onOpenDiscussions(selectedDetails.summary.title) })
                     }
                 }
 
@@ -1638,6 +1649,7 @@ private fun DetailModCard(
     onDownload: () -> Unit,
     onViewChangeNotes: () -> Unit,
     onSubscriptionClick: () -> Unit,
+    onOpenAuthor: (WorkshopAuthor) -> Unit,
 ) {
     val skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_metadata_skeleton")
     Card(
@@ -1666,16 +1678,16 @@ private fun DetailModCard(
                                 maxLines = 3,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            if (details.summary.authorName.isBlank() && (metadataLoading || communityLoading)) {
-                                LoadingSkeletonBlock(Modifier.fillMaxWidth(0.5f).height(16.dp), style = skeletonStyle)
-                            } else Text(
-                                text = details.summary.authorName.ifBlank { stringResource(R.string.workshop_unknown_author) },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
                         }
+                    }
+                    if (details.summary.authorName.isBlank() && details.creators.isEmpty() && (metadataLoading || communityLoading)) {
+                        LoadingSkeletonBlock(Modifier.fillMaxWidth(0.5f).height(16.dp), style = skeletonStyle)
+                    } else {
+                        WorkshopAuthorLinks(
+                            authors = details.creators.ifEmpty { listOfNotNull(details.summary.author) },
+                            fallbackName = details.summary.authorName,
+                            onOpenAuthor = onOpenAuthor,
+                        )
                     }
                     if (downloadLoading) {
                         LoadingSkeletonBlock(

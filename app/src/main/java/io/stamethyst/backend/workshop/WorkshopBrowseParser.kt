@@ -133,6 +133,7 @@ internal object WorkshopBrowseParser {
             previewUrl = itemPreviewRegex.find(block)?.groupValues?.getOrNull(1).orEmpty(),
             description = description,
             authorName = authorName,
+            author = WorkshopSocialParser.cardAuthor(block, authorName),
             rating = parseLegacyRating(block),
         )
     }
@@ -195,6 +196,7 @@ internal object WorkshopBrowseParser {
                     previewUrl = item.stringValueOrNull("preview_url").orEmpty(),
                     title = item.stringValueOrNull("title").orEmpty(),
                     authorName = creatorSteamId?.let(creatorNames::get).orEmpty(),
+                    author = WorkshopSocialParser.apiAuthor(creatorSteamId, creatorSteamId?.let(creatorNames::get).orEmpty()),
                     description = item.stringValueOrNull("short_description").orEmpty(),
                     fileSizeBytes = item.longValueOrNull("file_size") ?: 0L,
                     downloadCount = item.longValueOrNull("subscriptions") ?: 0L,

@@ -91,6 +91,7 @@ data class WorkshopItemSummary(
     val updatedAtMillis: Long = 0L,
     val downloadCount: Long = 0L,
     val rating: WorkshopItemRating? = null,
+    val author: WorkshopAuthor? = null,
 )
 
 data class WorkshopItemRating(
@@ -149,6 +150,7 @@ data class WorkshopItemDetails(
     val hasPreviousCommentPage: Boolean = false,
     val hasNextCommentPage: Boolean = false,
     val comments: List<WorkshopComment> = emptyList(),
+    val creators: List<WorkshopAuthor> = emptyList(),
 )
 
 data class WorkshopChangeNotes(
