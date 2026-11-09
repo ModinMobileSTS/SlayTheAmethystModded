@@ -292,16 +292,11 @@ object AgentPatchModManager {
         }.getOrNull()
     }
 
-    /** Enables or disables a packaged AI patch revision. */
+    /** Saves a packaged AI patch revision's preference; launch still requires its parent mod. */
     @Throws(IOException::class)
     fun setEnabled(context: Context, parentModId: String, patchId: String, enabled: Boolean) {
         val info = listPackaged(context, parentModId).firstOrNull { it.patchId == patchId }
             ?: throw IOException("AI patch not found: $patchId")
-        if (enabled && !ModManager.listInstalledMods(context).any {
-                ModManager.normalizeModId(it.modId) == info.parentModId && it.enabled
-            }) {
-            throw IOException("Enable the parent mod before enabling this AI patch.")
-        }
         val enabledIds = readEnabledPatchModIds(context)
         val changed = if (enabled) {
             enabledIds.add(info.patchModId)

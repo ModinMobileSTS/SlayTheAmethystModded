@@ -40,7 +40,7 @@
     <string name="mod_details_ai_on">已啟用</string>
     <string name="mod_details_ai_off">已停用</string>
     <string name="mod_details_ai_paused">隨主模組暫停載入</string>
-    <string name="mod_details_ai_parent_disabled">主模組已停用，AI 模組保留啟用偏好；啟用主模組後才會載入。</string>
+    <string name="mod_details_ai_parent_disabled">主模組未啟用，仍可調整修補程式開關；已開啟的修補程式將在主模組啟用後載入。</string>
     <string name="mod_details_ai_local">本機安裝</string>
     <string name="mod_details_ai_shared">已貢獻社群</string>
     <string name="mod_details_ai_view">檢視</string>

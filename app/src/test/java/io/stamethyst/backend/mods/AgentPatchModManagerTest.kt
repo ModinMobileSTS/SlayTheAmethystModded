@@ -375,6 +375,48 @@ class AgentPatchModManagerTest {
     }
 
     @Test
+    fun setEnabled_withoutEnabledParent_persistsPreferenceWithoutEnablingParent() {
+        withWorkspace { context, workspace ->
+            val parentJar = File(RuntimePaths.optionalModsLibraryDir(context), "parent.jar")
+            parentJar.parentFile?.mkdirs()
+            ZipOutputStream(parentJar.outputStream()).use { zip ->
+                zip.putNextEntry(ZipEntry("ModTheSpire.json"))
+                zip.write("{\"modid\":\"parent\",\"name\":\"Parent\"}".toByteArray())
+                zip.closeEntry()
+            }
+            ModManager.setOptionalModEnabled(context, "parent", false)
+            AgentPatchModManager.packagePatchMod(context, workspace, "Parent tweak", "1.0.0", "test")
+            val parentsBefore = ModManager.listInstalledMods(context)
+            assertFalse(parentsBefore.single { it.modId == "parent" }.enabled)
+            val selectionBefore = parentsBefore.associate { it.modId to it.enabled }
+
+            AgentPatchModManager.setEnabled(context, "parent", workspace.patchId, true)
+            assertTrue(AgentPatchModManager.listPackaged(context, "parent").single().enabled)
+            assertEquals(selectionBefore, ModManager.listInstalledMods(context).associate { it.modId to it.enabled })
+
+            AgentPatchModManager.setEnabled(context, "parent", workspace.patchId, false)
+            assertFalse(AgentPatchModManager.listPackaged(context, "parent").single().enabled)
+            assertEquals(selectionBefore, ModManager.listInstalledMods(context).associate { it.modId to it.enabled })
+        }
+    }
+
+    @Test
+    fun listEnabledForLaunch_requiresParentAndPatchPreferences() {
+        withWorkspace { context, workspace ->
+            val patch = AgentPatchModManager.packagePatchMod(context, workspace, "Parent tweak", "1.0.0", "test")
+            AgentPatchModManager.setEnabled(context, "parent", workspace.patchId, true)
+
+            assertTrue(AgentPatchModManager.listEnabledForLaunch(context, emptySet()).isEmpty())
+            assertTrue(AgentPatchModManager.listEnabledForLaunch(context, setOf("other")).isEmpty())
+            assertEquals(listOf(patch.patchModId),
+                AgentPatchModManager.listEnabledForLaunch(context, setOf("parent")).map { it.patchModId })
+
+            AgentPatchModManager.setEnabled(context, "parent", workspace.patchId, false)
+            assertTrue(AgentPatchModManager.listEnabledForLaunch(context, setOf("parent")).isEmpty())
+        }
+    }
+
+    @Test
     fun resolvePatchWorkspace_returnsNullForMissingRevision() {
         withWorkspace { context, workspace ->
             assertTrue(AgentPatchModManager.resolvePatchWorkspace(context, "parent", "patch-missing") == null)

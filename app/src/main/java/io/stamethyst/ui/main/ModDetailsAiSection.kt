@@ -109,7 +109,6 @@ internal fun ModDetailsAiSection(
             mod.agentPatchMods.forEach { patch ->
                 LocalDetailsAiModRow(
                     patch = patch,
-                    parentEnabled = mod.enabled,
                     controlsEnabled = controlsEnabled,
                     onToggle = { onToggle(patch, it) },
                     onDetails = { onDetails(patch) },
@@ -136,7 +135,6 @@ internal fun ModDetailsAiSection(
 @Composable
 private fun LocalDetailsAiModRow(
     patch: AgentPatchModUi,
-    parentEnabled: Boolean,
     controlsEnabled: Boolean,
     onToggle: (Boolean) -> Unit,
     onDetails: () -> Unit,
@@ -154,7 +152,7 @@ private fun LocalDetailsAiModRow(
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 val toggleDescription = stringResource(R.string.mod_details_toggle, name)
-                Switch(patch.enabled, onCheckedChange = onToggle, enabled = controlsEnabled && parentEnabled,
+                Switch(patch.enabled, onCheckedChange = onToggle, enabled = controlsEnabled,
                     modifier = Modifier.semantics { contentDescription = toggleDescription })
             }
             Text(patch.description.ifBlank { stringResource(R.string.main_mod_agent_patch_description_empty) },

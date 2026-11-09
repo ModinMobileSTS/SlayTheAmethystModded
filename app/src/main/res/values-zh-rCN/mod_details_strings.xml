@@ -40,7 +40,7 @@
     <string name="mod_details_ai_on">已启用</string>
     <string name="mod_details_ai_off">已停用</string>
     <string name="mod_details_ai_paused">随主模组暂停加载</string>
-    <string name="mod_details_ai_parent_disabled">主模组已停用，AI 模组保留启用偏好；启用主模组后才会加载。</string>
+    <string name="mod_details_ai_parent_disabled">主模组未启用，仍可调整补丁开关；已开启的补丁将在主模组启用后加载。</string>
     <string name="mod_details_ai_local">本地安装</string>
     <string name="mod_details_ai_shared">已贡献社区</string>
     <string name="mod_details_ai_view">查看</string>

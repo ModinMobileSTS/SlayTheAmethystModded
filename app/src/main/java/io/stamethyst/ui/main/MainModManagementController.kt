@@ -1177,7 +1177,7 @@ internal class MainModManagementController(
     }
 
     fun onSetAgentPatchEnabled(host: Activity, mod: ModItemUi, patch: AgentPatchModUi, enabled: Boolean) {
-        if (!hostCallbacks.canEditMainScreenState() || !mod.enabled && enabled) return
+        if (!hostCallbacks.canEditMainScreenState()) return
         runCatching {
             AgentPatchModManager.setEnabled(host, mod.modId, patch.patchId, enabled)
         }.onFailure { error ->

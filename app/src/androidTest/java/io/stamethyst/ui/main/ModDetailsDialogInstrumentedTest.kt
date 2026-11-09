@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -152,6 +153,33 @@ class ModDetailsDialogInstrumentedTest {
         compose.onNodeWithContentDescription(context.getString(R.string.mod_details_ai_manage_description, patch.name))
             .performScrollTo().performClick()
         compose.onNodeWithText(context.getString(R.string.main_mod_agent_patch_action_title)).assertIsDisplayed()
+    }
+
+    @Test fun disabledParentStillAllowsAiPatchToggle() {
+        val patch = AgentPatchModUi("patch-id", "patch-mod-id", "Test AI Mod", "1.0", "AI description", false)
+        var toggled = false
+        setCard(item = mod.copy(enabled = false, agentPatchMods = listOf(patch)),
+            callbacks = ModCardCallbacks(onSetAgentPatchEnabled = { parent, selected, enabled ->
+                assertEquals(mod.modId, parent.modId)
+                assertTrue(!parent.enabled)
+                assertEquals(patch.patchId, selected.patchId)
+                toggled = enabled
+            }))
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.mod_details_toggle, patch.name))
+            .performScrollTo().assertIsEnabled().performClick()
+        compose.runOnIdle { assertTrue(toggled) }
+    }
+
+    @Test fun disabledControlsStillBlockAiPatchToggle() {
+        val patch = AgentPatchModUi("patch-id", "patch-mod-id", "Test AI Mod", "1.0", "AI description", false)
+        var toggled = false
+        setCard(item = mod.copy(enabled = false, agentPatchMods = listOf(patch)), controlsEnabled = false,
+            callbacks = ModCardCallbacks(onSetAgentPatchEnabled = { _, _, _ -> toggled = true }))
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.mod_details_toggle, patch.name))
+            .performScrollTo().assertIsNotEnabled().performClick()
+        compose.runOnIdle { assertTrue(!toggled) }
     }
 
     @Test fun disabledActionsCannotMoveOrToggle() {
