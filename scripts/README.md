@@ -10,7 +10,7 @@ Use `scripts/build/main.py` for build, release, and packaging tasks.
 
 Commands:
 
-- `debug`: build a debug APK. Option: `--application-id` / `-ApplicationId`, default `io.stamethyst.debug`.
+- `debug`: build a debug APK. By default, use Gradle's `application.id` configuration (`io.stamethyst` in the repository), matching direct Gradle builds and the install/start harness. Option: `--application-id` / `-ApplicationId` explicitly overrides it, for example `io.stamethyst.debug` for a separate install. Switching IDs in the same checkout invalidates BuildConfig, resources, and downstream compilation/packaging; keep the ID consistent for incremental builds. The default debug APK shares the release package ID rather than installing alongside it.
 - `release`: build the slim release APK. It downloads the resource pack on first launch.
 - `release-fast`: alias of `release` kept for compatibility.
 - `release-full`: build the full release APK with the resource-pack archive embedded in the APK; it uses the same runtime installation path as slim.

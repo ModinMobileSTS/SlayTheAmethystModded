@@ -247,12 +247,17 @@ def release_build(
         print("Fast release skips lint by default, release native cache cleanup, R8 minification, and resource shrinking.")
 
 
-def build_debug(application_id: str) -> None:
-    if not application_id.strip():
-        raise RuntimeError("ApplicationId cannot be empty.")
-    run_gradle([":app:assembleDebug", f"-Papplication.id={application_id}"], failure_message="assembleDebug failed.")
+def build_debug(application_id: str | None = None) -> None:
+    tasks = [":app:assembleDebug"]
+    if application_id is not None:
+        application_id = application_id.strip()
+        if not application_id:
+            raise RuntimeError("ApplicationId cannot be empty.")
+        tasks.append(f"-Papplication.id={application_id}")
+    run_gradle(tasks, failure_message="assembleDebug failed.")
     print(f"Debug APK directory: {repo_root() / 'app' / 'build' / 'outputs' / 'apk' / 'debug'}")
-    print(f"Temporary applicationId: {application_id}")
+    if application_id is not None:
+        print(f"Temporary applicationId: {application_id}")
 
 
 def package_cloud_function(source_dir: str, output_zip: str) -> None:

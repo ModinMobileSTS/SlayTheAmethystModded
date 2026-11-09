@@ -22,7 +22,8 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     debug = subparsers.add_parser("debug")
-    debug.add_argument("--application-id", "-ApplicationId", default="io.stamethyst.debug")
+    debug.add_argument("--application-id", "-ApplicationId", default=None,
+                       help="Override the application.id Gradle property (default: use Gradle configuration).")
 
     for name in ("release", "release-fast", "release-full"):
         add_release_args(subparsers.add_parser(name))
