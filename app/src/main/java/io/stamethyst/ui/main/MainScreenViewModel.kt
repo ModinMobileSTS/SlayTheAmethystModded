@@ -2224,7 +2224,8 @@ class MainScreenViewModel : ViewModel() {
         enabled: Boolean,
     ) {
         modManagementController.onSetAgentPatchEnabled(host, mod, patch, enabled)
-        refresh(host)
+        // The controller publishes the changed patch state. A full refresh switches the
+        // mod list to its loading content and disposes the card that owns the dialog.
     }
 
     fun onExportAgentPatch(host: Activity, patch: AgentPatchModUi) {
