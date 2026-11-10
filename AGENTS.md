@@ -21,6 +21,10 @@
 - 项目根目录的 `opencode.json` 为本仓库启用 Serena MCP（`--context=ide`，语言服务器为 Kotlin + Python）。探索/检索 Kotlin、Python 代码时优先使用 `serena_*` 符号工具（`serena_get_symbols_overview`、`serena_find_symbol`、`serena_find_referencing_symbols`、`serena_replace_symbol_body`），不要动辄整文件读取或全文 grep。
 - `.serena/project.yml` 里固定了 `kotlin_lsp_version`：JetBrains 的 intellij-server 构建约 40 天后自过期。若 Kotlin 工具报 `This build of intellij-server has expired`，把该版本号更新为 https://github.com/Kotlin/kotlin-lsp/releases 上的最新 tag 即可。
 
+## Implementation and verification
+
+- For changes needing systematic post-implementation testing, or when explicitly requested, use `.opencode/skills/post-implementation-verification/SKILL.md`. Routine changes still require verification appropriate to their risk without necessarily loading the skill.
+
 ## TDD workflow (opt-in)
 
 - Because this workflow is costly, do not invoke it proactively. Use it only when the user explicitly requests this TDD workflow or the `tdd-development` skill. Otherwise, implement and verify changes using the appropriate ordinary project practices.

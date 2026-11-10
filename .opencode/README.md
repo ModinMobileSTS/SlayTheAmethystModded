@@ -45,14 +45,21 @@ npm test --prefix .opencode
 
 These tests use a fake Python CLI and do not need an Android device. Integration runs still require a connected device and a working connector.
 
-## Single-slice TDD workflow
+## Implementation verification
+
+For changes needing systematic post-implementation tests, use the lightweight
+[verification skill](skills/post-implementation-verification/SKILL.md). It keeps acceptance criteria
+before implementation, selects risk-based tests afterward and reports gaps without automatic delegation.
+Routine changes still need appropriate verification even when the skill is not loaded.
+
+## Single-slice TDD workflow (opt-in)
 
 The six project agents under `.opencode/agents/` adapt SpireForge's single-slice workflow:
 `tdd-slice` (read-only dispatcher), `tdd-red`, `tdd-green`, `tdd-refactor`, `test-runner`
 (read-only verification), and `code-reviewer` (read-only review). No model/provider is pinned.
 Native V2 configuration enables only two delegation levels: parent -> dispatcher -> leaf.
 
-Start with [the skill](skills/tdd-development/SKILL.md),
+Only when the user explicitly requests this workflow or its skill, start with [the skill](skills/tdd-development/SKILL.md),
 [project context](skills/tdd-development/project/slay-the-amethyst.md) and
 [handoff template](skills/tdd-development/references/slice-task-template.md).
 The parent confirms one behavior, accepted criteria, allowed/frozen paths and real focused commands.
