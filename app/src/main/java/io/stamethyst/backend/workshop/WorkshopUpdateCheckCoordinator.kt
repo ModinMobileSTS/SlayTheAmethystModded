@@ -73,7 +73,7 @@ internal object WorkshopUpdateCheckCoordinator {
         startPeriodicChecks(appContext, initialDelayMs)
     }
 
-    fun requestCheck(context: Context, force: Boolean = false, notifyResult: Boolean = false) {
+    fun requestCheck(context: Context, force: Boolean = false, notifyResult: Boolean = false, publishedFileIds: Set<ULong>? = null) {
         val appContext = context.applicationContext
         _uiState.value = _uiState.value.copy(
             lastCheckedAtMs = LauncherPreferences.readLastWorkshopUpdateCheckAtMs(appContext),
@@ -93,26 +93,26 @@ internal object WorkshopUpdateCheckCoordinator {
             }
             _uiState.value = _uiState.value.copy(checking = true, lastErrorSummary = null)
             checkJob = scope.launch {
-                runCheck(appContext)
+                runCheck(appContext, publishedFileIds)
             }
         }
     }
 
-    private suspend fun runCheck(context: Context) {
+    private suspend fun runCheck(context: Context, publishedFileIds: Set<ULong>?) {
         runCatching {
             withContext(Dispatchers.IO) {
-                WorkshopUpdateChecker(context).checkInstalledMods()
+                WorkshopUpdateChecker(context).checkInstalledMods(publishedFileIds)
             }
         }.onSuccess { report ->
             val completedAtMs = System.currentTimeMillis()
             val updateCount = report.results.count { it.hasUpdate }
             val failedCount = report.failedCount
-            LauncherPreferences.saveLastWorkshopUpdateCheckAtMs(context, completedAtMs)
+            if (publishedFileIds == null) LauncherPreferences.saveLastWorkshopUpdateCheckAtMs(context, completedAtMs)
             _uiState.value = WorkshopUpdateCheckUiState(
                 checking = false,
-                lastCheckedAtMs = completedAtMs,
+                lastCheckedAtMs = LauncherPreferences.readLastWorkshopUpdateCheckAtMs(context),
                 lastCompletedAtMs = completedAtMs,
-                updateCount = updateCount,
+                updateCount = countStoredUpdates(context),
                 failedCount = failedCount,
                 lastErrorSummary = null,
             )
@@ -126,10 +126,10 @@ internal object WorkshopUpdateCheckCoordinator {
             val completedAtMs = System.currentTimeMillis()
             val updateCount = countStoredUpdates(context)
             val errorSummary = error.message ?: error.javaClass.simpleName
-            LauncherPreferences.saveLastWorkshopUpdateCheckAtMs(context, completedAtMs)
+            if (publishedFileIds == null) LauncherPreferences.saveLastWorkshopUpdateCheckAtMs(context, completedAtMs)
             _uiState.value = WorkshopUpdateCheckUiState(
                 checking = false,
-                lastCheckedAtMs = completedAtMs,
+                lastCheckedAtMs = LauncherPreferences.readLastWorkshopUpdateCheckAtMs(context),
                 lastCompletedAtMs = completedAtMs,
                 updateCount = updateCount,
                 failedCount = 0,

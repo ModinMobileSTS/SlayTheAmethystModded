@@ -6,10 +6,10 @@ internal class WorkshopUpdateChecker(context: Context) {
     private val service = WorkshopService(context)
     private val store = WorkshopMetadataStore(context)
 
-    suspend fun checkInstalledMods(): WorkshopUpdateCheckReport {
+    suspend fun checkInstalledMods(publishedFileIds: Set<ULong>? = null): WorkshopUpdateCheckReport {
         val results = ArrayList<WorkshopUpdateCheckResult>()
         var failedCount = 0
-        store.list().forEach { record ->
+        store.list().filter { publishedFileIds == null || it.publishedFileId in publishedFileIds }.forEach { record ->
             runCatching {
                 val details = service.getDetails(
                     appId = record.appId,

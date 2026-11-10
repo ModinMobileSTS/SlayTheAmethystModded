@@ -23,6 +23,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
+import io.stamethyst.model.ModItemUi
+import androidx.compose.ui.platform.LocalContext
+import io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator
 
 @Composable
 internal fun ModsActionsMenu(
@@ -39,7 +42,14 @@ internal fun ModsActionsMenu(
     onCheckWorkshopUpdates: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
     onOpenCommunityPatches: () -> Unit = {},
+    selectedMods: List<ModItemUi> = emptyList(),
+    batchActions: BatchEditBarState? = null,
 ) {
+    val context = LocalContext.current
+    var showCommunityCheck by remember { mutableStateOf(false) }
+    if (showCommunityCheck) {
+        ScopedCommunityCheckDialog(selectedMods.takeIf { it.isNotEmpty() }) { showCommunityCheck = false }
+    }
     var expanded by remember { mutableStateOf(false) }
     var filtersExpanded by remember { mutableStateOf(false) }
     val hasActiveFilter = showEnabledModsOnly || showUpdateAvailableModsOnly
@@ -92,11 +102,29 @@ internal fun ModsActionsMenu(
                     leadingIcon = { Checkbox(checked = showEnabledModsOnly, onCheckedChange = null) },
                 )
             } else {
+                if (selectedMods.isNotEmpty() && batchActions != null) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_favorite_add)) },
+                        enabled = canEditFolders,
+                        onClick = { dismiss(); batchActions.onFavorite(true) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_favorite_remove)) },
+                        enabled = canEditFolders,
+                        onClick = { dismiss(); batchActions.onFavorite(false) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_priority_dialog_clear)) },
+                        enabled = canEditFolders,
+                        onClick = { dismiss(); batchActions.onResetPriority() },
+                    )
+                    HorizontalDivider()
+                }
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.community_patches_view_all)) },
+                    text = { Text(stringResource(if (selectedMods.isEmpty()) R.string.mod_check_community_all else R.string.mod_check_community_selected)) },
                     onClick = {
                         dismiss()
-                        onOpenCommunityPatches()
+                        showCommunityCheck = true
                     },
                     leadingIcon = { Icon(painterResource(R.drawable.ic_build), contentDescription = null) },
                 )
@@ -126,23 +154,6 @@ internal fun ModsActionsMenu(
                         )
                     },
                     trailingIcon = { Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null) },
-                )
-                DropdownMenuItem(
-                    text = {
-                        Text(stringResource(if (checkingUpdates) R.string.main_workshop_checking else R.string.main_mod_check_updates))
-                    },
-                    enabled = canEditFolders && !checkingUpdates,
-                    onClick = {
-                        dismiss()
-                        onCheckWorkshopUpdates()
-                    },
-                    leadingIcon = {
-                        if (checkingUpdates) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(painterResource(R.drawable.ic_check_circle), contentDescription = null)
-                        }
-                    },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(if (dragLocked) R.string.main_action_unlock_drag else R.string.main_action_lock_drag)) },

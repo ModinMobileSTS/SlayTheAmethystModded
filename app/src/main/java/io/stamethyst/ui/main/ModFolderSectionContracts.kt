@@ -51,6 +51,9 @@ internal data class ModFolderSectionCallbacks(
 )
 
 internal data class BatchEditBarState(
+    val selectedMods: List<ModItemUi> = emptyList(),
+    val onFavorite: (Boolean) -> Unit = {},
+    val onResetPriority: () -> Unit = {},
     val selectedCount: Int,
     val controlsEnabled: Boolean,
     val onMove: () -> Unit,

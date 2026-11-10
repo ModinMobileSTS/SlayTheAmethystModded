@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
+import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -83,7 +84,7 @@ internal data class ModCardDragStartInfo(
 
 private val MOD_DRAG_HANDLE_SLOT_WIDTH = 28.dp
 private val MOD_BATCH_CHECKBOX_SLOT_WIDTH = 48.dp
-private val MOD_ENABLE_CHECKBOX_SLOT_WIDTH = 48.dp
+private val MOD_ENABLE_CHECKBOX_SLOT_WIDTH = 56.dp
 private val MOD_ACTIONS_BUTTON_SLOT_WIDTH = 44.dp
 private val FavoriteCardBorderColor = Color(0xFFF2A8CB)
 private const val WORKSHOP_UPDATE_CHANGE_NOTES_TIMEOUT_MS = 8_000L
@@ -156,6 +157,10 @@ internal fun ModCard(
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var showDetailsDialog by remember(mod.storagePath) { mutableStateOf(false) }
+    var showCommunityCheck by remember(mod.storagePath) { mutableStateOf(false) }
+    if (showCommunityCheck) {
+        ScopedCommunityCheckDialog(listOf(mod)) { showCommunityCheck = false }
+    }
     var detailsStartAtActions by remember(mod.storagePath) { mutableStateOf(false) }
     var showPriorityDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
@@ -174,18 +179,18 @@ internal fun ModCard(
     var updateChangeNotesState by remember(mod.storagePath) {
         mutableStateOf<WorkshopUpdateChangeNotesState>(WorkshopUpdateChangeNotesState.Idle)
     }
-    val cardShape = RoundedCornerShape(10.dp)
+    val cardShape = RoundedCornerShape(4.dp)
     val batchSelectionAnimationProgress = if (batchSelectionMode) {
         batchSelectionProgress?.value ?: 1f
     } else {
         batchSelectionProgress?.value ?: 0f
     }.coerceIn(0f, 1f)
     val normalControlProgress = 1f - batchSelectionAnimationProgress
-    val dragAffordanceVisible = showDragHandle && !batchSelectionMode
+    val dragAffordanceVisible = showDragHandle
     val deleteWorkshopDownloadEnabled = mod.canDeleteDownloadedWorkshopMod()
     val actionsEnabled = fileActionsEnabled || deleteWorkshopDownloadEnabled
     val dragAffordanceProgress = if (dragAffordanceVisible) {
-        (dragAffordanceAlpha?.value ?: 1f) * normalControlProgress
+            (dragAffordanceAlpha?.value ?: 1f)
     } else {
         if (showDragHandle) normalControlProgress else 0f
     }.coerceIn(0f, 1f)
@@ -229,7 +234,6 @@ internal fun ModCard(
                     }
                 }
                 if (dragStartInHandle == null) {
-                    callbacks.onMoveFolderPickerRequest(mod)
                     return@awaitEachGesture
                 }
                 val anchor = buildModCardDragOverlayAnchor(
@@ -271,7 +275,7 @@ internal fun ModCard(
             if (batchSelectionMode && batchSelectionEnabled) {
                 onBatchSelectionChange(!batchSelected)
             } else {
-                detailsStartAtActions = false
+                detailsStartAtActions = true
                 showDetailsDialog = true
             }
         },
@@ -308,12 +312,11 @@ internal fun ModCard(
             .graphicsLayer {
                 alpha = if (isDraggedInOverlay) 0f else 1f
             }
-            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .padding(start = 22.dp, end = 8.dp, top = 1.dp, bottom = 1.dp)
             .onGloballyPositioned { cardCoordinates = it }
-            .shadow(elevation = 2.dp, shape = cardShape, clip = false)
             .clip(cardShape)
             .border(
-                if (batchSelected || mod.newlyImported) 2.dp else 1.dp,
+                if (batchSelected || mod.newlyImported) 1.dp else 0.dp,
                 if (batchSelected) {
                     MaterialTheme.colorScheme.primary
                 } else if (mod.favorite) {
@@ -321,7 +324,7 @@ internal fun ModCard(
                 } else if (mod.newlyImported) {
                     MaterialTheme.colorScheme.tertiary
                 } else {
-                    MaterialTheme.colorScheme.outlineVariant
+                    Color.Transparent
                 },
                 cardShape
             )
@@ -330,10 +333,8 @@ internal fun ModCard(
                     MaterialTheme.colorScheme.primaryContainer
                 } else if (mod.newlyImported) {
                     MaterialTheme.colorScheme.tertiaryContainer
-                } else if (mod.enabled) {
-                    MaterialTheme.colorScheme.primaryContainer
                 } else {
-                    MaterialTheme.colorScheme.surfaceContainer
+                    MaterialTheme.colorScheme.surface
                 },
                 cardShape
             )
@@ -344,12 +345,13 @@ internal fun ModCard(
                     easing = LinearEasing
                 )
             )
-            .padding(10.dp)
+            .padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
         ModCardBodyContent(
             mod = mod,
             isExpanded = false,
             showModFileName = showModFileName,
+            compact = true,
             modSuggestionText = suggestionText,
             suggestionUnread = !suggestionRead,
             suggestionBadgeEnabled = !batchSelectionMode,
@@ -417,10 +419,10 @@ internal fun ModCard(
             headerTrailing = {
                 Box(
                     modifier = Modifier
-                        .width(MOD_ACTIONS_BUTTON_SLOT_WIDTH * normalControlProgress)
+                        .width(MOD_ACTIONS_BUTTON_SLOT_WIDTH)
                         .clipToBounds()
                         .graphicsLayer {
-                            alpha = normalControlProgress
+                            alpha = 1f
                             scaleX = 0.86f + alpha * 0.14f
                             scaleY = 0.86f + alpha * 0.14f
                         },
@@ -428,17 +430,17 @@ internal fun ModCard(
                 ) {
                     IconButton(
                         onClick = {
-                            detailsStartAtActions = true
+                            detailsStartAtActions = false
                             showDetailsDialog = true
                         },
-                        enabled = actionsEnabled && !batchSelectionMode,
+                        enabled = true,
                         modifier = Modifier.semantics {
                             contentDescription = actionsContentDescription
                         }
                     ) {
                         Text(
                             text = "⋮",
-                            color = if (actionsEnabled && !batchSelectionMode) {
+                            color = if (actionsEnabled) {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
@@ -449,24 +451,24 @@ internal fun ModCard(
                 }
                 Box(
                     modifier = Modifier
-                        .width(MOD_ENABLE_CHECKBOX_SLOT_WIDTH * normalControlProgress)
+                        .width(MOD_ENABLE_CHECKBOX_SLOT_WIDTH)
                         .clipToBounds(),
                     contentAlignment = Alignment.Center
                 ) {
                     if (mod.showsEnableControl()) {
-                        Checkbox(
+                        Switch(
                             checked = mod.enabled,
                             onCheckedChange = { checked ->
-                                if (!batchSelectionMode && selectionEnabled) {
+                                if (selectionEnabled) {
                                     if (checked != mod.enabled) {
                                         LauncherHaptics.vibrateToggle(context)
                                     }
                                     callbacks.onToggleMod(mod, checked)
                                 }
                             },
-                            enabled = !batchSelectionMode && selectionEnabled,
+                            enabled = selectionEnabled,
                             modifier = Modifier.graphicsLayer {
-                                alpha = normalControlProgress
+                                alpha = 1f
                                 scaleX = 0.86f + alpha * 0.14f
                                 scaleY = 0.86f + alpha * 0.14f
                             }
@@ -693,7 +695,7 @@ internal fun ModCard(
         )
     }
 
-    if (showDetailsDialog && !batchSelectionMode) {
+    if (showDetailsDialog) {
         val openAiEditor = {
             showDetailsDialog = false
             AiEditorNewBadgeStore.markSeen(context)
@@ -725,6 +727,7 @@ internal fun ModCard(
             },
             onFavoriteChange = { callbacks.onSetFavorite(mod, it) },
             onOpenAiEditor = openAiEditor,
+            onOpenWorkshopDetails = openWorkshop,
             badgesContent = { onScrollToAi ->
                 ModDetailsBadges(
                     mod = mod,
@@ -781,6 +784,7 @@ internal fun ModCard(
             },
             actionsContent = {
                 ModActionsList(
+                    onCheckCommunity = { showCommunityCheck = true },
                     controlsEnabled = fileActionsEnabled,
                     favorite = mod.favorite,
                     deleteEnabled = actionsEnabled,
@@ -924,11 +928,13 @@ private fun buildModCardDragOverlayAnchor(
 internal fun DraggingModCardOverlayLayer(
     dragSession: ModDragSession?,
     showModFileName: Boolean,
-    overlayHostTopLeftWindow: Offset
+    overlayHostTopLeftWindow: Offset,
+    movingCount: Int = 1,
 ) {
     DraggingModCardOverlay(
         dragSession = dragSession,
         showModFileName = showModFileName,
+        movingCount = movingCount,
         overlayHostTopLeftWindow = overlayHostTopLeftWindow
     )
 }
@@ -937,7 +943,8 @@ internal fun DraggingModCardOverlayLayer(
 internal fun DraggingModCardOverlay(
     dragSession: ModDragSession?,
     showModFileName: Boolean,
-    overlayHostTopLeftWindow: Offset
+    overlayHostTopLeftWindow: Offset,
+    movingCount: Int = 1,
 ) {
     if (dragSession == null) {
         return
@@ -983,6 +990,9 @@ internal fun DraggingModCardOverlay(
                 )
                 .padding(10.dp)
         ) {
+            if (movingCount > 1) {
+                Text(stringResource(R.string.mod_drag_count, movingCount), style = MaterialTheme.typography.titleSmall)
+            }
             ModCardBodyContent(
                 mod = mod,
                 isExpanded = dragSession.isExpanded,

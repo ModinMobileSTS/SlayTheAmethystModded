@@ -1,0 +1,18 @@
+<resources>
+    <string name="mod_folder_updates_available">%1$d 个模组可更新</string>
+    <string name="mod_check_updates_all">检查所有模组更新</string>
+    <string name="mod_check_updates_selected">检查选中的模组更新</string>
+    <string name="mod_check_community_all">检查所有社区组件</string>
+    <string name="mod_check_community_selected">检查选中的社区组件</string>
+    <string name="mod_check_updates_single">检查此模组更新</string>
+    <string name="mod_check_community_single">检查此模组社区组件</string>
+    <string name="mod_manager_tools">工具</string>
+    <string name="mod_details_effective_priority">当前加载优先级：#%1$d</string>
+    <string name="mod_drag_count">正在移动 %1$d 个模组</string>
+    <string name="mod_folder_all_enabled">全组全部启用 %1$d/%2$d</string>
+    <string name="mod_folder_part_enabled">全组部分启用 %1$d/%2$d</string>
+    <string name="mod_folder_none_enabled">全组已启用 %1$d/%2$d</string>
+    <string name="mod_folder_select_results">选择本组筛选结果：已选 %1$d/%2$d 项</string>
+    <string name="mod_folder_visible_results">当前显示 %1$d 项</string>
+    <string name="mod_folder_disable_all">禁用本组全部模组</string>
+</resources>

@@ -12,7 +12,9 @@ internal class ModDragSessionCoordinator(
     private val resolveAssignedFolderToken: (ModItemUi) -> String,
     private val onAssignModToFolder: (ModItemUi, String) -> Unit,
     private val onMoveModToUnassigned: (ModItemUi) -> Unit,
-    private val onRevealFolderToken: (String) -> Unit
+    private val onRevealFolderToken: (String) -> Unit,
+    private val allowDropInSourceFolder: () -> Boolean = { false },
+    private val onReorderDrop: ((ModItemUi, Any, Boolean) -> Unit)? = null,
 ) {
     val shouldCollapseFolders: Boolean
         get() = interactionState.activeDragFolderId != null || interactionState.modDragState.collapseFoldersDuringDrag
@@ -32,7 +34,7 @@ internal class ModDragSessionCoordinator(
                 isExpanded = isExpanded
             ),
             activePointerIdValue = dragInfo.pointerIdValue,
-            collapseFoldersDuringDrag = true
+            collapseFoldersDuringDrag = onReorderDrop == null
         )
         updateModDragHover(dragInfo.overlayAnchor.pointerWindow)
     }
@@ -179,13 +181,30 @@ internal class ModDragSessionCoordinator(
     }
 
     private fun handleModDrop(session: ModDragSession) {
+        if (onReorderDrop != null) {
+            val viewport = interactionState.listViewportInWindow
+            val layout = interactionState.listState.layoutInfo
+            val y = session.overlayAnchor.pointerWindow.y
+            val target = viewport?.let { bounds ->
+                layout.visibleItemsInfo.firstOrNull {
+                    val top = bounds.top + it.offset - layout.viewportStartOffset
+                    y in top..(top + it.size)
+                }
+            }
+            cancelModDrag()
+            if (target != null && viewport != null) {
+                val center = viewport.top + target.offset - layout.viewportStartOffset + target.size / 2f
+                onReorderDrop.invoke(session.mod, target.key, y > center)
+            }
+            return
+        }
         val targetFolderId = findDropFolderAt(session.overlayAnchor.pointerWindow)
         val sourceFolderId = session.sourceFolderTokenId
         cancelModDrag()
 
         when {
             targetFolderId == null -> Unit
-            targetFolderId == sourceFolderId -> Unit
+            targetFolderId == sourceFolderId && !allowDropInSourceFolder() -> Unit
             targetFolderId == UNASSIGNED_FOLDER_ID -> {
                 onMoveModToUnassigned(session.mod)
                 onRevealFolderToken(targetFolderId)

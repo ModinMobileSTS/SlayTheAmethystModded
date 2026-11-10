@@ -655,6 +655,8 @@ private fun GameLaunchActionBar(
 
 @Composable
 private fun ModsHeaderPinnedContent(
+    selectedMods: List<ModItemUi> = emptyList(),
+    batchActions: BatchEditBarState? = null,
     localMods: List<ModItemUi>,
     folderControlsEnabled: Boolean,
     dragLocked: Boolean,
@@ -687,6 +689,8 @@ private fun ModsHeaderPinnedContent(
             enabled = folderControlsEnabled && hostAvailable,
         )
         ModsActionsMenu(
+            batchActions = batchActions,
+            selectedMods = selectedMods,
             canEditFolders = folderControlsEnabled && hostAvailable,
             dragLocked = dragLocked,
             showEnabledModsOnly = showEnabledModsOnly,
@@ -5300,8 +5304,10 @@ private fun LauncherMainScreenContent(
                                 contentPadding = PaddingValues(0.dp),
                                 pinnedContent = {
                                     ModsHeaderPinnedContent(
+                                        batchActions = batchEditBarState,
+                                        selectedMods = batchEditBarState?.selectedMods.orEmpty(),
                                         localMods = uiState.optionalMods,
-                                        folderControlsEnabled = uiState.controlsEnabled && !batchSelectionMode,
+                                        folderControlsEnabled = uiState.controlsEnabled,
                                         dragLocked = uiState.dragLocked,
                                         showEnabledModsOnly = showEnabledModsOnly,
                                         showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,

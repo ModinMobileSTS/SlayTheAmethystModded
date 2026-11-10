@@ -8,6 +8,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -48,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TriStateCheckbox
+import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -78,6 +80,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
@@ -114,6 +118,13 @@ internal fun ModFolderSection(
 ) {
     val dependencyMods = uiState.dependencyMods
     val mods = uiState.optionalMods
+    val orderContext = LocalContext.current.applicationContext
+    val orderStore = remember(orderContext) { ModDisplayOrder(orderContext) }
+    var displayOrder by remember(orderStore) { mutableStateOf(orderStore.read()) }
+    val orderRanks = remember(displayOrder) { displayOrder.withIndex().associate { it.value to it.index } }
+    LaunchedEffect(orderContext) {
+        io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator.requestCheck(orderContext)
+    }
     val folders = uiState.modFolders
     val folderAssignments = uiState.folderAssignments
     val folderCollapsed = uiState.folderCollapsed
@@ -136,7 +147,7 @@ internal fun ModFolderSection(
     var batchMoveDialogVisible by remember { mutableStateOf(false) }
     var batchDeleteDialogVisible by remember { mutableStateOf(false) }
     var selectedBatchStoragePaths by remember { mutableStateOf<Set<String>>(emptySet()) }
-    val effectiveDragLocked = uiState.dragLocked || batchSelectionMode
+    val effectiveDragLocked = uiState.dragLocked
     val organizationControlsEnabled = uiState.controlsEnabled && hostAvailable
     val organizationDragEnabled = organizationControlsEnabled && !effectiveDragLocked
     val modFileActionsEnabled = !uiState.busy && hostAvailable
@@ -165,14 +176,19 @@ internal fun ModFolderSection(
 
     val folderIds = remember(folders) { folders.map { it.id }.toSet() }
     val foldersById = remember(folders) { folders.associateBy { it.id } }
-    val modsByFolderId = remember(filteredMods, folderAssignments, folderIds) {
+    val modsByFolderId = remember(filteredMods, folderAssignments, folderIds, orderRanks) {
         filteredMods
             .groupBy { resolveAssignedFolderId(it, folderAssignments, folderIds) }
             .mapValues { (_, modsInFolder) ->
-                modsInFolder.sortedBy { if (it.favorite) 0 else 1 }
+                modsInFolder.sortedWith(compareBy<ModItemUi> { orderRanks[it.storagePath] ?: Int.MAX_VALUE }
+                    .thenBy { if (it.favorite) 0 else 1 })
             }
     }
     val unassignedMods = remember(modsByFolderId) { modsByFolderId[null].orEmpty() }
+    // Enable controls describe the whole group; batch selection describes visible results.
+    val allModsByFolderId = remember(mods, folderAssignments, folderIds) {
+        mods.groupBy { resolveAssignedFolderId(it, folderAssignments, folderIds) }
+    }
     val optionalModSuggestionInfoByStoragePath = remember(filteredMods, uiState.modSuggestions) {
         buildModSuggestionInfoByStoragePath(filteredMods, uiState.modSuggestions)
     }
@@ -236,6 +252,8 @@ internal fun ModFolderSection(
             null
         } else {
             BatchEditBarState(
+                onFavorite = { favorite -> latestSelectedBatchMods.value.forEach { callbacks.onSetModFavorite(it, favorite) } },
+                onResetPriority = { latestSelectedBatchMods.value.forEach { callbacks.onSetPriority(it, null) } },
                 selectedCount = 0,
                 controlsEnabled = false,
                 onMove = { batchMoveDialogVisible = true },
@@ -254,6 +272,7 @@ internal fun ModFolderSection(
             )
         }
     }?.copy(
+        selectedMods = selectedBatchMods,
         selectedCount = selectedBatchMods.size,
         controlsEnabled = latestBatchSelectionControlsEnabled.value
     )
@@ -467,15 +486,32 @@ internal fun ModFolderSection(
     val latestFolderAssignments = rememberUpdatedState(folderAssignments)
     val latestFolderIds = rememberUpdatedState(folderIds)
     val latestCallbacks = rememberUpdatedState(callbacks)
-    val latestOrganizationDragEnabled = rememberUpdatedState(organizationDragEnabled)
+    val latestOrganizationDragEnabled = rememberUpdatedState(
+        organizationDragEnabled && !searchActive && !showEnabledModsOnly && !showUpdateAvailableModsOnly
+    )
     val latestOrganizationControlsEnabled = rememberUpdatedState(organizationControlsEnabled)
     val latestSelectedBatchStoragePaths = rememberUpdatedState(selectedBatchStoragePaths)
+    var draggedMods by remember { mutableStateOf<List<ModItemUi>>(emptyList()) }
+    val latestDraggedMods = rememberUpdatedState(draggedMods)
+    val latestReorderDrop = rememberUpdatedState<(ModItemUi, Any, Boolean) -> Unit> { source, key, after ->
+        val target = mods.firstOrNull { "mod:${it.storagePath}" == key }
+        val sourceFolder = resolveAssignedFolderId(source, folderAssignments, folderIds)
+        if (latestOrganizationDragEnabled.value && target != null &&
+            resolveAssignedFolderId(target, folderAssignments, folderIds) == sourceFolder) {
+            val group = modsByFolderId[sourceFolder].orEmpty().map { it.storagePath }
+            val moving = latestDraggedMods.value.map { it.storagePath }.toSet().intersect(group.toSet())
+            val reordered = reorderModPaths(group, moving, target.storagePath, after)
+            displayOrder = reordered + displayOrder.filter { it !in group }
+            orderStore.save(displayOrder)
+        }
+    }
 
     // Keep the coordinator stable during a drag gesture, but resolve folder state
     // from the latest UI snapshot after moves have already updated assignments.
     val dragCoordinator = remember(interactionState) {
         ModDragSessionCoordinator(
             interactionState = interactionState,
+            onReorderDrop = { source, key, after -> latestReorderDrop.value(source, key, after) },
             resolveFolderTokenFromItemKey = { itemKey ->
                 val key = itemKey as? String ?: return@ModDragSessionCoordinator null
                 latestFolderTokenByItemKey.value[key]
@@ -488,11 +524,16 @@ internal fun ModFolderSection(
                 ) ?: UNASSIGNED_FOLDER_ID
             },
             onAssignModToFolder = { mod, folderId ->
-                latestCallbacks.value.onAssignModToFolder(mod, folderId)
+                val moving = latestDraggedMods.value
+                if (moving.size > 1) latestCallbacks.value.onAssignModsToFolder(moving, folderId)
+                else latestCallbacks.value.onAssignModToFolder(mod, folderId)
             },
             onMoveModToUnassigned = { mod ->
-                latestCallbacks.value.onMoveModToUnassigned(mod)
+                val moving = latestDraggedMods.value
+                if (moving.size > 1) latestCallbacks.value.onMoveModsToUnassigned(moving)
+                else latestCallbacks.value.onMoveModToUnassigned(mod)
             },
+            allowDropInSourceFolder = { latestDraggedMods.value.size > 1 },
             onRevealFolderToken = { folderTokenId ->
                 latestCallbacks.value.onRevealFolderToken(folderTokenId)
             }
@@ -899,7 +940,6 @@ internal fun ModFolderSection(
                                                 scaleX = folderScale
                                                 scaleY = folderScale
                                             }
-                                            .shadow(elevation = 2.dp, shape = headerShape, clip = false)
                                             .then(
                                                 if (isSourceFolderDuringModDrag) {
                                                     Modifier
@@ -916,7 +956,15 @@ internal fun ModFolderSection(
                                                 if (isHovering) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                                                 headerShape
                                             )
-                                            .padding(vertical = 6.dp)
+                                            .clickable(enabled = uiState.controlsEnabled && !collapseToggleLocked) {
+                                                collapseToggleLockedTokens = collapseToggleLockedTokens + folderTokenId
+                                                if (folderUiModel.isUnassigned) {
+                                                    callbacks.onToggleUnassignedCollapsed()
+                                                } else {
+                                                    callbacks.onToggleFolderCollapsed(folderTokenId)
+                                                }
+                                            }
+                                            .padding(vertical = 2.dp)
                                     ) {
                                         Row(
                                             modifier = Modifier
@@ -965,33 +1013,86 @@ internal fun ModFolderSection(
                                                     dragCoordinator.finishFolderReorder()
                                                 }
                                             )
-                                            TriStateCheckbox(
-                                                state = folderUiModel.toggleState,
-                                                enabled = folderUiModel.selectableCount > 0 && organizationControlsEnabled,
-                                                onClick = {
-                                                    if (organizationControlsEnabled) {
-                                                        if (folderUiModel.isUnassigned) {
-                                                            callbacks.onSetUnassignedSelected(folderUiModel.toggleState != ToggleableState.On)
-                                                        } else {
-                                                            callbacks.onSetFolderSelected(
-                                                                folderTokenId,
-                                                                folderUiModel.toggleState != ToggleableState.On
-                                                            )
-                                                        }
-                                                    }
-                                                }
+                                            val allFolderMods = allModsByFolderId[
+                                                if (folderUiModel.isUnassigned) null else folderTokenId
+                                            ].orEmpty().filter { it.canUseFolderSelection() }
+                                            val enabledCount = allFolderMods.count { it.enabled }
+                                            val enableState = folderAggregateState(enabledCount, allFolderMods.size)
+                                            val enableDescription = stringResource(
+                                                when (enableState) {
+                                                    ToggleableState.On -> R.string.mod_folder_all_enabled
+                                                    ToggleableState.Indeterminate -> R.string.mod_folder_part_enabled
+                                                    ToggleableState.Off -> R.string.mod_folder_none_enabled
+                                                }, enabledCount, allFolderMods.size
                                             )
-                                            Text(
-                                                text = stringResource(
-                                                    R.string.main_folder_name_count_format,
-                                                    folderUiModel.folderName,
-                                                    folderUiModel.selectedCount,
-                                                    folderUiModel.selectableCount
-                                                ),
-                                                modifier = Modifier.weight(1f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = MaterialTheme.colorScheme.primary
+                                            val setFolderEnabled: (Boolean) -> Unit = { enabled ->
+                                                if (folderUiModel.isUnassigned) {
+                                                    callbacks.onSetUnassignedSelected(enabled)
+                                                } else {
+                                                    callbacks.onSetFolderSelected(folderTokenId, enabled)
+                                                }
+                                            }
+                                            if (batchSelectionMode) {
+                                                val visiblePaths = folderUiModel.mods
+                                                    .filter { it.canUseFolderSelection() }
+                                                    .map { it.storagePath }.toSet()
+                                                val selectedCount = visiblePaths.count { it in selectedBatchStoragePaths }
+                                                val selectionState = folderAggregateState(selectedCount, visiblePaths.size)
+                                                val selectionDescription = stringResource(
+                                                    R.string.mod_folder_select_results, selectedCount, visiblePaths.size
+                                                )
+                                                TriStateCheckbox(
+                                                    state = selectionState,
+                                                    enabled = organizationControlsEnabled && visiblePaths.isNotEmpty(),
+                                                    modifier = Modifier.semantics {
+                                                        contentDescription = selectionDescription
+                                                    },
+                                                    onClick = {
+                                                        selectedBatchStoragePaths = toggleFolderBatchSelection(
+                                                            selectedBatchStoragePaths, visiblePaths
+                                                        )
+                                                    }
+                                                )
+                                            }
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_mod_folder),
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(end = 8.dp).size(24.dp)
+                                            )
+                                            Column(Modifier.weight(1f)) {
+                                                Text(
+                                                    text = folderUiModel.folderName,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(
+                                                    text = enableDescription,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                if (searchActive || showEnabledModsOnly || showUpdateAvailableModsOnly) {
+                                                    Text(
+                                                        text = stringResource(R.string.mod_folder_visible_results, folderUiModel.mods.size),
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                }
+                                                val updateCount = allFolderMods.count { it.workshop?.state == WorkshopModState.UpdateAvailable }
+                                                if (updateCount > 0) {
+                                                    Text(
+                                                        text = stringResource(R.string.mod_folder_updates_available, updateCount),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                    )
+                                                }
+                                            }
+                                            Switch(
+                                                checked = enableState != ToggleableState.Off,
+                                                onCheckedChange = { setFolderEnabled(enableState != ToggleableState.On) },
+                                                enabled = organizationControlsEnabled && allFolderMods.isNotEmpty(),
+                                                modifier = Modifier.semantics { stateDescription = enableDescription },
+                                                indeterminate = enableState == ToggleableState.Indeterminate,
                                             )
                                             IconButton(
                                                 enabled = uiState.controlsEnabled && !collapseToggleLocked,
@@ -1031,6 +1132,14 @@ internal fun ModFolderSection(
                                                     expanded = manageMenuExpanded,
                                                     onDismissRequest = { manageMenuExpanded = false }
                                                 ) {
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(R.string.mod_folder_disable_all)) },
+                                                        enabled = organizationControlsEnabled && enabledCount > 0,
+                                                        onClick = {
+                                                            manageMenuExpanded = false
+                                                            setFolderEnabled(false)
+                                                        }
+                                                    )
                                                     DropdownMenuItem(
                                                         text = { Text(stringResource(R.string.main_folder_rename)) },
                                                         enabled = organizationControlsEnabled,
@@ -1176,8 +1285,14 @@ internal fun ModFolderSection(
                                     onSetImportPatchEnabled = { item, moduleId, enabled ->
                                         latestCallbacks.value.onSetImportPatchEnabled(item, moduleId, enabled)
                                     },
-                                    onDragStart = { dragInfo ->
-                                        val currentMod = latestMod.value
+                                     onDragStart = { dragInfo ->
+                                         val currentMod = latestMod.value
+                                         draggedMods = if (currentMod.storagePath in latestSelectedBatchStoragePaths.value) {
+                                              latestSelectedBatchMods.value.filter {
+                                                  resolveAssignedFolderId(it, latestFolderAssignments.value, latestFolderIds.value) ==
+                                                      resolveAssignedFolderId(currentMod, latestFolderAssignments.value, latestFolderIds.value)
+                                              }
+                                         } else listOf(currentMod)
                                         dragCoordinator.startModDrag(
                                             mod = currentMod,
                                             dragInfo = dragInfo,
@@ -1187,7 +1302,11 @@ internal fun ModFolderSection(
                                     onDragCancel = {
                                         dragCoordinator.cancelModDrag()
                                     },
-                                    onMoveFolderPickerRequest = { pendingMoveMod = it },
+                                     onMoveFolderPickerRequest = {
+                                         if (it.storagePath in latestSelectedBatchStoragePaths.value) {
+                                             batchMoveDialogVisible = true
+                                         } else pendingMoveMod = it
+                                     },
                                     onBatchSelectionStart = { selectedMod ->
                                         if (latestOrganizationControlsEnabled.value && selectedMod.canUseFolderSelection()) {
                                             interactionState.expandedCards.clear()
@@ -1210,7 +1329,7 @@ internal fun ModFolderSection(
                                     fileActionsEnabled = modFileActionsEnabled && mod.installed,
                                     dragEnabled = folderModItem != null && mod.canUseFolderSelection(),
                                     dragEnabledState = latestOrganizationDragEnabled,
-                                    showDragHandle = folderModItem != null && !batchSelectionMode,
+                                    showDragHandle = folderModItem != null,
                                     dragAffordanceAlpha = dragAffordanceAlpha,
                                     batchSelectionProgress = batchSelectionProgress,
                                     batchSelectionMode = batchSelectionMode,
@@ -1275,6 +1394,7 @@ internal fun ModFolderSection(
     DraggingModCardOverlayLayer(
         dragSession = modDragState.session,
         showModFileName = showModFileName,
+        movingCount = draggedMods.size,
         overlayHostTopLeftWindow = interactionState.sectionTopLeftInWindow
     )
 }

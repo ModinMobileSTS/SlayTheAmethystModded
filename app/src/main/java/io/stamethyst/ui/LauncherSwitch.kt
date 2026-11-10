@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchColors
 import androidx.compose.material3.SwitchDefaults
@@ -23,13 +24,18 @@ internal fun LauncherSwitch(
     enabled: Boolean = true,
     colors: SwitchColors = SwitchDefaults.colors(),
     interactionSource: MutableInteractionSource? = null,
+    indeterminate: Boolean = false,
 ) {
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         modifier = modifier,
         enabled = enabled,
-        colors = colors,
+        colors = if (indeterminate) SwitchDefaults.colors(
+            checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
+            checkedThumbColor = MaterialTheme.colorScheme.primary,
+            checkedIconColor = MaterialTheme.colorScheme.onPrimary,
+        ) else colors,
         interactionSource = interactionSource,
         thumbContent = {
             // Material supplies the correct icon tint for checked, unchecked and disabled states.
@@ -37,7 +43,15 @@ internal fun LauncherSwitch(
             Canvas(modifier = Modifier.size(16.dp)) {
                 val strokeWidth = 2.dp.toPx()
                 val radius = 4.5.dp.toPx()
-                if (checked) {
+                if (indeterminate) {
+                    drawLine(
+                        color = color,
+                        start = Offset(center.x - radius, center.y),
+                        end = Offset(center.x + radius, center.y),
+                        strokeWidth = strokeWidth,
+                        cap = StrokeCap.Round,
+                    )
+                } else if (checked) {
                     drawLine(
                         color = color,
                         start = Offset(center.x, center.y - radius),

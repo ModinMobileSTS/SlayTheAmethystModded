@@ -95,6 +95,8 @@ private val communityPreviewRequests = Semaphore(4)
 internal fun CommunityPatchesScreen(
     workshopViewModel: WorkshopViewModel,
     modId: String? = null,
+    scopeModIds: Set<String>? = null,
+    refreshOnOpen: Boolean = false,
     onBack: () -> Unit,
     onOpenMod: (String) -> Unit = {},
     onOpenLlmSettings: () -> Unit = {},
@@ -106,7 +108,7 @@ internal fun CommunityPatchesScreen(
     var cachedMods by remember { mutableStateOf<List<CommunityPatchMod>?>(null) }
     val requestState by AgentPatchCatalogueService.requestState.collectAsState()
     val catalogueProgress by CatalogueLoadProgressReporter.progress.collectAsState()
-    val mods = requestState.data?.mods ?: cachedMods
+    val mods = (requestState.data?.mods ?: cachedMods)?.filter { scopeModIds == null || it.modId in scopeModIds }
     val refreshing = requestState.phase == CatalogueRequestPhase.FETCHING
     val error = requestState.error
     var refreshToken by rememberSaveable { mutableIntStateOf(0) }
@@ -127,7 +129,7 @@ internal fun CommunityPatchesScreen(
     LaunchedEffect(refreshToken) {
         try {
             if (mods == null) cachedMods = withContext(Dispatchers.IO) { AgentPatchCatalogueService.readCachedMods(context) }
-            AgentPatchCatalogueService.refreshMods(context, force = refreshToken != initialRefreshToken)
+            AgentPatchCatalogueService.refreshMods(context, force = refreshOnOpen || scopeModIds != null || refreshToken != initialRefreshToken)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

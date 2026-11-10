@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -78,19 +80,11 @@ internal fun ModDetailsDialog(
     badgesContent: @Composable (onScrollToAi: () -> Unit) -> Unit,
     aiContent: @Composable () -> Unit,
     actionsContent: @Composable () -> Unit,
+    onOpenWorkshopDetails: () -> Unit = {},
 ) {
-    val scroll = rememberScrollState()
+    val pager = rememberPagerState(initialPage = if (startAtActions) 0 else 1, pageCount = { 3 })
     val scope = rememberCoroutineScope()
     val sectionOffsets = remember { mutableStateMapOf<ModDetailsSection, Int>() }
-    val selectedSection by remember {
-        derivedStateOf { resolveModDetailsSection(scroll.value, scroll.maxValue, sectionOffsets) }
-    }
-    val navigateToSection: (ModDetailsSection) -> Unit = { section ->
-        scope.launch {
-            val offset = snapshotFlow { sectionOffsets[section] }.filterNotNull().first()
-            scroll.animateScrollTo(if (section == ModDetailsSection.INFO) 0 else offset)
-        }
-    }
     var descriptionExpanded by remember { mutableStateOf(false) }
     var descriptionOverflows by remember { mutableStateOf(false) }
     val authors by produceState<List<String>>(emptyList(), mod.storagePath, mod.version, mod.workshop?.localJarPath) {
@@ -99,12 +93,6 @@ internal fun ModDetailsDialog(
                 .filter { it.isNotBlank() }
                 .mapNotNull { path -> runCatching { ModJarSupport.readModManifest(File(path)).authors }.getOrNull() }
                 .firstOrNull { it.isNotEmpty() }.orEmpty()
-        }
-    }
-    LaunchedEffect(startAtActions) {
-        if (startAtActions) {
-            val offset = snapshotFlow { sectionOffsets[ModDetailsSection.ACTIONS] }.filterNotNull().first()
-            scroll.animateScrollTo(offset)
         }
     }
     val name = resolveModDisplayName(mod, showModFileName)
@@ -116,20 +104,23 @@ internal fun ModDetailsDialog(
             modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).testTag("mod_details_dialog")
                 .semantics { paneTitle = title },
         ) {
+            Text(name, style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
             SecondaryTabRow(
-                selectedTabIndex = selectedSection.ordinal,
+                selectedTabIndex = pager.currentPage,
                 containerColor = Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.fillMaxWidth().testTag("mod_details_section_tabs"),
             ) {
-                ModDetailsSection.entries.forEach { section ->
+                listOf(R.string.mod_manager_tools, R.string.mod_details_tab_info, R.string.mod_details_ai_title).forEachIndexed { index, label ->
                     Tab(
-                        selected = selectedSection == section,
-                        onClick = { navigateToSection(section) },
-                        modifier = Modifier.heightIn(min = 48.dp).testTag("mod_details_tab_${section.key}"),
+                        selected = pager.currentPage == index,
+                        onClick = { scope.launch { pager.animateScrollToPage(index) } },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("mod_manager_tab_$index"),
                     ) {
                         Text(
-                            stringResource(section.labelRes),
+                            stringResource(label),
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
                             style = MaterialTheme.typography.labelMedium,
                             maxLines = 1,
@@ -138,11 +129,17 @@ internal fun ModDetailsDialog(
                     }
                 }
             }
+            HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalAlignment = Alignment.Top) { page ->
             Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll)
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                     .testTag("mod_details_scroll").padding(horizontal = 22.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
+                when (page) {
+                    0 -> actionsContent()
+                    2 -> aiContent()
+                    else -> {
                 ModDetailsSectionContent(ModDetailsSection.INFO, sectionOffsets) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         ModCardLeadingImage(mod, size = 88.dp)
@@ -171,9 +168,6 @@ internal fun ModDetailsDialog(
                                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(stringResource(if (mod.enabled) R.string.mod_details_enabled else R.string.mod_details_disabled),
                                     modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                                val toggleDescription = stringResource(R.string.mod_details_toggle, name)
-                                Switch(mod.enabled, onCheckedChange = onToggleMod, enabled = selectionEnabled,
-                                    modifier = Modifier.semantics { contentDescription = toggleDescription })
                             }
                         }
                     }
@@ -203,31 +197,32 @@ internal fun ModDetailsDialog(
                             modifier = Modifier.padding(top = 6.dp))
                     }
                 }
-                ModDetailsSectionContent(ModDetailsSection.BADGES, sectionOffsets) {
-                    ModDetailsSectionTitle(stringResource(R.string.mod_details_badges))
-                    Spacer(Modifier.height(8.dp))
-                    badgesContent { navigateToSection(ModDetailsSection.AI) }
+                Text("ID: ${mod.modId}\n${mod.storagePath}", style = MaterialTheme.typography.bodySmall)
+                Text(if (mod.effectivePriority == null) stringResource(R.string.main_mod_priority_dialog_status_default)
+                    else stringResource(R.string.mod_details_effective_priority, mod.effectivePriority),
+                    style = MaterialTheme.typography.bodySmall)
+                if (!mod.importPatchDetails.isNullOrBlank()) {
+                    Text(mod.importPatchDetails, style = MaterialTheme.typography.bodySmall)
                 }
-                ModDetailsSectionContent(ModDetailsSection.AI, sectionOffsets) {
-                    aiContent()
+                mod.importPatches.forEach { patch ->
+                    Text("${patch.name}: ${patch.summary}", style = MaterialTheme.typography.bodySmall)
                 }
-                ModDetailsSectionContent(ModDetailsSection.ACTIONS, sectionOffsets) {
-                    ModDetailsSectionTitle(stringResource(R.string.main_mod_actions_title))
-                    Spacer(Modifier.height(12.dp))
-                    actionsContent()
+                ModDetailsSectionTitle(stringResource(R.string.mod_details_badges))
+                badgesContent { scope.launch { pager.animateScrollToPage(2) } }
+                if (mod.workshop != null) {
+                    TextButton(onClick = onOpenWorkshopDetails) {
+                        Text(stringResource(R.string.main_mod_open_market_page))
+                    }
                 }
+                    }
+                }
+            }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconToggleButton(checked = mod.favorite, onCheckedChange = onFavoriteChange, enabled = fileActionsEnabled) {
-                    Icon(painterResource(R.drawable.ic_favorite_heart),
-                        stringResource(if (mod.favorite) R.string.main_mod_favorite_remove else R.string.main_mod_favorite_add),
-                        tint = if (mod.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Button(onClick = onOpenAiEditor, enabled = fileActionsEnabled, modifier = Modifier.weight(1f)) {
-                    Icon(painterResource(R.drawable.ic_code), null, Modifier.padding(end = 8.dp).size(18.dp))
-                    Text(stringResource(R.string.mod_details_ai_edit))
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(android.R.string.ok))
                 }
             }
         }
