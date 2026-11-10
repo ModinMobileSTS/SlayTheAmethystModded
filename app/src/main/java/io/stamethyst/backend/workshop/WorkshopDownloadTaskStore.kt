@@ -77,6 +77,22 @@ class WorkshopDownloadTaskStore(context: Context) {
         saveUnlocked(current)
     }
 
+    fun enqueueSubscriptionIfEligible(
+        task: WorkshopDownloadTaskRecord,
+        expectedStatus: WorkshopDownloadTaskStatus?,
+        isCurrent: () -> Boolean = { true },
+    ): Boolean = withStoreLock {
+        if (task.status != WorkshopDownloadTaskStatus.Queued || isMarkedDeleted(task.publishedFileId)) return@withStoreLock false
+        val current = loadUnlocked().toMutableList()
+        val index = current.indexOfFirst { it.publishedFileId == task.publishedFileId }
+        val status = current.getOrNull(index)?.status
+        if (status != expectedStatus || (status != null && status != WorkshopDownloadTaskStatus.Completed)) return@withStoreLock false
+        if (!isCurrent()) return@withStoreLock false
+        if (index >= 0) current[index] = task else current.add(0, task)
+        saveUnlocked(current)
+        true
+    }
+
     fun update(publishedFileId: ULong, transform: (WorkshopDownloadTaskRecord) -> WorkshopDownloadTaskRecord) = withStoreLock {
         val current = loadUnlocked().toMutableList()
         val index = current.indexOfFirst { it.publishedFileId == publishedFileId }

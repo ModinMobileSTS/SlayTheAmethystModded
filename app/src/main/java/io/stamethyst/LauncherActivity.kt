@@ -223,6 +223,7 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        io.stamethyst.backend.workshop.WorkshopSubscriptionSyncController.get(this).setForeground(true)
         DisplayRefreshRatePolicy.requestHighestRefreshRate(this, window)
         LauncherOrientationPolicy.applyTo(this)
         syncLauncherLogcatCapture()
@@ -231,6 +232,7 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        io.stamethyst.backend.workshop.WorkshopSubscriptionSyncController.get(this).setForeground(false)
         cancelPendingGameReturnAnalysis()
         super.onPause()
         if (backgroundForGameLaunch && !isFinishing && !isDestroyed) {
@@ -453,6 +455,7 @@ class LauncherActivity : AppCompatActivity() {
             mapOf("debugLaunch" to (startupIntent?.hasExtra(EXTRA_DEBUG_LAUNCH_MODE) == true))
         )
         startupAfterResourcesCompleted = true
+        io.stamethyst.backend.workshop.WorkshopSubscriptionSyncController.get(this).onStartupResourcesReady()
         handleIncomingLauncherIntent(startupIntent)
         if (storageMigrationResult != null) {
             showStorageMigrationDialog(storageMigrationResult)

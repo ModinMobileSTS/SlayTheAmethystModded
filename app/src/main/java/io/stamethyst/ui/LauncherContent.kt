@@ -355,6 +355,7 @@ fun LauncherContent(
 
     fun refreshWorkshopSteamAuth() {
         val appContext = activity.applicationContext
+        io.stamethyst.backend.workshop.WorkshopSubscriptionSyncController.get(appContext).refreshAuth()
         workshopViewModel.refreshSteamAuth(appContext)
         workshopSubscriptionsViewModel.refreshSteamAuth(appContext)
     }

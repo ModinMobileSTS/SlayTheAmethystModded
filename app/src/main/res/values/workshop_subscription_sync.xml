@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workshop_subscribe_queued">Subscribed to %1$s and added to the download queue.</string>
+    <string name="workshop_subscribe_preparation_failed">Subscribed to %1$s, but download preparation failed. You can download it manually later.</string>
+</resources>
