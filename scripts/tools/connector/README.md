@@ -44,23 +44,23 @@ game-probe 的启动条件为 `launchMode=mts` 且至少满足其一：`debugMod
 
 ```bash
 # 启动后台 daemon（需指定端口）
-python -m scripts.tools.connector start --port 15555
+python -m scripts.tools.connector start --port 39999
 
 # 或通过环境变量设置默认端口
-export STS_CONNECTOR_PORT=15555
+export STS_CONNECTOR_PORT=39999
 python -m scripts.tools.connector start
 
 # 查看运行状态
 python -m scripts.tools.connector status
 
 # 重启
-python -m scripts.tools.connector restart --port 15555
+python -m scripts.tools.connector restart --port 39999
 
 # 停止
 python -m scripts.tools.connector stop
 
 # 前台运行（调试用）
-python -m scripts.tools.connector daemon --port 15555
+python -m scripts.tools.connector daemon --port 39999
 ```
 
 `start` 命令通过 TCP ping 检查端口是否已占用，已运行则拒绝重复启动。
@@ -103,13 +103,13 @@ TCP (127.0.0.1)，纯文本 JSON 行协议，请求/响应配对，支持多个�
 
 ```json
 {"method":"devices"}
-→ {"devices":[{"serial":"localhost:15555","state":"device","model":"Pixel_8"}]}
+→ {"devices":[{"serial":"192.0.2.1:45678","state":"device","model":"Pixel_8"}]}
 ```
 
 ### select
 
 ```json
-{"method":"select","params":{"serial":"localhost:15555","timeout_ms":10000}}
+{"method":"select","params":{"serial":"192.0.2.1:45678","timeout_ms":10000}}
 → {"ok":true}
 ```
 `serial` 可用 `"auto"` 自动选择第一个设备。
@@ -118,7 +118,7 @@ TCP (127.0.0.1)，纯文本 JSON 行协议，请求/响应配对，支持多个�
 
 ```json
 {"method":"status"}
-→ {"serial":"localhost:15555","state":"online","model":"Pixel_8"}
+→ {"serial":"192.0.2.1:45678","state":"online","model":"Pixel_8"}
 ```
 
 ### forward / unforward
@@ -232,3 +232,43 @@ stream.close()
 | `daemon.py` | TCP server，请求分发，stream proxy |
 | `client.py` | 客户端库，含 Stream 封装 |
 | `__main__.py` | CLI 入口，提供 start/stop/restart/status 等管理命令 |
+# Workspace-local wireless ADB (Linux)
+
+Recommended setup: copy the root `.env.local.example` to `.env.local`, set an absolute
+SDK `adb` executable, a non-default local server port, and the device's wireless
+debugging `host:port`. Never commit actual device endpoints or pairing credentials.
+The server port is NOT the device connection port or its pairing port.
+
+```sh
+python3 -m scripts.tools.local_adb ensure
+python3 -m scripts.tools.local_adb status
+python3 -m scripts.tools.local_adb adb -- shell getprop ro.product.model
+python3 -m scripts.tools.local_adb run -- ./gradlew :app:stsPullLogs
+python3 -m scripts.tools.local_adb stop
+```
+
+OpenCode `sts` tools automatically ensure this connection; `sts.local_adb` exposes
+`ensure`, `status`, and `stop`. No device or connector port argument is needed.
+The local manager allocates a connector port and replaces stale inherited
+`STS_CONNECTOR_PORT`/`STS_TEST_DEVICE` settings in its child processes. The old
+fixed-port harness auto-start is removed. Explicit legacy connectors remain
+available only when no managed local configuration exists.
+
+The manager uses official adb with an independent loopback listener, explicit
+server selection on every command, process identity checks, and a cross-process
+lifecycle lock. It never falls back to port 5037 or shuts down an unknown server.
+State and logs live in ignored `agent-tmp/local-adb/`. Stop before changing the
+server port or adb binary. Device endpoint changes may be applied on the next call.
+No USB fallback or automatic pairing is performed. If the device requires pairing,
+pair explicitly using the configured binary and project server (`-H 127.0.0.1 -P
+<local-server-port> pair <pairing-endpoint>`); enter the code interactively, never
+save it in tracked files. This lifecycle implementation requires Linux (`/proc`
+ownership checks and `flock`). ADB authentication keys retain the SDK's standard
+user-level behavior; this isolates the server, not the authentication identity.
+
+Gradle's custom `stsStart`, `stsStartAutoplay`, `stsStop`, and `stsPullLogs` tasks
+use the local manager when `.env.local` exists. Other Android Gradle Plugin tasks
+(for example `installDebug`) must be invoked through `local_adb run` so they inherit
+the project server environment. Use the harness install tool when possible.
+
+Legacy connector commands below are for explicit, externally managed setups only.

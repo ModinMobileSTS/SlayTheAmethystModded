@@ -1,5 +1,11 @@
 # Repository Rules
 
+## Local Android tools
+
+- Use `sts` tools for Android operations. They automatically use the workspace-owned wireless ADB configured in ignored `.env.local`.
+- For CLI operations use `python3 -m scripts.tools.local_adb adb -- <device-command>`; for Gradle device tasks use `python3 -m scripts.tools.local_adb run -- ./gradlew <task>`.
+- Do not run bare/global adb, change the machine-wide server, or hardcode/commit device endpoints. Local lifecycle: `python3 -m scripts.tools.local_adb ensure|status|stop`.
+
 ## Mod-side fixes
 
 - If a gameplay/runtime fix is shipped through a mod under `mods/`, document every individual fix in that mod's `README.md` in the same change.

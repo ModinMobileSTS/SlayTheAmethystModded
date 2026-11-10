@@ -48,6 +48,7 @@ function run(name, input = {}, signal = new AbortController().signal) {
 
 test("exposes scoped tools and maps actions to Python CLI arguments", async () => {
   const names = [
+    "local_adb",
     "get_game_status", "control_game_lifecycle", "collect_game_diagnostics",
     "run_gameplay_scenario", "manage_game_probe_agent", "execute_game_console_command",
     "inspect_or_reload_game_class", "decompile_installed_game_classes", "manage_enabled_mods",
@@ -61,6 +62,7 @@ test("exposes scoped tools and maps actions to Python CLI arguments", async () =
   const config = JSON.parse(readFileSync(resolve(repoRoot, "opencode.json"), "utf8"))
   const approvalActions = config.permissions.filter((rule) => rule.effect === "ask").map((rule) => rule.action)
   assert.deepEqual(approvalActions, [
+    "local_adb",
     "control_game_lifecycle", "run_gameplay_scenario", "manage_game_probe_agent",
     "execute_game_console_command", "inspect_or_reload_game_class", "manage_enabled_mods",
     "run_game_performance_tests", "test_steam_cloud_sync",

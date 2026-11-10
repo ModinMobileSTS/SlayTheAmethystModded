@@ -37,6 +37,10 @@ abstract class StsPullLogsTask : DefaultTask() {
     abstract val adbPath: Property<String>
 
     @get:Input
+    @get:Optional
+    abstract val localAdbPython: Property<String>
+
+    @get:Input
     abstract val applicationId: Property<String>
 
     @get:Input
@@ -165,6 +169,7 @@ abstract class StsPullLogsTask : DefaultTask() {
         val out = ByteArrayOutputStream()
         execOperations.exec {
             commandLine(buildAdbArgs(*args))
+            workingDir(project.rootProject.projectDir)
             isIgnoreExitValue = true
             standardOutput = out
             errorOutput = ByteArrayOutputStream()
@@ -180,6 +185,7 @@ abstract class StsPullLogsTask : DefaultTask() {
         val out = ByteArrayOutputStream()
         execOperations.exec {
             commandLine(buildAdbArgs("exec-out", "run-as", pkg, "sh", "-c", cmd))
+            workingDir(project.rootProject.projectDir)
             isIgnoreExitValue = true
             standardOutput = out
             errorOutput = ByteArrayOutputStream()
@@ -198,6 +204,11 @@ abstract class StsPullLogsTask : DefaultTask() {
     }
 
     private fun buildAdbArgs(vararg args: String): List<String> = buildList {
+        if (localAdbPython.isPresent) {
+            addAll(listOf(localAdbPython.get(), "-m", "scripts.tools.local_adb", "adb", "--"))
+            addAll(args.toList())
+            return@buildList
+        }
         add(adbPath.get())
         val serial = deviceSerial.orNull.orEmpty()
         if (serial.isNotEmpty()) { add("-s"); add(serial) }

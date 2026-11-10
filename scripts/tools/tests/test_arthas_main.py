@@ -10,7 +10,7 @@ class TestArthasDeviceResolution(unittest.TestCase):
         from scripts.tools.arthas.__main__ import _parse_args
 
         args = _parse_args([
-            "--device", "localhost:15555", "query", "--duration", "20",
+            "--device", "192.0.2.1:45678", "query", "--duration", "20",
             "monitor Foo bar",
         ])
 
@@ -21,7 +21,7 @@ class TestArthasDeviceResolution(unittest.TestCase):
         from scripts.tools.arthas.__main__ import resolve_device
 
         conn = MagicMock()
-        self.assertEqual("localhost:15555", resolve_device(conn, "localhost:15555"))
+        self.assertEqual("192.0.2.1:45678", resolve_device(conn, "192.0.2.1:45678"))
         conn.devices.assert_not_called()
 
     def test_resolve_device_uses_env_when_cli_missing(self) -> None:
@@ -40,20 +40,20 @@ class TestArthasDeviceResolution(unittest.TestCase):
 
         conn = MagicMock()
         conn.devices.return_value = [
-            {"serial": "localhost:15555", "state": "device"},
+            {"serial": "192.0.2.1:45678", "state": "device"},
         ]
         with patch(
             "scripts.tools.arthas.__main__.get_test_device_serial",
             return_value="auto",
         ):
-            self.assertEqual("localhost:15555", resolve_device(conn, None))
+            self.assertEqual("192.0.2.1:45678", resolve_device(conn, None))
 
     def test_resolve_device_rejects_multiple_devices_without_explicit_serial(self) -> None:
         from scripts.tools.arthas.__main__ import resolve_device
 
         conn = MagicMock()
         conn.devices.return_value = [
-            {"serial": "localhost:15555", "state": "device"},
+            {"serial": "192.0.2.1:45678", "state": "device"},
             {"serial": "localhost:25555", "state": "device"},
         ]
         with patch(
@@ -62,7 +62,7 @@ class TestArthasDeviceResolution(unittest.TestCase):
         ):
             with self.assertRaises(SystemExit) as ctx:
                 resolve_device(conn, None)
-        self.assertIn("localhost:15555", str(ctx.exception))
+        self.assertIn("192.0.2.1:45678", str(ctx.exception))
         self.assertIn("localhost:25555", str(ctx.exception))
 
 
@@ -74,13 +74,13 @@ class TestArthasMainCommands(unittest.TestCase):
         mgr = MagicMock()
         with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
             arthas_main, "ArthasManager", return_value=mgr), patch.object(
-            arthas_main, "resolve_device", return_value="localhost:15555"
+            arthas_main, "resolve_device", return_value="192.0.2.1:45678"
         ):
-            code = arthas_main.main(["--device", "localhost:15555", "start"])
+            code = arthas_main.main(["--device", "192.0.2.1:45678", "start"])
 
         self.assertEqual(0, code)
         conn.connect.assert_called_once()
-        conn.select.assert_called_once_with("localhost:15555")
+        conn.select.assert_called_once_with("192.0.2.1:45678")
         mgr.start.assert_called_once()
         conn.close.assert_called_once()
 
@@ -112,9 +112,9 @@ class TestArthasMainCommands(unittest.TestCase):
         stream = MagicMock()
         conn.connect_arthas_stream.return_value = stream
         with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
-            arthas_main, "resolve_device", return_value="localhost:15555"
+            arthas_main, "resolve_device", return_value="192.0.2.1:45678"
         ), patch.object(arthas_main, "run_query", side_effect=RuntimeError("boom")):
-            code = arthas_main.main(["--device", "localhost:15555", "query", "version"])
+            code = arthas_main.main(["--device", "192.0.2.1:45678", "query", "version"])
 
         self.assertEqual(1, code)
         stream.close.assert_called_once()
@@ -132,9 +132,9 @@ class TestArthasMainCommands(unittest.TestCase):
             captured["reconnect_fn"] = reconnect_fn
 
         with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
-            arthas_main, "resolve_device", return_value="localhost:15555"
+            arthas_main, "resolve_device", return_value="192.0.2.1:45678"
         ), patch.object(arthas_main, "run_query", side_effect=capture_run_query):
-            arthas_main.main(["--device", "localhost:15555", "query", "trace Foo bar"])
+            arthas_main.main(["--device", "192.0.2.1:45678", "query", "trace Foo bar"])
 
         reconnect = captured["reconnect_fn"]
         self.assertIsNotNone(reconnect)
@@ -145,7 +145,7 @@ class TestArthasMainCommands(unittest.TestCase):
             result = reconnect()
 
         self.assertIs(result, reconnect_stream)
-        reconnect_conn.select.assert_called_once_with("localhost:15555")
+        reconnect_conn.select.assert_called_once_with("192.0.2.1:45678")
         reconnect_conn.connect_arthas_stream.assert_called_once_with(agent_port=9099, arthas_port=8099)
 
     def test_stop_selects_device_and_invokes_manager_stop(self) -> None:
@@ -155,11 +155,11 @@ class TestArthasMainCommands(unittest.TestCase):
         mgr = MagicMock()
         with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
             arthas_main, "ArthasManager", return_value=mgr
-        ), patch.object(arthas_main, "resolve_device", return_value="localhost:15555"):
-            code = arthas_main.main(["--device", "localhost:15555", "stop"])
+        ), patch.object(arthas_main, "resolve_device", return_value="192.0.2.1:45678"):
+            code = arthas_main.main(["--device", "192.0.2.1:45678", "stop"])
 
         self.assertEqual(0, code)
-        conn.select.assert_called_once_with("localhost:15555")
+        conn.select.assert_called_once_with("192.0.2.1:45678")
         mgr.stop.assert_called_once()
         mgr.shutdown.assert_not_called()
         conn.close.assert_called_once()
@@ -171,11 +171,11 @@ class TestArthasMainCommands(unittest.TestCase):
         mgr = MagicMock()
         with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
             arthas_main, "ArthasManager", return_value=mgr
-        ), patch.object(arthas_main, "resolve_device", return_value="localhost:15555"):
-            code = arthas_main.main(["--device", "localhost:15555", "shutdown"])
+        ), patch.object(arthas_main, "resolve_device", return_value="192.0.2.1:45678"):
+            code = arthas_main.main(["--device", "192.0.2.1:45678", "shutdown"])
 
         self.assertEqual(0, code)
-        conn.select.assert_called_once_with("localhost:15555")
+        conn.select.assert_called_once_with("192.0.2.1:45678")
         mgr.shutdown.assert_called_once()
         mgr.stop.assert_not_called()
         conn.close.assert_called_once()
@@ -187,8 +187,8 @@ class TestArthasMainCommands(unittest.TestCase):
         mgr = MagicMock()
         with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
             arthas_main, "ArthasManager", return_value=mgr
-        ), patch.object(arthas_main, "resolve_device", return_value="localhost:15555"):
-            arthas_main.main(["--device", "localhost:15555", "--arthas-port", "18099", "shutdown"])
+        ), patch.object(arthas_main, "resolve_device", return_value="192.0.2.1:45678"):
+            arthas_main.main(["--device", "192.0.2.1:45678", "--arthas-port", "18099", "shutdown"])
 
         mgr.shutdown.assert_called_once_with(port=18099)
 

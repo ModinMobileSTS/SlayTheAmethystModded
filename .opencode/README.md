@@ -7,8 +7,9 @@
 - Use OpenCode V2; project plugins under `.opencode/plugins/` load automatically.
 - Run `npm ci --prefix .opencode` after cloning to install the plugin dependency and test tools.
 - Ensure Python 3, Android SDK/ADB and the Gradle wrapper are available. Override the Python executable with `STS_HARNESS_PYTHON` when needed.
-- The connector daemon port is provided by `STS_CONNECTOR_PORT` or the tool's `connectorPort` argument. With either set, the harness requires an existing connector daemon. Start it separately with `python3 -m scripts.tools.connector start --port <port>`. When neither is set, the current Python harness uses port 19876 and may auto-start the daemon.
-- Specify `deviceSerial` if more than one Android device is online.
+- Copy `.env.local.example` to `.env.local` and configure the absolute SDK adb binary, independent local server port and wireless device endpoint. See `scripts/tools/connector/README.md` for isolation and lifecycle details. The local file is ignored by Git; never put a real device endpoint in tracked configuration.
+- Tools automatically ensure the workspace-owned ADB and connector, and select only the configured wireless device. Old inherited `STS_CONNECTOR_PORT` values are ignored in managed mode; omit `connectorPort` and `deviceSerial`. Explicit values must match the managed instance.
+- Without local configuration, legacy externally managed connectors require an explicit port; the previous fixed-port auto-start fallback has been removed.
 
 ## Tools
 
@@ -16,6 +17,7 @@ Tools in the `sts` namespace (effective OpenCode ID: `sts_<name>`):
 
 | Tool name | Purpose |
 | --- | --- |
+| `local_adb` | Ensure, inspect or stop this workspace's local wireless ADB and connector. |
 | `get_game_status` | Inspect process, runtime, installed package, and device. |
 | `control_game_lifecycle` | Install, start, stop, or gracefully exit the game. |
 | `collect_game_diagnostics` | Run doctor, collect logs, or take a screenshot. |

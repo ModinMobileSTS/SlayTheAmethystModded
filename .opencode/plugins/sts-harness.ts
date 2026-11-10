@@ -49,8 +49,8 @@ function findRepoRoot(directory: string): string {
 }
 
 const COMMON_PROPERTIES = {
-  deviceSerial: { type: "string", description: "ADB device serial. Required when multiple devices are online." },
-  connectorPort: { type: "integer", minimum: 1, maximum: 65535, description: "Existing connector daemon port." },
+  deviceSerial: { type: "string", description: "Optional legacy ADB serial. Omit with .env.local; if supplied it must match the configured device." },
+  connectorPort: { type: "integer", minimum: 1, maximum: 65535, description: "Optional legacy connector port. Omit with .env.local; managed mode allocates it automatically." },
   timeoutSeconds: { type: "integer", minimum: 1, maximum: 43200, description: "Harness operation timeout." },
   pollIntervalSeconds: { type: "integer", minimum: 1, maximum: 60 },
   outDir: { type: "string", description: "Repository-relative artifact base directory." },
@@ -370,6 +370,18 @@ export default Plugin.define({
 
     await ctx.tool.transform((editor) => {
       editor.namespace({ name: "sts", description: "SlayTheAmethyst Android harness" })
+      editor.add({
+        name: "local_adb",
+        description: "Ensure, inspect or stop the workspace-owned wireless ADB and connector. Device settings come only from local configuration.",
+        input: { type: "object", properties: { action: { type: "string", enum: ["ensure", "status", "stop"] } }, required: ["action"], additionalProperties: false },
+        options: { namespace: "sts", permission: "sts_local_adb" },
+        execute: async (value: JsonObject, context: ToolContext) => {
+          const execution = await withDeviceLock(context.signal, () => executeHarness(
+            ["-m", "scripts.tools.local_adb", String(value.action)], repoRoot, context, pythonExecutable, DEFAULT_TIMEOUT_SECONDS,
+          ))
+          return { content: JSON.stringify(execution) }
+        },
+      } as unknown as PluginTool)
 
       editor.add(buildTool(
         "get_game_status",

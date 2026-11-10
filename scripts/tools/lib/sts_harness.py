@@ -329,13 +329,25 @@ class Harness:
         from scripts.tools.connector.client import ConnectorClient, resolve_connector_port
 
         explicit_port = self.options.connector_port
+        import os
+        if (self.repo_root / ".env.local").exists() or os.environ.get("STS_ADB_DEVICE_ENDPOINT"):
+            from scripts.tools.local_adb import ensure
+            local_env = ensure()
+            local_port = int(local_env["STS_CONNECTOR_PORT"])
+            if explicit_port is not None and explicit_port != local_port:
+                raise RuntimeError("Explicit connector port differs from the managed local connector")
+            endpoint = local_env["STS_ADB_DEVICE_ENDPOINT"]
+            if self.resolved_device_serial not in ("", "auto", endpoint):
+                raise RuntimeError("Requested device differs from the configured local wireless device")
+            os.environ.update(local_env)
+            self.resolved_device_serial = endpoint
+            explicit_port = local_port
         env_port = __import__("os").environ.get("STS_CONNECTOR_PORT", "").strip()
         if explicit_port is not None or env_port:
             port = resolve_connector_port(explicit_port)
             auto_start = False
         else:
-            port = 19876
-            auto_start = True
+            raise RuntimeError("Configure .env.local for managed wireless ADB, or explicitly supply a legacy connector port")
         self.connector_port = port
         client = ConnectorClient(port=port, auto_start=auto_start)
         client.connect()

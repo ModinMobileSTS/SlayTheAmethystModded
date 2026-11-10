@@ -112,11 +112,11 @@ class ConsoleCliTest(unittest.TestCase):
         args = parser.parse_args([
             "-Command", "console",
             "-ConsoleCommand", "unlock Ironclad",
-            "-DeviceSerial", "localhost:15555",
+            "-DeviceSerial", "192.0.2.1:45678",
         ])
         self.assertEqual(args.command, "console")
         self.assertEqual(args.console_command, "unlock Ironclad")
-        self.assertEqual(args.device_serial, "localhost:15555")
+        self.assertEqual(args.device_serial, "192.0.2.1:45678")
 
 
 class SteamCloudSyncCliTest(unittest.TestCase):

@@ -159,12 +159,12 @@ MTS 可能同时保留多个同名类副本。bridge 因此关闭 Arthas batch r
 
 ```bash
 export STS_CONNECTOR_PORT=39999
-export STS_TEST_DEVICE=localhost:15555   # 可选默认
+export STS_TEST_DEVICE=192.0.2.1:45678   # 仅文档示例
 
-python3 -m scripts.tools.arthas --device localhost:15555 start
-python3 -m scripts.tools.arthas --device localhost:15555 query "version"
-python3 -m scripts.tools.arthas --device localhost:15555 stop      # 轻量清理，后端保持
-python3 -m scripts.tools.arthas --device localhost:15555 shutdown  # 完整销毁，释放端口
+python3 -m scripts.tools.arthas --device 192.0.2.1:45678 start
+python3 -m scripts.tools.arthas --device 192.0.2.1:45678 query "version"
+python3 -m scripts.tools.arthas --device 192.0.2.1:45678 stop      # 轻量清理，后端保持
+python3 -m scripts.tools.arthas --device 192.0.2.1:45678 shutdown  # 完整销毁，释放端口
 ```
 
 解析顺序：`--device` → `STS_TEST_DEVICE`（非空且非 `auto`）→ 仅 1 台在线时自动选择 → 否则报错并列 serial。
@@ -200,7 +200,7 @@ from scripts.tools.arthas.shell import ArthasShell
 
 conn = ConnectorClient()
 conn.connect()
-conn.select("localhost:15555")
+conn.select("192.0.2.1:45678")
 
         mgr = ArthasManager(connector=conn, agent_client=None)
         mgr.start(port=8099)
