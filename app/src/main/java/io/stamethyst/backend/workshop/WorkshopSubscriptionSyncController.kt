@@ -43,11 +43,11 @@ internal class WorkshopSubscriptionSyncController private constructor(private va
                     itemDirectory = { RuntimePaths.workshopItemDir(context, APP_ID, it) },
                     installedRecord = { metadata.findByPublishedFileId(APP_ID, it) },
                     getDetails = { id ->
-                        requireCurrent(account)
+                        requireAccountCurrent(account)
                         service.getDetails(APP_ID, id, includeCommunityData = false, includeDependencyData = false)
                     },
                     isBlocked = WorkshopDownloadBlocklist::isBlocked,
-                    isCurrent = { isCurrent(account) },
+                    isCurrent = { isCurrentAccount(account) },
                     queuedMessage = { context.getString(R.string.workshop_download_task_message_waiting) },
                     onQueued = {
                         withContext(Dispatchers.Main.immediate) { WorkshopDownloadCenterStore.initialize(context) }
@@ -63,22 +63,23 @@ internal class WorkshopSubscriptionSyncController private constructor(private va
 
     fun setForeground(value: Boolean) {
         foreground = value
-        coordinator.update(foreground, ready, identity)
         if (value) refreshAuth()
     }
 
     fun onStartupResourcesReady() {
         ready = true
-        refreshAuth()
+        refreshAuth(updateCoordinator = false)
     }
 
-    fun refreshAuth() {
+    fun refreshAuth(updateCoordinator: Boolean = false) {
         val request = ++authRequest
         scope.launch {
             val current = withContext(Dispatchers.IO) { readIdentity() }
             if (request != authRequest) return@launch
             identity = current
-            coordinator.update(foreground, ready, current)
+            // Keep the identity fence current for explicit subscribe-and-download actions, while
+            // automatic subscription-library scans remain disabled until re-enabled here.
+            coordinator.update(if (updateCoordinator) foreground else false, if (updateCoordinator) ready else false, current)
         }
     }
 
@@ -99,8 +100,15 @@ internal class WorkshopSubscriptionSyncController private constructor(private va
     private fun isCurrent(account: WorkshopSubscriptionAccountIdentity): Boolean =
         foreground && ready && identity == account && readIdentity() == account
 
+    private fun isCurrentAccount(account: WorkshopSubscriptionAccountIdentity): Boolean =
+        identity == account && readIdentity() == account
+
     private fun requireCurrent(account: WorkshopSubscriptionAccountIdentity) {
         if (!isCurrent(account)) throw CancellationException("Subscription account is no longer current")
+    }
+
+    private fun requireAccountCurrent(account: WorkshopSubscriptionAccountIdentity) {
+        if (!isCurrentAccount(account)) throw CancellationException("Subscription account is no longer current")
     }
 
     companion object {

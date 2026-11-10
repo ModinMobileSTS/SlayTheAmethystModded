@@ -79,15 +79,22 @@ internal class WorkshopSubscriptionSyncCoordinator(
     }
 
     suspend fun enqueueSubscribed(account: WorkshopSubscriptionAccountIdentity, item: WorkshopItemSummary): WorkshopSubscriptionEnqueueResult =
-        enqueueCandidate(account, generation, item)
+        enqueueCandidate(account, generation, item, allowInactive = true)
 
-    private suspend fun enqueueCandidate(identity: WorkshopSubscriptionAccountIdentity, token: Long, item: WorkshopItemSummary): WorkshopSubscriptionEnqueueResult = candidates.withLock {
-        if (!isCurrent(identity, token) || item.appId != appId) return@withLock WorkshopSubscriptionEnqueueResult.Skipped
+    private suspend fun enqueueCandidate(
+        identity: WorkshopSubscriptionAccountIdentity,
+        token: Long,
+        item: WorkshopItemSummary,
+        allowInactive: Boolean = false,
+    ): WorkshopSubscriptionEnqueueResult = candidates.withLock {
+        if ((!allowInactive && !isCurrent(identity, token)) || account != identity || item.appId != appId) {
+            return@withLock WorkshopSubscriptionEnqueueResult.Skipped
+        }
         try {
             currentCoroutineContext().ensureActive()
             val eligible = shouldEnqueue(identity, item)
             currentCoroutineContext().ensureActive()
-            if (!eligible || !isCurrent(identity, token)) return@withLock WorkshopSubscriptionEnqueueResult.Skipped
+            if (!eligible || (!allowInactive && !isCurrent(identity, token))) return@withLock WorkshopSubscriptionEnqueueResult.Skipped
             enqueue(identity, item)
         } catch (cancelled: CancellationException) {
             throw cancelled
