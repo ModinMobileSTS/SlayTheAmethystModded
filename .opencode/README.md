@@ -44,3 +44,42 @@ npm test --prefix .opencode
 ```
 
 These tests use a fake Python CLI and do not need an Android device. Integration runs still require a connected device and a working connector.
+
+## Single-slice TDD workflow
+
+The six project agents under `.opencode/agents/` adapt SpireForge's single-slice workflow:
+`tdd-slice` (read-only dispatcher), `tdd-red`, `tdd-green`, `tdd-refactor`, `test-runner`
+(read-only verification), and `code-reviewer` (read-only review). No model/provider is pinned.
+Native V2 configuration enables only two delegation levels: parent -> dispatcher -> leaf.
+
+Start with [the skill](skills/tdd-development/SKILL.md),
+[project context](skills/tdd-development/project/slay-the-amethyst.md) and
+[handoff template](skills/tdd-development/references/slice-task-template.md).
+The parent confirms one behavior, accepted criteria, allowed/frozen paths and real focused commands.
+Red establishes expected failure; Green freezes tests; Refactor may legitimately do nothing;
+Review is mandatory. Missing infrastructure blocks the slice rather than becoming invented Red.
+Initial adoption is limited to existing deterministic offline tests, not mandatory unit-test claims
+for Android UI, native/driver or live-game behavior. Documentation and workflow bootstrapping are
+outside behavior-slice dispatch; the parent integrates required docs before Review.
+
+All six roles explicitly deny `sts_*` tools. Writers and runner have broad shell permissions for
+multiple toolchains: scope restrictions are procedural, not a security sandbox. Audit actual diffs
+and commands; do not invoke devices, live services, installation, deployment or shell bypasses.
+Existing parent device approvals and MCP/plugin configuration remain unchanged.
+
+Focused offline configuration regression:
+
+```sh
+node --test .opencode/tests/tdd-workflow.test.mjs
+```
+
+It checks checked-in V2 rule declarations, role boundaries, handoff gates and context references.
+It does **not** emulate OpenCode's permission evaluator, prove runtime isolation, discover agents
+or exercise nested dispatch. The full existing `npm test --prefix .opencode` also checks the fake
+harness integration; type checking remains separate. No dependency installation or device is needed
+when the repository's existing Node tools/dependencies are available.
+
+An explicit maintenance self-check can dispatch static `code-reviewer`, then `test-runner` for
+the command above. It is not product TDD and cannot edit files or probe denied commands.
+Runtime agent discovery/nested dispatch must be reported separately if exercised; registration
+alone is not permission-isolation proof. Do not launch an unrelated product slice just to demo TDD.

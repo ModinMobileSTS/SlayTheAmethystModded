@@ -1,5 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "experimental": {
+    "subagent_depth": 2
+  },
   "permissions": [
     { "action": "sts_local_adb", "resource": "*", "effect": "ask" },
     { "action": "sts_control_game_lifecycle", "resource": "*", "effect": "ask" },
