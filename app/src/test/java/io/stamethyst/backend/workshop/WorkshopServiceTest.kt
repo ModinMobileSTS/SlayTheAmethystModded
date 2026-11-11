@@ -382,6 +382,73 @@ class WorkshopServiceTest {
         assertNull(details.summary.rating)
     }
 
+    @Test
+    fun lazyCommunitySummaryLoadsAuthorAndRatingWithoutRepeatingMetadataApi() = runBlocking {
+        browseServer.enqueue(MockResponse.Builder().body(
+            """
+            <div class="creatorsBlock"><div class="friendBlock" data-miniprofile="123">
+              <a class="friendBlockLinkOverlay" href="https://steamcommunity.com/profiles/76561197960265851"></a>
+              <div class="friendBlockContent">Original Author<br><span class="friendSmallText">Offline</span></div>
+            </div></div>
+            <div class="fileRatingDetails"><img src="/public/images/sharedfiles/4-star_large.png" /></div>
+            """.trimIndent(),
+        ).build())
+        val base = WorkshopItemSummary(
+            123456uL, 646570u, "Cached title", "https://example.com/cover.jpg", "Cached API description",
+            fileSizeBytes = 123, updatedAtMillis = 456, downloadCount = 789,
+            author = WorkshopSocialParser.apiAuthor("76561197960265851", ""),
+        )
+
+        val enriched = newService().loadCommunitySummary(base)
+
+        assertEquals("Original Author", enriched.authorName)
+        assertEquals("Original Author", enriched.author?.name)
+        assertEquals(WorkshopItemRating(4), enriched.rating)
+        assertEquals(base, enriched.copy(authorName = base.authorName, author = base.author, rating = base.rating))
+        assertEquals(0, detailsServer.requestCount)
+        assertEquals(1, browseServer.requestCount)
+        val request = browseServer.takeRequest()
+        assertEquals("123456", request.url.queryParameter("id"))
+        assertEquals("schinese", request.url.queryParameter("l"))
+    }
+
+    @Test
+    fun lazyCommunitySummaryKeepsKnownFieldsWhenCommunityHasNoAuthorOrRating() = runBlocking {
+        browseServer.enqueue(MockResponse.Builder().body("<html><body>No public metadata</body></html>").build())
+        val base = WorkshopItemSummary(123456uL, 646570u, "Mod", "", "", authorName = "Known author", rating = WorkshopItemRating(3))
+
+        assertEquals(base, newService().loadCommunitySummary(base))
+        assertEquals(0, detailsServer.requestCount)
+        assertEquals(1, browseServer.requestCount)
+    }
+
+    @Test
+    fun lazyCommunitySummaryFailureIsReportedWithoutTouchingMetadataApi() = runBlocking {
+        browseServer.enqueue(MockResponse.Builder().code(429).build())
+        val base = WorkshopItemSummary(123456uL, 646570u, "Mod", "", "")
+
+        assertTrue(runCatching { newService().loadCommunitySummary(base) }.isFailure)
+        assertEquals(0, detailsServer.requestCount)
+        assertEquals(1, browseServer.requestCount)
+    }
+
+    @Test
+    fun lazyCommunitySummaryUsesExistingCommunityCacheForTheSameLanguage() = runBlocking {
+        browseServer.enqueue(MockResponse.Builder().body(
+            """<div class="fileRatingDetails"><img src="/public/images/sharedfiles/5-star_large.png" /></div>""",
+        ).build())
+        val base = WorkshopItemSummary(123456uL, 646570u, "Mod", "", "")
+        val service = newService()
+
+        val first = service.loadCommunitySummary(base)
+        val second = service.loadCommunitySummary(base)
+
+        assertEquals(WorkshopItemRating(5), second.rating)
+        assertEquals(first, second)
+        assertEquals(0, detailsServer.requestCount)
+        assertEquals(1, browseServer.requestCount)
+    }
+
     private fun detailApiResponse(description: String = "", children: String = ""): MockResponse =
         MockResponse.Builder().body(
             """{"response":{"publishedfiledetails":[{"publishedfileid":"123456","title":"Detailed Mod","description":"$description"$children}]}}""",

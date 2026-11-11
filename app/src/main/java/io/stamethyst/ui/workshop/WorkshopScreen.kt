@@ -94,6 +94,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -1114,6 +1115,10 @@ internal fun WorkshopItemCard(
     localPreviewImagePath: String? = null,
     downloadEnabled: Boolean = true,
     showDescriptionFallback: Boolean = true,
+    authorLoading: Boolean = false,
+    ratingLoading: Boolean = false,
+    downloadCountLoading: Boolean = false,
+    useCachedPreviewWhenUrlMissing: Boolean = false,
 ) {
     WorkshopSummaryCard(
         modifier = modifier,
@@ -1129,19 +1134,39 @@ internal fun WorkshopItemCard(
             }
         },
         onClick = onClick,
+        supportingTextLoading = authorLoading,
+        useCachedPreviewWhenUrlMissing = useCachedPreviewWhenUrlMissing,
         footerContent = {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                WorkshopRatingIndicator(
-                    rating = item.rating,
-                    modifier = Modifier.width(WorkshopRatingIndicatorWidth),
-                )
-                WorkshopDownloadCountIndicator(
-                    downloadCount = item.downloadCount,
-                    modifier = Modifier.width(WorkshopDownloadCountIndicatorWidth),
-                )
+                if (ratingLoading) {
+                    LoadingSkeletonBlock(
+                        Modifier.width(WorkshopRatingIndicatorWidth)
+                            .height(with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() })
+                            .testTag("workshop_card_rating_loading"),
+                        rememberLoadingSkeletonStyle("workshop_card_rating"),
+                    )
+                } else {
+                    WorkshopRatingIndicator(
+                        rating = item.rating,
+                        modifier = Modifier.width(WorkshopRatingIndicatorWidth),
+                    )
+                }
+                if (downloadCountLoading) {
+                    LoadingSkeletonBlock(
+                        Modifier.width(WorkshopDownloadCountIndicatorWidth)
+                            .height(with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() })
+                            .testTag("workshop_card_count_loading"),
+                        rememberLoadingSkeletonStyle("workshop_card_count"),
+                    )
+                } else {
+                    WorkshopDownloadCountIndicator(
+                        downloadCount = item.downloadCount,
+                        modifier = Modifier.width(WorkshopDownloadCountIndicatorWidth),
+                    )
+                }
             }
         },
         trailingContent = {
@@ -1166,6 +1191,8 @@ internal fun WorkshopSummaryCard(
     trailingContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     localPreviewImagePath: String? = null,
+    supportingTextLoading: Boolean = false,
+    useCachedPreviewWhenUrlMissing: Boolean = false,
 ) {
     Card(
         onClick = onClick,
@@ -1183,17 +1210,27 @@ internal fun WorkshopSummaryCard(
                 publishedFileId = publishedFileId,
                 url = previewUrl,
                 localImagePath = localPreviewImagePath,
+                useCachedPreviewWhenUrlMissing = useCachedPreviewWhenUrlMissing,
                 contentDescription = stringResource(R.string.workshop_preview_content_description, title),
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    text = supportingText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (supportingTextLoading) {
+                    LoadingSkeletonBlock(
+                        Modifier.fillMaxWidth(0.55f)
+                            .height(with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() })
+                            .testTag("workshop_card_author_loading"),
+                        rememberLoadingSkeletonStyle("workshop_card_author"),
+                    )
+                } else {
+                    Text(
+                        text = supportingText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 footerContent()
             }
             trailingContent()
@@ -1543,13 +1580,14 @@ internal fun WorkshopPreviewImage(
     contentDescription: String,
     modifier: Modifier = Modifier.size(72.dp),
     localImagePath: String? = null,
+    useCachedPreviewWhenUrlMissing: Boolean = false,
 ) {
     val context = LocalContext.current
     val imageState by produceState<PreviewImageState>(
         initialValue = PreviewImageState.Loading,
         key1 = publishedFileId,
         key2 = url,
-        key3 = localImagePath,
+        key3 = localImagePath to useCachedPreviewWhenUrlMissing,
     ) {
         value = when {
             localImagePath != null -> withContext(Dispatchers.IO) {
@@ -1557,7 +1595,12 @@ internal fun WorkshopPreviewImage(
                     ?.let(PreviewImageState::Loaded)
                     ?: PreviewImageState.Failed
             }
-            url.isBlank() -> PreviewImageState.Failed
+            url.isBlank() -> if (useCachedPreviewWhenUrlMissing) {
+                withContext(Dispatchers.IO) {
+                    WorkshopPreviewCacheStore.decodeCached(context.applicationContext, publishedFileId)
+                        ?.let(PreviewImageState::Loaded) ?: PreviewImageState.Failed
+                }
+            } else PreviewImageState.Failed
             else -> withContext(Dispatchers.IO) {
                 WorkshopPreviewCacheStore.load(context.applicationContext, publishedFileId, url)
                     ?.let(PreviewImageState::Loaded)

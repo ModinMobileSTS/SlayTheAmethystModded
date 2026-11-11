@@ -87,8 +87,10 @@ class CommunityPatchDetailInstrumentedTest {
             }
         }
         compose.onNodeWithText(description).assertDoesNotExist()
-        compose.onNodeWithText(context.getString(R.string.workshop_unknown_author)).assertIsDisplayed()
-        compose.onNodeWithContentDescription(context.getString(R.string.workshop_rating_unrated_content_description)).assertExists()
+        compose.onNodeWithText(context.getString(R.string.workshop_unknown_author)).assertDoesNotExist()
+        compose.onNodeWithContentDescription(context.getString(R.string.workshop_rating_unrated_content_description)).assertDoesNotExist()
+        compose.onNodeWithTag("workshop_card_author_loading", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_rating_loading", useUnmergedTree = true).assertIsDisplayed()
 
         compose.runOnIdle {
             marketState = CommunityPatchMarketState(summary.copy(description = description, rating = WorkshopItemRating(4)))
@@ -96,6 +98,8 @@ class CommunityPatchDetailInstrumentedTest {
 
         compose.onNodeWithText(description).assertDoesNotExist()
         compose.onNodeWithText(summary.authorName).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_author_loading", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("workshop_card_rating_loading", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText(context.getString(R.string.workshop_unknown_author)).assertDoesNotExist()
         compose.onNodeWithContentDescription(context.getString(R.string.workshop_rating_content_description, 4, 5)).assertExists()
     }
@@ -149,10 +153,94 @@ class CommunityPatchDetailInstrumentedTest {
 
     @Test fun marketLoadingDoesNotHideAlreadyAvailablePatches() {
         showContent(CommunityPatchMarketState(loading = true))
-        compose.onNodeWithTag("community_market_loading").assertExists()
+        compose.onNodeWithTag("community_market_loading").assertDoesNotExist()
+        compose.onNodeWithTag("community_market_card").assertIsDisplayed()
+        compose.onNodeWithText(mod.name).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_author_loading", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_rating_loading", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithTag("community_patch_details")
             .performScrollToNode(hasTestTag("community_patch_${shortPatch.communityItemKey()}"))
         compose.onNodeWithText(shortPatch.description).assertIsDisplayed()
+    }
+
+    @Test fun lazyCommunityFieldsDoNotBlockKnownMetadataOrDownload() {
+        var downloads = 0
+        val base = summary.copy(authorName = "", downloadCount = 1234)
+        compose.setContent {
+            MaterialTheme {
+                CommunityPatchDetailContent(
+                    mod, CommunityPatchMarketState(base, loading = true), WorkshopModDownloadState.NotDownloaded,
+                    onOpenDetails = {}, onDownload = { downloads++ }, onRetryMarket = {},
+                )
+            }
+        }
+        compose.onNodeWithText(base.title).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_author_loading", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_rating_loading", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_count_loading", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("1234").assertIsDisplayed()
+        compose.onNodeWithContentDescription(context.getString(R.string.workshop_action_download)).performClick()
+        compose.runOnIdle { assertEquals(1, downloads) }
+    }
+
+    @Test fun refreshDoesNotReplaceKnownAuthorOrRatingWithSkeletons() {
+        showContent(CommunityPatchMarketState(summary.copy(rating = WorkshopItemRating(4)), loading = true))
+        compose.onNodeWithText(summary.authorName).assertIsDisplayed()
+        compose.onNodeWithContentDescription(context.getString(R.string.workshop_rating_content_description, 4, 5)).assertExists()
+        compose.onNodeWithTag("workshop_card_author_loading", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("workshop_card_rating_loading", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test fun loadedAuthorRemainsVisibleWhileOnlyRatingIsMissing() {
+        showContent(CommunityPatchMarketState(summary, loading = true))
+        compose.onNodeWithText(summary.authorName).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_author_loading", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("workshop_card_rating_loading", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test fun loadedRatingRemainsVisibleWhileOnlyAuthorIsMissing() {
+        showContent(CommunityPatchMarketState(summary.copy(authorName = "", rating = WorkshopItemRating(4)), loading = true))
+        compose.onNodeWithTag("workshop_card_author_loading", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_rating_loading", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithContentDescription(context.getString(R.string.workshop_rating_content_description, 4, 5)).assertExists()
+    }
+
+    @Test fun largeTextKeepsPartialLoadingSkeletonsInsideTheCard() {
+        compose.setContent {
+            MaterialTheme {
+                val density = LocalDensity.current.density
+                CompositionLocalProvider(LocalDensity provides Density(density, fontScale = 1.5f)) {
+                    Box(Modifier.width(360.dp)) {
+                        CommunityPatchDetailContent(
+                            mod, CommunityPatchMarketState(summary.copy(authorName = "", downloadCount = 1234), loading = true),
+                            WorkshopModDownloadState.NotDownloaded, onOpenDetails = {}, onDownload = {}, onRetryMarket = {},
+                        )
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText(summary.title).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_author_loading", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("workshop_card_rating_loading", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test fun failedCommunityLoadStopsSkeletonsButRetainsBaseCard() {
+        var state by mutableStateOf(CommunityPatchMarketState(summary.copy(authorName = ""), loading = true))
+        compose.setContent {
+            MaterialTheme {
+                CommunityPatchDetailContent(
+                    mod, state, WorkshopModDownloadState.NotDownloaded,
+                    onOpenDetails = {}, onDownload = {}, onRetryMarket = {},
+                )
+            }
+        }
+        compose.runOnIdle { state = state.copy(loading = false, error = "Community unavailable") }
+        compose.onNodeWithTag("workshop_card_author_loading", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("workshop_card_rating_loading", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText(summary.title).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.workshop_unknown_author)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(context.getString(R.string.workshop_rating_unrated_content_description)).assertExists()
+        compose.onNodeWithText(context.getString(R.string.community_patch_market_retry)).assertExists()
     }
 
     @Test fun marketFailureRetainsPatchBrowsingAndOffersIndependentRetry() {

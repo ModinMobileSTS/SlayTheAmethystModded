@@ -43,7 +43,6 @@ import io.stamethyst.ui.workshop.MissingWorkshopDependenciesDialog
 import io.stamethyst.ui.workshop.WORKSHOP_DOWNLOAD_PROGRESS_REFRESH_INTERVAL_MS
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.WorkshopItemCard
-import io.stamethyst.ui.workshop.WorkshopListSkeletonCard
 import io.stamethyst.ui.workshop.WorkshopModDownloadState
 import io.stamethyst.ui.workshop.WorkshopViewModel
 import io.stamethyst.ui.workshop.resolveWorkshopModDownloadState
@@ -60,7 +59,7 @@ internal fun CommunityPatchDetail(
 ) {
     val context = LocalContext.current.applicationContext
     val workshopState = workshopViewModel.uiState
-    val marketState = marketViewModel.state
+    val marketState = marketViewModel.stateFor(mod)
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -143,9 +142,6 @@ internal fun CommunityPatchDetailContent(
         item(key = "market_card") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 when {
-                    marketState.loading && marketState.summary == null -> WorkshopListSkeletonCard(
-                        variant = 0, modifier = Modifier.testTag("community_market_loading"),
-                    )
                     summary != null -> WorkshopItemCard(
                         item = summary,
                         downloadState = downloadState,
@@ -153,6 +149,10 @@ internal fun CommunityPatchDetailContent(
                         onDownload = { onDownload(summary) },
                         downloadEnabled = marketState.summary != null,
                         showDescriptionFallback = false,
+                        authorLoading = marketState.authorLoading,
+                        ratingLoading = marketState.ratingLoading,
+                        downloadCountLoading = marketState.loading && marketState.summary == null,
+                        useCachedPreviewWhenUrlMissing = true,
                         modifier = Modifier.testTag("community_market_card"),
                     )
                     else -> CommunityPatchUnlinkedMod(mod)
