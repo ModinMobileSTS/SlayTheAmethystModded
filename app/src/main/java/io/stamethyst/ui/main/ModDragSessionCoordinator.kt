@@ -4,58 +4,51 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import io.stamethyst.model.ModItemUi
-import kotlin.math.abs
+
+internal const val MOD_DRAG_PLACEHOLDER_KEY = "modDragPlaceholder"
 
 internal class ModDragSessionCoordinator(
     private val interactionState: ModFolderSectionInteractionState,
     private val resolveFolderTokenFromItemKey: (Any) -> String?,
     private val resolveAssignedFolderToken: (ModItemUi) -> String,
-    private val onAssignModToFolder: (ModItemUi, String) -> Unit,
-    private val onMoveModToUnassigned: (ModItemUi) -> Unit,
-    private val onRevealFolderToken: (String) -> Unit,
-    private val allowDropInSourceFolder: () -> Boolean = { false },
-    private val onReorderDrop: ((ModItemUi, Any, Boolean) -> Unit)? = null,
+    private val dragEnabled: () -> Boolean,
+    private val createTransaction: (ModItemUi) -> ModDragTransaction,
 ) {
-    val shouldCollapseFolders: Boolean
-        get() = interactionState.activeDragFolderId != null || interactionState.modDragState.collapseFoldersDuringDrag
+    private var transaction: ModDragTransaction? = null
 
-    fun startModDrag(
-        mod: ModItemUi,
-        dragInfo: ModCardDragStartInfo,
-        isExpanded: Boolean,
-    ) {
-        interactionState.activeDragFolderId = null
+    fun startModDrag(mod: ModItemUi, dragInfo: ModCardDragStartInfo, isExpanded: Boolean) {
+        if (!dragEnabled()) return
+        cancelActiveDrags()
         interactionState.rememberDragScrollAnchor()
+        val source = resolveAssignedFolderToken(mod)
+        val drag = createTransaction(mod)
+        transaction = drag
+        interactionState.movingModPaths = drag.movingPaths
+        interactionState.modDragPreview = drag.previewFolders
+        interactionState.dragExpandedFolderTokens = setOf(source)
         interactionState.modDragState = ModDragInteractionState(
-            session = ModDragSession(
-                mod = mod,
-                sourceFolderTokenId = resolveAssignedFolderToken(mod),
-                overlayAnchor = dragInfo.overlayAnchor,
-                isExpanded = isExpanded
-            ),
+            session = ModDragSession(mod, source, overlayAnchor = dragInfo.overlayAnchor, isExpanded = isExpanded),
             activePointerIdValue = dragInfo.pointerIdValue,
-            collapseFoldersDuringDrag = onReorderDrop == null
         )
-        updateModDragHover(dragInfo.overlayAnchor.pointerWindow)
+        // Keep the initial gathered anchor slot until the next pointer event/layout.
     }
 
-    fun onContainerPointerChanges(
-        changes: List<PointerInputChange>,
-        sectionTopLeftWindow: Offset
-    ) {
-        val activePointerIdValue = interactionState.modDragState.activePointerIdValue ?: return
-        val trackedChange = changes.firstOrNull { change ->
-            change.id.value == activePointerIdValue
-        }
-        if (trackedChange == null) {
+    fun onContainerPointerChanges(changes: List<PointerInputChange>, sectionTopLeftWindow: Offset) {
+        val pointerId = interactionState.modDragState.activePointerIdValue ?: return
+        val change = changes.firstOrNull { it.id.value == pointerId }
+        if (change == null || !dragEnabled()) {
             cancelModDrag()
             return
         }
-        val pointerWindow = sectionTopLeftWindow + trackedChange.position
-        trackedChange.consume()
+        val position = sectionTopLeftWindow + change.position
+        change.consume()
         when {
-            trackedChange.changedToUpIgnoreConsumed() -> endModDrag(pointerWindow)
-            trackedChange.pressed -> updateModDragHover(pointerWindow)
+            change.changedToUpIgnoreConsumed() -> {
+                updateModDragHover(position)
+                transaction?.drop()
+                cancelModDrag()
+            }
+            change.pressed -> updateModDragHover(position)
             else -> cancelModDrag()
         }
     }
@@ -73,147 +66,69 @@ internal class ModDragSessionCoordinator(
     }
 
     fun cancelActiveDrags() {
-        val hadFolderReorder = interactionState.activeDragFolderId != null
-        val hadModDrag = interactionState.modDragState.isActive ||
-            interactionState.modDragState.activePointerIdValue != null
-        if (!hadFolderReorder && !hadModDrag) {
-            return
-        }
-        interactionState.activeDragFolderId = null
-        interactionState.modDragState = ModDragInteractionState()
-        interactionState.scheduleDragScrollRestore()
+        if (interactionState.activeDragFolderId != null) finishFolderReorder()
+        cancelModDrag()
     }
 
     fun cancelModDrag() {
-        if (interactionState.modDragState.isActive || interactionState.modDragState.activePointerIdValue != null) {
+        transaction?.cancel()
+        transaction = null
+        interactionState.modDragPreview = null
+        interactionState.movingModPaths = emptyList()
+        interactionState.dragExpandedFolderTokens = emptySet()
+        if (interactionState.modDragState.isActive) {
             interactionState.modDragState = ModDragInteractionState()
             interactionState.scheduleDragScrollRestore()
         }
     }
 
-    fun updateModDragHover(position: Offset, ignoreFolderId: String? = null) {
-        val currentSession = interactionState.modDragState.session ?: return
-        val nextHoverId = findExactFolderAt(position, ignoreFolderId)
-        val updatedSession = currentSession
-            .updatePointer(position)
-            .copy(hoveredFolderTokenId = nextHoverId)
-        if (updatedSession != currentSession) {
-            interactionState.modDragState = interactionState.modDragState.copy(session = updatedSession)
+    fun updateModDragHover(position: Offset) {
+        val session = interactionState.modDragState.session ?: return
+        val drag = transaction ?: return
+        val viewport = interactionState.listViewportInWindow
+        val layout = interactionState.listState.layoutInfo
+        val target = if (viewport != null && viewport.contains(position)) {
+            layout.visibleItemsInfo.firstOrNull {
+                val top = viewport.top + it.offset - layout.viewportStartOffset
+                position.y >= top && position.y < top + it.size
+            }
+        } else null
+        val targetPath = (target?.key as? String)?.takeIf { it.startsWith("mod:") }?.removePrefix("mod:")
+        // During remeasurement the layout may still contain a moving row replaced by the placeholder.
+        val movingTarget = targetPath != null && targetPath in drag.movingPaths
+        val folder = target?.let { resolveFolderTokenFromItemKey(it.key) }
+            ?: if (movingTarget) drag.previewFolders.entries.firstOrNull { targetPath in it.value }?.key else null
+        when {
+            target == null || folder == null -> drag.previewOutsideViewport()
+            target.key == MOD_DRAG_PLACEHOLDER_KEY || movingTarget -> drag.previewPlaceholder()
+            else -> {
+                interactionState.dragExpandedFolderTokens += folder
+                val center = viewport!!.top + target.offset - layout.viewportStartOffset + target.size / 2f
+                drag.preview(folder, targetPath, position.y > center)
+            }
         }
+        interactionState.modDragPreview = drag.previewFolders
+        interactionState.modDragState = interactionState.modDragState.copy(
+            session = session.updatePointer(position).copy(hoveredFolderTokenId = folder)
+        )
     }
 
     fun nextAutoScrollDelta(): Float {
-        val pointerWindow = interactionState.modDragState.session?.overlayAnchor?.pointerWindow ?: return 0f
-        updateModDragHover(pointerWindow)
-        val pointerY = pointerWindow.y
+        val position = interactionState.modDragState.session?.overlayAnchor?.pointerWindow ?: return 0f
+        if (!dragEnabled()) {
+            cancelModDrag()
+            return 0f
+        }
+        updateModDragHover(position)
         val viewport = interactionState.listViewportInWindow ?: return 0f
-        val edgeSize = MOD_DRAG_AUTO_SCROLL_EDGE_PX
-        val maxStep = MOD_DRAG_AUTO_SCROLL_MAX_STEP_PX
-        val topTrigger = viewport.top + edgeSize
-        val bottomTrigger = viewport.bottom - edgeSize
-        return when {
-            pointerY < topTrigger -> {
-                val ratio = ((topTrigger - pointerY) / edgeSize).coerceIn(0f, 1f)
-                val eased = ratio * ratio
-                if (eased < 0.04f) 0f else -maxStep * eased
-            }
-
-            pointerY > bottomTrigger -> {
-                val ratio = ((pointerY - bottomTrigger) / edgeSize).coerceIn(0f, 1f)
-                val eased = ratio * ratio
-                if (eased < 0.04f) 0f else maxStep * eased
-            }
-
+        val topTrigger = viewport.top + MOD_DRAG_AUTO_SCROLL_EDGE_PX
+        val bottomTrigger = viewport.bottom - MOD_DRAG_AUTO_SCROLL_EDGE_PX
+        val ratio = when {
+            position.y < topTrigger -> -((topTrigger - position.y) / MOD_DRAG_AUTO_SCROLL_EDGE_PX).coerceIn(0f, 1f)
+            position.y > bottomTrigger -> ((position.y - bottomTrigger) / MOD_DRAG_AUTO_SCROLL_EDGE_PX).coerceIn(0f, 1f)
             else -> 0f
         }
-    }
-
-    private fun endModDrag(pointerWindow: Offset) {
-        val currentSession = interactionState.modDragState.session ?: return
-        val completedSession = currentSession.updatePointer(pointerWindow)
-        interactionState.modDragState = interactionState.modDragState.copy(session = completedSession)
-        handleModDrop(completedSession)
-    }
-
-    private fun findExactFolderAt(position: Offset, ignoreFolderId: String? = null): String? {
-        val viewport = interactionState.listViewportInWindow ?: return null
-        val pointerY = position.y
-        val layoutInfo = interactionState.listState.layoutInfo
-        val viewportStartOffset = layoutInfo.viewportStartOffset
-        return layoutInfo.visibleItemsInfo.firstNotNullOfOrNull { itemInfo ->
-            val folderToken = resolveFolderTokenFromItemKey(itemInfo.key) ?: return@firstNotNullOfOrNull null
-            if (folderToken == ignoreFolderId) {
-                return@firstNotNullOfOrNull null
-            }
-            val top = viewport.top + itemInfo.offset - viewportStartOffset
-            val bottom = top + itemInfo.size
-            if (pointerY in top..bottom) folderToken else null
-        }
-    }
-
-    private fun findDropFolderAt(position: Offset, ignoreFolderId: String? = null): String? {
-        val exact = findExactFolderAt(position, ignoreFolderId)
-        if (exact != null) {
-            return exact
-        }
-        val viewport = interactionState.listViewportInWindow ?: return null
-        val pointerY = position.y
-        val layoutInfo = interactionState.listState.layoutInfo
-        val viewportStartOffset = layoutInfo.viewportStartOffset
-
-        val candidates = layoutInfo.visibleItemsInfo.mapNotNull { itemInfo ->
-            val folderToken = resolveFolderTokenFromItemKey(itemInfo.key) ?: return@mapNotNull null
-            if (folderToken == ignoreFolderId) {
-                return@mapNotNull null
-            }
-            val top = viewport.top + itemInfo.offset - viewportStartOffset
-            val bottom = top + itemInfo.size
-            folderToken to ((top + bottom) / 2f)
-        }
-        if (candidates.isEmpty()) {
-            return null
-        }
-        val maxCenter = candidates.maxOfOrNull { it.second } ?: return null
-        if (pointerY > maxCenter + MOD_DRAG_DROP_AFTER_LAST_MARGIN_PX) {
-            return null
-        }
-        return candidates.minByOrNull { (_, centerY) -> abs(centerY - pointerY) }?.first
-    }
-
-    private fun handleModDrop(session: ModDragSession) {
-        if (onReorderDrop != null) {
-            val viewport = interactionState.listViewportInWindow
-            val layout = interactionState.listState.layoutInfo
-            val y = session.overlayAnchor.pointerWindow.y
-            val target = viewport?.let { bounds ->
-                layout.visibleItemsInfo.firstOrNull {
-                    val top = bounds.top + it.offset - layout.viewportStartOffset
-                    y in top..(top + it.size)
-                }
-            }
-            cancelModDrag()
-            if (target != null && viewport != null) {
-                val center = viewport.top + target.offset - layout.viewportStartOffset + target.size / 2f
-                onReorderDrop.invoke(session.mod, target.key, y > center)
-            }
-            return
-        }
-        val targetFolderId = findDropFolderAt(session.overlayAnchor.pointerWindow)
-        val sourceFolderId = session.sourceFolderTokenId
-        cancelModDrag()
-
-        when {
-            targetFolderId == null -> Unit
-            targetFolderId == sourceFolderId && !allowDropInSourceFolder() -> Unit
-            targetFolderId == UNASSIGNED_FOLDER_ID -> {
-                onMoveModToUnassigned(session.mod)
-                onRevealFolderToken(targetFolderId)
-            }
-
-            else -> {
-                onAssignModToFolder(session.mod, targetFolderId)
-                onRevealFolderToken(targetFolderId)
-            }
-        }
+        val eased = ratio * kotlin.math.abs(ratio)
+        return if (kotlin.math.abs(eased) < 0.04f) 0f else MOD_DRAG_AUTO_SCROLL_MAX_STEP_PX * eased
     }
 }
