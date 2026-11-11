@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workshop_subscribe_queued">已訂閱 %1$s，並加入下載佇列。</string>
+    <string name="workshop_subscribe_preparation_failed">已訂閱 %1$s，但下載準備失敗。可稍後手動下載。</string>
+</resources>

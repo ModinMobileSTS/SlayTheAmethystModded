@@ -22,7 +22,7 @@ class HarnessRunTest(unittest.TestCase):
                 disable_card_obtain_effect_ownership_compat=False,
             ),
             repo_root=Path("."),
-            resolved_device_serial="localhost:15555",
+            resolved_device_serial="192.0.2.1:45678",
             result={},
         )
 
@@ -31,16 +31,16 @@ class HarnessRunTest(unittest.TestCase):
         run_start(self._ctx())
 
         args = gradle.call_args.args[1]
-        self.assertIn("-PdeviceSerial=localhost:15555", args)
-        self.assertNotIn("-PandroidDeviceSerial=localhost:15555", args)
+        self.assertIn("-PdeviceSerial=192.0.2.1:45678", args)
+        self.assertNotIn("-PandroidDeviceSerial=192.0.2.1:45678", args)
 
     @patch("scripts.tools.harness.run.gradle")
     def test_stop_passes_device_serial_property(self, gradle):
         run_stop(self._ctx())
 
         args = gradle.call_args.args[1]
-        self.assertIn("-PdeviceSerial=localhost:15555", args)
-        self.assertNotIn("-PandroidDeviceSerial=localhost:15555", args)
+        self.assertIn("-PdeviceSerial=192.0.2.1:45678", args)
+        self.assertNotIn("-PandroidDeviceSerial=192.0.2.1:45678", args)
         self.assertEqual(gradle.call_args.kwargs["timeout_seconds"], 30)
 
     @patch("scripts.tools.harness.run.ensure_single_room_device_spec")

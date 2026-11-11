@@ -20,8 +20,8 @@
 #
 # Examples:
 #   ./scripts/perf-loop.sh
-#   ./scripts/perf-loop.sh localhost:15555
-#   ./scripts/perf-loop.sh --skip-install --update-baseline localhost:15555
+#   ./scripts/perf-loop.sh 192.0.2.1:45678
+#   ./scripts/perf-loop.sh --skip-install --update-baseline 192.0.2.1:45678
 #   ./scripts/perf-loop.sh --timeout 480 --character DEFECT
 #
 # Output:

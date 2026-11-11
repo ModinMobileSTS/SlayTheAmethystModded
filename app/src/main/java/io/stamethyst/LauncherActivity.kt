@@ -453,6 +453,7 @@ class LauncherActivity : AppCompatActivity() {
             mapOf("debugLaunch" to (startupIntent?.hasExtra(EXTRA_DEBUG_LAUNCH_MODE) == true))
         )
         startupAfterResourcesCompleted = true
+        io.stamethyst.backend.workshop.WorkshopSubscriptionSyncController.get(this).onStartupResourcesReady()
         handleIncomingLauncherIntent(startupIntent)
         if (storageMigrationResult != null) {
             showStorageMigrationDialog(storageMigrationResult)

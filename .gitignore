@@ -6,6 +6,8 @@
 .idea/
 *.iml
 local.properties
+.env.local
+/.local-tools/platform-tools/
 android-ndk-r10e/
 build/
 !scripts/build/

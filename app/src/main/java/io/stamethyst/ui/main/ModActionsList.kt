@@ -15,9 +15,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.Layout
 import io.stamethyst.R
 
-/** The original grouped actions, shared by the standalone menu and the details dialog. */
+/** All tools share a single two-column grid; information and AI management have their own pages. */
 @Composable
 internal fun ModActionsList(
     controlsEnabled: Boolean,
@@ -37,9 +38,13 @@ internal fun ModActionsList(
     showMove: Boolean = false,
     moveEnabled: Boolean = controlsEnabled,
     onMove: () -> Unit = {},
+    onCheckUpdates: (() -> Unit)? = null,
+    onCheckCommunity: (() -> Unit)? = null,
+    associationPresent: Boolean = false,
+    onRemoveAssociation: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ModActionListSection(stringResource(R.string.main_mod_actions_group_management)) {
+        ModActionGrid {
             ModActionListItem(
                 if (favorite) R.string.main_mod_favorite_remove else R.string.main_mod_favorite_add,
                 if (favorite) R.string.main_mod_action_desc_favorite_remove else R.string.main_mod_action_desc_favorite_add,
@@ -54,21 +59,10 @@ internal fun ModActionsList(
                 R.string.main_mod_associate, R.string.main_mod_action_desc_associate,
                 R.drawable.ic_link, controlsEnabled, onClick = onAssociate,
             )
-            if (showMove) {
-                ModActionListItem(
-                    R.string.mod_details_move, R.string.mod_details_move_description,
-                    R.drawable.ic_move_folder, moveEnabled, onClick = onMove,
-                )
-            }
-            if (showOpenWorkshopDetails) {
-                ModActionListItem(
-                    R.string.main_mod_open_market_page, R.string.main_mod_action_desc_market,
-                    R.drawable.ic_settings_market, true, onClick = onOpenWorkshopDetails,
-                )
-            }
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-        ModActionListSection(stringResource(R.string.main_mod_actions_group_tools)) {
+            ModActionListItem(
+                R.string.mod_remove_association, R.string.mod_remove_association_description,
+                R.drawable.ic_link, controlsEnabled && associationPresent, onClick = onRemoveAssociation,
+            )
             ModActionListItem(
                 R.string.main_mod_ai_edit, R.string.main_mod_action_desc_ai_edit,
                 R.drawable.ic_code, controlsEnabled,
@@ -88,26 +82,33 @@ internal fun ModActionsList(
                 R.drawable.ic_edit, controlsEnabled, onClick = onRename,
             )
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
-        ModActionListSection(stringResource(R.string.main_mod_actions_group_remove)) {
-            ModActionListItem(
-                R.string.main_mod_delete, R.string.main_mod_action_desc_delete,
-                R.drawable.ic_delete, deleteEnabled, danger = true, onClick = onDelete,
-            )
+    }
+}
+
+@Composable
+private fun ModActionGrid(content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Layout(content = { ColumnScopeContent(content) }) { measurables, constraints ->
+            val gap = 8.dp.roundToPx()
+            val cellWidth = ((constraints.maxWidth - gap) / 2).coerceAtLeast(0)
+            val cells = measurables.map {
+                it.measure(constraints.copy(minWidth = cellWidth, maxWidth = cellWidth, minHeight = 0))
+            }
+            val heights = cells.chunked(2).map { row -> row.maxOf { it.height } }
+            layout(constraints.maxWidth, heights.sum() + gap * (heights.size - 1).coerceAtLeast(0)) {
+                var y = 0
+                cells.chunked(2).forEachIndexed { rowIndex, row ->
+                    row.forEachIndexed { column, cell -> cell.placeRelative(column * (cellWidth + gap), y) }
+                    y += heights[rowIndex] + gap
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ModActionListSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            title, style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 12.dp, bottom = 2.dp),
-        )
-        content()
-    }
+private fun ColumnScope.ColumnScopeContent(content: @Composable ColumnScope.() -> Unit) {
+    content()
 }
 
 @Composable

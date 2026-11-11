@@ -2132,6 +2132,14 @@ class MainScreenViewModel : ViewModel() {
         modManagementController.onShareMod(host, mod)
     }
 
+    fun onExportMods(host: Activity, mods: List<ModItemUi>) {
+        modManagementController.onExportMods(host, mods)
+    }
+
+    fun onShareMods(host: Activity, mods: List<ModItemUi>) {
+        modManagementController.onShareMods(host, mods)
+    }
+
     fun onRenameModAlias(host: Activity, mod: ModItemUi, aliasInput: String) {
         modManagementController.onRenameModAlias(host, mod, aliasInput)
     }
@@ -2224,7 +2232,8 @@ class MainScreenViewModel : ViewModel() {
         enabled: Boolean,
     ) {
         modManagementController.onSetAgentPatchEnabled(host, mod, patch, enabled)
-        refresh(host)
+        // The controller publishes the changed patch state. A full refresh switches the
+        // mod list to its loading content and disposes the card that owns the dialog.
     }
 
     fun onExportAgentPatch(host: Activity, patch: AgentPatchModUi) {

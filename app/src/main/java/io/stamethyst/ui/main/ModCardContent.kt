@@ -64,6 +64,7 @@ internal fun ModCardBodyContent(
     mod: ModItemUi,
     isExpanded: Boolean,
     showModFileName: Boolean,
+    compact: Boolean = false,
     modSuggestionText: String? = null,
     suggestionUnread: Boolean = false,
     suggestionBadgeEnabled: Boolean = true,
@@ -99,7 +100,7 @@ internal fun ModCardBodyContent(
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         headerLeading()
-        ModCardLeadingImage(mod)
+        ModCardLeadingImage(mod, size = if (compact) 36.dp else 48.dp)
         Spacer(modifier = Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -110,6 +111,15 @@ internal fun ModCardBodyContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            if (compact) {
+                Text(
+                    text = listOfNotNull(resolvedVersion, resolvedFileSize).joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             ModCardBadges(
                 mod = mod,
                 modSuggestionText = modSuggestionText,
@@ -132,18 +142,20 @@ internal fun ModCardBodyContent(
         headerTrailing()
     }
 
-    Spacer(modifier = Modifier.height(2.dp))
-    ModCardMetadataRow(
-        version = resolvedVersion,
-        fileSize = resolvedFileSize
-    )
-    Text(
-        text = resolvedDescription,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.secondary,
-        maxLines = if (isExpanded) Int.MAX_VALUE else 2,
-        overflow = TextOverflow.Ellipsis
-    )
+    if (!compact) {
+        Spacer(modifier = Modifier.height(2.dp))
+        ModCardMetadataRow(
+            version = resolvedVersion,
+            fileSize = resolvedFileSize
+        )
+        Text(
+            text = resolvedDescription,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+            maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
     val workshopStatus = mod.workshop
         ?.takeUnless { it.state == WorkshopModState.ImportedPatched }
         ?.statusText

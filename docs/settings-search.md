@@ -37,4 +37,4 @@
 
 搜索界面测试使用替代保存回调和专用内容槽，避免修改真实凭据或触发文件操作。另需在设备上手测专用编辑器、长结果滚动、横屏/键盘、开发者和 MobileGlues 警告，以及搜索编辑后返回分类页的值同步。界面测试编译通过不等于设备验收通过。
 
-本次本地回归：65 项 JVM 测试通过（设置和搜索历史 63 项、LLM 推理强度 2 项），Android 测试编译通过。`SettingsSearchInstrumentedTest` 共 31 项，依赖加载测试共 8 项；设备 `localhost:15555` 的 ADB shell/getprop 超时，尚未执行设备验收。日志：`agent-tmp/settings-search-final-validation.log`。
+本次本地回归：65 项 JVM 测试通过（设置和搜索历史 63 项、LLM 推理强度 2 项），Android 测试编译通过。`SettingsSearchInstrumentedTest` 共 31 项，依赖加载测试共 8 项；本地测试设备的 ADB shell/getprop 超时，尚未执行设备验收。日志：`agent-tmp/settings-search-final-validation.log`。

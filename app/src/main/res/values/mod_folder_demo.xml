@@ -1,0 +1,25 @@
+<resources>
+    <string name="mod_remove_association">Remove association</string>
+    <string name="mod_remove_association_description">Leave the association group without changing other members.</string>
+    <string name="mod_batch_priority_mixed">Selected mods have different priorities. Confirming applies the same priority to all selected mods; clearing restores their defaults.</string>
+    <string name="mod_batch_associate_confirm">Associate these %1$d mods as one group? Existing association groups will be merged; enabling or disabling a mod may affect the group.</string>
+    <string name="mod_batch_archive_summary">Prepared %1$d mods; skipped %2$d unavailable files.</string>
+    <string name="mod_select_all">Select all</string>
+    <string name="mod_select_all_results">Select results</string>
+    <string name="mod_folder_updates_available">Updates available: %1$d</string>
+    <string name="mod_check_updates_all">Check all mods for updates</string>
+    <string name="mod_check_updates_selected">Check selected mods for updates</string>
+    <string name="mod_check_community_all">Check all community components</string>
+    <string name="mod_check_community_selected">Check selected community components</string>
+    <string name="mod_check_updates_single">Check mod for updates</string>
+    <string name="mod_check_community_single">Check community components</string>
+    <string name="mod_manager_tools">Tools</string>
+    <string name="mod_details_effective_priority">Effective load priority: #%1$d</string>
+    <string name="mod_drag_count">Moving %1$d mods</string>
+    <string name="mod_folder_all_enabled">All enabled %1$d/%2$d</string>
+    <string name="mod_folder_part_enabled">Partly enabled %1$d/%2$d</string>
+    <string name="mod_folder_none_enabled">Enabled %1$d/%2$d</string>
+    <string name="mod_folder_select_results">Select matching items in this folder: %1$d of %2$d selected</string>
+    <string name="mod_folder_visible_results">Showing %1$d matching items</string>
+    <string name="mod_folder_disable_all">Disable all items in folder</string>
+</resources>

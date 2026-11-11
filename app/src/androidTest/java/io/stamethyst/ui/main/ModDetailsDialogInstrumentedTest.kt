@@ -11,6 +11,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -29,6 +31,7 @@ import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.model.WorkshopModUi
+import io.stamethyst.ui.LauncherDialogHost
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -188,6 +191,42 @@ class ModDetailsDialogInstrumentedTest {
         compose.onNodeWithContentDescription(context.getString(R.string.mod_details_toggle, mod.name)).assertIsNotEnabled()
         compose.onNodeWithTag("mod_details_tab_actions").performClick()
         compose.onNodeWithText(context.getString(R.string.mod_details_move)).performScrollTo().assertIsNotEnabled()
+    }
+
+    @Test fun patchStateUpdatesKeepHostedDialogOpenInBothDirections() {
+        val patch = AgentPatchModUi("patch-id", "patch-mod-id", "Toggle regression", "1.0", "Description", false)
+        var changes = 0
+        compose.setContent {
+            MaterialTheme {
+                LauncherDialogHost {
+                    var current by remember { mutableStateOf(mod.copy(agentPatchMods = listOf(patch))) }
+                    ModCard(
+                        mod = current, isDraggedInOverlay = false, showModFileName = false,
+                        selectionEnabled = true, fileActionsEnabled = true,
+                        dragEnabled = false, showDragHandle = false,
+                        callbacks = ModCardCallbacks(onSetAgentPatchEnabled = { _, selected, enabled ->
+                            current = current.copy(agentPatchMods = current.agentPatchMods.map {
+                                if (it.patchId == selected.patchId) it.copy(enabled = enabled) else it
+                            })
+                            changes++
+                        }),
+                    )
+                }
+            }
+        }
+        compose.onNodeWithText(mod.name).performClick()
+        // The hosted window has a clickable input shield; inspect its children without
+        // merging the dialog's pane semantics into that shield.
+        val control = compose.onNodeWithContentDescription(
+            context.getString(R.string.mod_details_toggle, patch.name), useUnmergedTree = true,
+        )
+        repeat(3) {
+            control.performScrollTo().assertIsOff().performClick().assertIsOn()
+            compose.onNodeWithTag("mod_details_dialog", useUnmergedTree = true).assertIsDisplayed()
+            control.performClick().assertIsOff()
+            compose.onNodeWithTag("mod_details_dialog", useUnmergedTree = true).assertIsDisplayed()
+        }
+        compose.runOnIdle { assertEquals(6, changes) }
     }
 
     @Test fun batchSelectionTapDoesNotOpenDetails() {

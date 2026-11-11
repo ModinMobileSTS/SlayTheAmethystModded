@@ -16,5 +16,5 @@ def run_install(ctx: HarnessContext) -> None:
         raise RuntimeError(f"No debug APK found under: {apk_root}")
     apk = apks[0]
     ctx.result.setdefault("artifacts", {})["debugApk"] = str(apk)
-    adb(ctx, ["install", "-r", str(apk)], timeout_seconds=180)
+    adb(ctx, ["install", "--fastdeploy", "-r", str(apk)], timeout_seconds=180)
     set_result_success(ctx, True, "INSTALLED", "Debug APK installed.")

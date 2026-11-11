@@ -44,6 +44,8 @@ import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.backend.workshop.WorkshopSteamLoginRequiredException
 import io.stamethyst.backend.workshop.WorkshopSubscriptionVerificationException
+import io.stamethyst.backend.workshop.WorkshopSubscriptionSyncController
+import io.stamethyst.backend.workshop.WorkshopSubscriptionEnqueueResult
 import io.stamethyst.backend.workshop.WorkshopUnsubscriptionVerificationException
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckResult
 import io.stamethyst.backend.workshop.WorkshopUpdateChecker
@@ -1237,24 +1239,44 @@ internal class WorkshopViewModel : ViewModel() {
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
+                    val account = WorkshopSubscriptionSyncController.get(context).captureAccount()
                     currentService.subscribeToPublishedFile(summary.appId, summary.publishedFileId)
+                    account
                 }
-            }.onSuccess {
+            }.onSuccess { account ->
                 Log.i(
                     WORKSHOP_SUBSCRIPTION_LOG_TAG,
                     "subscribeSelected success appId=${summary.appId} publishedFileId=${summary.publishedFileId} title=${summary.title}",
                 )
-                uiState = uiState.copy(
-                    detailSubscriptionLoadingId = null,
-                    subscribedWorkshopIds = uiState.subscribedWorkshopIds + summary.publishedFileId,
-                    detailSubscriptionStatusId = summary.publishedFileId,
-                    detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Subscribed,
-                    detailSubscriptionMessage = context.getString(
-                        R.string.workshop_subscribe_success,
-                        summary.title.ifBlank { summary.publishedFileId.toString() },
-                    ),
-                )
+                fun stillSelected() = uiState.selected?.summary?.let {
+                    it.appId == summary.appId && it.publishedFileId == summary.publishedFileId
+                } == true
+                if (stillSelected()) {
+                    uiState = uiState.copy(
+                        subscribedWorkshopIds = uiState.subscribedWorkshopIds + summary.publishedFileId,
+                        detailSubscriptionLoadingId = null,
+                        detailSubscriptionStatusId = summary.publishedFileId,
+                        detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Subscribed,
+                        detailSubscriptionMessage = context.getString(R.string.workshop_subscribe_success,
+                            summary.title.ifBlank { summary.publishedFileId.toString() }),
+                    )
+                }
+                // This is separate from the confirmed Steam operation: preparation cannot undo it.
+                val result = WorkshopSubscriptionSyncController.get(context).enqueueSubscribed(account, summary)
+                if (stillSelected()) {
+                    val message = when (result) {
+                        WorkshopSubscriptionEnqueueResult.Queued -> R.string.workshop_subscribe_queued
+                        WorkshopSubscriptionEnqueueResult.Skipped -> R.string.workshop_subscribe_success
+                        WorkshopSubscriptionEnqueueResult.PreparationFailed -> R.string.workshop_subscribe_preparation_failed
+                    }
+                    uiState = uiState.copy(detailSubscriptionMessage = context.getString(message,
+                        summary.title.ifBlank { summary.publishedFileId.toString() }))
+                }
             }.onFailure { error ->
+                if (error is CancellationException) throw error
+                if (uiState.selected?.summary?.let {
+                    it.appId == summary.appId && it.publishedFileId == summary.publishedFileId
+                } != true) return@onFailure
                 if (error is WorkshopSteamLoginRequiredException) {
                     Log.w(
                         WORKSHOP_SUBSCRIPTION_LOG_TAG,

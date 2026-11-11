@@ -28,6 +28,8 @@ _RUNTIME_ROOT = "/data/data/io.stamethyst/files/runtimes/Internal"
 
 
 def _resolve_adb_path() -> str:
+    if os.environ.get("STS_ADB_BINARY"):
+        return os.environ["STS_ADB_BINARY"]
     adb_name = "adb.exe" if os.name == "nt" else "adb"
     candidates = [
         os.environ.get("ANDROID_SDK_ROOT", ""),
@@ -46,7 +48,7 @@ def _resolve_adb_path() -> str:
 def _adb_devices(adb_path: str) -> list[dict[str, str]]:
     try:
         output = subprocess.check_output(
-            [adb_path, "devices", "-l"], timeout=10, text=True,
+            [adb_path, *_server_args(), "devices", "-l"], timeout=10, text=True,
             stderr=subprocess.STDOUT)
     except Exception:
         return []
@@ -64,6 +66,11 @@ def _adb_devices(adb_path: str) -> list[dict[str, str]]:
                 model = part.split(":", 1)[1]
         devices.append({"serial": serial, "state": state, "model": model})
     return devices
+
+
+def _server_args() -> list[str]:
+    port = os.environ.get("STS_ADB_SERVER_PORT")
+    return ["-H", "127.0.0.1", "-P", port] if port else []
 
 
 class Daemon:
@@ -107,7 +114,7 @@ class Daemon:
         return None
 
     def _adb_cmd(self, serial: str | None, *args: str) -> list[str]:
-        cmd = [self._adb_path]
+        cmd = [self._adb_path, *_server_args()]
         if serial:
             cmd.extend(["-s", serial])
         cmd.extend(args)
@@ -631,6 +638,8 @@ class Daemon:
                 session["serial"] = serial
                 session["explicit_serial"] = serial
             return {"ok": True, "serial": session["serial"]}
+        elif method == "local_adb_identity":
+            return {"localAdbIdentity": json.loads(os.environ.get("STS_LOCAL_ADB_IDENTITY", "null"))}
         elif method == "status":
             if not serial:
                 return {"error": {"code": -32001, "message": "no device selected"}}

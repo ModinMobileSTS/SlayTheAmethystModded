@@ -87,9 +87,17 @@ class TestConnectorDaemonIntegration(unittest.TestCase):
     def test_start_cli_exits_when_output_streams_are_combined(self):
         port = _free_port()
         repo_root = Path(__file__).resolve().parents[3]
+        # This exercises legacy CLI startup, independent of a developer's local config.
+        script = (
+            "import sys; from pathlib import Path; "
+            "from scripts.tools import local_adb; "
+            "local_adb.ROOT = Path(sys.argv[1]); "
+            "sys.argv = ['connector', 'start', '--port', sys.argv[2]]; "
+            "from scripts.tools.connector.__main__ import main; main()"
+        )
         try:
             result = subprocess.run(
-                [sys.executable, "-m", "scripts.tools.connector", "start", "--port", str(port)],
+                [sys.executable, "-c", script, str(repo_root / "agent-tmp/legacy-cli-test"), str(port)],
                 cwd=repo_root,
                 text=True,
                 stdout=subprocess.PIPE,

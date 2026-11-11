@@ -34,6 +34,33 @@ const DEFAULT_LONG_TIMEOUT_SECONDS = 720
 // The Python scenario timeout excludes setup, Gradle log export, and cleanup.
 // Keep the process alive long enough for those phases to write result.json.
 const PROCESS_TIMEOUT_GRACE_SECONDS = 180
+
+// Never discover the global background service here: OpenChamber can host a
+// separate server using the same database, but with a different live event bus.
+export async function submitNativeShell(sessionID: string, command: string, serverUrl?: string): Promise<void> {
+  const flag = (name: string): string | undefined => {
+    const inline = process.argv.find((arg) => arg.startsWith(`${name}=`))
+    if (inline) return inline.slice(name.length + 1)
+    const index = process.argv.indexOf(name)
+    return index >= 0 ? process.argv[index + 1] : undefined
+  }
+  const port = flag("--port")
+  const host = flag("--hostname") || "127.0.0.1"
+  const url = serverUrl || (port ? `http://${host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "[::1]" : host.includes(":") ? `[${host}]` : host}:${port}` : "")
+  if (!url) throw new Error("Cannot identify this OpenCode server. Configure plugin serverUrl; refusing global service discovery.")
+  const headers: Record<string, string> = { "content-type": "application/json" }
+  if (process.env.OPENCODE_SERVER_PASSWORD) {
+    headers.authorization = `Basic ${Buffer.from(`${process.env.OPENCODE_SERVER_USERNAME || "opencode"}:${process.env.OPENCODE_SERVER_PASSWORD}`).toString("base64")}`
+  }
+  const infoResponse = await fetch(new URL("/api/info", url), { headers, signal: AbortSignal.timeout(10_000), redirect: "error" })
+  if (!infoResponse.ok) throw new Error(`Cannot verify current OpenCode server (HTTP ${infoResponse.status})`)
+  const info = await infoResponse.json() as { pid?: number }
+  if (info.pid !== process.pid) throw new Error("Native shell target is not this plugin's OpenCode server; refusing cross-server execution")
+  const response = await fetch(new URL(`/api/session/${encodeURIComponent(sessionID)}/shell`, url), {
+    method: "POST", headers, body: JSON.stringify({ command }), signal: AbortSignal.timeout(15_000), redirect: "error",
+  })
+  if (!response.ok) throw new Error(`Native shell request failed (HTTP ${response.status})`)
+}
 // Connector device selection and Gradle's ADB operations can affect other sessions.
 // Serialize all harness calls, including calls where the serial is selected automatically.
 let deviceLock: Promise<void> = Promise.resolve()
@@ -49,8 +76,8 @@ function findRepoRoot(directory: string): string {
 }
 
 const COMMON_PROPERTIES = {
-  deviceSerial: { type: "string", description: "Exact user-approved ADB serial. Required for install and raw adb/shell commands; auto discovery is not authorization." },
-  connectorPort: { type: "integer", minimum: 1, maximum: 65535, description: "Existing connector daemon port." },
+  deviceSerial: { type: "string", description: "Exact user-approved ADB serial required for install and raw adb/shell commands; must match .env.local in managed mode. Configuration alone is not installation authorization." },
+  connectorPort: { type: "integer", minimum: 1, maximum: 65535, description: "Optional legacy connector port. Omit with .env.local; managed mode allocates it automatically." },
   timeoutSeconds: { type: "integer", minimum: 1, maximum: 43200, description: "Harness operation timeout." },
   pollIntervalSeconds: { type: "integer", minimum: 1, maximum: 60 },
   outDir: { type: "string", description: "Repository-relative artifact base directory." },
@@ -373,8 +400,40 @@ export default Plugin.define({
       ? settings.pythonExecutable
       : process.env.STS_HARNESS_PYTHON || (process.platform === "win32" ? "python" : "python3")
 
+    // Command executors do not submit prompts or inherit tool permission checks.
+    // Only an explicit, argument-free invocation authorizes this fixed operation.
+    await ctx.command.transform((editor) => {
+      editor.add({
+        name: "install-apk",
+        description: "编译当前工作区 Debug APK 并覆盖安装到配置设备（不调用 AI）",
+        execute: async ({ sessionID, prompt }) => {
+          if (prompt.text.trim() || prompt.files?.length || prompt.agents?.length || prompt.skills?.length) {
+            throw new Error("/install-apk does not accept arguments or attachments")
+          }
+          // SDK 2.0.18 omits session.shell from ctx.session. Target only this
+          // hosting server's endpoint and verify its PID before any side effect.
+          const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
+          if (process.platform === "win32") throw new Error("/install-apk native shell integration currently requires a POSIX shell")
+          const command = `cd ${quote(repoRoot)} && exec ` + [pythonExecutable, "-u", ...commandArgs("control_game_lifecycle", { action: "install" }, repoRoot)].map(quote).join(" ")
+          await submitNativeShell(sessionID, command, typeof settings.serverUrl === "string" ? settings.serverUrl : undefined)
+        },
+      })
+    })
+
     await ctx.tool.transform((editor) => {
       editor.namespace({ name: "sts", description: "SlayTheAmethyst Android harness" })
+      editor.add({
+        name: "local_adb",
+        description: "Ensure, inspect or stop the workspace-owned wireless ADB and connector. Device settings come only from local configuration.",
+        input: { type: "object", properties: { action: { type: "string", enum: ["ensure", "status", "stop"] } }, required: ["action"], additionalProperties: false },
+        options: { namespace: "sts", permission: "sts_local_adb" },
+        execute: async (value: JsonObject, context: ToolContext) => {
+          const execution = await withDeviceLock(context.signal, () => executeHarness(
+            ["-m", "scripts.tools.local_adb", String(value.action)], repoRoot, context, pythonExecutable, DEFAULT_TIMEOUT_SECONDS,
+          ))
+          return { content: JSON.stringify(execution) }
+        },
+      } as unknown as PluginTool)
 
       editor.add(buildTool(
         "get_game_status",

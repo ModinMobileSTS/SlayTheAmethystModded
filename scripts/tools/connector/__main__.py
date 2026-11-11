@@ -137,9 +137,9 @@ def main() -> None:
               {DEFAULT_PORT_ENV}    default port for start/stop/restart/status
 
             Examples:
-              python -m scripts.tools.connector start --port 15555
+              python -m scripts.tools.connector start --port <connector-port>
               python -m scripts.tools.connector status
-              python -m scripts.tools.connector stop --port 15555
+              python -m scripts.tools.connector stop --port <connector-port>
         """),
     )
     sub = parser.add_subparsers(dest="command")
@@ -160,6 +160,15 @@ def main() -> None:
     if not args.command:
         parser.print_help()
         raise SystemExit(1)
+
+    from scripts.tools import local_adb
+    if (local_adb.ROOT / ".env.local").exists() or os.environ.get("STS_ADB_DEVICE_ENDPOINT"):
+        if args.port is not None:
+            raise SystemExit("Managed local ADB allocates its connector port; remove --port")
+        if args.command == "restart":
+            subprocess.run([sys.executable, "-m", "scripts.tools.local_adb", "stop"], check=True)
+        action = {"start": "ensure", "restart": "ensure", "stop": "stop", "status": "status"}[args.command]
+        raise SystemExit(subprocess.call([sys.executable, "-m", "scripts.tools.local_adb", action]))
 
     if args.command == "start":
         cmd_start(args)

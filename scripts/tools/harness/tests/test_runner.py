@@ -184,6 +184,20 @@ class AdbTest(unittest.TestCase):
         connector.shell.assert_called_once()
 
 
+    def test_install_preserves_fastdeploy_arguments_through_connector(self):
+        from scripts.tools.harness._runner import adb
+        connector = MagicMock()
+        connector.adb.return_value = {"exit": 0, "stdout": "installed", "stderr": ""}
+        ctx = self._make_ctx(connector=connector)
+        args = ["install", "--fastdeploy", "-r", "/fake/app.apk"]
+        result = adb(ctx, args, timeout_seconds=180)
+        self.assertEqual(result.exit_code, 0)
+        connector.adb.assert_called_once_with(
+            args, timeout_ms=180000, capture="text", local_path="",
+        )
+        connector.install.assert_not_called()
+
+
 class GradleTest(unittest.TestCase):
     def _make_ctx(self, gradle_wrapper="/fake/gradlew"):
         return HarnessContext(

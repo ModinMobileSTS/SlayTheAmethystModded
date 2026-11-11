@@ -103,11 +103,18 @@ limitations; this command does not install or change anything on a device.
 
 Use `scripts/tools/main.py` for debugging and device automation tools. The `harness` alias is equivalent to `sts-harness`.
 
-**Prerequisite:** start the connector daemon and set its port before any harness command:
+**Recommended:** configure the root ignored `.env.local` using `.env.local.example`.
+The harness and OpenCode tools automatically start a workspace-local wireless ADB
+server and connector; no connector port or device serial argument is needed.
+See [local ADB setup](tools/connector/README.md#workspace-local-wireless-adb-linux).
+Real device endpoints must remain only in local configuration. The fixed-port
+auto-start fallback is removed; managed mode replaces inherited old connector ports.
+
+**Legacy setup (without `.env.local`):** start the connector daemon and set its port before any harness command:
 
 ```bash
 export STS_CONNECTOR_PORT=39999
-export STS_TEST_DEVICE=localhost:15555   # optional; or pass -DeviceSerial
+export STS_TEST_DEVICE=192.0.2.1:45678   # documentation-only example
 python -m scripts.tools.connector start --port 39999
 ```
 
@@ -116,7 +123,7 @@ Alternatively pass `-ConnectorPort 39999` / `--connector-port 39999` on each har
 Harness commands:
 
 - `doctor`: validate connector, Gradle wrapper, package id, device selection, storage access, and runtime status signals.
-- `install`: explicitly build and install the debug APK; requires `-DeviceSerial` for the user-approved target. Never invoked by test flows.
+- `install`: explicitly build and install the debug APK using `install --fastdeploy -r`; requires `-DeviceSerial` for the user-approved target and is never invoked by test flows. Use the project-local platform-tools 35.0.2 configured in `.env.local`; ADB 37.0.0/37.0.1 incorrectly skip fast deploy on the tested API 29 device. Unsupported fast deploy may fall back to a full install in ADB; passing the flag alone does not guarantee differential transfer. The shell shortcut still uses `ADB_BIN`/PATH; invoke it through `local_adb run` with `ADB_BIN` set to the project-local binary to use the workspace-owned server.
 - `start`: start the app through `:app:stsStart`.
 - `stop`: force-stop the app through `:app:stsStop`.
 - `logs`: export runtime logs and a harness logcat dump.
@@ -187,9 +194,9 @@ Do not treat the historical serials in examples as authorization.
 export STS_CONNECTOR_PORT=39999
 python -m scripts.tools.connector start --port 39999
 
-python scripts/tools/main.py sts-harness -Command doctor -DeviceSerial localhost:15555
-python scripts/tools/main.py sts-harness -Command status -DeviceSerial localhost:15555
-python scripts/tools/main.py sts-harness -Command mods -DeviceSerial localhost:15555
+python scripts/tools/main.py sts-harness -Command doctor -DeviceSerial 192.0.2.1:45678
+python scripts/tools/main.py sts-harness -Command status -DeviceSerial 192.0.2.1:45678
+python scripts/tools/main.py sts-harness -Command mods -DeviceSerial 192.0.2.1:45678
 python scripts/tools/main.py sts-harness -Command set-mods -Mods "Downfall.jar,ReplayTheSpire"
 python scripts/tools/main.py sts-harness -Command set-mods -ModListFile agent-tmp/enabled-mods.txt
 python scripts/tools/main.py sts-harness -Command set-mods -EnableAllMods
@@ -293,12 +300,12 @@ Gradle 与本地 CFR 等主机侧工具仍本地执行。Connector 使用纯 Pyt
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `STS_CONNECTOR_PORT` | Connector daemon 的 TCP 端口 | 必填（harness 也可传 `-ConnectorPort`） |
+| `STS_CONNECTOR_PORT` | Connector daemon 的 TCP 端口 | 托管本地模式自动提供；旧模式显式指定 |
 | `STS_TEST_DEVICE` | 集成测试的默认设备序列号 | `auto` |
 
 ```bash
 export STS_CONNECTOR_PORT=39999
-export STS_TEST_DEVICE=localhost:15555
+export STS_TEST_DEVICE=192.0.2.1:45678
 python -m scripts.tools.connector start --port 39999
 ```
 

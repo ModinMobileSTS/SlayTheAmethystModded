@@ -5,8 +5,5 @@ STS_CONNECTOR_PORT   — connector daemon 端口（ConnectorClient 读取）
 """
 import os
 
-_STS_TEST_DEVICE = os.environ.get("STS_TEST_DEVICE", "auto")
-
-
 def get_test_device_serial() -> str:
-    return _STS_TEST_DEVICE
+    return os.environ.get("STS_TEST_DEVICE", "auto")

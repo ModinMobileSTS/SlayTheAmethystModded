@@ -17,6 +17,12 @@ class ConnectorError(RuntimeError):
 
 
 def resolve_connector_port(explicit: int | None = None) -> int:
+    from scripts.tools.local_adb import ROOT, ensure
+    if explicit is None and ((ROOT / ".env.local").exists() or os.environ.get("STS_ADB_DEVICE_ENDPOINT")):
+        managed = ensure()
+        port = int(managed["STS_CONNECTOR_PORT"])
+        os.environ.update(managed)
+        return port
     if explicit is not None:
         return int(explicit)
     env = os.environ.get("STS_CONNECTOR_PORT", "").strip()

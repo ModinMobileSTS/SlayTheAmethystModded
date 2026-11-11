@@ -655,6 +655,8 @@ private fun GameLaunchActionBar(
 
 @Composable
 private fun ModsHeaderPinnedContent(
+    selectedMods: List<ModItemUi> = emptyList(),
+    batchActions: BatchEditBarState? = null,
     localMods: List<ModItemUi>,
     folderControlsEnabled: Boolean,
     dragLocked: Boolean,
@@ -680,6 +682,7 @@ private fun ModsHeaderPinnedContent(
         subtitle = "",
         iconSize = 28.dp,
     ) {
+        batchActions?.let { BatchSelectAllAction(it) }
         AgentWorkingIndicator()
         WorkshopUpdatesAction(
             localMods = localMods,
@@ -687,6 +690,8 @@ private fun ModsHeaderPinnedContent(
             enabled = folderControlsEnabled && hostAvailable,
         )
         ModsActionsMenu(
+            batchActions = batchActions,
+            selectedMods = selectedMods,
             canEditFolders = folderControlsEnabled && hostAvailable,
             dragLocked = dragLocked,
             showEnabledModsOnly = showEnabledModsOnly,
@@ -4314,6 +4319,13 @@ internal fun LauncherMainRoute(
             viewModel.onExportModPicked(activity, sourcePath, uri)
         }
     }
+    val exportModsArchiveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val sourcePath = pendingExportModSourcePath
+        pendingExportModSourcePath = null
+        hostActivity?.let { viewModel.onExportModPicked(it, sourcePath, uri) }
+    }
     val easyTierVpnPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -4405,7 +4417,11 @@ internal fun LauncherMainRoute(
                 }
                 is MainScreenViewModel.Effect.OpenExportModPicker -> {
                     pendingExportModSourcePath = effect.sourcePath
-                    exportModLauncher.launch(effect.suggestedName)
+                    if (effect.suggestedName.endsWith(".zip", ignoreCase = true)) {
+                        exportModsArchiveLauncher.launch(effect.suggestedName)
+                    } else {
+                        exportModLauncher.launch(effect.suggestedName)
+                    }
                 }
                 is MainScreenViewModel.Effect.LaunchIntent -> {
                     val activity = hostActivity ?: return@collect
@@ -5300,8 +5316,10 @@ private fun LauncherMainScreenContent(
                                 contentPadding = PaddingValues(0.dp),
                                 pinnedContent = {
                                     ModsHeaderPinnedContent(
+                                        batchActions = batchEditBarState,
+                                        selectedMods = batchEditBarState?.selectedMods.orEmpty(),
                                         localMods = uiState.optionalMods,
-                                        folderControlsEnabled = uiState.controlsEnabled && !batchSelectionMode,
+                                        folderControlsEnabled = uiState.controlsEnabled,
                                         dragLocked = uiState.dragLocked,
                                         showEnabledModsOnly = showEnabledModsOnly,
                                         showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
@@ -6559,6 +6577,8 @@ private fun ColumnScope.MainContentSwitcher(
                         onDeleteMods = actions.onDeleteMods,
                         onExportMod = actions.onExportMod,
                         onShareMod = actions.onShareMod,
+                        onExportMods = actions.onExportMods,
+                        onShareMods = actions.onShareMods,
                         onRenameModAlias = actions.onRenameModAlias,
                         onRestoreModOriginalName = actions.onRestoreModOriginalName,
                         onPatchWorkshopMod = actions.onPatchWorkshopMod,

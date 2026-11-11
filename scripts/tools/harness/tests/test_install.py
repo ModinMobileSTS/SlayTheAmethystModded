@@ -47,8 +47,11 @@ class RunInstallTest(unittest.TestCase):
         mock_adb.return_value = MagicMock(exit_code=0)
         ctx = self._make_ctx()
         run_install(ctx)
-        mock_gradle.assert_called_once()
-        mock_adb.assert_called_once()
+        mock_gradle.assert_called_once_with(ctx, [":app:assembleDebug"])
+        mock_adb.assert_called_once_with(
+            ctx, ["install", "--fastdeploy", "-r", "/fake/repo/app-debug.apk"],
+            timeout_seconds=180,
+        )
         self.assertTrue(ctx.result["success"])
         self.assertEqual(ctx.result["status"], "INSTALLED")
 

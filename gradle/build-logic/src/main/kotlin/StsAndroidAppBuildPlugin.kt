@@ -764,6 +764,9 @@ private fun Project.registerRendererBackendImportTask() {
 }
 
 private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String) {
+    tasks.withType(Exec::class.java).configureEach {
+        if (name in setOf("stsStart", "stsStop", "stsStartAutoplay")) workingDir(rootProject.projectDir)
+    }
     val supportedLaunchModes = setOf("mts", "vanilla")
     val rawLaunchMode = readGradleProperty("launchMode", "mts")
     val launchMode = when (rawLaunchMode) {
@@ -787,6 +790,11 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
     }
 
     fun adbCommand(vararg args: String): List<String> = buildList {
+        if (rootProject.file(".env.local").isFile) {
+            addAll(listOf(readGradleProperty("pythonExecutable", "python3"), "-m", "scripts.tools.local_adb", "adb", "--"))
+            addAll(args)
+            return@buildList
+        }
         add(adb.get())
         if (deviceSerial.isNotEmpty()) {
             add("-s")
@@ -906,6 +914,9 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         group = "debug"
         description = "Export the same JVM log bundle as Settings > Share Logs."
         adbPath.set(adb)
+        if (rootProject.file(".env.local").isFile) {
+            localAdbPython.set(readGradleProperty("pythonExecutable", "python3"))
+        }
         applicationId.set(packageName)
         this.deviceSerial.set(deviceSerial)
         this.logsDir.set(logsDir)
