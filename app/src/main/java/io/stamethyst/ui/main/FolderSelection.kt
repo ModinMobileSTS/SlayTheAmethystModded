@@ -11,3 +11,7 @@ internal fun folderAggregateState(active: Int, total: Int): ToggleableState = wh
 /** Only visible eligible children participate; selections in other groups are preserved. */
 internal fun toggleFolderBatchSelection(selected: Set<String>, visible: Set<String>): Set<String> =
     if (visible.all { it in selected }) selected - visible else selected + visible
+
+/** Long press always adds matching children, even when the whole group is already selected. */
+internal fun selectFolderBatchSelection(selected: Set<String>, visible: Set<String>): Set<String> =
+    selected + visible

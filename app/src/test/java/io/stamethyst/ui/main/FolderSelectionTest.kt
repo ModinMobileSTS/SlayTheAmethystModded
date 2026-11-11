@@ -5,6 +5,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FolderSelectionTest {
+    @Test fun longPressAlwaysAddsMatchingChildrenAndPreservesExistingSelection() {
+        val existing = setOf("other", "hidden", "a")
+        assertEquals(existing + "b", selectFolderBatchSelection(existing, setOf("a", "b")))
+        assertEquals(existing, selectFolderBatchSelection(existing, setOf("a")))
+        assertEquals(existing, selectFolderBatchSelection(existing, emptySet()))
+    }
     @Test fun aggregateDistinguishesEmptyPartialAndAll() {
         assertEquals(ToggleableState.Off, folderAggregateState(0, 0))
         assertEquals(ToggleableState.Off, folderAggregateState(0, 8))

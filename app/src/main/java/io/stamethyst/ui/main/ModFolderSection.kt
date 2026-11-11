@@ -9,6 +9,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -103,7 +105,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 private const val INITIAL_EXPANDED_FOLDER_MOD_ITEM_BUDGET = 48
 private const val EXPANDED_FOLDER_FULL_MOUNT_DELAY_MS = 220L
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun ModFolderSection(
     modifier: Modifier = Modifier,
@@ -535,6 +537,11 @@ internal fun ModFolderSection(
             })
     }
 
+    val latestDragTopInset = rememberUpdatedState(with(density) { contentTopInset.toPx() })
+    val latestDragBottomInset = rememberUpdatedState(with(density) {
+        (if (batchSelectionMode) BATCH_EDIT_BOTTOM_INSET else contentBottomInset).toPx()
+    })
+
     // Keep the coordinator stable during a drag gesture, but resolve folder state
     // from the latest UI snapshot after moves have already updated assignments.
     val dragCoordinator = remember(interactionState) {
@@ -542,6 +549,9 @@ internal fun ModFolderSection(
             interactionState = interactionState,
             dragEnabled = { latestOrganizationDragEnabled.value },
             createTransaction = { latestCreateTransaction.value(it) },
+            density = density.density,
+            topInsetPx = { latestDragTopInset.value },
+            bottomInsetPx = { latestDragBottomInset.value },
             resolveFolderTokenFromItemKey = { itemKey ->
                 val key = itemKey as? String ?: return@ModDragSessionCoordinator null
                 latestFolderTokenByItemKey.value[key]
@@ -593,7 +603,7 @@ internal fun ModFolderSection(
         while (interactionState.modDragState.isActive) {
             val target = dragCoordinator.nextAutoScrollDelta()
             smoothAutoScrollDelta = if (target == 0f) {
-                smoothAutoScrollDelta * 0.5f
+                0f
             } else {
                 smoothAutoScrollDelta * 0.5f + target * 0.3f
             }
@@ -991,14 +1001,25 @@ internal fun ModFolderSection(
                                                 if (isHovering) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                                                 headerShape
                                             )
-                                            .clickable(enabled = uiState.controlsEnabled && !collapseToggleLocked) {
-                                                collapseToggleLockedTokens = collapseToggleLockedTokens + folderTokenId
-                                                if (folderUiModel.isUnassigned) {
-                                                    callbacks.onToggleUnassignedCollapsed()
-                                                } else {
-                                                    callbacks.onToggleFolderCollapsed(folderTokenId)
+                                            .combinedClickable(
+                                                enabled = uiState.controlsEnabled && !collapseToggleLocked,
+                                                onLongClick = {
+                                                    if (organizationControlsEnabled) {
+                                                        val paths = folderUiModel.mods.filter { it.canUseFolderSelection() }
+                                                            .map { it.storagePath }.toSet()
+                                                        selectedBatchStoragePaths = selectFolderBatchSelection(selectedBatchStoragePaths, paths)
+                                                        batchSelectionMode = true
+                                                    }
+                                                },
+                                                onClick = {
+                                                    collapseToggleLockedTokens = collapseToggleLockedTokens + folderTokenId
+                                                    if (folderUiModel.isUnassigned) {
+                                                        callbacks.onToggleUnassignedCollapsed()
+                                                    } else {
+                                                        callbacks.onToggleFolderCollapsed(folderTokenId)
+                                                    }
                                                 }
-                                            }
+                                            )
                                             .padding(vertical = 2.dp)
                                     ) {
                                         Row(

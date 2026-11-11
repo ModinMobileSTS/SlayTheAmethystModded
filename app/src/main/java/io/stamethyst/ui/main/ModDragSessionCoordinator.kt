@@ -13,6 +13,9 @@ internal class ModDragSessionCoordinator(
     private val resolveAssignedFolderToken: (ModItemUi) -> String,
     private val dragEnabled: () -> Boolean,
     private val createTransaction: (ModItemUi) -> ModDragTransaction,
+    private val density: Float = 1f,
+    private val topInsetPx: () -> Float = { 0f },
+    private val bottomInsetPx: () -> Float = { 0f },
 ) {
     private var transaction: ModDragTransaction? = null
 
@@ -71,6 +74,9 @@ internal class ModDragSessionCoordinator(
     }
 
     fun cancelModDrag() {
+        // Capture the viewport before removing preview rows, rather than restoring
+        // the position captured at gesture start after an edge scroll.
+        if (interactionState.modDragState.isActive) interactionState.rememberDragScrollAnchor()
         transaction?.cancel()
         transaction = null
         interactionState.modDragPreview = null
@@ -121,14 +127,7 @@ internal class ModDragSessionCoordinator(
         }
         updateModDragHover(position)
         val viewport = interactionState.listViewportInWindow ?: return 0f
-        val topTrigger = viewport.top + MOD_DRAG_AUTO_SCROLL_EDGE_PX
-        val bottomTrigger = viewport.bottom - MOD_DRAG_AUTO_SCROLL_EDGE_PX
-        val ratio = when {
-            position.y < topTrigger -> -((topTrigger - position.y) / MOD_DRAG_AUTO_SCROLL_EDGE_PX).coerceIn(0f, 1f)
-            position.y > bottomTrigger -> ((position.y - bottomTrigger) / MOD_DRAG_AUTO_SCROLL_EDGE_PX).coerceIn(0f, 1f)
-            else -> 0f
-        }
-        val eased = ratio * kotlin.math.abs(ratio)
-        return if (kotlin.math.abs(eased) < 0.04f) 0f else MOD_DRAG_AUTO_SCROLL_MAX_STEP_PX * eased
+        return modDragAutoScrollDelta(position.x, position.y, viewport.left, viewport.top + topInsetPx(),
+            viewport.right, viewport.bottom - bottomInsetPx(), density)
     }
 }
