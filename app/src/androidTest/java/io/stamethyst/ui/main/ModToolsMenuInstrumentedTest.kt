@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.test.platform.app.InstrumentationRegistry
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
@@ -135,7 +136,7 @@ class ModToolsMenuInstrumentedTest {
         compose.onNodeWithText(context.getString(R.string.mod_remove_association)).assertIsNotEnabled()
     }
 
-    @Test fun selectionContainingAssociatedModDisablesGroupingButAllowsRemoval() {
+    @Test fun mixedSelectionAllowsGroupingAndRemoval() {
         var associations = 0
         var removals = 0
         val first = ModItemUi(
@@ -156,16 +157,18 @@ class ModToolsMenuInstrumentedTest {
                     batchActions = BatchEditBarState(
                         selectedMods = selected, selectedCount = 2, controlsEnabled = true,
                         onMove = {}, onDelete = {}, onEnable = {}, onDisable = {}, onCancel = {},
-                        associationPresent = true, onAssociate = { associations++ },
+                        associationPresent = true, canAssociate = canAssociateSelection(2, 1),
+                        onAssociate = { associations++ },
                         onRemoveAssociation = { removals++ },
                     ),
                 )
             }
         }
         compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).performClick()
-        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).assertIsNotEnabled()
+        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).performClick()
         compose.onNodeWithText(context.getString(R.string.mod_remove_association)).performClick()
-        assertEquals(0, associations)
+        assertEquals(1, associations)
         assertEquals(1, removals)
     }
 

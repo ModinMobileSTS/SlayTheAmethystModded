@@ -137,7 +137,7 @@ internal fun ModsActionsMenu(
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.main_mod_associate)) },
-                        enabled = batchActions.controlsEnabled && selectedMods.size >= 2 && !batchActions.associationPresent,
+                        enabled = batchActions.controlsEnabled && batchActions.canAssociate,
                         onClick = { dismiss(); batchActions.onAssociate() },
                         leadingIcon = { Icon(painterResource(R.drawable.ic_link), contentDescription = null) },
                     )

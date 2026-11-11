@@ -64,6 +64,7 @@ internal data class BatchEditBarState(
     val onAssociate: () -> Unit = {},
     val onRemoveAssociation: () -> Unit = {},
     val associationPresent: Boolean = false,
+    val canAssociate: Boolean = false,
     val onExport: () -> Unit = {},
     val onShare: () -> Unit = {},
     val selectedCount: Int,

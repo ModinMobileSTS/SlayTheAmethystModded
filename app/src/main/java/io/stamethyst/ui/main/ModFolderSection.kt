@@ -303,6 +303,8 @@ internal fun ModFolderSection(
         selectionFiltered = searchActive || showEnabledModsOnly || showUpdateAvailableModsOnly,
         selectedMods = selectedBatchMods,
         associationPresent = selectedBatchMods.any { modAssociationState.groupFor(it) != null },
+        canAssociate = canAssociateSelection(selectedBatchMods.size,
+            selectedBatchMods.count { modAssociationState.groupFor(it) != null }),
         selectedCount = selectedBatchMods.size,
         controlsEnabled = latestBatchSelectionControlsEnabled.value
     )
@@ -862,10 +864,11 @@ internal fun ModFolderSection(
                 title = { Text(stringResource(R.string.main_mod_associate)) },
                 text = { Text(stringResource(R.string.mod_batch_associate_confirm, selectedBatchMods.size)) },
                 confirmButton = {
-                    TextButton(enabled = batchSelectionControlsEnabled && selectedBatchMods.size >= 2 &&
-                        selectedBatchMods.none { modAssociationState.groupFor(it) != null }, onClick = {
+                    TextButton(enabled = batchSelectionControlsEnabled && canAssociateSelection(selectedBatchMods.size,
+                        selectedBatchMods.count { modAssociationState.groupFor(it) != null }), onClick = {
                         batchAssociationDialogVisible = false
-                        if (selectedBatchMods.any { modAssociationState.groupFor(it) != null }) return@TextButton
+                        if (!canAssociateSelection(selectedBatchMods.size,
+                            selectedBatchMods.count { modAssociationState.groupFor(it) != null })) return@TextButton
                         val source = selectedBatchMods.firstOrNull()
                         if (source != null) selectedBatchMods.drop(1).forEach { callbacks.onAssociateMods(source, it) }
                     }) { Text(stringResource(android.R.string.ok)) }
