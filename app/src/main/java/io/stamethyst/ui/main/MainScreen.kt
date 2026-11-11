@@ -682,6 +682,7 @@ private fun ModsHeaderPinnedContent(
         subtitle = "",
         iconSize = 28.dp,
     ) {
+        batchActions?.let { BatchSelectAllAction(it) }
         AgentWorkingIndicator()
         WorkshopUpdatesAction(
             localMods = localMods,
@@ -4318,6 +4319,13 @@ internal fun LauncherMainRoute(
             viewModel.onExportModPicked(activity, sourcePath, uri)
         }
     }
+    val exportModsArchiveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val sourcePath = pendingExportModSourcePath
+        pendingExportModSourcePath = null
+        hostActivity?.let { viewModel.onExportModPicked(it, sourcePath, uri) }
+    }
     val easyTierVpnPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -4409,7 +4417,11 @@ internal fun LauncherMainRoute(
                 }
                 is MainScreenViewModel.Effect.OpenExportModPicker -> {
                     pendingExportModSourcePath = effect.sourcePath
-                    exportModLauncher.launch(effect.suggestedName)
+                    if (effect.suggestedName.endsWith(".zip", ignoreCase = true)) {
+                        exportModsArchiveLauncher.launch(effect.suggestedName)
+                    } else {
+                        exportModLauncher.launch(effect.suggestedName)
+                    }
                 }
                 is MainScreenViewModel.Effect.LaunchIntent -> {
                     val activity = hostActivity ?: return@collect
@@ -6565,6 +6577,8 @@ private fun ColumnScope.MainContentSwitcher(
                         onDeleteMods = actions.onDeleteMods,
                         onExportMod = actions.onExportMod,
                         onShareMod = actions.onShareMod,
+                        onExportMods = actions.onExportMods,
+                        onShareMods = actions.onShareMods,
                         onRenameModAlias = actions.onRenameModAlias,
                         onRestoreModOriginalName = actions.onRestoreModOriginalName,
                         onPatchWorkshopMod = actions.onPatchWorkshopMod,

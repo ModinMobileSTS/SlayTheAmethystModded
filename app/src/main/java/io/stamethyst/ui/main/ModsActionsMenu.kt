@@ -45,11 +45,6 @@ internal fun ModsActionsMenu(
     selectedMods: List<ModItemUi> = emptyList(),
     batchActions: BatchEditBarState? = null,
 ) {
-    val context = LocalContext.current
-    var showCommunityCheck by remember { mutableStateOf(false) }
-    if (showCommunityCheck) {
-        ScopedCommunityCheckDialog(selectedMods.takeIf { it.isNotEmpty() }) { showCommunityCheck = false }
-    }
     var expanded by remember { mutableStateOf(false) }
     var filtersExpanded by remember { mutableStateOf(false) }
     val hasActiveFilter = showEnabledModsOnly || showUpdateAvailableModsOnly
@@ -102,33 +97,73 @@ internal fun ModsActionsMenu(
                     leadingIcon = { Checkbox(checked = showEnabledModsOnly, onCheckedChange = null) },
                 )
             } else {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.main_action_add_folder)) },
+                    enabled = canEditFolders,
+                    onClick = { dismiss(); onAddFolderClick() },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_folder_add), contentDescription = null) },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.main_mod_filter_menu)) },
+                    onClick = { filtersExpanded = true },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_filter_list), contentDescription = null) },
+                    trailingIcon = { Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null) },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(if (dragLocked) R.string.main_action_unlock_drag else R.string.main_action_lock_drag)) },
+                    enabled = canEditFolders,
+                    onClick = { dismiss(); onToggleDragLocked() },
+                    leadingIcon = { Icon(painterResource(if (dragLocked) R.drawable.ic_lock else R.drawable.ic_lock_open), contentDescription = null) },
+                )
                 if (selectedMods.isNotEmpty() && batchActions != null) {
+                    HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.main_mod_favorite_add)) },
-                        enabled = canEditFolders,
+                        enabled = batchActions.controlsEnabled && selectedMods.any { !it.favorite },
                         onClick = { dismiss(); batchActions.onFavorite(true) },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_favorite_heart), contentDescription = null) },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.main_mod_favorite_remove)) },
-                        enabled = canEditFolders,
+                        enabled = batchActions.controlsEnabled && selectedMods.any { it.favorite },
                         onClick = { dismiss(); batchActions.onFavorite(false) },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_favorite_heart), contentDescription = null) },
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.main_mod_priority_dialog_clear)) },
-                        enabled = canEditFolders,
-                        onClick = { dismiss(); batchActions.onResetPriority() },
+                        text = { Text(stringResource(R.string.main_mod_priority_adjust)) },
+                        enabled = batchActions.controlsEnabled,
+                        onClick = { dismiss(); batchActions.onEditPriority() },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_speed), contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_associate)) },
+                        enabled = batchActions.controlsEnabled && selectedMods.size >= 2 && !batchActions.associationPresent,
+                        onClick = { dismiss(); batchActions.onAssociate() },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_link), contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.mod_remove_association)) },
+                        enabled = batchActions.controlsEnabled && batchActions.associationPresent,
+                        onClick = { dismiss(); batchActions.onRemoveAssociation() },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_link), contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_export)) },
+                        enabled = batchActions.controlsEnabled,
+                        onClick = { dismiss(); batchActions.onExport() },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_workshop_download), contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_share)) },
+                        enabled = batchActions.controlsEnabled,
+                        onClick = { dismiss(); batchActions.onShare() },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_lan_room_share), contentDescription = null) },
                     )
                     HorizontalDivider()
+                    ModDeleteMenuItem(batchActions.controlsEnabled) { dismiss(); batchActions.onDelete() }
                 }
-                DropdownMenuItem(
-                    text = { Text(stringResource(if (selectedMods.isEmpty()) R.string.mod_check_community_all else R.string.mod_check_community_selected)) },
-                    onClick = {
-                        dismiss()
-                        showCommunityCheck = true
-                    },
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_build), contentDescription = null) },
-                )
                 if (feedbackUnreadCount > 0) {
+                    HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.main_feedback_updates_content_description)) },
                         onClick = {
@@ -142,40 +177,18 @@ internal fun ModsActionsMenu(
                         },
                     )
                 }
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.main_mod_filter_menu)) },
-                    onClick = { filtersExpanded = true },
-                    leadingIcon = {
-                        Icon(
-                            painterResource(R.drawable.ic_filter_list),
-                            contentDescription = null,
-                            tint = if (hasActiveFilter) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    trailingIcon = { Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null) },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(if (dragLocked) R.string.main_action_unlock_drag else R.string.main_action_lock_drag)) },
-                    enabled = canEditFolders,
-                    onClick = {
-                        dismiss()
-                        onToggleDragLocked()
-                    },
-                    leadingIcon = {
-                        Icon(painterResource(if (dragLocked) R.drawable.ic_lock else R.drawable.ic_lock_open), contentDescription = null)
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.main_action_add_folder)) },
-                    enabled = canEditFolders,
-                    onClick = {
-                        dismiss()
-                        onAddFolderClick()
-                    },
-                    leadingIcon = { Icon(painterResource(R.drawable.ic_folder_add), contentDescription = null) },
-                )
             }
         }
     }
+}
+
+@Composable
+internal fun ModDeleteMenuItem(enabled: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(stringResource(R.string.main_mod_delete), color = MaterialTheme.colorScheme.error) },
+        enabled = enabled,
+        onClick = onClick,
+        leadingIcon = { Icon(painterResource(R.drawable.ic_delete), contentDescription = null,
+            tint = MaterialTheme.colorScheme.error) },
+    )
 }

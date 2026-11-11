@@ -2132,6 +2132,14 @@ class MainScreenViewModel : ViewModel() {
         modManagementController.onShareMod(host, mod)
     }
 
+    fun onExportMods(host: Activity, mods: List<ModItemUi>) {
+        modManagementController.onExportMods(host, mods)
+    }
+
+    fun onShareMods(host: Activity, mods: List<ModItemUi>) {
+        modManagementController.onShareMods(host, mods)
+    }
+
     fun onRenameModAlias(host: Activity, mod: ModItemUi, aliasInput: String) {
         modManagementController.onRenameModAlias(host, mod, aliasInput)
     }

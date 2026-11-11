@@ -1,4 +1,11 @@
 <resources>
+    <string name="mod_remove_association">移除关联</string>
+    <string name="mod_remove_association_description">退出关联组，保留其他成员之间的关联。</string>
+    <string name="mod_batch_priority_mixed">选中模组的优先级不同。确认后统一设置为所选值，清除则分别恢复默认优先级。</string>
+    <string name="mod_batch_associate_confirm">将选中的 %1$d 个模组关联为同一组？已有的关联组将合并；启用或停用模组可能影响整组。</string>
+    <string name="mod_batch_archive_summary">已打包 %1$d 个模组，跳过 %2$d 个不可用文件。</string>
+    <string name="mod_select_all">全选</string>
+    <string name="mod_select_all_results">全选结果</string>
     <string name="mod_folder_updates_available">%1$d 个模组可更新</string>
     <string name="mod_check_updates_all">检查所有模组更新</string>
     <string name="mod_check_updates_selected">检查选中的模组更新</string>

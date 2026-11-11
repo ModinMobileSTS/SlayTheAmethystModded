@@ -461,7 +461,8 @@ internal fun ModPriorityDialog(
     effectivePriority: Int?,
     onDismiss: () -> Unit,
     onClearPriority: () -> Unit,
-    onConfirm: (Int) -> Unit
+    onConfirm: (Int) -> Unit,
+    mixedPriorities: Boolean = false,
 ) {
     if (!visible) {
         return
@@ -477,6 +478,7 @@ internal fun ModPriorityDialog(
     val selectedPriority = sliderValue.roundToInt()
         .coerceIn(ModManager.OPTIONAL_MOD_PRIORITY_MIN, ModManager.OPTIONAL_MOD_PRIORITY_MAX)
     val currentStatusText = when {
+        mixedPriorities -> stringResource(R.string.mod_batch_priority_mixed)
         explicitPriority != null && effectivePriority != null && explicitPriority != effectivePriority ->
             stringResource(
                 R.string.main_mod_priority_dialog_status_explicit_and_effective,

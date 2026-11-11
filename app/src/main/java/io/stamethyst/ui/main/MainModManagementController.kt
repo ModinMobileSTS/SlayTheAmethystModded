@@ -899,6 +899,56 @@ internal class MainModManagementController(
         )
     }
 
+    fun onExportMods(host: Activity, mods: List<ModItemUi>) = prepareBatchArchive(host, mods, share = false)
+
+    fun onShareMods(host: Activity, mods: List<ModItemUi>) = prepareBatchArchive(host, mods, share = true)
+
+    private fun prepareBatchArchive(host: Activity, mods: List<ModItemUi>, share: Boolean) {
+        if (hostCallbacks.isBusy() || mods.isEmpty()) return
+        val selected = mods.distinctBy { it.storagePath }
+        val sources = selected.mapNotNull { mod ->
+            if (!mod.installed) null else resolveExportableModFile(mod)?.let { file ->
+                file to resolveModExportFileName(mod, file.name)
+            }
+        }
+        if (sources.isEmpty()) {
+            emitSnackbar(host.getString(R.string.main_mod_export_missing))
+            return
+        }
+        setBusy(true, UiText.StringResource(R.string.main_mod_export_busy))
+        executor.execute {
+            try {
+                val directory = File(RuntimePaths.transientFilesRoot(host), "share/mods").apply {
+                    check(isDirectory || mkdirs()) { "Unable to create archive directory" }
+                }
+                val archive = File.createTempFile("mods-", ".zip", directory)
+                writeModBatchArchive(sources, archive)
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    emitSnackbar(host.getString(R.string.mod_batch_archive_summary, sources.size, selected.size - sources.size))
+                    if (share) {
+                        val intent = FileShareCompat.buildShareIntent(
+                            host = host,
+                            uri = FileShareCompat.resolveShareUri(host, archive),
+                            fileName = archive.name,
+                            mimeType = "application/zip",
+                        )
+                        hostCallbacks.emitEffect(MainScreenViewModel.Effect.LaunchIntent(
+                            Intent.createChooser(intent, host.getString(R.string.main_mod_share_chooser_title))))
+                    } else {
+                        hostCallbacks.emitEffect(MainScreenViewModel.Effect.OpenExportModPicker(
+                            sourcePath = archive.absolutePath, suggestedName = "mods.zip"))
+                    }
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    emitSnackbar(host.getString(R.string.main_mod_export_failed, error.message.orEmpty()))
+                }
+            }
+        }
+    }
+
     fun onExportAgentPatch(host: Activity, patch: AgentPatchModUi) {
         val source = File(patch.jarPath)
         if (!source.isFile) {

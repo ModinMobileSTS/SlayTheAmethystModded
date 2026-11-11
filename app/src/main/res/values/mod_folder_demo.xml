@@ -1,4 +1,11 @@
 <resources>
+    <string name="mod_remove_association">Remove association</string>
+    <string name="mod_remove_association_description">Leave the association group without changing other members.</string>
+    <string name="mod_batch_priority_mixed">Selected mods have different priorities. Confirming applies the same priority to all selected mods; clearing restores their defaults.</string>
+    <string name="mod_batch_associate_confirm">Associate these %1$d mods as one group? Existing association groups will be merged; enabling or disabling a mod may affect the group.</string>
+    <string name="mod_batch_archive_summary">Prepared %1$d mods; skipped %2$d unavailable files.</string>
+    <string name="mod_select_all">Select all</string>
+    <string name="mod_select_all_results">Select results</string>
     <string name="mod_folder_updates_available">Updates available: %1$d</string>
     <string name="mod_check_updates_all">Check all mods for updates</string>
     <string name="mod_check_updates_selected">Check selected mods for updates</string>

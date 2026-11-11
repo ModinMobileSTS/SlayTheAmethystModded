@@ -81,6 +81,8 @@ internal fun ModDetailsDialog(
     aiContent: @Composable () -> Unit,
     actionsContent: @Composable () -> Unit,
     onOpenWorkshopDetails: () -> Unit = {},
+    onDelete: (() -> Unit)? = null,
+    deleteEnabled: Boolean = fileActionsEnabled,
 ) {
     val pager = rememberPagerState(initialPage = if (startAtActions) 0 else 1, pageCount = { 3 })
     val scope = rememberCoroutineScope()
@@ -104,9 +106,12 @@ internal fun ModDetailsDialog(
             modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).testTag("mod_details_dialog")
                 .semantics { paneTitle = title },
         ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
             Text(name, style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+                modifier = Modifier.weight(1f).padding(horizontal = 22.dp, vertical = 12.dp),
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+            onDelete?.let { ModDeleteOverflow(deleteEnabled, it) }
+            }
             SecondaryTabRow(
                 selectedTabIndex = pager.currentPage,
                 containerColor = Color.Transparent,

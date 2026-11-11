@@ -107,6 +107,7 @@ internal data class ModCardCallbacks(
     val onRenameModAlias: (ModItemUi, String) -> Unit = { _, _ -> },
     val onRestoreModOriginalName: (ModItemUi) -> Unit = {},
     val onAssociateMod: (ModItemUi) -> Unit = {},
+    val onRemoveAssociation: (ModItemUi) -> Unit = {},
     val onAssociationBadgeClick: (ModItemUi) -> Unit = {},
     val onPatchWorkshopMod: (ModItemUi) -> Unit = {},
     val onRetryWorkshopDownload: (ModItemUi) -> Unit = {},
@@ -157,10 +158,6 @@ internal fun ModCard(
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var showDetailsDialog by remember(mod.storagePath) { mutableStateOf(false) }
-    var showCommunityCheck by remember(mod.storagePath) { mutableStateOf(false) }
-    if (showCommunityCheck) {
-        ScopedCommunityCheckDialog(listOf(mod)) { showCommunityCheck = false }
-    }
     var detailsStartAtActions by remember(mod.storagePath) { mutableStateOf(false) }
     var showPriorityDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
@@ -728,6 +725,11 @@ internal fun ModCard(
             onFavoriteChange = { callbacks.onSetFavorite(mod, it) },
             onOpenAiEditor = openAiEditor,
             onOpenWorkshopDetails = openWorkshop,
+            deleteEnabled = actionsEnabled,
+            onDelete = {
+                showDetailsDialog = false
+                callbacks.onDeleteMod(mod)
+            },
             badgesContent = { onScrollToAi ->
                 ModDetailsBadges(
                     mod = mod,
@@ -784,7 +786,6 @@ internal fun ModCard(
             },
             actionsContent = {
                 ModActionsList(
-                    onCheckCommunity = { showCommunityCheck = true },
                     controlsEnabled = fileActionsEnabled,
                     favorite = mod.favorite,
                     deleteEnabled = actionsEnabled,
@@ -798,6 +799,8 @@ internal fun ModCard(
                         showDetailsDialog = false
                         callbacks.onAssociateMod(mod)
                     },
+                    associationPresent = associationBadge != null,
+                    onRemoveAssociation = { callbacks.onRemoveAssociation(mod) },
                     onExport = {
                         showDetailsDialog = false
                         callbacks.onExportMod(mod)
@@ -811,7 +814,7 @@ internal fun ModCard(
                         showDetailsDialog = false
                         callbacks.onDeleteMod(mod)
                     },
-                    showMove = true,
+                    showMove = false,
                     moveEnabled = selectionEnabled && !mod.required && mod.canUseFolderOrganization(),
                     onMove = {
                         showDetailsDialog = false

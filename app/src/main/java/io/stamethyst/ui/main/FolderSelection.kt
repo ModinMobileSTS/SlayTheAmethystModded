@@ -15,3 +15,10 @@ internal fun toggleFolderBatchSelection(selected: Set<String>, visible: Set<Stri
 /** Long press always adds matching children, even when the whole group is already selected. */
 internal fun selectFolderBatchSelection(selected: Set<String>, visible: Set<String>): Set<String> =
     selected + visible
+
+/** Search and collapse do not invalidate selections; only the full eligible inventory does. */
+internal fun retainEligibleBatchSelection(selected: Set<String>, eligible: Set<String>): Set<String> =
+    selected intersect eligible
+
+internal fun batchSelectionState(selected: Set<String>, scope: Set<String>): ToggleableState =
+    folderAggregateState(scope.count { it in selected }, scope.size)

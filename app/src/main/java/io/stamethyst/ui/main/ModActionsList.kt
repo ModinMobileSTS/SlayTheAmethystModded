@@ -40,17 +40,11 @@ internal fun ModActionsList(
     onMove: () -> Unit = {},
     onCheckUpdates: (() -> Unit)? = null,
     onCheckCommunity: (() -> Unit)? = null,
+    associationPresent: Boolean = false,
+    onRemoveAssociation: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ModActionGrid {
-            onCheckUpdates?.let { check ->
-                ModActionListItem(R.string.mod_check_updates_single, R.string.mod_check_updates_single,
-                    R.drawable.ic_refresh, controlsEnabled, onClick = check)
-            }
-            onCheckCommunity?.let { check ->
-                ModActionListItem(R.string.mod_check_community_single, R.string.mod_check_community_single,
-                    R.drawable.ic_build, controlsEnabled, onClick = check)
-            }
             ModActionListItem(
                 if (favorite) R.string.main_mod_favorite_remove else R.string.main_mod_favorite_add,
                 if (favorite) R.string.main_mod_action_desc_favorite_remove else R.string.main_mod_action_desc_favorite_add,
@@ -65,12 +59,10 @@ internal fun ModActionsList(
                 R.string.main_mod_associate, R.string.main_mod_action_desc_associate,
                 R.drawable.ic_link, controlsEnabled, onClick = onAssociate,
             )
-            if (showMove) {
-                ModActionListItem(
-                    R.string.mod_details_move, R.string.mod_details_move_description,
-                    R.drawable.ic_move_folder, moveEnabled, onClick = onMove,
-                )
-            }
+            ModActionListItem(
+                R.string.mod_remove_association, R.string.mod_remove_association_description,
+                R.drawable.ic_link, controlsEnabled && associationPresent, onClick = onRemoveAssociation,
+            )
             ModActionListItem(
                 R.string.main_mod_ai_edit, R.string.main_mod_action_desc_ai_edit,
                 R.drawable.ic_code, controlsEnabled,
@@ -88,10 +80,6 @@ internal fun ModActionsList(
             ModActionListItem(
                 R.string.main_mod_rename, R.string.main_mod_action_desc_rename,
                 R.drawable.ic_edit, controlsEnabled, onClick = onRename,
-            )
-            ModActionListItem(
-                R.string.main_mod_delete, R.string.main_mod_action_desc_delete,
-                R.drawable.ic_delete, deleteEnabled, danger = true, onClick = onDelete,
             )
         }
     }

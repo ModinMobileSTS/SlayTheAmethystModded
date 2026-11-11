@@ -197,9 +197,14 @@ internal fun ModFolderSection(
     val dependencyModSuggestionInfoByStoragePath = remember(dependencyMods, uiState.modSuggestions) {
         buildModSuggestionInfoByStoragePath(dependencyMods, uiState.modSuggestions)
     }
-    val filteredModStoragePaths = remember(filteredMods) { filteredMods.map { it.storagePath }.toSet() }
-    LaunchedEffect(filteredModStoragePaths) {
-        val pruned = selectedBatchStoragePaths.filterTo(LinkedHashSet()) { filteredModStoragePaths.contains(it) }
+    val eligibleModStoragePaths = remember(mods) {
+        mods.filter { it.canUseFolderSelection() }.map { it.storagePath }.toSet()
+    }
+    val selectionScope = remember(filteredMods) {
+        filteredMods.filter { it.canUseFolderSelection() }.map { it.storagePath }.toSet()
+    }
+    LaunchedEffect(eligibleModStoragePaths) {
+        val pruned = retainEligibleBatchSelection(selectedBatchStoragePaths, eligibleModStoragePaths)
         if (pruned.size != selectedBatchStoragePaths.size) {
             selectedBatchStoragePaths = pruned
             if (pruned.isEmpty()) {
@@ -207,8 +212,9 @@ internal fun ModFolderSection(
             }
         }
     }
-    val selectedBatchMods = remember(filteredMods, selectedBatchStoragePaths) {
-        filteredMods.filter { selectedBatchStoragePaths.contains(it.storagePath) }
+    val selectedBatchMods = remember(mods, selectedBatchStoragePaths) {
+        mods.filter { it.canUseFolderSelection() && it.storagePath in selectedBatchStoragePaths }
+            .distinctBy { it.storagePath }
     }
     val context = LocalContext.current.applicationContext
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -239,7 +245,10 @@ internal fun ModFolderSection(
             modSearchHistory = SearchHistoryStore.recordModSearch(context, normalizedQuery)
         }
     }
+    val latestCallbacks = rememberUpdatedState(callbacks)
     val batchSelectionControlsEnabled = organizationControlsEnabled && selectedBatchMods.isNotEmpty()
+    var batchPriorityDialogVisible by remember { mutableStateOf(false) }
+    var batchAssociationDialogVisible by remember { mutableStateOf(false) }
     fun exitBatchSelection() {
         batchSelectionMode = false
         selectedBatchStoragePaths = emptySet()
@@ -249,13 +258,28 @@ internal fun ModFolderSection(
     val latestSelectedBatchMods = rememberUpdatedState(selectedBatchMods)
     val latestBatchSelectionControlsEnabled = rememberUpdatedState(batchSelectionControlsEnabled)
     val latestExitBatchSelection = rememberUpdatedState(::exitBatchSelection)
+    val latestSelectionScope = rememberUpdatedState(selectionScope)
+    val latestSelectionControlsEnabled = rememberUpdatedState(organizationControlsEnabled)
     val batchEditBarState = remember(batchSelectionMode) {
         if (!batchSelectionMode) {
             null
         } else {
             BatchEditBarState(
-                onFavorite = { favorite -> latestSelectedBatchMods.value.forEach { callbacks.onSetModFavorite(it, favorite) } },
-                onResetPriority = { latestSelectedBatchMods.value.forEach { callbacks.onSetPriority(it, null) } },
+                onToggleSelectAll = {
+                    val scope = latestSelectionScope.value
+                    if (latestSelectionControlsEnabled.value && scope.isNotEmpty()) {
+                        selectedBatchStoragePaths = toggleFolderBatchSelection(selectedBatchStoragePaths, scope)
+                    }
+                },
+                onFavorite = { favorite -> latestSelectedBatchMods.value.forEach { latestCallbacks.value.onSetModFavorite(it, favorite) } },
+                onResetPriority = { latestSelectedBatchMods.value.forEach { latestCallbacks.value.onSetPriority(it, null) } },
+                onEditPriority = { batchPriorityDialogVisible = true },
+                onAssociate = { batchAssociationDialogVisible = true },
+                onRemoveAssociation = {
+                    latestSelectedBatchMods.value.forEach { latestCallbacks.value.onRemoveModAssociation(it, it) }
+                },
+                onExport = { latestCallbacks.value.onExportMods(latestSelectedBatchMods.value) },
+                onShare = { latestCallbacks.value.onShareMods(latestSelectedBatchMods.value) },
                 selectedCount = 0,
                 controlsEnabled = false,
                 onMove = { batchMoveDialogVisible = true },
@@ -274,7 +298,11 @@ internal fun ModFolderSection(
             )
         }
     }?.copy(
+        selectAllState = batchSelectionState(selectedBatchStoragePaths, selectionScope),
+        selectAllEnabled = organizationControlsEnabled && selectionScope.isNotEmpty(),
+        selectionFiltered = searchActive || showEnabledModsOnly || showUpdateAvailableModsOnly,
         selectedMods = selectedBatchMods,
+        associationPresent = selectedBatchMods.any { modAssociationState.groupFor(it) != null },
         selectedCount = selectedBatchMods.size,
         controlsEnabled = latestBatchSelectionControlsEnabled.value
     )
@@ -285,7 +313,8 @@ internal fun ModFolderSection(
         onDispose { onBatchEditBarStateChange(null) }
     }
     BackHandler(
-        enabled = batchSelectionMode && !batchMoveDialogVisible && !batchDeleteDialogVisible
+        enabled = batchSelectionMode && !batchMoveDialogVisible && !batchDeleteDialogVisible &&
+            !batchPriorityDialogVisible && !batchAssociationDialogVisible
     ) {
         exitBatchSelection()
     }
@@ -509,7 +538,6 @@ internal fun ModFolderSection(
     val latestFolderTokenByItemKey = rememberUpdatedState(folderTokenByItemKey)
     val latestFolderAssignments = rememberUpdatedState(folderAssignments)
     val latestFolderIds = rememberUpdatedState(folderIds)
-    val latestCallbacks = rememberUpdatedState(callbacks)
     val latestOrganizationDragEnabled = rememberUpdatedState(
         organizationDragEnabled && !searchActive && !showEnabledModsOnly && !showUpdateAvailableModsOnly
     )
@@ -808,6 +836,43 @@ internal fun ModFolderSection(
                     exitBatchSelection()
                     callbacks.onDeleteMods(selectedMods)
                 }
+            )
+        }
+
+        ModPriorityDialog(
+            visible = batchPriorityDialogVisible,
+            controlsEnabled = batchSelectionControlsEnabled,
+            modName = stringResource(R.string.main_batch_edit_selected_format, selectedBatchMods.size),
+            explicitPriority = selectedBatchMods.map { it.explicitPriority }.distinct().singleOrNull(),
+            effectivePriority = selectedBatchMods.map { it.effectivePriority }.distinct().singleOrNull(),
+            mixedPriorities = selectedBatchMods.map { it.explicitPriority to it.effectivePriority }.distinct().size > 1,
+            onDismiss = { batchPriorityDialogVisible = false },
+            onClearPriority = {
+                batchPriorityDialogVisible = false
+                selectedBatchMods.forEach { callbacks.onSetPriority(it, null) }
+            },
+            onConfirm = { priority ->
+                batchPriorityDialogVisible = false
+                selectedBatchMods.forEach { callbacks.onSetPriority(it, priority) }
+            },
+        )
+        if (batchAssociationDialogVisible) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { batchAssociationDialogVisible = false },
+                title = { Text(stringResource(R.string.main_mod_associate)) },
+                text = { Text(stringResource(R.string.mod_batch_associate_confirm, selectedBatchMods.size)) },
+                confirmButton = {
+                    TextButton(enabled = batchSelectionControlsEnabled && selectedBatchMods.size >= 2 &&
+                        selectedBatchMods.none { modAssociationState.groupFor(it) != null }, onClick = {
+                        batchAssociationDialogVisible = false
+                        if (selectedBatchMods.any { modAssociationState.groupFor(it) != null }) return@TextButton
+                        val source = selectedBatchMods.firstOrNull()
+                        if (source != null) selectedBatchMods.drop(1).forEach { callbacks.onAssociateMods(source, it) }
+                    }) { Text(stringResource(android.R.string.ok)) }
+                },
+                dismissButton = { TextButton(onClick = { batchAssociationDialogVisible = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                } },
             )
         }
 
@@ -1322,6 +1387,7 @@ internal fun ModFolderSection(
                                         latestCallbacks.value.onRestoreModOriginalName(item)
                                     },
                                     onAssociateMod = { pendingAssociationPickerMod = it },
+                                    onRemoveAssociation = { callbacks.onRemoveModAssociation(it, it) },
                                     onAssociationBadgeClick = { pendingAssociationManageMod = it },
                                     onPatchWorkshopMod = { latestCallbacks.value.onPatchWorkshopMod(it) },
                                     onRetryWorkshopDownload = { latestCallbacks.value.onRetryWorkshopDownload(it) },
@@ -1775,14 +1841,6 @@ internal fun BatchEditToolbar(
                     text = stringResource(R.string.main_batch_action_disable),
                     enabled = controlsEnabled,
                     onClick = onDisable
-                )
-                BatchActionChip(
-                    modifier = Modifier.weight(1f).height(42.dp),
-                    iconResId = R.drawable.ic_delete,
-                    text = stringResource(R.string.main_batch_action_delete),
-                    enabled = controlsEnabled,
-                    destructive = true,
-                    onClick = onDelete
                 )
             }
         }
