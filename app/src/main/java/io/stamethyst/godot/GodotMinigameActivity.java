@@ -3,6 +3,7 @@ package io.stamethyst.godot;
 import android.app.Activity;
 import android.content.res.Configuration;
 import android.content.Context;
+import android.content.Intent;
 import android.content.res.Resources;
 import android.content.res.AssetManager;
 import android.os.*;
@@ -56,8 +57,8 @@ public final class GodotMinigameActivity extends Activity {
                 requestLeave(GodotExitState.Destination.LAUNCHER);
             return true;
         }));
-        // Godot owns all normal loading/progress/entry UI. Native UI is restricted to a
-        // transient double-BACK hint and explicit failure/unsaved-progress recovery dialogs.
+        // Godot owns loading/progress/entry UI; Android owns the system document picker,
+        // transient double-BACK hint and failure/unsaved-progress recovery dialogs.
         FrameLayout game = new FrameLayout(this); game.setBackgroundColor(0xffd5d9cc);
         setContentView(game);
         // Register before native initialization so early JNI crashes are visible via Binder death.
@@ -237,6 +238,18 @@ public final class GodotMinigameActivity extends Activity {
         if (host == null) return;
         try { host.getClass().getMethod(name, types).invoke(host, args); }
         catch (Throwable error) { failure(error); }
+    }
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (host == null || engineFailed || exitState.completed() || isFinishing() || isDestroyed()) return;
+        try {
+            // getGodot is already part of the downloaded host's GodotHost API. Use the
+            // official dispatcher: it delivers SAF URIs AND cancellation on the render
+            // thread. Keep the Intent intact, including its URI grants and ClipData.
+            Object godot = host.getClass().getMethod("getGodot").invoke(host);
+            godot.getClass().getMethod("onActivityResult", int.class, int.class, Intent.class)
+                .invoke(godot, requestCode, resultCode, data);
+        } catch (Throwable error) { failure(error); }
     }
     @Override protected void onStart() { super.onStart(); started = true; call("start"); }
     @Override protected void onResume() {
