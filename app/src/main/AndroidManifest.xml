@@ -96,6 +96,12 @@
             android:theme="@style/Theme.SlayTheAmethyst.Dialog" />
 
         <activity
+            android:name="io.stamethyst.ui.refresh.RefreshRateDiagnosticsActivity"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:theme="@style/Theme.SlayTheAmethyst" />
+
+        <activity
             android:name="com.canhub.cropper.CropImageActivity"
             android:screenOrientation="fullUser"
             android:theme="@style/Base.Theme.AppCompat" />

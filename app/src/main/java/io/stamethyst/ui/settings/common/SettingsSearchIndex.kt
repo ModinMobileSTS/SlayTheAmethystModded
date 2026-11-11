@@ -516,6 +516,17 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.DeveloperSettings,
     ),
     entry(
+        titleResId = R.string.refresh_diagnostics_title,
+        subtitleResId = R.string.refresh_diagnostics_description,
+        categoryTitleResId = R.string.settings_developer_title,
+        route = Route.DeveloperSettings,
+    ),
+    entry(
+        titleResId = R.string.refresh_diagnostics_latest,
+        categoryTitleResId = R.string.settings_developer_title,
+        route = Route.DeveloperSettings,
+    ),
+    entry(
         titleResId = R.string.settings_view_full_status,
         categoryTitleResId = R.string.settings_developer_title,
         route = Route.DeveloperSettings,

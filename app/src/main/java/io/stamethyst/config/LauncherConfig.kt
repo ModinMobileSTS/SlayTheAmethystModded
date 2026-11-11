@@ -1439,6 +1439,16 @@ object LauncherConfig {
         return migrated
     }
 
+    /** Diagnostics must not persist a legacy migration simply by observing the configuration. */
+    internal fun readTargetFpsWithoutMigration(context: Context): Int {
+        val preferences = prefs(context, crossProcess = true)
+        readExactTargetFps(preferences)?.let { return normalizeTargetFps(it.roundToInt()) }
+        if (preferences.contains(PREF_KEY_TARGET_FPS)) {
+            return normalizeTargetFps(preferences.getInt(PREF_KEY_TARGET_FPS, DEFAULT_TARGET_FPS))
+        }
+        return normalizeTargetFps(DisplayConfigSync.readTargetFpsLimit(context))
+    }
+
     fun saveTargetFps(context: Context, targetFps: Int) {
         val normalizedTargetFps = normalizeTargetFps(targetFps)
         prefs(context, crossProcess = true).edit(commit = true) {

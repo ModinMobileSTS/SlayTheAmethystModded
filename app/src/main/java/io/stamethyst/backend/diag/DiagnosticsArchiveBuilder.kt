@@ -402,6 +402,11 @@ internal object DiagnosticsArchiveBuilder {
             }
             exportedCount += writeAchievementSyncLogsForArchive(zipOutput, context)
             exportedCount += writeWindowDiagnosticsForArchive(zipOutput, context)
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                io.stamethyst.backend.diag.refresh.RefreshRateReportStore.latestFile(context),
+                "sts/refresh_rate/latest-report.zip",
+            )
             progress?.onProgress(PROGRESS_MEMORY_DONE)
             RuntimePaths.listLogcatCaptureFiles(context)
                 .groupBy { if (it.name.contains("system")) "system" else "app" }
@@ -455,6 +460,7 @@ internal object DiagnosticsArchiveBuilder {
         - easytier/：EasyTier 配置、当前状态，以及最近 5 条断开/重连/失败记录（含 :easytier 进程退出原因）。
         - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
         - info/：设备信息，以及启动器设置导出（launcher_settings.txt 英文机器键值、launcher_settings.zh.txt 中文可读版，末尾均含原始 SharedPreferences 全量转储）。
+        - refresh_rate/latest-report.zip：可选的最近一次刷新率诊断（report.txt + report.json），有独立测试时间，不一定对应最后一局游戏。
         - resource_pack/：资源包 active generation、版本、校验和迁移状态。
         - resource_timings/：逐次资源创建/回收阻塞耗时 JSONL、会话汇总和导出完整性状态（深度性能诊断开启时生成）。
          - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。

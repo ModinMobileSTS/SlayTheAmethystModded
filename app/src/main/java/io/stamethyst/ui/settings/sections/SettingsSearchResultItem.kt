@@ -248,6 +248,8 @@ private val advancedRenderTitles = setOf(
 )
 
 private val statusTitles = setOf(
+    R.string.refresh_diagnostics_title,
+    R.string.refresh_diagnostics_latest,
     R.string.settings_view_full_status,
     R.string.settings_view_log_paths,
     R.string.settings_unplayable_mods_entry_title,

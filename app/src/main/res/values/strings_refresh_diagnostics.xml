@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="refresh_diagnostics_title">Refresh rate diagnostics</string>
+    <string name="refresh_diagnostics_description">Run a ~20-second window and Surface test, then view or export the report</string>
+    <string name="refresh_diagnostics_latest">View last refresh rate report</string>
+    <string name="refresh_diagnostics_running_scope">Keep this screen visible. A small animation tests callback timing, window mode requests, SurfaceView and TextureView. Switching apps or cancelling stops the test and keeps a partial report. No system settings are changed.</string>
+    <string name="refresh_diagnostics_scope">Scope: this is an isolated diagnostic Activity in the launcher process, not the launcher home window or the game Activity. It uses Android View/Canvas, not the game JVM, EGL renderer or Swappy. App-reported Hz, selected display-mode Hz and callback frequency are different measurements. Callback/draw counts are not presentation FPS or physical panel scanout. A returned setter only means submission, not system acceptance. This app cannot read privileged display-policy dumps or a definitive vendor rejection reason.</string>
+    <string name="refresh_diagnostics_next_steps">Interpretation: compare each phase separately. If the app-reported rate stays below target after a submitted request, system policy or request-path differences remain possible; this report cannot name a specific cause. If app-reported Hz reaches target but callbacks are slower, inspect scheduling/rendering load rather than assuming physical 60 Hz. Game settings here are persisted values, not runtime measurements. For unresolved cases, collect serial-bound, read-only display/window/SurfaceFlinger/game/power/thermal dumps and system logs during active launcher scrolling and gameplay. Slow intervals exceed 1.5× the target callback period; they are not proven dropped frames. Thermal status uses Android values 0–6; battery temperature is in tenths of a degree Celsius. Review firmware identifiers and configuration before sharing. Window preferences and keep-screen-on are restored; no device settings or game preferences are modified.</string>
+    <string name="refresh_diagnostics_phase_baseline">1/5 · Default window + animation</string>
+    <string name="refresh_diagnostics_phase_mode">2/5 · Highest mode at current resolution</string>
+    <string name="refresh_diagnostics_phase_window">3/5 · Window request: 120 Hz</string>
+    <string name="refresh_diagnostics_phase_surface">4/5 · SurfaceView request: 120 Hz</string>
+    <string name="refresh_diagnostics_phase_texture">5/5 · TextureView + window request: 120 Hz</string>
+    <string name="refresh_diagnostics_observed">Target app-reported rate and near-target callback frequency observed; not proof of panel rate</string>
+    <string name="refresh_diagnostics_callbacks_slow">Target app-reported rate observed, but callbacks were slower</string>
+    <string name="refresh_diagnostics_below">Target app-reported rate not observed during sampling; cause undetermined</string>
+    <string name="refresh_diagnostics_variable">App-reported rate reached target only during part of the sample</string>
+    <string name="refresh_diagnostics_request_failed">Request could not be submitted; see error details</string>
+    <string name="refresh_diagnostics_insufficient">Insufficient samples or drawing errors; no reliable verdict</string>
+    <string name="refresh_diagnostics_interrupted">Interrupted; partial results only</string>
+    <string name="refresh_diagnostics_retry">Run again</string>
+    <string name="refresh_diagnostics_export">Export report ZIP</string>
+    <string name="refresh_diagnostics_exported">Report exported (report.txt + report.json)</string>
+    <string name="refresh_diagnostics_export_failed">Export failed: %1$s</string>
+    <string name="refresh_diagnostics_save_failed">Could not save the last report: %1$s. You can still export this report.</string>
+    <string name="refresh_diagnostics_no_report">No saved report. Select Run again to start a test.</string>
+</resources>
