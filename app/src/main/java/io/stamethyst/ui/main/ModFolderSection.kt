@@ -295,7 +295,7 @@ internal fun ModFolderSection(
     val folderDisplayIndexMap = remember(displayFolderTargetIds) {
         displayFolderTargetIds.withIndex().associate { it.value to it.index }
     }
-    val folderUiModels = remember(
+    val committedFolderUiModels = remember(
         displayFolderTargetIds,
         foldersById,
         modsByFolderId,
@@ -311,6 +311,18 @@ internal fun ModFolderSection(
             unassignedCollapsed = unassignedCollapsed,
             unassignedFolderName = unassignedFolderName
         )
+    }
+    val modDragPreview = interactionState.modDragPreview
+    val movingModPaths = interactionState.movingModPaths
+    val dragExpandedFolderTokens = interactionState.dragExpandedFolderTokens
+    val modsByPath = remember(mods) { mods.associateBy { it.storagePath } }
+    val folderUiModels = remember(committedFolderUiModels, modDragPreview, dragExpandedFolderTokens, modsByPath) {
+        committedFolderUiModels.map { folder ->
+            folder.copy(
+                mods = modDragPreview?.get(folder.folderTokenId)?.mapNotNull { modsByPath[it] } ?: folder.mods,
+                isCollapsed = folder.isCollapsed && folder.folderTokenId !in dragExpandedFolderTokens,
+            )
+        }
     }
     val associationFolderUiModels = remember(
         folderTargetIds,
@@ -438,6 +450,7 @@ internal fun ModFolderSection(
         shouldCollapseFolders,
         activeDragSourceFolderId,
         activeDragMod,
+        movingModPaths,
         deferExpandedFolderItems
     ) {
         if (searchActive) {
@@ -445,7 +458,7 @@ internal fun ModFolderSection(
                 searchResultMods = folderUiModels.flatMap { it.mods }
             )
         } else {
-            buildModFolderLazyItems(
+            val folderItems = buildModFolderLazyItems(
                 hasDependencyMods = dependencyMods.isNotEmpty(),
                 folderUiModels = folderUiModels,
                 folderBodyVisibilityByToken = folderBodyVisibilityByToken,
@@ -460,6 +473,15 @@ internal fun ModFolderSection(
                     Int.MAX_VALUE
                 }
             )
+            var placeholderAdded = false
+            folderItems.mapNotNull { item ->
+                if (item is ModFolderLazyItem.FolderMod && item.mod.storagePath in movingModPaths) {
+                    if (placeholderAdded) null else {
+                        placeholderAdded = true
+                        ModFolderLazyItem.DragPlaceholder(item.folderTokenId)
+                    }
+                } else item
+            }
         }
     }
     val topLevelItemKeys = remember(lazyListItems) {
@@ -491,19 +513,26 @@ internal fun ModFolderSection(
     )
     val latestOrganizationControlsEnabled = rememberUpdatedState(organizationControlsEnabled)
     val latestSelectedBatchStoragePaths = rememberUpdatedState(selectedBatchStoragePaths)
-    var draggedMods by remember { mutableStateOf<List<ModItemUi>>(emptyList()) }
-    val latestDraggedMods = rememberUpdatedState(draggedMods)
-    val latestReorderDrop = rememberUpdatedState<(ModItemUi, Any, Boolean) -> Unit> { source, key, after ->
-        val target = mods.firstOrNull { "mod:${it.storagePath}" == key }
-        val sourceFolder = resolveAssignedFolderId(source, folderAssignments, folderIds)
-        if (latestOrganizationDragEnabled.value && target != null &&
-            resolveAssignedFolderId(target, folderAssignments, folderIds) == sourceFolder) {
-            val group = modsByFolderId[sourceFolder].orEmpty().map { it.storagePath }
-            val moving = latestDraggedMods.value.map { it.storagePath }.toSet().intersect(group.toSet())
-            val reordered = reorderModPaths(group, moving, target.storagePath, after)
-            displayOrder = reordered + displayOrder.filter { it !in group }
-            orderStore.save(displayOrder)
+    val latestCreateTransaction = rememberUpdatedState<(ModItemUi) -> ModDragTransaction> { source ->
+        val snapshot = committedFolderUiModels.associate { folder ->
+            folder.folderTokenId to folder.mods.map { it.storagePath }
         }
+        ModDragTransaction(snapshot, source.storagePath, selectedBatchStoragePaths,
+            dragLocked = !latestOrganizationDragEnabled.value,
+            onCommit = { result ->
+                if (latestOrganizationDragEnabled.value) {
+                    result.forEach { (token, paths) ->
+                        val transferred = paths.filter { it !in snapshot.getValue(token) }.mapNotNull { modsByPath[it] }
+                        if (transferred.isNotEmpty()) {
+                            if (token == UNASSIGNED_FOLDER_ID) latestCallbacks.value.onMoveModsToUnassigned(transferred)
+                            else latestCallbacks.value.onAssignModsToFolder(transferred, token)
+                        }
+                    }
+                    val ordered = result.values.flatten()
+                    displayOrder = ordered + displayOrder.filter { it !in ordered }
+                    orderStore.save(displayOrder)
+                }
+            })
     }
 
     // Keep the coordinator stable during a drag gesture, but resolve folder state
@@ -511,7 +540,8 @@ internal fun ModFolderSection(
     val dragCoordinator = remember(interactionState) {
         ModDragSessionCoordinator(
             interactionState = interactionState,
-            onReorderDrop = { source, key, after -> latestReorderDrop.value(source, key, after) },
+            dragEnabled = { latestOrganizationDragEnabled.value },
+            createTransaction = { latestCreateTransaction.value(it) },
             resolveFolderTokenFromItemKey = { itemKey ->
                 val key = itemKey as? String ?: return@ModDragSessionCoordinator null
                 latestFolderTokenByItemKey.value[key]
@@ -523,21 +553,10 @@ internal fun ModFolderSection(
                     latestFolderIds.value
                 ) ?: UNASSIGNED_FOLDER_ID
             },
-            onAssignModToFolder = { mod, folderId ->
-                val moving = latestDraggedMods.value
-                if (moving.size > 1) latestCallbacks.value.onAssignModsToFolder(moving, folderId)
-                else latestCallbacks.value.onAssignModToFolder(mod, folderId)
-            },
-            onMoveModToUnassigned = { mod ->
-                val moving = latestDraggedMods.value
-                if (moving.size > 1) latestCallbacks.value.onMoveModsToUnassigned(moving)
-                else latestCallbacks.value.onMoveModToUnassigned(mod)
-            },
-            allowDropInSourceFolder = { latestDraggedMods.value.size > 1 },
-            onRevealFolderToken = { folderTokenId ->
-                latestCallbacks.value.onRevealFolderToken(folderTokenId)
-            }
         )
+    }
+    BackHandler(enabled = interactionState.isModDragActive) {
+        dragCoordinator.cancelModDrag()
     }
 
     LaunchedEffect(batchSelectionMode) {
@@ -636,21 +655,27 @@ internal fun ModFolderSection(
                 testTagsAsResourceId = true
             }
             .pointerInput(dragCoordinator) {
-                awaitEachGesture {
-                    awaitFirstDown(
-                        requireUnconsumed = false,
-                        pass = PointerEventPass.Initial
-                    )
-                    while (true) {
-                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                        dragCoordinator.onContainerPointerChanges(
-                            changes = event.changes,
-                            sectionTopLeftWindow = interactionState.sectionTopLeftInWindow
+                try {
+                    awaitEachGesture {
+                        awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial
                         )
-                        if (event.changes.none { it.pressed }) {
-                            break
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                dragCoordinator.onContainerPointerChanges(
+                                    changes = event.changes,
+                                    sectionTopLeftWindow = interactionState.sectionTopLeftInWindow
+                                )
+                                if (event.changes.none { it.pressed }) break
+                            }
+                        } finally {
+                            dragCoordinator.cancelModDrag()
                         }
                     }
+                } finally {
+                    dragCoordinator.cancelModDrag()
                 }
             }
             .onGloballyPositioned { interactionState.sectionTopLeftInWindow = it.boundsInWindow().topLeft },
@@ -805,6 +830,16 @@ internal fun ModFolderSection(
                     contentType = { it.contentType }
                 ) { lazyItem ->
                     when (lazyItem) {
+                        is ModFolderLazyItem.DragPlaceholder -> {
+                            val height = with(density) {
+                                (activeModDragSession?.overlayAnchor?.cardSizePx?.height ?: 1).toDp()
+                            } * movingModPaths.size.coerceAtLeast(1)
+                            Box(
+                                Modifier.fillMaxWidth().height(height).padding(horizontal = 6.dp)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                            )
+                        }
                         ModFolderLazyItem.TopPlaceholder -> {
                             Spacer(
                                 modifier = Modifier
@@ -1287,12 +1322,6 @@ internal fun ModFolderSection(
                                     },
                                      onDragStart = { dragInfo ->
                                          val currentMod = latestMod.value
-                                         draggedMods = if (currentMod.storagePath in latestSelectedBatchStoragePaths.value) {
-                                              latestSelectedBatchMods.value.filter {
-                                                  resolveAssignedFolderId(it, latestFolderAssignments.value, latestFolderIds.value) ==
-                                                      resolveAssignedFolderId(currentMod, latestFolderAssignments.value, latestFolderIds.value)
-                                              }
-                                         } else listOf(currentMod)
                                         dragCoordinator.startModDrag(
                                             mod = currentMod,
                                             dragInfo = dragInfo,
@@ -1394,7 +1423,7 @@ internal fun ModFolderSection(
     DraggingModCardOverlayLayer(
         dragSession = modDragState.session,
         showModFileName = showModFileName,
-        movingCount = draggedMods.size,
+        movingCount = movingModPaths.size,
         overlayHostTopLeftWindow = interactionState.sectionTopLeftInWindow
     )
 }
@@ -1817,6 +1846,11 @@ private sealed interface ModFolderLazyItem {
     val contentType: String
     val dropFolderTokenId: String?
 
+    data class DragPlaceholder(override val dropFolderTokenId: String) : ModFolderLazyItem {
+        override val key = MOD_DRAG_PLACEHOLDER_KEY
+        override val contentType = "dragPlaceholder"
+    }
+
     data object TopPlaceholder : ModFolderLazyItem {
         override val key: String = MOD_LIST_TOP_PLACEHOLDER_KEY
         override val contentType: String = "topPlaceholder"
@@ -1912,7 +1946,7 @@ private fun buildModFolderLazyItems(
         }
         folderUiModels.forEachIndexed { index, folderUiModel ->
             val folderTokenId = folderUiModel.folderTokenId
-            val keepSourceFolderBodyAlive = activeDragMod != null && activeDragSourceFolderId == folderTokenId
+            val keepSourceFolderBodyAlive = shouldCollapseFolders && activeDragMod != null && activeDragSourceFolderId == folderTokenId
             val effectiveCollapsed = if (shouldCollapseFolders) true else folderUiModel.isCollapsed
             val bodyVisible = folderBodyVisibilityByToken[folderTokenId] == true
             val bodyPresent = bodyVisible ||
@@ -1978,7 +2012,7 @@ private fun buildFolderBodyVisibilityByToken(
     return buildMap {
         folderUiModels.forEach { folderUiModel ->
             val folderTokenId = folderUiModel.folderTokenId
-            val keepSourceFolderBodyAlive = activeDragMod != null && activeDragSourceFolderId == folderTokenId
+            val keepSourceFolderBodyAlive = shouldCollapseFolders && activeDragMod != null && activeDragSourceFolderId == folderTokenId
             val effectiveCollapsed = if (shouldCollapseFolders) true else folderUiModel.isCollapsed
             put(folderTokenId, !effectiveCollapsed || keepSourceFolderBodyAlive)
         }

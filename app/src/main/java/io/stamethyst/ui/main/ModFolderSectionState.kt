@@ -62,6 +62,9 @@ internal class ModFolderSectionInteractionState(
     var folderPreviewOrder by mutableStateOf(initialFolderOrder)
 
     var modDragState by mutableStateOf(ModDragInteractionState())
+    var modDragPreview by mutableStateOf<Map<String, List<String>>?>(null)
+    var movingModPaths by mutableStateOf<List<String>>(emptyList())
+    var dragExpandedFolderTokens by mutableStateOf<Set<String>>(emptySet())
     var activeDragFolderId by mutableStateOf<String?>(null)
     var activeDragScrollAnchor by mutableStateOf<DragScrollAnchor?>(null)
     var pendingDragScrollRestore by mutableStateOf<DragScrollAnchor?>(null)
