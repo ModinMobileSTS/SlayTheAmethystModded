@@ -66,7 +66,7 @@ internal object DisplayRefreshRatePolicy {
         return highestRate
     }
 
-    /** Requests the highest display mode for the launcher's own window. */
+    /** Requests the highest display mode for the Activity's own window. */
     fun requestHighestRefreshRate(context: Context, window: Window): Float {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return 0f
         val display = resolveDefaultDisplay(context.applicationContext) ?: return 0f
