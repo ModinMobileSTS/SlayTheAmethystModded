@@ -11,6 +11,46 @@
 - Tools automatically ensure the workspace-owned ADB and connector, and select only the configured wireless device. Old inherited `STS_CONNECTOR_PORT` values are ignored in managed mode; omit `connectorPort` and `deviceSerial`. Explicit values must match the managed instance.
 - Without local configuration, legacy externally managed connectors require an explicit port; the previous fixed-port auto-start fallback has been removed.
 
+## Direct slash command
+
+Use **`/install-apk`** in this project to build the current working tree's Debug APK
+(including uncommitted source changes) and install it on the device configured in
+the ignored `.env.local`. This is a plugin command executor, not a Markdown prompt
+template: it submits the existing Python harness `install` to the native session
+shell endpoint (`POST /api/session/:sessionID/shell`), just like composer **`!`**,
+never calls
+an agent/model, never switches agents, and does not start the game.
+
+The command accepts no arguments or attachments. Invoking it explicitly authorizes
+the fixed build/install operation: unlike agent tool calls, plugin command executors
+do **not** pass through `sts_control_game_lifecycle` tool permission checks.
+OpenChamber renders native shell start/output/end through its existing `!` UI,
+instead of synthetic user messages or heartbeat spam. The native shell owns job
+lifetime; reloading this plugin no longer cancels the build. Outputs and result.json
+live under `agent-tmp/harness-tools/`. Harness subprocess output can be buffered.
+The command uses workspace-owned ADB but no longer holds the plugin's in-process
+tool device lock: do not run concurrent device tools/install commands.
+
+OpenCode plugin SDK 2.0.18 omits `session.shell` from the plugin context. The executor
+targets the hosting process's `--hostname`/`--port` (or plugin option `serverUrl`)
+and verifies `/api/info` returns its own PID before submitting any shell work.
+Authentication uses the hosting server's environment, never tracked credentials.
+It deliberately does **not** use CLI background-service discovery: OpenChamber's
+private OpenCode and a global service may share session storage but have separate
+live event buses, causing commands sent to the wrong server to be invisible.
+Missing/incorrect server identity fails closed. All harness argv and the checkout
+working directory are POSIX-shell quoted; this adapter requires a POSIX shell.
+
+Installation uses `adb install -r`; the default package ID is `io.stamethyst`, not
+a separate debug app. No uninstall/data wipe or signature-conflict recovery is
+performed. A failed build is not followed by installation. The command passes a
+720-second harness timeout; native shell execution limits/lifecycle also apply.
+The existing harness imposes a separate 180-second ADB installation timeout.
+
+OpenCode loads the command from this plugin automatically. OpenChamber must discover
+and invoke server-registered commands; actual UI discovery is a separate integration
+check from the offline tests below.
+
 ## Tools
 
 Tools in the `sts` namespace (effective OpenCode ID: `sts_<name>`):

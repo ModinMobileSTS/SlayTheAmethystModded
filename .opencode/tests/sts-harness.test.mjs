@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync,
 import { resolve, relative } from "node:path"
 import { test } from "node:test"
 
-import plugin from "../plugins/sts-harness.ts"
+import plugin, { submitNativeShell } from "../plugins/sts-harness.ts"
 
 const repoRoot = resolve(import.meta.dirname, "../..")
 mkdirSync(resolve(repoRoot, "agent-tmp"), { recursive: true })
@@ -17,29 +17,40 @@ const path = require("node:path")
 const args = process.argv.slice(2)
 const param = (flag) => args[args.indexOf(flag) + 1]
 const action = param("--command")
+const failInstall = action === "install" && fs.existsSync(${JSON.stringify(resolve(testRoot, "fail-install"))})
+const slowInstall = action === "install" && fs.existsSync(${JSON.stringify(resolve(testRoot, "slow-install"))})
+if (slowInstall) console.log("Building debug APK fixture...")
 const log = ${JSON.stringify(resolve(testRoot, "events.log"))}
 fs.appendFileSync(log, action + ":start\\n")
-const output = path.resolve(process.cwd(), param("--out-dir"), action)
+const output = path.resolve(process.cwd(), param("--out-dir") === "agent-tmp/harness-tools" ? ${JSON.stringify(artifactBase)} : param("--out-dir"), action)
 fs.mkdirSync(output, { recursive: true })
 setTimeout(() => {
   fs.appendFileSync(log, action + ":end\\n")
   const resultPath = path.join(output, "result.json")
-  fs.writeFileSync(resultPath, JSON.stringify({ success: action !== "perf", status: "DONE", message: action, artifacts: { resultJson: resultPath }, argv: args, operations: [{ many: "details" }] }))
+  fs.writeFileSync(resultPath, JSON.stringify({ success: action !== "perf" && !failInstall, status: failInstall ? "FAILED" : "DONE", message: action, artifacts: { resultJson: resultPath }, argv: args, operations: [{ many: "details" }] }))
   if (action === "play") process.stdout.write("play> Harness result: " + resultPath + "\\n")
   else console.log("Harness result: " + resultPath)
-}, action === "status" ? 150 : action === "perf-bench" ? 30_000 : 5)
+}, slowInstall ? 16_000 : action === "status" ? 150 : action === "perf-bench" ? 30_000 : 5)
 `)
 chmodSync(fakePython, 0o755)
 
 const tools = new Map()
+const commands = new Map()
+const messages = []
 const editor = {
   namespace() {},
   add(tool) { tools.set(tool.name, tool) },
 }
-await plugin.setup({
-  options: { pythonExecutable: fakePython },
+const cleanup = await plugin.setup({
+  options: { pythonExecutable: fakePython, serverUrl: "http://127.0.0.1:12345" },
   location: { directory: repoRoot, project: { canonical: repoRoot } },
   tool: { async transform(register) { register(editor) } },
+  command: { async transform(register) { register({ add(command) { commands.set(command.name, command) } }) } },
+  session: {
+    async synthetic(input) { messages.push(input) },
+    async prompt() { throw new Error("Commands must not invoke an agent") },
+    async generate() { throw new Error("Commands must not invoke a model") },
+  },
 })
 
 function run(name, input = {}, signal = new AbortController().signal) {
@@ -165,6 +176,61 @@ test("treats a successful process exit with a failed harness result as failure",
   assert.equal(result.success, false)
 })
 
+test("install-apk forwards to the native ! shell endpoint without synthetic messages or model calls", async () => {
+  assert.deepEqual([...commands.keys()], ["install-apk"])
+  messages.length = 0
+  const requests = []
+  const original = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url: String(url), ...init })
+    return requests.length === 1 ? Response.json({ pid: process.pid }) : new Response(null, { status: 204 })
+  }
+  try {
+    await commands.get("install-apk").execute({ sessionID: "test-session", prompt: { text: "" } })
+  } finally {
+    globalThis.fetch = original
+  }
+  assert.equal(messages.length, 0)
+  assert.equal(requests[0].url, "http://127.0.0.1:12345/api/info")
+  assert.equal(requests[1].url, "http://127.0.0.1:12345/api/session/test-session/shell")
+  assert.equal(requests[1].method, "POST")
+  const { command } = JSON.parse(requests[1].body)
+  assert.ok(command.startsWith(`cd '${repoRoot}' && exec '${fakePython}' '-u' '-m' 'scripts.tools.main'`))
+  assert.match(command, /'--command' 'install'/)
+  assert.match(command, /'--timeout-seconds' '720'/)
+  assert.match(command, /'agent-tmp\/harness-tools'/)
+})
+
+test("install-apk rejects all arguments and attachments before doing work", async () => {
+  const before = messages.length
+  for (const prompt of [{ text: "; rm -rf anything" }, { text: "", files: [{}] }, { text: "", agents: ["build"] }, { text: "", skills: ["test"] }]) {
+    await assert.rejects(commands.get("install-apk").execute({ sessionID: "test-session", prompt }), /does not accept/)
+  }
+  assert.equal(messages.length, before)
+})
+
+test("install-apk surfaces native shell submission failure", async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = async (url) => String(url).endsWith("/api/info") ? Response.json({ pid: process.pid }) : new Response(null, { status: 503 })
+  try {
+    await assert.rejects(commands.get("install-apk").execute({ sessionID: "test-session", prompt: { text: "" } }), /Native shell request failed/)
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+test("refuses a different server even when it shares the same session database", async () => {
+  const original = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = async () => { calls++; return Response.json({ pid: process.pid + 1 }) }
+  try {
+    await assert.rejects(submitNativeShell("test-session", "echo no", "http://127.0.0.1:12345"), /not this plugin's OpenCode server/)
+    assert.equal(calls, 1)
+  } finally { globalThis.fetch = original }
+})
+
+
 test.after(() => {
+  cleanup?.()
   rmSync(testRoot, { recursive: true, force: true })
 })
