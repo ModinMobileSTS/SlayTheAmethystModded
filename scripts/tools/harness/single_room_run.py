@@ -12,15 +12,12 @@ from scripts.tools.harness._device import (
 )
 from scripts.tools.harness._status import harness_status
 from scripts.tools.harness.run import run_start
-from scripts.tools.harness.install import run_install
 
 
 def run_single_room(ctx: HarnessContext, resolved_out_dir: Path) -> int:
     logcat_capture: Any = None
     logcat_since = ""
     try:
-        if not ctx.options.skip_install:
-            run_install(ctx)
         clear_runtime_signals(ctx)
         logcat_since = device_logcat_timestamp(ctx)
         try:

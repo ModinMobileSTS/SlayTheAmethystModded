@@ -107,6 +107,7 @@ class TestConnectorClient(unittest.TestCase):
         from scripts.tools.connector.client import ConnectorClient
         client = ConnectorClient(port=1)
         client._sock = MagicMock()
+        client._selected_serial = "approved-test-device"
         client._sock.recv.side_effect = [
             b'{"exit":0,"stdout":"Success"}\n',
             b'{"exit":0,"stdout":"ok"}\n',

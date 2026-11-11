@@ -6,6 +6,8 @@ import sys
 import time
 from typing import Any
 
+from scripts.tools.lib.device_safety import require_explicit_device
+
 
 class ConnectorError(RuntimeError):
     def __init__(self, message: str, code: int | None = None, response: dict[str, Any] | None = None) -> None:
@@ -99,13 +101,14 @@ class ConnectorClient:
         return resp.get("devices", [])
 
     def select(self, serial: str, timeout_ms: int = 5000) -> bool:
+        self._selected_serial = None
         resp = self.send_request({
             "method": "select",
             "params": {"serial": serial, "timeout_ms": timeout_ms},
         })
         selected = resp.get("ok", False)
         if selected:
-            self._selected_serial = serial
+            self._selected_serial = serial.strip()
         return selected
 
     def status(self) -> dict[str, Any]:
@@ -144,6 +147,7 @@ class ConnectorClient:
         return self.send_request({"method": "adb", "params": params})
 
     def install(self, local: str, *, replace: bool = True, timeout_ms: int = 180000) -> dict[str, Any]:
+        require_explicit_device(self._selected_serial)
         return self.send_request({
             "method": "install",
             "params": {"local": local, "replace": replace, "timeout_ms": timeout_ms},

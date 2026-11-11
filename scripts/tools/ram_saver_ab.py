@@ -14,7 +14,6 @@ from pathlib import Path
 
 
 PACKAGE = "io.stamethyst"
-DEVICE = "10.126.126.2:5555"
 STS = "/sdcard/Android/data/io.stamethyst/files/sts"
 COMPONENTS = (
     "AmethystRuntimeCompat.jar",
@@ -53,13 +52,6 @@ def package_component_hash(apk: Path, component: str) -> str:
     return hashlib.sha256(result.stdout).hexdigest()
 
 
-def install(device: str, apk: Path) -> None:
-    run(device, "install", "-r", "-d", str(apk), timeout=180.0)
-    for name in COMPONENTS:
-        run(device, "shell", "rm", "-f", "%s/required_mods/%s" % (STS, name))
-    time.sleep(1.0)
-
-
 def result_from_log(text: str) -> dict[str, str] | None:
     matches = re.findall(r"\[amethyst-autoplay\] single_room result ([^\n]+)", text)
     if not matches:
@@ -68,8 +60,11 @@ def result_from_log(text: str) -> dict[str, str] | None:
 
 
 def collect(device: str, apk: Path, output: Path, duration: int) -> None:
+    # APK metadata describes the intended build, not proof of what is installed.
+    # Preparing/installing that build is a separate, explicitly authorized step.
+    if not device or device.lower() == "auto":
+        raise RuntimeError("collect requires an explicit --device serial.")
     output.mkdir(parents=True, exist_ok=False)
-    install(device, apk)
     spec = output / "single-room.properties"
     spec.write_text(
         "schemaVersion=1\ncharacter=IRONCLAD\nmonster=Lagavulin\n"
@@ -131,7 +126,7 @@ def collect(device: str, apk: Path, output: Path, duration: int) -> None:
     played_cards = len(re.findall(r"single_room combat played card=", log))
     blocked_neows_lament = len(re.findall(r"single_room blocked NeowsLament atBattleStart", log))
     save_json(output / "run.json", {
-        "apk": str(apk),
+        "referenceApk": str(apk),
         "apkSha256": sha256(apk),
         "componentHashes": {
             name: package_component_hash(apk, name) for name in COMPONENTS
@@ -206,12 +201,14 @@ def analyze(path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("collect", "analyze"))
-    parser.add_argument("--device", default=DEVICE)
-    parser.add_argument("--apk", type=Path)
+    parser.add_argument("--device", help="Explicit device serial; required for collect. No automatic selection.")
+    parser.add_argument("--apk", type=Path, help="Reference APK for metadata only; never installed by this script.")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--duration", type=int, default=120)
     args = parser.parse_args()
     if args.command == "collect":
+        if not args.device or args.device.lower() == "auto":
+            parser.error("collect requires an explicit --device serial (not auto)")
         if args.apk is None or args.output is None:
             parser.error("collect requires --apk and --output")
         collect(args.device, args.apk.resolve(), args.output.resolve(), args.duration)

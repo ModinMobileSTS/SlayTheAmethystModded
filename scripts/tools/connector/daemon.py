@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from scripts.tools.lib.device_safety import require_explicit_device
+
 
 _ARTHAS_PROMPT = re.compile(rb"\[arthas@([^\]\r\n]+)\]\$ ?")
 _ARTHAS_AGENT_PORT = 9099
@@ -596,23 +598,38 @@ class Daemon:
     ) -> dict[str, Any] | None:
         method = req.get("method", "")
         serial = session.get("serial")
+        # Arbitrary adb/shell scripts can hide package-manager operations. Fail
+        # closed for these escape hatches, not just the dedicated install RPC.
+        if method in {"install", "adb", "shell"}:
+            try:
+                require_explicit_device(session.get("explicit_serial"))
+                if serial != session["explicit_serial"]:
+                    raise RuntimeError("Selected device differs from the explicit target.")
+            except RuntimeError as exc:
+                return {"error": {"code": -32004, "message": str(exc)}}
         if method == "ping":
             return {"pong": True}
         elif method == "devices":
             return {"devices": _adb_devices(self._adb_path)}
         elif method == "select":
             params = req.get("params", {})
-            serial = params.get("serial", "")
+            serial = str(params.get("serial", "") or "").strip()
+            # Invalidate the previous authorization even if selection fails.
+            session["serial"] = None
+            session["explicit_serial"] = None
             if serial == "auto":
                 devs = [d for d in _adb_devices(self._adb_path) if d.get("state") == "device"]
-                if not devs:
-                    devs = _adb_devices(self._adb_path)
-                if devs:
+                if len(devs) == 1:
                     session["serial"] = devs[0]["serial"]
                 else:
-                    return {"error": {"code": -32001, "message": "no devices"}}
+                    return {"error": {"code": -32001, "message": "auto requires exactly one online device"}}
             else:
+                try:
+                    serial = require_explicit_device(serial)
+                except RuntimeError as exc:
+                    return {"error": {"code": -32004, "message": str(exc)}}
                 session["serial"] = serial
+                session["explicit_serial"] = serial
             return {"ok": True, "serial": session["serial"]}
         elif method == "status":
             if not serial:
@@ -657,6 +674,8 @@ class Daemon:
             args = params.get("args") or []
             if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
                 return {"error": {"code": -32004, "message": "params.args must be a list of strings"}}
+            if not args or args[0].startswith("-"):
+                return {"error": {"code": -32004, "message": "adb target/options must not override the selected device"}}
             timeout = params.get("timeout_ms", 30000) / 1000
             capture = params.get("capture", "text")
             local_path = str(params.get("local_path", "") or "")

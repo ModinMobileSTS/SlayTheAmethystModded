@@ -49,7 +49,7 @@ function findRepoRoot(directory: string): string {
 }
 
 const COMMON_PROPERTIES = {
-  deviceSerial: { type: "string", description: "ADB device serial. Required when multiple devices are online." },
+  deviceSerial: { type: "string", description: "Exact user-approved ADB serial. Required for install and raw adb/shell commands; auto discovery is not authorization." },
   connectorPort: { type: "integer", minimum: 1, maximum: 65535, description: "Existing connector daemon port." },
   timeoutSeconds: { type: "integer", minimum: 1, maximum: 43200, description: "Harness operation timeout." },
   pollIntervalSeconds: { type: "integer", minimum: 1, maximum: 60 },
@@ -117,7 +117,6 @@ function appendLaunchOptions(args: string[], input: HarnessInput, repoRoot: stri
   addBoolean(args, "--autoplay", input.autoplay)
   addString(args, "--autoplay-save-mode", input.autoplaySaveMode)
   addString(args, "--autoplay-mode", input.autoplayMode)
-  addBoolean(args, "--skip-install", input.skipInstall)
   addBoolean(args, "--no-stop-after-smoke", input.noStopAfterSmoke)
   addBoolean(args, "--disable-card-obtain-effect-ownership-compat", input.disableCardObtainEffectOwnershipCompat)
   addString(args, "--single-room-spec", localPath(input.singleRoomSpec, "singleRoomSpec", repoRoot))
@@ -167,6 +166,12 @@ function resolveHarnessCommand(toolName: string, input: HarnessInput): string {
 
 function commandArgs(toolName: string, input: HarnessInput, repoRoot: string): string[] {
   const command = resolveHarnessCommand(toolName, input)
+  if (command === "install") {
+    const serial = typeof input.deviceSerial === "string" ? input.deviceSerial.trim() : ""
+    if (!serial || /^(auto|default|all|\*)$/i.test(serial) || serial.startsWith("-") || /\s/.test(serial)) {
+      throw new Error("Installation requires an explicit user-approved deviceSerial; automatic selection is forbidden")
+    }
+  }
   const args = ["-m", "scripts.tools.main", "sts-harness", "--command", command]
   appendCommon(args, input, repoRoot, command)
   return args
@@ -382,7 +387,7 @@ export default Plugin.define({
 
       editor.add(buildTool(
         "control_game_lifecycle",
-        "Install the debug APK (action: install), launch the game (start), force-stop it (stop), or request a graceful exit (exit). Changes device/game state; no arbitrary shell commands.",
+        "Explicitly install the debug APK (action: install; requires separate user authorization and an exact deviceSerial), launch the already installed game (start), force-stop it (stop), or request a graceful exit (exit). No arbitrary shell commands.",
         objectSchema({
           action: { type: "string", enum: ["install", "start", "stop", "exit"] },
           launchMode: { type: "string", enum: ["mts_basemod", "mts", "vanilla"] },
@@ -392,7 +397,7 @@ export default Plugin.define({
           debugMode: { type: "boolean" },
           forceJvmCrash: { type: "boolean" },
           forceRuntimeCrash: { type: "boolean" },
-          skipInstall: { type: "boolean" },
+          skipInstall: { type: "boolean", description: "Deprecated compatibility field; tests never install APKs." },
           singleRoomSpec: { type: "string" },
           singleRoomDeviceSpec: { type: "string" },
           singleRoomCharacter: { type: "string" },
@@ -419,11 +424,11 @@ export default Plugin.define({
 
       editor.add(buildTool(
         "run_gameplay_scenario",
-        "Run an Android game smoke check (action: smoke), enter a specified combat room (single-room), or run a game-probe play session (play). May launch/install the game; returns structured artifacts.",
+        "Run an Android game smoke check (action: smoke), enter a specified combat room (single-room), or run a game-probe play session (play). Uses the already installed game; never installs or uninstalls APKs. Returns structured artifacts.",
         objectSchema({
           action: { type: "string", enum: ["smoke", "single-room", "play"] },
           launchMode: { type: "string", enum: ["mts_basemod", "mts"] },
-          skipInstall: { type: "boolean" },
+          skipInstall: { type: "boolean", description: "Deprecated compatibility field; tests never install APKs." },
           noStopAfterSmoke: { type: "boolean" },
           debugMode: { type: "boolean" },
           autoplay: { type: "boolean" },
@@ -535,10 +540,10 @@ export default Plugin.define({
 
       editor.add(buildTool(
         "run_game_performance_tests",
-        "Collect game performance metrics (action: perf), profile startup caching (startup-cache-profile), or run the full performance benchmark (perf-bench). Returns metrics and artifacts; updating a benchmark baseline requires perfBenchUpdateBaseline.",
+        "Collect game performance metrics (action: perf), profile startup caching (startup-cache-profile), or run the full performance benchmark (perf-bench). Uses the already installed game; never installs/uninstalls APKs. Returns metrics and artifacts; updating a benchmark baseline requires perfBenchUpdateBaseline.",
         objectSchema({
           action: { type: "string", enum: ["perf", "startup-cache-profile", "perf-bench"] },
-          skipInstall: { type: "boolean" },
+          skipInstall: { type: "boolean", description: "Deprecated compatibility field; tests never install APKs." },
           cacheHitRuns: { type: "integer", minimum: 1, maximum: 20 },
           noClearStartupCache: { type: "boolean" },
           perfBenchBaseline: { type: "string" },
@@ -569,16 +574,15 @@ export default Plugin.define({
 
       editor.add(buildTool(
         "test_steam_cloud_sync",
-        "Test Steam Cloud synchronization for the Android game using a test payload, collecting before/poll/final snapshots. May write the test file on the device.",
+        "Test Steam Cloud synchronization for the already installed Android game using a test payload, collecting before/poll/final snapshots. May write the test file on the device; never installs/uninstalls APKs.",
         objectSchema({
-          skipInstall: { type: "boolean" },
+          skipInstall: { type: "boolean", description: "Deprecated compatibility field; tests never install APKs." },
           cloudSyncRelativePath: { type: "string" },
           cloudSyncPayload: { type: "string" },
           cloudSyncSourceFile: { type: "string" },
           cloudSyncPullIntervalSeconds: { type: "integer", minimum: 1, maximum: 300 },
         }),
         (args, value, root) => {
-          addBoolean(args, "--skip-install", value.skipInstall)
           addString(args, "--cloud-sync-relative-path", deviceRelativePath(value.cloudSyncRelativePath))
           addString(args, "--cloud-sync-payload", value.cloudSyncPayload)
           addString(args, "--cloud-sync-source-file", localPath(value.cloudSyncSourceFile, "cloudSyncSourceFile", root))

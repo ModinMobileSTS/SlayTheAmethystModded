@@ -95,10 +95,10 @@ SQLite 通过 Python 3 标准库以 `mode=ro` 打开，不修改数据库、不�
 `AiContextCacheInstrumentedTest` 使用隔离 Compose 对话框验证最近/累计比例、实时变为“未报告”、切换模型不显示旧缓存值。不会读取密钥、启动模型任务或改动用户对话。
 
 ```bash
-./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=io.stamethyst.ui.aimod.AiContextCacheInstrumentedTest \
-  --console=plain
+./gradlew :app:compileDebugAndroidTestKotlin --console=plain
 ```
+
+此命令仅本地编译测试。会自动安装/卸载应用的 connected/托管设备测试已禁用；设备验收必须明确指定并授权目标设备，使用已安装的测试构建。安装/卸载另需授权，不得隐式执行（见 `AGENTS.md`）。
 
 ## 本机验收记录（2026-10-19）
 

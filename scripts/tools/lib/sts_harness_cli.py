@@ -128,7 +128,10 @@ def create_parser() -> argparse.ArgumentParser:
             "for repro runs."
         ),
     )
-    parser.add_argument("-SkipInstall", "--skip-install", dest="skip_install", action="store_true")
+    parser.add_argument(
+        "-SkipInstall", "--skip-install", dest="skip_install", action="store_true", default=True,
+        help="Deprecated compatibility flag: test flows never install APKs. Use the explicit install command separately.",
+    )
     parser.add_argument("-NoStopAfterSmoke", "--no-stop-after-smoke", dest="no_stop_after_smoke", action="store_true")
     parser.add_argument(
         "-CacheHitRuns",

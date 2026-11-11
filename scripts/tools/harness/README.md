@@ -155,7 +155,7 @@ perfBenchTimeoutSeconds > harnessTimeoutSeconds > 720
 | autoplay 场景 | `normal` 完整地牢 | `autoplayMode`、`autoplaySingleRoomSpec`、`singleRoomSpecFile`、`singleRoomMonster`、`singleRoomCards` |
 | 存档模式 | `fresh` | `autoplaySaveMode` |
 | 深度性能诊断 | 开启 | `performanceDeepDiagnostics` |
-| 安装 APK | 每轮安装 | `harnessSkipInstall` 当前只对 `stsHarnessSmoke` 生效 |
+| 安装 APK | 从不安装；使用设备上已有应用 | `harnessSkipInstall` 已废弃，省略也不会安装 |
 | JVM/runtime 强制崩溃 | 关闭 | `forceJvmCrash`、`forceRuntimeCrash` 被 `stsStartAutoplay` 固定关闭 |
 | 结束处理 | 总是停止游戏 | `noStopAfterSmoke` 只用于 smoke |
 

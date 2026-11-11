@@ -6,7 +6,7 @@
 #
 # Options:
 #   --skip-build          Skip gradlew assembleDebug + mod build
-#   --skip-install        Skip APK install (implies --skip-build)
+#   --skip-install        Deprecated alias for --skip-build; APKs are never installed
 #   --update-baseline     Overwrite perf_bench_baseline.json with this run
 #   --timeout <sec>       Game run timeout in seconds (default: 360)
 #   --connector-port <p>  Connector daemon port (default: 19876)
@@ -33,10 +33,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# This flow uses the app already installed on the target device. Building below
+# only produces local artifacts; it never deploys or updates the measured app.
 # ── Defaults ────────────────────────────────────────────────────────────────
 GRADLE_BIN="${GRADLE_BIN:-$PROJECT_DIR/gradlew}"
 SKIP_BUILD=0
-SKIP_INSTALL=0
 UPDATE_BASELINE=0
 TIMEOUT_SEC=360
 CONNECTOR_PORT="${STS_CONNECTOR_PORT:-19876}"
@@ -47,7 +48,7 @@ CHARACTER="IRONCLAD"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-build)      SKIP_BUILD=1;        shift ;;
-        --skip-install)    SKIP_INSTALL=1; SKIP_BUILD=1; shift ;;
+        --skip-install)    SKIP_BUILD=1; shift ;;
         --update-baseline) UPDATE_BASELINE=1;   shift ;;
         --timeout)         TIMEOUT_SEC="$2";    shift 2 ;;
         --connector-port)  CONNECTOR_PORT="$2"; shift 2 ;;
@@ -98,10 +99,6 @@ HARNESS_ARGS=(
     -SingleRoomCharacter "$CHARACTER"
     -LaunchMode mts_basemod
 )
-
-if [[ "$SKIP_INSTALL" -eq 1 ]]; then
-    HARNESS_ARGS+=(-SkipInstall)
-fi
 
 if [[ "$UPDATE_BASELINE" -eq 1 ]]; then
     HARNESS_ARGS+=(-UpdateBaseline)

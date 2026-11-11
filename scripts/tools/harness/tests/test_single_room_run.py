@@ -18,7 +18,7 @@ class SingleRoomRunTest(unittest.TestCase):
             "processes": {"game": "123"},
         }
         ctx = HarnessContext(
-            options=SimpleNamespace(skip_install=True, timeout_seconds=1, poll_interval_seconds=1),
+            options=SimpleNamespace(skip_install=False, timeout_seconds=1, poll_interval_seconds=1),
             repo_root=Path("."), application_id="io.stamethyst",
             resolved_device_serial="device", result={},
         )

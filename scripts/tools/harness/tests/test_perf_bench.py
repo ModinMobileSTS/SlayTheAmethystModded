@@ -23,7 +23,7 @@ class PerfBenchTest(unittest.TestCase):
         }
         ctx = HarnessContext(
             options=SimpleNamespace(
-                skip_install=True,
+                skip_install=False,
                 timeout_seconds=1,
                 poll_interval_seconds=1,
                 autoplay=False,

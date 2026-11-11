@@ -41,6 +41,7 @@
   --tests io.stamethyst.backend.mods.ModConfigRepositoryTest \
   --tests io.stamethyst.backend.mods.ModConfigLocatorTest
 
-./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=io.stamethyst.ui.main.ModConfigDialogInstrumentedTest
+./gradlew :app:compileDebugAndroidTestKotlin
 ```
+
+以上仅执行本地单元测试和测试代码编译。已禁用会自动安装/卸载应用的 connected/托管设备测试；如需设备验收，必须明确指定并授权目标设备，使用已安装的测试构建。安装/卸载另需授权，不能作为测试准备隐式执行（见 `AGENTS.md`）。
