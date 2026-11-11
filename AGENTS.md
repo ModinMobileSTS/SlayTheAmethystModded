@@ -1,5 +1,11 @@
 # Repository Rules
 
+## Working directory and branches
+
+- 默认在原始项目目录 `/home/justinz/SlayTheAmethystModded` 的 `main` 分支开发；两位维护者共用这一工作方式。
+- 除非用户明确要求，不创建额外 Git worktree、不创建任务分支，也不自动切换分支。
+- 多个 agent 同时工作前先协调文件修改范围；提交、拉取或推送前检查工作区，保留其他维护者及 agent 的未提交修改。
+
 ## Local Android tools
 
 - Use `sts` tools for Android operations. They automatically use the workspace-owned wireless ADB configured in ignored `.env.local`.
