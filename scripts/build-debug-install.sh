@@ -55,5 +55,5 @@ fi
 
 APK_PATH="${apk_files[0]}"
 printf 'Installing %s...\n' "$APK_PATH"
-"$ADB_BIN" "${adb_args[@]}" install -r "$APK_PATH"
+"$ADB_BIN" "${adb_args[@]}" install --fastdeploy -r "$APK_PATH"
 printf 'Debug APK installed successfully on %s.\n' "${DEVICE_SERIAL:-${connected_devices[0]}}"

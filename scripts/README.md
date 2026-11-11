@@ -123,7 +123,7 @@ Alternatively pass `-ConnectorPort 39999` / `--connector-port 39999` on each har
 Harness commands:
 
 - `doctor`: validate connector, Gradle wrapper, package id, device selection, storage access, and runtime status signals.
-- `install`: build and install the debug APK.
+- `install`: build and install the debug APK using `install --fastdeploy -r` by default (also used by harness flows that install, and `build-debug-install.sh`). Use the project-local platform-tools 35.0.2 configured in `.env.local`; ADB 37.0.0/37.0.1 incorrectly skip fast deploy on the tested API 29 device. Unsupported fast deploy may fall back to a full install in ADB; passing the flag alone does not guarantee differential transfer. The shell shortcut still uses `ADB_BIN`/PATH; invoke it through `local_adb run` with `ADB_BIN` set to the project-local binary to use the workspace-owned server.
 - `start`: start the app through `:app:stsStart`.
 - `stop`: force-stop the app through `:app:stsStop`.
 - `logs`: export runtime logs and a harness logcat dump.

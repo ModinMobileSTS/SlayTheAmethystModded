@@ -135,10 +135,6 @@ def adb(
                 raw = connector.adb(args, timeout_ms=max(1, int(timeout_seconds * 1000)), capture="text")
                 if "error" not in raw:
                     resp = raw
-        elif len(args) >= 1 and args[0] == "install":
-            local = args[-1]
-            replace = "-r" in args
-            resp = connector.install(local, replace=replace, timeout_ms=max(1, int(timeout_seconds * 1000)))
         else:
             resp = connector.adb(
                 args,

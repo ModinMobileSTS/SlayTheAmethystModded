@@ -437,7 +437,7 @@ class Harness:
             raise RuntimeError(f"No debug APK found under: {apk_root}")
         apk = apks[0]
         self.result["artifacts"]["debugApk"] = str(apk)
-        self.adb(["install", "-r", str(apk)], timeout_seconds=180)
+        self.adb(["install", "--fastdeploy", "-r", str(apk)], timeout_seconds=180)
 
     def harness_start(self) -> None:
         launcher_component = f"{self.application_id or ''}/.LauncherActivity"
