@@ -31,25 +31,6 @@
 
 - For changes needing systematic post-implementation testing, or when explicitly requested, use `.opencode/skills/post-implementation-verification/SKILL.md`. Routine changes still require verification appropriate to their risk without necessarily loading the skill.
 
-## TDD workflow (opt-in)
-
-- Because this workflow is costly, do not invoke it proactively. Use it only when the user explicitly requests this TDD workflow or the `tdd-development` skill. Otherwise, implement and verify changes using the appropriate ordinary project practices.
-- When explicitly requested for behavior slices with existing deterministic offline tests, use `.opencode/skills/tdd-development/SKILL.md` and project context `.opencode/skills/tdd-development/project/slay-the-amethyst.md`. The parent owns accepted requirements, slice selection, integration and final acceptance; delegate implementation through `tdd-slice` with the complete slice-task template.
-- `tdd-slice` is read-only and dispatches exactly one slice through serial foreground `tdd-red`, `tdd-green`, `tdd-refactor`, optional `test-runner`, and mandatory `code-reviewer`. It is the only nested-delegation exception; leaves never delegate. Keep `experimental.subagent_depth` at 2, not unrestricted depth or independent sessions to bypass gates.
-- Red edits only assigned tests/fixtures and establishes expected behavior failure (or explicitly required missing-API structural Red). Infrastructure failures are blockers. Green/Refactor edit only assigned production paths; tests are frozen. No overlapping writers or unrelated cleanup. The parent/dispatcher accepts stage evidence rather than running normal slice tests in their place.
-- Use the affected module's real verification, not one language's default. Missing test infrastructure needs a separately authorized task before Green. Documentation, workflow bootstrapping and pure behavior-preserving refactors do not require fabricated Red. Unsupported UI/native/runtime work must state its verification limits rather than claim TDD coverage.
-- Required documentation is parent-owned and integrated before Review, including every Mod fix's README entry. Every stage reports commands, working directories, actual results and gaps. Preserve existing changes; no stage commits, installs dependencies, deploys, operates devices or contacts live services.
-- Device/runtime/live-service checks are separately authorized parent work via existing supported tools, not a local TDD gate. TDD agents deny `sts_*`; broad shell/edit permissions are not per-slice isolation and must not bypass role restrictions.
-- Only an explicit toolchain self-check may use the skill's maintenance exception: static read-only configuration review, then the supplied existing offline check. No writers, Red/Green/Refactor, denied-command probes or product-completion claim.
-
 ## Git conventions
 
 - 提交 Git 时，应当注意 message 规范：feat：新特性、fix：修复问题、perf：性能更改、chores：其它工作。
-
-## Device safety
-
-- **如果用户没有明确指定本次操作的目标设备，禁止进行任何安装、覆盖安装、降级安装或卸载应用的操作。** 唯一在线设备、自动发现的设备、脚本默认值、历史对话中的设备、已有环境变量都不等于用户授权。
-- 即使指定了设备，也必须先获得安装/卸载操作本身的明确授权；普通的测试、回归或性能验证请求不包含这项授权。命令必须绑定该具体设备序列号，禁止自动选择或回退到其他设备。
-- 禁止通过真机测试任务间接安装或卸载应用，包括 `connected*AndroidTest`、`connectedCheck`、托管设备测试和 macrobenchmark；这些任务可能由 AGP/UTP 在结束时自动卸载主应用并丢失数据。本仓库已禁用此类自动部署任务。
-- 冒烟、单房间、性能、启动缓存、Steam Cloud 等测试只能使用设备上已安装的应用，不得自动构建后安装。默认使用本地编译、Android 测试代码编译和 JVM/mock 测试验证。
-- 不得在操作失败后擅自重装、卸载、清除应用数据或恢复设备；需要这些操作时，重新说明目标设备、包名及数据风险并取得授权。
