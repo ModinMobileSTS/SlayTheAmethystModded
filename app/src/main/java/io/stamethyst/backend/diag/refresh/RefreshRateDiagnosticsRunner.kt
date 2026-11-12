@@ -19,6 +19,7 @@ import android.view.Surface
 import android.view.WindowManager
 import io.stamethyst.BuildConfig
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.backend.render.DisplayRefreshRatePolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -52,6 +53,7 @@ internal class RefreshRateDiagnosticsRunner(private val activity: Activity, priv
             attrs.preferredDisplayModeId, attrs.preferredRefreshRate.takeIf { it.isFinite() } ?: 0f,
             window.decorView.hasWindowFocus(), power?.isPowerSaveMode,
             if (Build.VERSION.SDK_INT >= 29) power?.currentThermalStatus else null,
+            probe.requestedViewRate(), probe.composeHighVoteInstalled(),
         )
     }
 
@@ -87,8 +89,16 @@ internal class RefreshRateDiagnosticsRunner(private val activity: Activity, priv
         put("game.manualRenderer", LauncherConfig.readManualRendererBackend(activity).toString())
         put("game.settingsScope", "Persisted configuration only; this test does not start the game JVM or inspect its effective FPS/Swappy state")
         put("test.timing", "Each phase: 700 ms settle + 2500 ms sample; callback arrival intervals, not presentation timestamps")
-        put("test.surface", "SurfaceView uses hardware Canvas; TextureView uses Canvas. Neither reproduces the game's EGL/GPU workload")
-        put("test.requestDifference", "Diagnostic mode selection keeps current resolution; diagnostic Surface requests ONLY_IF_SEAMLESS. The shared game policy can choose another resolution and uses ALWAYS")
+        put("test.surface", "SurfaceView uses hardware Canvas; TextureView uses Canvas; Compose phases draw the same pattern on a Compose Canvas. None reproduces the game's EGL/GPU workload")
+        put("test.phases", RefreshRatePhase.entries.joinToString { it.key })
+        put("test.requestDifference", "Original five comparison phases retain their requests (including Surface ONLY_IF_SEAMLESS). Production stages share same-resolution window mode selection, Surface DEFAULT/ALWAYS, and View High helpers with the app; no request preferences are persisted by diagnostics. Drawing workload and Activity still differ from gameplay")
+        setting("display.arrSupported") {
+            if (Build.VERSION.SDK_INT >= 36) display()?.hasArrSupport()?.toString() else "requires API 36"
+        }
+        setting("window.frameRatePowerSavingsBalanced") {
+            if (Build.VERSION.SDK_INT >= 35) window.isFrameRatePowerSavingsBalanced.toString() else "requires API 35"
+        }
+        put("test.highVote", "High is a category, not a fixed 120 Hz command. View/Compose stages use the highest same-resolution mode as reference; production combinations use the production Surface target. composeHighVoteInstalled records modifier installation, not compositor acceptance")
         put("systemPolicy", "No privileged DUMP/READ_LOGS access; no per-UID override, physical scanout or vendor rejection reason can be established here")
     }
 
@@ -111,11 +121,6 @@ internal class RefreshRateDiagnosticsRunner(private val activity: Activity, priv
             manager?.registerDisplayListener(listener, Handler(Looper.getMainLooper()))
             registered = manager != null
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            val supported = display()?.supportedModes.orEmpty()
-            val current = display()?.mode
-            val mode = supported.filter { current != null && it.refreshRate.isFinite() && it.refreshRate > 0f &&
-                it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
-                .maxByOrNull { it.refreshRate }
             for ((index, phase) in RefreshRatePhase.entries.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 onPhase(phase, index)
@@ -126,29 +131,32 @@ internal class RefreshRateDiagnosticsRunner(private val activity: Activity, priv
                 var request = ""
                 var requestError: String? = null
                 var completed = false
-                val target = if (phase == RefreshRatePhase.MODE) mode?.refreshRate ?: 120f else 120f
+                var target = 120f
                 val intervals = mutableListOf<Long>()
                 var stageFailure: Throwable? = null
                 try {
                     withTimeout(5000) { while (!probe.ready()) frame() }
                     try {
+                        val activeDisplay = display()
+                        val mode = activeDisplay?.let(DisplayRefreshRatePolicy::highestModeAtCurrentResolution)
+                        if (phase.usesHighestRateReference) target = mode?.refreshRate ?: 120f
                         val attrs = window.attributes
                         attrs.preferredDisplayModeId = 0
                         attrs.preferredRefreshRate = 0f
                         window.attributes = attrs
-                        when (phase) {
-                            RefreshRatePhase.BASELINE -> request = "Clear diagnostic window preferences; observe platform default (120 Hz reference only)"
-                            RefreshRatePhase.MODE -> {
+                        when (phase.requestKind) {
+                            RefreshRateRequestKind.DEFAULT -> request =
+                                "Clear diagnostic window preferences; ${phase.probeKind} without explicit vote (${target} Hz reference only)"
+                            RefreshRateRequestKind.MODE -> {
                                 check(mode != null) { "No valid display mode at current resolution" }
-                                attrs.preferredDisplayModeId = mode.modeId
-                                window.attributes = attrs
+                                DisplayRefreshRatePolicy.applyWindowMode(window, mode)
                                 request = "preferredDisplayModeId=${mode.modeId}; ${mode.refreshRate} Hz; same resolution; setter returned, NOT system acceptance"
                             }
-                            else -> {
+                            RefreshRateRequestKind.WINDOW, RefreshRateRequestKind.SURFACE_SEAMLESS -> {
                                 attrs.preferredRefreshRate = 120f
                                 window.attributes = attrs
                                 request = "preferredDisplayModeId=0; preferredRefreshRate=120; setter returned, NOT system acceptance"
-                                if (phase == RefreshRatePhase.SURFACE) {
+                                if (phase.requestKind == RefreshRateRequestKind.SURFACE_SEAMLESS) {
                                     check(Build.VERSION.SDK_INT >= 30) { "Surface.setFrameRate requires API 30" }
                                     val surface = checkNotNull(probe.surface()) { "Display Surface unavailable" }
                                     if (Build.VERSION.SDK_INT >= 31) surface.setFrameRate(120f,
@@ -156,6 +164,32 @@ internal class RefreshRateDiagnosticsRunner(private val activity: Activity, priv
                                     else surface.setFrameRate(120f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
                                     request += "; Surface.setFrameRate(120, DEFAULT, ONLY_IF_SEAMLESS)"
                                 }
+                            }
+                            RefreshRateRequestKind.VIEW_HIGH -> {
+                                request = "View.setRequestedFrameRate(HIGH); no window/Surface vote; ${target} Hz reference only"
+                                probe.requestHighViewVote()
+                            }
+                            RefreshRateRequestKind.COMPOSE_HIGH -> {
+                                request = "Compose Modifier.preferredFrameRate(High), with production lifecycle/focus guard; no window/Surface vote; ${target} Hz reference only"
+                                probe.requestHighComposeVote()
+                            }
+                            RefreshRateRequestKind.PRODUCTION -> {
+                                check(mode != null) { "No valid display mode at current resolution" }
+                                val surfaceRate = DisplayRefreshRatePolicy.highestSupportedRefreshRateHz(activeDisplay)
+                                target = surfaceRate.takeIf { it.isFinite() && it > 0f } ?: mode.refreshRate
+                                request = "Production helpers; same-resolution window mode=${mode.modeId}@${mode.refreshRate}; setter return is NOT acceptance"
+                                DisplayRefreshRatePolicy.applyWindowMode(window, mode)
+                                if (Build.VERSION.SDK_INT >= 30) {
+                                    request += "; Surface.setFrameRate($surfaceRate, DEFAULT, " +
+                                        if (Build.VERSION.SDK_INT >= 31) "ALWAYS)" else "two-argument API 30 overload)"
+                                    check(surfaceRate > 0f) { "No valid highest Surface target" }
+                                    DisplayRefreshRatePolicy.applySurfaceFrameRate(
+                                        checkNotNull(probe.producerSurface()) { "Producer Surface unavailable" }, surfaceRate)
+                                } else request += "; Surface vote skipped: API < 30 (same as production)"
+                                if (Build.VERSION.SDK_INT >= 35) {
+                                    request += "; View.setRequestedFrameRate(HIGH)"
+                                    probe.requestHighViewVote()
+                                } else request += "; View vote skipped: API < 35 (same as production)"
                             }
                         }
                     } catch (failure: Exception) { requestError = error(failure) }

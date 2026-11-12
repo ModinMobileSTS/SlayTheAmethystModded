@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="refresh_diagnostics_title">更新率診斷</string>
-    <string name="refresh_diagnostics_description">執行約 20 秒的視窗與 Surface 測試，檢視並匯出詳細報告</string>
+    <string name="refresh_diagnostics_description">執行約 35 秒的視窗、Surface、View 與 Compose 測試，檢視並匯出詳細報告</string>
     <string name="refresh_diagnostics_latest">檢視上次更新率報告</string>
-    <string name="refresh_diagnostics_running_scope">請保持此頁面在前景。測試動畫會依序檢查回呼時序、視窗模式請求、SurfaceView 和 TextureView。切到背景或取消會停止測試並保留部分報告，不修改系統設定。</string>
-    <string name="refresh_diagnostics_scope">測量範圍：這是啟動器程序中的獨立診斷 Activity，並非首頁視窗或遊戲 Activity；使用 Android View/Canvas，不啟動遊戲 JVM、EGL 算繪器或 Swappy。應用程式讀取的 Hz、系統顯示模式 Hz 和回呼頻率是不同指標。回呼數、繪製數不是實際呈現 FPS 或實體面板更新率。設定介面返回只代表請求已提交，不代表系統接受。本應用程式無法讀取特權顯示策略轉儲，也無法得知確定的廠商拒絕原因。</string>
+    <string name="refresh_diagnostics_running_scope">請保持此頁面在前景。十階段動畫對比回呼時序、視窗請求、View/Compose High 投票及 SurfaceView/TextureView 正式請求。切到背景或取消會停止測試並保留部分報告，不修改系統設定。</string>
+    <string name="refresh_diagnostics_scope">測量範圍：這是啟動器程序中的獨立診斷 Activity，並非首頁視窗或遊戲 Activity；使用 Android View/Compose Canvas，不啟動遊戲 JVM、EGL 算繪器或 Swappy。雖然共用正式請求實作，繪製負載仍不同。應用程式讀取的 Hz、系統顯示模式 Hz 和回呼頻率是不同指標。回呼數、繪製數不是實際呈現 FPS 或實體面板更新率。設定介面返回或安裝 High modifier 均不代表系統接受。本應用程式無法讀取特權顯示策略轉儲，也無法得知確定的廠商拒絕原因。</string>
     <string name="refresh_diagnostics_next_steps">判讀：逐階段比較。請求提交後，應用程式讀取值仍低於目標，可能涉及系統策略或請求路徑差異，本報告不能直接確定原因；讀取值達到目標而回呼偏慢，應繼續檢查排程及算繪負載，不能直接認定螢幕實體上只有 60 Hz。此處遊戲設定僅為持久化組態，並非執行時測量。無法定位時，需在首頁持續捲動和遊戲動畫場景分別擷取指定裝置的唯讀 display/window/SurfaceFlinger/game/power/thermal 轉儲及系統記錄。慢間隔指超過目標回呼週期 1.5 倍，不等於已證實掉格。溫控等級採用 Android 的 0–6 數值；電池溫度單位為 0.1℃。分享前請檢查韌體識別和組態資訊。測試後還原視窗偏好和保持亮屏旗標，不修改裝置設定或遊戲組態。</string>
-    <string name="refresh_diagnostics_phase_baseline">1/5 · 預設視窗與動畫</string>
-    <string name="refresh_diagnostics_phase_mode">2/5 · 目前解析度下最高更新率模式</string>
-    <string name="refresh_diagnostics_phase_window">3/5 · 視窗申請 120 Hz</string>
-    <string name="refresh_diagnostics_phase_surface">4/5 · SurfaceView 申請 120 Hz</string>
-    <string name="refresh_diagnostics_phase_texture">5/5 · TextureView 與視窗申請 120 Hz</string>
+    <string name="refresh_diagnostics_phase_label">%1$d/%2$d · %3$s</string>
+    <string name="refresh_diagnostics_phase_baseline">預設視窗與動畫</string>
+    <string name="refresh_diagnostics_phase_mode">目前解析度下最高更新率模式</string>
+    <string name="refresh_diagnostics_phase_window">視窗申請 120 Hz</string>
+    <string name="refresh_diagnostics_phase_surface">SurfaceView 申請 120 Hz：僅無縫切換對照</string>
+    <string name="refresh_diagnostics_phase_texture">TextureView 與視窗申請 120 Hz</string>
+    <string name="refresh_diagnostics_phase_view_high">僅 View High 投票</string>
+    <string name="refresh_diagnostics_phase_compose_baseline">Compose 動畫：不投 High 票</string>
+    <string name="refresh_diagnostics_phase_compose_high">Compose 動畫：High 投票</string>
+    <string name="refresh_diagnostics_phase_surface_production">SurfaceView：正式視窗、Surface 與 View 組合請求</string>
+    <string name="refresh_diagnostics_phase_texture_production">TextureView：正式視窗、Surface 與 View 組合請求</string>
     <string name="refresh_diagnostics_observed">已觀測到目標應用程式更新率及接近目標的回呼頻率；不代表實體面板測量</string>
     <string name="refresh_diagnostics_callbacks_slow">應用程式讀取值達到目標，但影格回呼頻率偏低</string>
     <string name="refresh_diagnostics_below">取樣期間未觀測到目標應用程式更新率，原因待進一步確認</string>
