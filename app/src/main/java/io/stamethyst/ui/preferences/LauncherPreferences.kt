@@ -20,7 +20,6 @@ import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayStyle
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
@@ -336,13 +335,6 @@ object LauncherPreferences {
 
     fun isSlingBreakAudioDebugModeEnabled(context: Context): Boolean {
         return LauncherConfig.isSlingBreakAudioDebugModeEnabled(context)
-    }
-
-    fun readSlingBreakEngineMode(context: Context): SlingBreakEngineMode =
-        LauncherConfig.readSlingBreakEngineMode(context)
-
-    fun saveSlingBreakEngineMode(context: Context, mode: SlingBreakEngineMode) {
-        LauncherConfig.saveSlingBreakEngineMode(context, mode)
     }
 
     fun setSlingBreakAudioDebugModeEnabled(context: Context, enabled: Boolean) {

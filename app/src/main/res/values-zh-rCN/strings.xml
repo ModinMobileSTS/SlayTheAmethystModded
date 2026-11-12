@@ -15,13 +15,6 @@
     <string name="save_import_ascension">进阶 %1$s → %2$s</string>
     <string name="save_import_apply">导入 · %1$d</string>
     <string name="save_import_run_count">新增 %1$d / 覆盖 %2$d 局</string>
-    <string name="settings_sling_break_web_preparing_title">正在准备 Web 依赖</string>
-    <string name="settings_sling_break_web_preparing">正在准备 GeckoView 依赖…</string>
-    <string name="settings_sling_break_web_downloading">正在下载 Web 依赖… %1$d%%</string>
-    <string name="settings_sling_break_web_unpacking">下载完成，正在校验并解压 GeckoView…</string>
-    <string name="settings_sling_break_mode_title">小游戏模式</string>
-    <string name="settings_sling_break_mode_webview">WebView 模式</string>
-    <string name="settings_sling_break_mode_compatibility">兼容模式</string>
     <string name="settings_sling_break_download_confirmation">使用兼容模式时需要拉取依赖，是否拉取？（50MB）</string>
     <string name="settings_sling_break_download_yes">是</string>
     <string name="settings_sling_break_download_no">否</string>

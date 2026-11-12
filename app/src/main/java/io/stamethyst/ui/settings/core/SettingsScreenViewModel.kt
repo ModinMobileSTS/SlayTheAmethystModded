@@ -32,7 +32,6 @@ import io.stamethyst.backend.minigame.SlingBreakInstallation
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.resources.ResourcePackDownloadMirrorSwitchController
 import io.stamethyst.backend.resources.ResourcePackSlowDownloadMirrorSwitch
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
 import io.stamethyst.backend.fs.LauncherJunkFileCleaner
@@ -402,7 +401,6 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_CHROME_BACKGROUND_OPACITY,
         val bootOverlayStyle: BootOverlayStyle =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE,
-        val slingBreakEngineMode: SlingBreakEngineMode = SlingBreakEngineMode.WEBVIEW,
         val slingBreakDependencyProgress: Int? = null,
         val slingBreakDependencyFailure: String? = null,
         val slingBreakDownloadMessage: String = "",
@@ -745,7 +743,6 @@ class SettingsScreenViewModel : ViewModel() {
             launcherIconMode = SettingsRepository.loadLauncherIconMode(host),
             chromeBackgroundOpacity = SettingsRepository.loadChromeBackgroundOpacity(host),
             bootOverlayStyle = SettingsRepository.loadBootOverlayStyle(host),
-            slingBreakEngineMode = LauncherPreferences.readSlingBreakEngineMode(host),
             slingBreakInstalledVersion = SlingBreakInstallation.read(host)?.rawTagName.orEmpty(),
             bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host),
             bootOverlayImageConfig = SettingsRepository.loadBootOverlayImageConfig(host)
@@ -797,7 +794,7 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         if (style == BootOverlayStyle.GODOT_SLING_BREAK && SlingBreakInstallation.read(host) == null) {
-            onSlingBreakEngineModeChanged(host, uiState.slingBreakEngineMode)
+            onPrepareSlingBreak(host)
             return
         }
         uiState = uiState.copy(bootOverlayStyle = style)
@@ -849,7 +846,7 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    fun onSlingBreakEngineModeChanged(host: Activity, mode: SlingBreakEngineMode) {
+    fun onPrepareSlingBreak(host: Activity) {
         if (uiState.busy || uiState.slingBreakDependencyProgress != null) return
         if (uiState.slingBreakDependencyFailure == null) slingBreakSelectAfterInstall = true
         prepareSlingBreak(host, uiState.slingBreakUpdateRelease.takeUnless { slingBreakSelectAfterInstall })
@@ -4729,7 +4726,6 @@ class SettingsScreenViewModel : ViewModel() {
             launcherIconMode = snapshot.launcherIconMode,
             chromeBackgroundOpacity = snapshot.chromeBackgroundOpacity,
             bootOverlayStyle = snapshot.bootOverlayStyle,
-            slingBreakEngineMode = snapshot.slingBreakEngineMode,
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
             bootOverlayImageConfig = snapshot.bootOverlayImageConfig,
             playerName = snapshot.playerName,

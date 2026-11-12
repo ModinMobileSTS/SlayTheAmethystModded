@@ -64,11 +64,11 @@ dependencies {
     implementation(libs.jsoup)
 }
 
-// Applies to every variant, not just slim builds. Neither external Gecko nor retired X5 may be bundled.
+// Applies to every variant: retired web engines must not return; Godot stays download-only.
 configurations.configureEach {
     incoming.afterResolve {
         check(resolutionResult.allComponents.none { it.moduleVersion?.group == "org.mozilla.geckoview" }) {
-            "GeckoView must only be built by :web-runtime, never linked into a launcher APK."
+            "GeckoView has been retired and must not be linked into a launcher APK."
         }
         check(resolutionResult.allComponents.none { it.moduleVersion?.group == "com.tencent.tbs" }) {
             "Tencent X5 has been removed and must not be linked into a launcher APK."
@@ -82,10 +82,15 @@ configurations.configureEach {
 // Inspect real packaged output too, so accidental asset/native copies cannot evade the guard.
 androidComponents.onVariants { variant ->
     val capitalized = variant.name.replaceFirstChar { it.uppercaseChar() }
-    val verify = tasks.register("verify${capitalized}NoBundledGecko") {
+    val verify = tasks.register("verify${capitalized}EngineBoundaries") {
         val apks = variant.artifacts.get(SingleArtifact.APK)
+        val manifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
         inputs.dir(apks)
+        inputs.file(manifest)
         doLast {
+            check(!manifest.get().asFile.readText().contains("org.mozilla.")) {
+                "Retired Gecko components must not be registered in the launcher manifest."
+            }
             apks.get().asFile.walkTopDown().filter { it.extension == "apk" }.forEach { apk ->
                 ZipFile(apk).use { archive ->
                     val entries = archive.entries().asSequence().toList()
@@ -98,7 +103,7 @@ androidComponents.onVariants { variant ->
                             (it.name.startsWith("assets/") && it.name.contains("geckoview") &&
                                 (it.name.endsWith(".zip") || it.name.endsWith(".aar") || it.name.endsWith(".apk")))
                     }
-                    check(forbidden.isEmpty()) { "Bundled Gecko/X5 files in $apk: ${forbidden.map { it.name }}" }
+                    check(forbidden.isEmpty()) { "Bundled engine files in $apk: ${forbidden.map { it.name }}" }
                     entries.filter { it.name.matches(Regex("classes[0-9]*\\.dex")) }.forEach { entry ->
                         val bytes = archive.getInputStream(entry).use { it.readBytes() }
                         val dex = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
@@ -127,7 +132,7 @@ androidComponents.onVariants { variant ->
                         }
                     }
                 }
-                logger.lifecycle("Verified no bundled GeckoView or X5: ${apk.name}")
+                logger.lifecycle("Verified engine boundaries (retired Gecko/X5, download-only Godot): ${apk.name}")
             }
         }
     }
@@ -237,15 +242,6 @@ val resourcePackDownloadUrls = buildList {
     .filter(String::isNotEmpty)
     .distinct()
 val resourcePackDownloadUrl = resourcePackDownloadUrls.firstOrNull().orEmpty()
-val webRuntimeDownloadUrls = buildList {
-    add(readGradleProperty(
-        "webRuntime.url",
-        readLocalProperty("webRuntime.url").ifEmpty {
-            "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/geckoview-148.0.20260309125808-v1-arm64-v8a.zip"
-        }
-    ))
-    add("https://gitee.com/apricityx/SlayTheAmethystResource/releases/download/v1.1/geckoview-148.0.20260309125808-v1-arm64-v8a.zip")
-}.map(String::trim).filter(String::isNotEmpty).distinct()
 // Hosted pack identity. Keep this aligned with the archive at the download URLs;
 // bumping it forces every player to re-download.
 val resourcePackVersion = readGradleProperty(
@@ -310,12 +306,6 @@ android {
             buildConfigField("String", "GODOT_PROTOTYPE_$field",
                 providers.gradleProperty("godot.prototype.${field.lowercase()}").orElse("").get().toBuildConfigStringLiteral())
         }
-        val webRuntimeSpec = Properties().apply {
-            rootProject.file("web-runtime/runtime.properties").inputStream().use(::load)
-        }
-        buildConfigField("String", "WEB_RUNTIME_VERSION", webRuntimeSpec.getProperty("version").toBuildConfigStringLiteral())
-        buildConfigField("String", "WEB_RUNTIME_SHA256", webRuntimeSpec.getProperty("sha256").toBuildConfigStringLiteral())
-        buildConfigField("String[]", "WEB_RUNTIME_DOWNLOAD_URLS", webRuntimeDownloadUrls.toBuildConfigStringArrayLiteral())
 
         ndk {
             //noinspection ChromeOsAbiSupport

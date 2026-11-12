@@ -69,18 +69,3 @@ test('native failure relinquishes v2 output ownership for safe Web Audio fallbac
   assert.equal(G.audio.diagnosticSnapshot().backend,'web-audio');
   assert.equal(G.audio.diagnosticSnapshot().native.state,'failed');
 });
-
-test('Gecko synchronous facade forwards every bounded audio method',()=>{
-  const calls=[];
-  class XHR {
-    open(method,url,async){calls.push({method,url,async});}
-    setRequestHeader(){}
-    send(body){calls.at(-1).args=JSON.parse(body);this.status=200;this.responseText=JSON.stringify('ok');}
-  }
-  const sandbox={URLSearchParams,XMLHttpRequest:XHR,location:{search:'?geckoLauncher=secret',pathname:'/origin/slingbreak/index.html'},
-    window:{addEventListener(){}},fetch:()=>new Promise(()=>{}),setTimeout};
-  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname,'../../../app/src/main/assets/sling-gecko-launcher-bridge.js'),'utf8'),sandbox);
-  assert.equal(sandbox.window.SlingNativeAudio.playBatch(3,'[]'),'ok');
-  assert.deepEqual(calls[0],{method:'POST',url:'/origin/bridge/secret/audio/playBatch',async:false,args:[3,'[]']});
-  assert.equal(Object.keys(sandbox.window.SlingNativeAudio).length,14);
-});

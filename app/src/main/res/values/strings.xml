@@ -13,13 +13,6 @@
     <string name="save_import_ascension">Ascension %1$s → %2$s</string>
     <string name="save_import_apply">Import · %1$d</string>
     <string name="save_import_run_count">+%1$d / replace %2$d</string>
-    <string name="settings_sling_break_web_preparing_title">Preparing web dependency</string>
-    <string name="settings_sling_break_web_preparing">Preparing GeckoView dependency…</string>
-    <string name="settings_sling_break_web_downloading">Downloading web dependency… %1$d%%</string>
-    <string name="settings_sling_break_web_unpacking">Download complete. Verifying and extracting GeckoView…</string>
-    <string name="settings_sling_break_mode_title">Minigame mode</string>
-    <string name="settings_sling_break_mode_webview">WebView mode</string>
-    <string name="settings_sling_break_mode_compatibility">Compatibility mode</string>
     <string name="settings_sling_break_download_confirmation">Compatibility mode requires downloading dependencies. Download now? (50MB)</string>
     <string name="settings_sling_break_download_yes">Yes</string>
     <string name="settings_sling_break_download_no">No</string>

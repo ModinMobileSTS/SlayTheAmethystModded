@@ -36,7 +36,6 @@ import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconMode
@@ -60,7 +59,6 @@ internal object SettingsRepository {
         val bootOverlayStyle: BootOverlayStyle,
         val bootOverlayAnimation: BootOverlayAnimation,
         val bootOverlayImageConfig: BootOverlayImageConfig,
-        val slingBreakEngineMode: SlingBreakEngineMode,
         val accelerationStrategy: io.stamethyst.backend.network.AccelerationStrategy,
         val localTestCloudControlEnabled: Boolean,
         val steamAchievementDebugModeEnabled: Boolean,
@@ -231,7 +229,6 @@ internal object SettingsRepository {
             bootOverlayStyle = LauncherPreferences.readBootOverlayStyle(context),
             bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
             bootOverlayImageConfig = LauncherPreferences.readBootOverlayImageConfig(context),
-            slingBreakEngineMode = LauncherPreferences.readSlingBreakEngineMode(context),
             accelerationStrategy = LauncherPreferences.readAccelerationStrategy(context),
             localTestCloudControlEnabled = LauncherPreferences.isLocalTestCloudControlEnabled(context),
             steamAchievementDebugModeEnabled = LauncherPreferences.isSteamAchievementDebugModeEnabled(context),
@@ -533,7 +530,6 @@ internal object SettingsRepository {
             LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG
         )
         LauncherPreferences.setSlingBreakAudioDebugModeEnabled(context, false)
-        LauncherPreferences.saveSlingBreakEngineMode(context, SlingBreakEngineMode.WEBVIEW)
         LauncherPreferences.setGlBridgeSwapHeartbeatDebugEnabled(
             context,
             LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG

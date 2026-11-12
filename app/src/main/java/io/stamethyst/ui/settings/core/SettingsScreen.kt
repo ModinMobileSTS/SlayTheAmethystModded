@@ -57,7 +57,7 @@ fun LauncherSettingsScreen(
         message = uiState.slingBreakDownloadMessage,
         failure = uiState.slingBreakDependencyFailure,
         slowDownloadSwitch = uiState.slingBreakSlowDownloadSwitch,
-        onRetry = { viewModel.onSlingBreakEngineModeChanged(activity, uiState.slingBreakEngineMode) },
+        onRetry = { viewModel.onPrepareSlingBreak(activity) },
         onSwitchMirror = viewModel::switchSlingBreakDownloadMirror,
         onDismissFailure = viewModel::dismissSlingBreakDependencyFailure,
     )
@@ -98,8 +98,8 @@ fun LauncherSettingsLauncherScreen(
         onBootOverlayStyleChanged = { style ->
             viewModel.onBootOverlayStyleChanged(activity, style)
         },
-        onSlingBreakEngineModeChanged = { mode ->
-            viewModel.onSlingBreakEngineModeChanged(activity, mode)
+        onPrepareSlingBreak = {
+            viewModel.onPrepareSlingBreak(activity)
         },
         onDismissSlingBreakDependencyFailure = viewModel::dismissSlingBreakDependencyFailure,
         onSwitchSlingBreakDownloadMirror = viewModel::switchSlingBreakDownloadMirror,

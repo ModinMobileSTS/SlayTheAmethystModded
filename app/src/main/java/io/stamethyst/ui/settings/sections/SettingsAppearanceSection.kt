@@ -68,7 +68,6 @@ import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
@@ -86,7 +85,7 @@ internal data class AppearanceSettingsActions(
     val onLauncherIconModeChanged: (LauncherIconMode) -> Unit,
     val onChromeBackgroundOpacityChanged: (Float) -> Unit,
     val onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit,
-    val onSlingBreakEngineModeChanged: (SlingBreakEngineMode) -> Unit,
+    val onPrepareSlingBreak: () -> Unit,
     val onDismissSlingBreakDependencyFailure: () -> Unit,
     val onSwitchSlingBreakDownloadMirror: () -> Unit,
     val onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit,
@@ -221,7 +220,7 @@ internal fun SettingsAppearanceSection(
         SlingBreakDownloadConfirmation(
             onConfirm = {
                 showGodotDownloadConfirmation = false
-                actions.onSlingBreakEngineModeChanged(uiState.slingBreakEngineMode)
+                actions.onPrepareSlingBreak()
             },
             onDismiss = { showGodotDownloadConfirmation = false },
         )

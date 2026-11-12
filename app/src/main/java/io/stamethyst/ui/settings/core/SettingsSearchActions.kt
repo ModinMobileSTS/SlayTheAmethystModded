@@ -48,7 +48,7 @@ internal fun settingsSearchActions(
         onLauncherIconModeChanged = { viewModel.onLauncherIconModeChanged(activity, it) },
         onChromeBackgroundOpacityChanged = { viewModel.onChromeBackgroundOpacityChanged(activity, it) },
         onBootOverlayStyleChanged = { viewModel.onBootOverlayStyleChanged(activity, it) },
-        onSlingBreakEngineModeChanged = { viewModel.onSlingBreakEngineModeChanged(activity, it) },
+        onPrepareSlingBreak = { viewModel.onPrepareSlingBreak(activity) },
         onDismissSlingBreakDependencyFailure = viewModel::dismissSlingBreakDependencyFailure,
         onSwitchSlingBreakDownloadMirror = viewModel::switchSlingBreakDownloadMirror,
         onBootOverlayAnimationChanged = { viewModel.onBootOverlayAnimationChanged(activity, it) },

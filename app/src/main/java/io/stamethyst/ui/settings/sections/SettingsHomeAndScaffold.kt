@@ -52,7 +52,6 @@ import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
@@ -334,7 +333,7 @@ internal fun LauncherSettingsLauncherScreenContent(
     onLauncherIconModeChanged: (LauncherIconMode) -> Unit = {},
     onChromeBackgroundOpacityChanged: (Float) -> Unit = {},
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit = {},
-    onSlingBreakEngineModeChanged: (SlingBreakEngineMode) -> Unit = {},
+    onPrepareSlingBreak: () -> Unit = {},
     onDismissSlingBreakDependencyFailure: () -> Unit = {},
     onSwitchSlingBreakDownloadMirror: () -> Unit = {},
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit = {},
@@ -378,7 +377,7 @@ internal fun LauncherSettingsLauncherScreenContent(
                         onLauncherIconModeChanged = onLauncherIconModeChanged,
                         onChromeBackgroundOpacityChanged = onChromeBackgroundOpacityChanged,
                         onBootOverlayStyleChanged = onBootOverlayStyleChanged,
-                        onSlingBreakEngineModeChanged = onSlingBreakEngineModeChanged,
+                        onPrepareSlingBreak = onPrepareSlingBreak,
                         onDismissSlingBreakDependencyFailure = onDismissSlingBreakDependencyFailure,
                         onSwitchSlingBreakDownloadMirror = onSwitchSlingBreakDownloadMirror,
                         onBootOverlayAnimationChanged = onBootOverlayAnimationChanged,
@@ -423,7 +422,7 @@ internal fun LauncherSettingsLauncherScreenContent(
         message = uiState.slingBreakDownloadMessage,
         failure = uiState.slingBreakDependencyFailure,
         slowDownloadSwitch = uiState.slingBreakSlowDownloadSwitch,
-        onRetry = { onSlingBreakEngineModeChanged(uiState.slingBreakEngineMode) },
+        onRetry = onPrepareSlingBreak,
         onSwitchMirror = onSwitchSlingBreakDownloadMirror,
         onDismissFailure = onDismissSlingBreakDependencyFailure,
     )

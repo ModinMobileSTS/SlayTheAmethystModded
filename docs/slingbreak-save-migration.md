@@ -15,6 +15,7 @@
 
 - 旧 WebView 的 `slingbreak-save-v1` 通过 `LegacySlingBreakSaveService` 在原所属进程中读取：启动器默认进程对应 `app_webview`，`:game` 对应 `app_webview_game`。只加载原 `file:///android_asset/slingbreak/index.html` origin 下的空白 HTML，不运行旧游戏、不删除或修改 localStorage，不直接复制或解析正在使用的 LevelDB。
 - 旧 Gecko 兼容模式通过 `LegacyGeckoSlingBreakSave` 只读查询 `files/mozilla/*/storage/default/http+++127.0.0.1+<port>/ls/data.sqlite` 的同名键，支持 Mozilla LSValue UTF-8 / UTF-16LE 和有界 raw Snappy 解码。不加载或下载 Gecko 引擎，不迁移主题或其他站点数据。
+- Gecko 引擎模块、服务声明和下载/桥接代码已移除；本迁移器仅依赖 Android SQLite 和 Java 解码，不依赖 Mozilla SDK。不得把旧存档目录或迁移器当作废弃引擎缓存自动删除。
 - 单份 Web JSON 最大 256 Ki 个 UTF-16 code units。损坏、超限或读取失败的数据不会删除；读取错误写入 `SlingBreakMigration` 日志，下次可重新检测。
 - `LegacySlingBreakProgress` 将旧状态校验并包装成 `slingbreak-progress` version 1，保留关卡、金币、升级、战场伤害、障碍、技能选择、成就及音量。缺失的新升级字段补零，最早累积多级技能转为新版的单级技能。新版自身的技能等级门槛和槽位规则仍生效。
 - 适配器支持旧 Web v1 状态，不猜测转换原生专属的 `nativeBoss` 或 `board.variant` 规则数据；遇到不支持的格式会明确迁移失败，不写完成标记，不静默丢弃这些字段。
