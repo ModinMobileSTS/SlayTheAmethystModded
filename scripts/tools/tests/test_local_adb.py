@@ -101,6 +101,86 @@ class LocalAdbTests(unittest.TestCase):
                 self.assertIn("16037", call.args[0])
                 self.assertNotIn("5037", call.args[0])
 
+    def test_shell_probe_reconnects_stale_wireless_transport_once(self):
+        self.write_config()
+        state = {"identity": adb.identity(self.c), "adbPid": 123, "connectorPort": 23456}
+        results = []
+        shell_results = iter([False, True])
+
+        def run(command, **kwargs):
+            results.append(command)
+            result = type("Result", (), {})()
+            result.returncode = 0
+            result.stdout = "device\n"
+            if command[-2:] == ["shell", "true"]:
+                result.returncode = 0 if next(shell_results) else 1
+            return result
+
+        with patch.object(adb, "read_state", return_value=state), \
+             patch.object(adb, "listening", return_value=True), \
+             patch.object(adb, "server_owned", return_value=True), \
+             patch.object(adb, "connector_owned", return_value=True), \
+             patch.object(adb.subprocess, "Popen") as popen, \
+             patch.object(adb.subprocess, "run", side_effect=run):
+            env = adb.ensure()
+
+        self.assertEqual(env["STS_CONNECTOR_PORT"], "23456")
+        popen.assert_not_called()
+        self.assertEqual(sum(command[5:6] == ["disconnect"] for command in results), 1)
+        self.assertEqual(sum(command[5:6] == ["connect"] for command in results), 2)
+
+    def test_shell_probe_failure_after_reconnect_does_not_start_connector(self):
+        self.write_config()
+        state = {"identity": adb.identity(self.c), "adbPid": 123}
+        shell_results = iter([False, False])
+
+        def run(command, **kwargs):
+            result = type("Result", (), {})()
+            result.returncode = 0
+            result.stdout = "device\n"
+            if command[-2:] == ["shell", "true"]:
+                result.returncode = 0 if next(shell_results) else 1
+            return result
+
+        with patch.object(adb, "read_state", return_value=state), \
+             patch.object(adb, "listening", return_value=True), \
+             patch.object(adb, "server_owned", return_value=True), \
+             patch.object(adb, "connector_owned", return_value=False), \
+             patch.object(adb, "write_state") as write_state, \
+             patch.object(adb.subprocess, "run", side_effect=run), \
+             patch.object(adb.subprocess, "Popen") as popen:
+            with self.assertRaisesRegex(RuntimeError, "shell is not responding"):
+                adb.ensure()
+
+        popen.assert_not_called()
+        write_state.assert_not_called()
+
+    def test_offline_transport_is_reconnected_once_before_failing_or_starting_connector(self):
+        self.write_config()
+        state = {"identity": adb.identity(self.c), "adbPid": 123, "connectorPort": 23456}
+        get_states = iter(["offline\n", "device\n"])
+        commands = []
+
+        def run(command, **kwargs):
+            commands.append(command)
+            result = type("Result", (), {})()
+            result.returncode = 0
+            result.stdout = "device\n"
+            if command[-1:] == ["get-state"]:
+                result.stdout = next(get_states)
+            return result
+
+        with patch.object(adb, "read_state", return_value=state), \
+             patch.object(adb, "listening", return_value=True), \
+             patch.object(adb, "server_owned", return_value=True), \
+             patch.object(adb, "connector_owned", return_value=True), \
+             patch.object(adb.subprocess, "run", side_effect=run):
+            env = adb.ensure()
+
+        self.assertEqual(env["STS_CONNECTOR_PORT"], "23456")
+        self.assertEqual(sum(command[5:6] == ["disconnect"] for command in commands), 1)
+        self.assertEqual(sum(command[5:6] == ["connect"] for command in commands), 2)
+
     def test_offline_device_does_not_start_connector(self):
         self.write_config()
         state = {"identity": adb.identity(self.c), "adbPid": 123}

@@ -133,6 +133,29 @@ def connector_owned(state: dict, c: dict[str, str]) -> bool:
         return False
 
 
+def device_shell_ready(c: dict[str, str], env: dict[str, str]) -> bool:
+    try:
+        result = subprocess.run(
+            command(c, "-s", c["STS_ADB_DEVICE_ENDPOINT"], "shell", "true"),
+            env=env,
+            check=False,
+            capture_output=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return result.returncode == 0
+
+
+def reconnect_device(c: dict[str, str], env: dict[str, str]) -> subprocess.CompletedProcess:
+    subprocess.run(command(c, "disconnect", c["STS_ADB_DEVICE_ENDPOINT"]),
+                   env=env, check=False, capture_output=True, timeout=5)
+    subprocess.run(command(c, "connect", c["STS_ADB_DEVICE_ENDPOINT"]), env=env,
+                   check=True, capture_output=True, timeout=15)
+    return subprocess.run(command(c, "-s", c["STS_ADB_DEVICE_ENDPOINT"], "get-state"),
+                          env=env, capture_output=True, text=True, timeout=10)
+
+
 def ensure() -> dict[str, str]:
     c = config()
     env = environment(c)
@@ -163,7 +186,14 @@ def ensure() -> dict[str, str]:
         result = subprocess.run(command(c, "-s", c["STS_ADB_DEVICE_ENDPOINT"], "get-state"),
                                 env=env, capture_output=True, text=True, timeout=10)
         if result.returncode or result.stdout.strip() != "device":
-            raise RuntimeError("Configured wireless device is not online/authorized; check its connection port and pairing")
+            result = reconnect_device(c, env)
+            if result.returncode or result.stdout.strip() != "device":
+                raise RuntimeError("Configured wireless device is not online/authorized; check its connection port and pairing")
+        if not device_shell_ready(c, env):
+            result = reconnect_device(c, env)
+            if (result.returncode or result.stdout.strip() != "device"
+                    or not device_shell_ready(c, env)):
+                raise RuntimeError("Configured wireless device shell is not responding; check the device connection")
         if not connector_owned(state, c):
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
