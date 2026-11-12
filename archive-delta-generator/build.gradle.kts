@@ -23,7 +23,7 @@ tasks.register<Test>("corpusTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/LocalArchiveCorpusTest.class")
-    systemProperty("archiveDelta.corpus", rootProject.file("jar-delta/test-corpus/base.jar").absolutePath)
+    systemProperty("archiveDelta.corpus", layout.projectDirectory.file("test-corpus/base.jar").asFile.absolutePath)
     doFirst {
         val temporary = rootProject.file("agent-tmp/archive-delta-corpus-tests")
         temporary.mkdirs()

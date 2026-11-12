@@ -7,7 +7,7 @@ import java.nio.file.Path
 @Serializable
 data class FileIdentity(val size: Long, val sha256: String)
 
-/** Separate namespace from the experimental jar-delta manifest. */
+/** Manifest for the exact-byte archive delta package. */
 @Serializable
 data class ArchivePackageManifest(
     val format: String = "stamethyst-archive-delta",

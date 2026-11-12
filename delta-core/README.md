@@ -31,6 +31,6 @@ Delta Core 未来以 `Task` 的具体类型接入 Manager；宿主不会直接�
 WorkerGroup 并行上限约束。恢复须核对已存在候选与提交结果，不能无条件重放转换。
 Core 子类真正落地前需要抽取共享 Task API 或在 Manager 内适配，避免反向依赖形成循环；
 当前不实现增量 Task 或撤销协议。
-现有 `jar-delta`、`archive-delta-core` 和 `archive-delta-generator` 仍是独立实验，
+现有 `archive-delta-core` 和 `archive-delta-generator` 仍是独立实验，
 本模块未直接依赖它们，也不将其单写者等限制视作已解决。
 构建入口：`./gradlew --offline :delta-core:build`，目前只能验证模块配置。

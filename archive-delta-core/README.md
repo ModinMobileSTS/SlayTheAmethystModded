@@ -27,7 +27,7 @@ ZIP **恰好**包含：
 
 三个 SHA-256 均针对实际文件字节；payload 针对压缩后的字节。输出目标验证为**完整文件**，不是条目逻辑摘要。SHA-256 不是发布者认证，不提供签名信任。
 
-此格式与 `jar-delta` 的实验条目 v1 格式不同，不自动检测或迁移；调用显式 `ArchiveDeltaAdapter`。Steam manifest/chunk 组装可以独立生成候选文件，不塞进 GFbFv1_0 或本 manifest。
+调用方直接使用 `ArchivePackages.inspect` / `ArchivePackages.buildCandidate`。Steam manifest/chunk 组装可以独立生成候选文件，不塞进 GFbFv1_0 或本 manifest。
 
 `NativePatch`、`ArchiveIO` 为跨模块基础设施，调用方应优先使用高层封装。底层 apply 的 output/work 必须是调用方拥有的独占临时路径。上游 Java 入口不是有预算的安全 API。
 

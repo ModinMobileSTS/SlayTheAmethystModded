@@ -110,4 +110,4 @@ scripts/tools/arthas/resource/jdk-companion/
 /test.md
 
 # Local third-party JAR corpus; never redistribute downloaded Workshop files.
-/jar-delta/test-corpus/
+/archive-delta-generator/test-corpus/

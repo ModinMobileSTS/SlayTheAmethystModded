@@ -49,12 +49,14 @@ Deflate 兼容窗口在生成和应用入口检查；当前仅 JVM 21 验证，�
 ## 验证
 
 ```bash
-./gradlew :archive-delta-core:build :archive-delta-generator:build :jar-delta:build --offline --console=plain
+./gradlew :archive-delta-core:build :archive-delta-generator:build --offline --console=plain
 ./gradlew :archive-delta-generator:corpusTest --offline --console=plain
 ```
 
 普通测试使用独立构建的 ZIP 和完整字节 oracle，覆盖 STORE/DEFLATE、增删改、元数据、空条目、8组固定种子输入、限制、取消、输入变化、错误基础、损坏封装及不覆盖输出。原版生成的 synthetic golden 补丁保存在测试资源，附来源；还测试新生成补丁经 legacy 应用链还原。
 
-显式 corpusTest 使用已有且忽略的 `jar-delta/test-corpus/base.jar`，不存在则失败，不下载文件。选择条目只按名称排序，无模组类名或兼容逻辑；结果不是可玩修复。不会提交第三方 JAR。单一样本不证明性能优势。
+显式 corpusTest 使用已有且忽略的 `archive-delta-generator/test-corpus/base.jar`，不存在则失败，不下载文件。选择条目只按名称排序，无模组类名或兼容逻辑；结果不是可玩修复。不会提交第三方 JAR。单一样本不证明性能优势。
+
+本地样本目录整体被 `.gitignore` 排除，可保留 `source.txt` 记录来源、下载时间、摘要和文件大小。现有样本来自 Steam Workshop 的 SuperFastMode（Workshop ID `1612867189`，游戏 App ID `646570`）；下载文件仅作为通用 JAR 数据集，不提交或分发。
 
 本轮没有做设备、HTTP 服务、原子安装/历史恢复接入、资源耗尽压力测试或全量模糊测试。

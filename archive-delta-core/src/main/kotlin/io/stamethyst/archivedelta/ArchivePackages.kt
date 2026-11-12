@@ -11,7 +11,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
-/** v1 ZIP envelope: exactly manifest.json and payload.deflate. Not jar-delta's entry format. */
+/** v1 ZIP envelope: exactly manifest.json and payload.deflate. */
 object ArchivePackages {
     private val json = Json { ignoreUnknownKeys = false; encodeDefaults = true }
     private const val MANIFEST_LIMIT = 16384L
