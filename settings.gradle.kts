@@ -46,3 +46,7 @@ include(":jar-delta")
 // Offline archive delta tools; deliberately not app dependencies.
 include(":archive-delta-core")
 include(":archive-delta-generator")
+// Isolated IO architecture scaffolds; deliberately not app dependencies yet.
+include(":io-task-manager")
+include(":download-core")
+include(":delta-core")
