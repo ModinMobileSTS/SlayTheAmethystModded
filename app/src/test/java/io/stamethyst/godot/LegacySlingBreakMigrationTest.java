@@ -55,6 +55,22 @@ public class LegacySlingBreakMigrationTest {
             assertEquals("previous-native-save", new String(Files.readAllBytes(new File(backups[0], "native-progress.json").toPath()), StandardCharsets.UTF_8));
         } finally { clean(root); }
     }
+    @Test public void decodedGeckoSaveMigratesWithoutChangingOriginalData() throws Exception {
+        byte[] encoded = WEB.getBytes(StandardCharsets.UTF_16LE);
+        byte[] original = encoded.clone();
+        String decoded = LegacyGeckoSlingBreakSave.decode(encoded, WEB.length(), 0, 0);
+        File root = Files.createTempDirectory("legacy-gecko-progress-test").toFile();
+        try {
+            LegacySlingBreakMigrationStore store = new LegacySlingBreakMigrationStore(root);
+            store.migrate(decoded);
+            assertTrue(store.completed());
+            JSONObject state = new JSONObject(new String(Files.readAllBytes(store.progress().toPath()),
+                StandardCharsets.UTF_8)).getJSONObject("state");
+            assertEquals(12, state.getInt("level"));
+            assertEquals(321.5, state.getDouble("coins"), 0);
+            assertArrayEquals(original, encoded);
+        } finally { clean(root); }
+    }
     @Test public void failedConversionDoesNotTouchNativeSaveOrMarkCompletion() throws Exception {
         File root = Files.createTempDirectory("legacy-progress-test").toFile();
         try {
