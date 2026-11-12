@@ -9,6 +9,46 @@ import android.view.Window
 
 /** Coordinates the display-rate request and the live value shown by the launcher. */
 internal object DisplayRefreshRatePolicy {
+    internal data class ModeCandidate(val id: Int, val width: Int, val height: Int, val rateHz: Float)
+
+    /** Never change resolution merely because another resolution lists a faster mode first. */
+    internal fun highestModeAtCurrentResolution(
+        current: ModeCandidate?,
+        supported: List<ModeCandidate>,
+    ): ModeCandidate? {
+        if (current == null || current.width <= 0 || current.height <= 0) return null
+        return supported.asSequence()
+            .filter { it.id > 0 && it.width == current.width && it.height == current.height }
+            .filter { it.rateHz.isFinite() && it.rateHz > 0f }
+            .maxWithOrNull(compareBy<ModeCandidate> { it.rateHz }.thenBy { it.id == current.id })
+    }
+
+    internal fun highestModeAtCurrentResolution(display: Display): Display.Mode? {
+        val modes = display.supportedModes.orEmpty()
+        fun Display.Mode.candidate() = ModeCandidate(modeId, physicalWidth, physicalHeight, refreshRate)
+        val selected = highestModeAtCurrentResolution(display.mode?.candidate(), modes.map { it.candidate() })
+        return modes.firstOrNull { it.modeId == selected?.id }
+    }
+
+    /** Shared by production and diagnostics; callers decide whether to persist request metadata. */
+    internal fun applySurfaceFrameRate(surface: Surface, rateHz: Float) {
+        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { "Surface.setFrameRate requires API 30" }
+        check(surface.isValid) { "Display Surface unavailable" }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            surface.setFrameRate(rateHz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT, Surface.CHANGE_FRAME_RATE_ALWAYS)
+        } else {
+            surface.setFrameRate(rateHz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
+        }
+    }
+
+    internal fun applyWindowMode(window: Window, mode: Display.Mode) {
+        val attributes = window.attributes
+        if (attributes.preferredDisplayModeId != mode.modeId) {
+            attributes.preferredDisplayModeId = mode.modeId
+            window.attributes = attributes
+        }
+    }
+
     private const val PREFERENCES_NAME = "display_refresh_rate"
     private const val REQUESTED_REFRESH_RATE_KEY = "requested_refresh_rate_hz"
 
@@ -45,16 +85,7 @@ internal object DisplayRefreshRatePolicy {
         val highestRate = highestSupportedRefreshRateHz(display)
         if (highestRate <= 0f) return 0f
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                surface.setFrameRate(
-                    highestRate,
-                    Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
-                    Surface.CHANGE_FRAME_RATE_ALWAYS,
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                surface.setFrameRate(highestRate, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
-            }
+            applySurfaceFrameRate(surface, highestRate)
         } catch (_: Throwable) {
             return 0f
         }
@@ -66,30 +97,22 @@ internal object DisplayRefreshRatePolicy {
         return highestRate
     }
 
-    /** Requests the highest display mode for the Activity's own window. */
+    /** Requests the highest mode at the window display's current resolution. */
     fun requestHighestRefreshRate(context: Context, window: Window): Float {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return 0f
-        val display = resolveDefaultDisplay(context.applicationContext) ?: return 0f
-        val mode = display.supportedModes
-            ?.asSequence()
-            ?.filter { it.refreshRate > 0f && !it.refreshRate.isNaN() }
-            ?.maxByOrNull { it.refreshRate }
-            ?: return 0f
         try {
-            val attributes = window.attributes
-            if (attributes.preferredDisplayModeId != mode.modeId) {
-                attributes.preferredDisplayModeId = mode.modeId
-                window.attributes = attributes
-            }
+            val display = window.decorView.display ?: resolveDefaultDisplay(context.applicationContext) ?: return 0f
+            val mode = highestModeAtCurrentResolution(display) ?: return 0f
+            applyWindowMode(window, mode)
+            context.applicationContext
+                .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putFloat(REQUESTED_REFRESH_RATE_KEY, mode.refreshRate)
+                .apply()
+            return mode.refreshRate
         } catch (_: Throwable) {
             return 0f
         }
-        context.applicationContext
-            .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putFloat(REQUESTED_REFRESH_RATE_KEY, mode.refreshRate)
-            .apply()
-        return mode.refreshRate
     }
 
     internal fun highestSupportedRefreshRateHz(display: Display?): Float {
