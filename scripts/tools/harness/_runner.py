@@ -11,6 +11,7 @@ from scripts.tools.lib.sts_harness import (
     utc_timestamp,
 )
 from scripts.tools.harness._context import HarnessContext
+from scripts.tools.lib.device_safety import require_explicit_device
 
 
 @dataclass
@@ -106,8 +107,12 @@ def adb(
     capture: str = "text",
     local_path: str = "",
 ) -> CommandResult:
-    connector = _require_connector(ctx)
     args = [str(a) for a in arguments]
+    if args and (args[0].startswith("install") or args[0] == "uninstall"):
+        serial = require_explicit_device(ctx.options.device_serial)
+        if serial != ctx.resolved_device_serial:
+            raise RuntimeError("Selected device does not match the explicit package-operation target.")
+    connector = _require_connector(ctx)
     started = datetime.now(timezone.utc)
     timed_out = False
     exit_code = 0

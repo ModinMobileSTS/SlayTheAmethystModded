@@ -146,7 +146,8 @@ internal fun CommunityPatchesScreen(
             LauncherTopAppBar(
                 title = {
                     Text(
-                        marketViewModel?.state?.summary?.title ?: selected?.name ?: stringResource(R.string.community_patches_title),
+                        selected?.let { marketViewModel?.stateFor(it)?.summary?.title ?: it.name }
+                            ?: stringResource(R.string.community_patches_title),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -443,19 +444,23 @@ private fun CommunityPatchThumbnail(workshopId: ULong?, service: WorkshopService
     LaunchedEffect(workshopId) {
         if (workshopId == null) return@LaunchedEffect
         try {
-            bitmap = withContext(Dispatchers.IO) {
-                WorkshopPreviewCacheStore.decodeCached(context, workshopId)
-                    ?: communityPreviewRequests.withPermit {
-                        val details = service.getDetails(
-                            appId = 646570u,
-                            publishedFileId = workshopId,
-                            includeCommunityData = false,
-                            includeDependencyData = false,
-                        )
-                        val url = details.summary.previewUrl
-                        if (url.isBlank()) null
-                        else WorkshopPreviewCacheStore.load(context, workshopId, url)
-                    }
+            bitmap = withContext(Dispatchers.IO) { WorkshopPreviewCacheStore.decodeCached(context, workshopId) }
+            if (bitmap != null) loading = false
+            // Even a cached image needs its API summary retained for the detail card.
+            val summary = CommunityPatchSummaryStore.shared.load(646570u, workshopId) {
+                communityPreviewRequests.withPermit {
+                    service.getDetails(
+                        appId = 646570u,
+                        publishedFileId = workshopId,
+                        includeCommunityData = false,
+                        includeDependencyData = false,
+                    ).summary
+                }
+            }
+            if (bitmap == null && summary.previewUrl.isNotBlank()) {
+                bitmap = withContext(Dispatchers.IO) {
+                    WorkshopPreviewCacheStore.load(context, workshopId, summary.previewUrl)
+                }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled

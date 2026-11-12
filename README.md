@@ -124,17 +124,13 @@ python3 scripts/build/main.py doctor
 .\gradlew.bat :app:assembleDebug
 ```
 
-在 Linux/macOS 或 Git Bash 中，也可以直接打包并安装到已连接的 Android 设备：
-
-```bash
-./scripts/build-debug-install.sh
-```
-
-连接了多台设备时，传入目标设备序列号：
+在 Linux/macOS 或 Git Bash 中，如已明确授权安装到某台 Android 设备，必须传入该设备的具体序列号（即使只有一台设备在线也不能省略）：
 
 ```bash
 ./scripts/build-debug-install.sh <设备序列号>
 ```
+
+不指定设备或指定 `auto` 会直接拒绝，不自动选择设备。真机测试不会自动安装应用；会自动部署/卸载的 Gradle connected、托管设备测试任务已禁用，默认只做本地编译和 JVM/mock 测试。设备安全要求见 `AGENTS.md`。
 
 ### 4. 构建签名发布版 APK
 

@@ -44,12 +44,10 @@ Compile without a device:
 ./gradlew :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin
 ```
 
-Run on a connected test device:
-
-```bash
-./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=io.stamethyst.ui.LauncherDialogScrollInstrumentedTest
-```
+Automatic connected/managed-device tests are disabled: AGP/UTP can install and
+then uninstall the main app. The command above compiles tests locally only.
+Device checks require an explicitly user-approved target and an already installed
+test build; installation/uninstallation needs separate authorization (see `AGENTS.md`).
 
 Also manually check actual landscape rotation and the device IME, especially AI
 patch upload/rename and room-password/kick-message forms. The small-height fixture

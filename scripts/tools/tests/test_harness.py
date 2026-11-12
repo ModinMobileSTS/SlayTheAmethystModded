@@ -67,10 +67,22 @@ class TestHarnessOrchestrator(unittest.TestCase):
         orch = HarnessOrchestrator(
             connector=self.mock_conn,
             application_id="io.stamethyst.debug",
+            device_serial="approved-test-device",
         )
         orch.build_and_install("/tmp/app-debug.apk")
+        self.mock_conn.select.assert_called_once_with("approved-test-device")
         self.mock_conn.install.assert_called_once_with(
             "/tmp/app-debug.apk", replace=True, timeout_ms=180000)
+
+    def test_install_rejects_automatic_device(self):
+        from scripts.tools.harness.orchestrator import HarnessOrchestrator
+        for serial in (None, "", "auto"):
+            with self.subTest(serial=serial):
+                orch = HarnessOrchestrator(self.mock_conn, "io.stamethyst.debug", serial)
+                with self.assertRaisesRegex(RuntimeError, "explicit device"):
+                    orch.build_and_install("/fake/app-debug.apk")
+        self.mock_conn.select.assert_not_called()
+        self.mock_conn.install.assert_not_called()
 
 
 if __name__ == "__main__":

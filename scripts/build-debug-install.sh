@@ -8,6 +8,14 @@ GRADLE_BIN="${GRADLE_BIN:-$PROJECT_DIR/gradlew}"
 ADB_BIN="${ADB_BIN:-adb}"
 DEVICE_SERIAL="${1:-}"
 
+case "$DEVICE_SERIAL" in
+    ""|[aA][uU][tT][oO]|[dD][eE][fF][aA][uU][lL][tT]|[aA][lL][lL]|\*|-*|*[[:space:]]*)
+        printf 'An explicit, user-approved device serial is required; automatic selection is forbidden.\n' >&2
+        printf 'Usage: %s <device-serial>\n' "$0" >&2
+        exit 1
+        ;;
+esac
+
 if [[ ! -x "$GRADLE_BIN" ]]; then
     printf 'Gradle wrapper is not executable: %s\n' "$GRADLE_BIN" >&2
     printf 'Run: chmod +x %q\n' "$GRADLE_BIN" >&2
@@ -19,23 +27,7 @@ if ! command -v "$ADB_BIN" >/dev/null 2>&1; then
     exit 1
 fi
 
-adb_args=()
-if [[ -n "$DEVICE_SERIAL" ]]; then
-    adb_args=(-s "$DEVICE_SERIAL")
-else
-    connected_devices=()
-    while IFS= read -r device; do
-        connected_devices+=("$device")
-    done < <("$ADB_BIN" devices | awk 'NR > 1 && $2 == "device" { print $1 }')
-    if [[ "${#connected_devices[@]}" -ne 1 ]]; then
-        printf 'Expected exactly one authorized adb device, found %s.\n' "${#connected_devices[@]}" >&2
-        printf 'Connected devices:\n' >&2
-        "$ADB_BIN" devices >&2
-        printf 'Usage with multiple devices: %s <device-serial>\n' "$0" >&2
-        exit 1
-    fi
-    adb_args=(-s "${connected_devices[0]}")
-fi
+adb_args=(-s "$DEVICE_SERIAL")
 
 printf 'Building debug APK...\n'
 (
@@ -56,4 +48,4 @@ fi
 APK_PATH="${apk_files[0]}"
 printf 'Installing %s...\n' "$APK_PATH"
 "$ADB_BIN" "${adb_args[@]}" install --fastdeploy -r "$APK_PATH"
-printf 'Debug APK installed successfully on %s.\n' "${DEVICE_SERIAL:-${connected_devices[0]}}"
+printf 'Debug APK installed successfully on %s.\n' "$DEVICE_SERIAL"

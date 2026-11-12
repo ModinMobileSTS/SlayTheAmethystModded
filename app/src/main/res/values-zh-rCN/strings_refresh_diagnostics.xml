@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="refresh_diagnostics_title">刷新率诊断</string>
+    <string name="refresh_diagnostics_description">运行约 20 秒的窗口与 Surface 测试，查看并导出详细报告</string>
+    <string name="refresh_diagnostics_latest">查看上次刷新率报告</string>
+    <string name="refresh_diagnostics_running_scope">请保持此页面在前台。测试动画会依次检查回调时序、窗口模式请求、SurfaceView 和 TextureView。切到后台或取消将停止测试并保留部分报告，不修改系统设置。</string>
+    <string name="refresh_diagnostics_scope">测量范围：这是启动器进程中的独立诊断 Activity，并非首页窗口或游戏 Activity；使用 Android View/Canvas，不启动游戏 JVM、EGL 渲染器或 Swappy。应用读取的 Hz、系统显示模式 Hz 和回调频率是不同指标。回调数、绘制数不是实际呈现 FPS 或物理面板刷新率。设置接口返回只代表请求已提交，不代表系统接受。本应用无法读取特权显示策略转储，也无法获知确定的厂商拒绝原因。</string>
+    <string name="refresh_diagnostics_next_steps">判读：逐阶段比较。请求已提交后，应用读取值仍低于目标，可能涉及系统策略或请求路径差异，本报告不能直接确定是哪一种；读取值达到目标而回调偏慢，应继续检查调度及渲染负载，不能直接认定屏幕物理上只有 60 Hz。这里的游戏设置仅为持久化配置，并非运行时测量。未能定位时，需在首页持续滑动和游戏动画场景分别采集指定设备的只读 display/window/SurfaceFlinger/game/power/thermal 转储及系统日志。慢间隔指超过目标回调周期 1.5 倍，不等于已证实丢帧。温控等级采用 Android 的 0–6 数值；电池温度单位为 0.1℃。分享前请检查固件标识和配置信息。测试后恢复窗口偏好和常亮标志，不修改设备设置或游戏配置。</string>
+    <string name="refresh_diagnostics_phase_baseline">1/5 · 默认窗口与动画</string>
+    <string name="refresh_diagnostics_phase_mode">2/5 · 当前分辨率下最高刷新率模式</string>
+    <string name="refresh_diagnostics_phase_window">3/5 · 窗口申请 120 Hz</string>
+    <string name="refresh_diagnostics_phase_surface">4/5 · SurfaceView 申请 120 Hz</string>
+    <string name="refresh_diagnostics_phase_texture">5/5 · TextureView 与窗口申请 120 Hz</string>
+    <string name="refresh_diagnostics_observed">已观测到目标应用刷新率及接近目标的回调频率；不代表物理面板测量</string>
+    <string name="refresh_diagnostics_callbacks_slow">应用读取值达到目标，但帧回调频率偏低</string>
+    <string name="refresh_diagnostics_below">采样期间未观测到目标应用刷新率，原因待进一步确认</string>
+    <string name="refresh_diagnostics_variable">应用刷新率仅在部分采样中达到目标</string>
+    <string name="refresh_diagnostics_request_failed">请求未能提交，详见异常记录</string>
+    <string name="refresh_diagnostics_insufficient">采样不足或发生绘制错误，无法可靠判断</string>
+    <string name="refresh_diagnostics_interrupted">测试中断，仅保留部分结果</string>
+    <string name="refresh_diagnostics_retry">重新测试</string>
+    <string name="refresh_diagnostics_export">导出报告 ZIP</string>
+    <string name="refresh_diagnostics_exported">报告已导出（report.txt + report.json）</string>
+    <string name="refresh_diagnostics_export_failed">导出失败：%1$s</string>
+    <string name="refresh_diagnostics_save_failed">无法保存最近报告：%1$s。仍可导出当前报告。</string>
+    <string name="refresh_diagnostics_no_report">暂无已保存的报告，点击“重新测试”开始诊断。</string>
+</resources>

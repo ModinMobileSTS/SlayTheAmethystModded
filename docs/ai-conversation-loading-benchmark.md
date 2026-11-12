@@ -18,13 +18,13 @@
 
 ## Android 实际存储读取测试
 
-连接设备后运行（会安装 debug 应用及测试 APK）：
+本地只编译 Android 测试，不自动部署到设备：
 
 ```sh
-./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=io.stamethyst.ui.aimod.AiConversationLoadingCostInstrumentedTest \
-  -Pandroid.testInstrumentationRunnerArguments.aiLoadingBenchmark=true
+./gradlew :app:compileDebugAndroidTestKotlin
 ```
+
+会自动安装/卸载应用的 connected/托管设备测试已禁用。需要执行 `AiConversationLoadingCostInstrumentedTest` 时，必须明确指定并授权设备，使用已安装的测试构建，并传入 `aiLoadingBenchmark=true`；安装/卸载另需授权，禁止隐式执行（见 `AGENTS.md`）。
 
 使用独立缓存目录，不读写用户对话；每组结束清理测试数据库。测量同样的历史数量和回答长度，输出数据库文件总字节数、首次读取、9 次重复读取的中位数/P90、摘要读取及最近 3 条消息的行准备中位数。写入和造数不计时。每次重新构造 store，但**不清除操作系统页缓存**，首次读取也不是设备冷启动。
 

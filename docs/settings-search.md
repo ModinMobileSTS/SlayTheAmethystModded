@@ -33,12 +33,7 @@
   --tests 'io.stamethyst.backend.llm.LlmReasoningEffortTest'
 ```
 
-设备连接正常后执行：
-
-```sh
-./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=io.stamethyst.ui.settings.SettingsSearchInstrumentedTest,io.stamethyst.ui.settings.SettingsDependencyLoadingInstrumentedTest
-```
+已禁用会自动安装/卸载应用的 connected/托管设备测试。上方命令只编译 Android 测试并运行本地 JVM 测试；设备验收必须明确指定并授权目标设备，使用已安装的测试构建，安装/卸载另需授权（见 `AGENTS.md`）。
 
 搜索界面测试使用替代保存回调和专用内容槽，避免修改真实凭据或触发文件操作。另需在设备上手测专用编辑器、长结果滚动、横屏/键盘、开发者和 MobileGlues 警告，以及搜索编辑后返回分类页的值同步。界面测试编译通过不等于设备验收通过。
 

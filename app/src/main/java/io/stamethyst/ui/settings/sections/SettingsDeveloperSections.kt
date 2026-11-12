@@ -1212,6 +1212,11 @@ internal fun SettingsStatusSection(
 
     SettingsStatusDialogActions(uiState, settingTitleResId)
 
+    if (settingTitleResId == null || settingTitleResId == R.string.refresh_diagnostics_title ||
+        settingTitleResId == R.string.refresh_diagnostics_latest) {
+        RefreshRateDiagnosticsSetting(uiState, settingTitleResId)
+    }
+
     if (settingTitleResId == null || settingTitleResId == R.string.settings_agent_workspace_export_title) SettingsActionListItem(
         title = stringResource(R.string.settings_agent_workspace_export_title),
         supportingText = stringResource(R.string.settings_agent_workspace_export_desc),

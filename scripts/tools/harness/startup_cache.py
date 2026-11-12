@@ -23,7 +23,6 @@ from scripts.tools.harness._status import (
     update_status_harness_logcat,
     wait_harness_status,
 )
-from scripts.tools.harness.install import run_install
 from scripts.tools.harness.run import run_start, run_stop
 
 
@@ -175,8 +174,6 @@ def run_startup_cache_profile(ctx: HarnessContext, resolved_out_dir: Path) -> in
     if ctx.options.launch_mode == "vanilla":
         raise RuntimeError("startup-cache-profile requires -LaunchMode mts or mts_basemod.")
     hit_runs = max(0, int(ctx.options.cache_hit_runs))
-    if not ctx.options.skip_install:
-        run_install(ctx)
     phases: list[tuple[str, bool]] = []
     phases.append(("cache-build", not ctx.options.no_clear_startup_cache))
     for run_index in range(hit_runs):

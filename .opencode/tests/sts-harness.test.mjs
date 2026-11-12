@@ -137,6 +137,29 @@ test("rejects unsupported actions and paths outside the repository", async () =>
   await assert.rejects(run("test_steam_cloud_sync", { cloudSyncRelativePath: "../../other" }), /stay below sts/)
 })
 
+test("install requires an explicit target before spawning the harness", async () => {
+  const events = resolve(testRoot, "events.log")
+  writeFileSync(events, "")
+  for (const deviceSerial of [undefined, "", "auto", "AUTO", "default", "*", "-d", "a b"]) {
+    await assert.rejects(run("control_game_lifecycle", { action: "install", deviceSerial }), /explicit user-approved deviceSerial/)
+  }
+  assert.equal(readFileSync(events, "utf8"), "")
+  const result = await run("control_game_lifecycle", { action: "install", deviceSerial: "approved-fake-device" })
+  assert.equal(result.result.argv[4], "install")
+  assert.equal(result.result.argv.at(result.result.argv.indexOf("--device-serial") + 1), "approved-fake-device")
+})
+
+test("scenario and sync tools never request installation regardless of legacy skipInstall", async () => {
+  for (const skipInstall of [undefined, false, true]) {
+    const scenario = await run("run_gameplay_scenario", { action: "smoke", skipInstall })
+    const sync = await run("test_steam_cloud_sync", { skipInstall })
+    for (const result of [scenario, sync]) {
+      assert.notEqual(result.result.argv[4], "install")
+      assert.ok(!result.result.argv.includes("--skip-install"))
+    }
+  }
+})
+
 test("serializes concurrent calls even with auto-selected device serial", async () => {
   const events = resolve(testRoot, "events.log")
   writeFileSync(events, "")

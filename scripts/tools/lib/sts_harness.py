@@ -374,7 +374,8 @@ class Harness:
             for d in devices
             if d.get("state") == "device" and d.get("serial")
         ]
-        if self.resolved_device_serial:
+        if self.options.device_serial.strip():
+            self.resolved_device_serial = self.options.device_serial.strip()
             if self.resolved_device_serial not in online_devices:
                 raise RuntimeError(f"Requested device is not connected and online: {self.resolved_device_serial}")
             ok = self.connector.select(self.resolved_device_serial)
@@ -386,11 +387,16 @@ class Harness:
         if len(online_devices) > 1:
             raise RuntimeError(f"Multiple Android devices are online. Pass -DeviceSerial. Devices: {', '.join(online_devices)}")
         self.resolved_device_serial = online_devices[0]
-        ok = self.connector.select(self.resolved_device_serial)
+        # Preserve auto-selection provenance: it is not permission for raw
+        # adb/shell execution or package operations on the connector.
+        ok = self.connector.select("auto")
         if not ok:
             raise RuntimeError(f"Failed to select device: {self.resolved_device_serial}")
 
     def initialize(self) -> None:
+        if self.options.command == "install":
+            from scripts.tools.lib.device_safety import require_explicit_device
+            require_explicit_device(self.options.device_serial)
         self.gradle_wrapper = self.resolve_gradle_wrapper()
         self.application_id = read_key_value_file(self.repo_root / "gradle.properties", "application.id", "io.stamethyst")
         if not self.application_id.strip():
@@ -430,14 +436,8 @@ class Harness:
         return "mts" if self.options.launch_mode == "mts_basemod" else self.options.launch_mode
 
     def harness_install(self) -> None:
-        self.gradle([":app:assembleDebug"])
-        apk_root = self.repo_root / "app" / "build" / "outputs" / "apk" / "debug"
-        apks = sorted(apk_root.glob("*.apk"), key=lambda item: item.stat().st_mtime, reverse=True) if apk_root.exists() else []
-        if not apks:
-            raise RuntimeError(f"No debug APK found under: {apk_root}")
-        apk = apks[0]
-        self.result["artifacts"]["debugApk"] = str(apk)
-        self.adb(["install", "--fastdeploy", "-r", str(apk)], timeout_seconds=180)
+        from scripts.tools.harness.install import run_install
+        run_install(self._build_context())
 
     def harness_start(self) -> None:
         launcher_component = f"{self.application_id or ''}/.LauncherActivity"
@@ -1610,9 +1610,6 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             "polls": [],
         }
         self.result["steamCloudSync"] = sync_result
-
-        if not self.options.skip_install:
-            self.harness_install()
 
         trigger_relative_path = sync_result["triggerRelativePath"]
         payload_text = self.build_cloud_sync_payload_text()

@@ -9,18 +9,21 @@ import io.stamethyst.backend.mods.CommunityPatchMod
 import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.backend.workshop.WorkshopService
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 
 internal data class CommunityPatchMarketState(
     val summary: WorkshopItemSummary? = null,
     val loading: Boolean = false,
     val error: String? = null,
-)
+) {
+    val authorLoading: Boolean
+        get() = loading && summary?.authorName.isNullOrBlank() && summary?.author?.name.isNullOrBlank()
+    val ratingLoading: Boolean
+        get() = loading && summary?.rating == null
+}
 
 internal fun CommunityPatchMod.workshopFallback(): WorkshopItemSummary? = workshopId
     ?.takeIf { it > 0uL }
@@ -35,13 +38,25 @@ internal fun CommunityPatchMod.workshopFallback(): WorkshopItemSummary? = worksh
     }
 
 /** Entry-scoped: loading a community card must not change the market's selected detail or browse list. */
-internal class CommunityPatchMarketViewModel : ViewModel() {
+internal class CommunityPatchMarketViewModel(
+    private val summaryStore: CommunityPatchSummaryStore = CommunityPatchSummaryStore.shared,
+) : ViewModel() {
     var state by mutableStateOf(CommunityPatchMarketState())
         private set
     private var requestKey: String? = null
     private var requestGeneration = 0L
     private var lastRefreshToken = 0
     private var job: Job? = null
+
+    fun stateFor(mod: CommunityPatchMod): CommunityPatchMarketState {
+        val current = state
+        val fallback = mod.workshopFallback() ?: return CommunityPatchMarketState()
+        if (requestKey == "${mod.modId}:${fallback.publishedFileId}") return current
+        return CommunityPatchMarketState(
+            summary = summaryStore.peek(fallback.appId, fallback.publishedFileId),
+            loading = true,
+        )
+    }
 
     fun load(mod: CommunityPatchMod, service: WorkshopService, refreshToken: Int = 0, force: Boolean = false) {
         val fallback = mod.workshopFallback() ?: run {
@@ -52,37 +67,43 @@ internal class CommunityPatchMarketViewModel : ViewModel() {
             return
         }
         val key = "${mod.modId}:${fallback.publishedFileId}"
-        val refreshRequested = force || refreshToken != lastRefreshToken
-        if (key == requestKey && !refreshRequested) return
+        // Retry a failed community fetch without discarding/re-requesting the API summary.
+        // Only the explicit page refresh token revalidates the base metadata.
+        val refreshRequested = refreshToken != lastRefreshToken
+        if (key == requestKey && !refreshRequested && !force) return
         val generation = ++requestGeneration
         job?.cancel()
-        if (key != requestKey) state = CommunityPatchMarketState()
+        if (key != requestKey) state = stateFor(mod)
         requestKey = key
         lastRefreshToken = refreshToken
         state = state.copy(loading = true, error = null)
         val retainedSummary = state.summary ?: fallback
         job = viewModelScope.launch {
             try {
-                val details = service.getDetails(
-                    appId = fallback.appId,
-                    publishedFileId = fallback.publishedFileId,
-                    fallbackSummary = retainedSummary,
-                    includeCommunityData = true,
-                    includeDependencyData = false,
-                    onUpdate = { update ->
-                        // getDetails publishes from its IO scope; Compose state belongs to Main.
-                        if (!update.metadataLoading && update.metadataErrorMessage == null) {
-                            withContext(Dispatchers.Main.immediate) {
-                                if (generation == requestGeneration) {
-                                    state = state.copy(summary = update.details.summary)
-                                }
-                            }
-                        }
-                    },
-                )
+                val base = state.summary?.takeUnless { refreshRequested } ?: run {
+                    summaryStore.load(fallback.appId, fallback.publishedFileId, force = refreshRequested) {
+                        service.getDetails(
+                            appId = fallback.appId,
+                            publishedFileId = fallback.publishedFileId,
+                            fallbackSummary = retainedSummary,
+                            includeCommunityData = false,
+                            includeDependencyData = false,
+                        ).summary
+                    }
+                }
                 coroutineContext.ensureActive()
                 if (generation != requestGeneration) return@launch
-                state = CommunityPatchMarketState(summary = details.summary)
+                // Keep known author/rating visible during refresh; only missing fields shimmer.
+                val visible = base.copy(
+                    authorName = base.authorName.ifBlank { retainedSummary.authorName },
+                    author = base.author ?: retainedSummary.author,
+                    rating = base.rating ?: retainedSummary.rating,
+                )
+                state = state.copy(summary = visible)
+                val enriched = service.loadCommunitySummary(visible)
+                coroutineContext.ensureActive()
+                if (generation != requestGeneration) return@launch
+                state = CommunityPatchMarketState(summary = enriched)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {

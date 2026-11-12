@@ -16,7 +16,6 @@ from scripts.tools.harness._status import (
     wait_harness_status,
 )
 from scripts.tools.harness.agent import run_agent_attach
-from scripts.tools.harness.install import run_install
 from scripts.tools.harness.logs import run_logs
 from scripts.tools.harness.run import run_start, run_stop
 from scripts.tools.harness.screenshot import run_screenshot
@@ -28,8 +27,6 @@ def run_smoke(ctx: HarnessContext, resolved_out_dir: Path) -> int:
     logcat_since = ""
     start_requested = False
     try:
-        if not ctx.options.skip_install:
-            run_install(ctx)
         clear_runtime_signals(ctx)
         logcat_since = device_logcat_timestamp(ctx)
         try:

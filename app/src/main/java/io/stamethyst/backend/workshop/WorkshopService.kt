@@ -686,6 +686,22 @@ internal class WorkshopService(
         }
     }
 
+    /** Enrich an already-loaded card without repeating the public metadata API request. */
+    suspend fun loadCommunitySummary(summary: WorkshopItemSummary): WorkshopItemSummary = withContext(Dispatchers.IO) {
+        val community = loadLocalizedDetailPageWithCache(
+            publishedFileId = summary.publishedFileId,
+            languageRequestValue = steamLanguagePreference.requestValue,
+            shouldRetryWithoutUsefulContent = { false },
+        )
+        val author = community.creators.firstOrNull { it.steamId == summary.author?.steamId }
+            ?: community.creators.firstOrNull() ?: summary.author
+        summary.copy(
+            authorName = community.authorName.ifBlank { author?.name.orEmpty() }.ifBlank { summary.authorName },
+            author = author,
+            rating = community.rating ?: summary.rating,
+        )
+    }
+
     private fun buildItemDetails(
         appId: UInt,
         publishedFileId: ULong,

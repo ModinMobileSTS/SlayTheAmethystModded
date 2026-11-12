@@ -11,6 +11,32 @@ When adding or changing harness commands or options, update both `scripts/README
 
 ## Contract
 
+### Device safety
+
+All test flows (`smoke`, `single-room`, `perf-bench`, `startup-cache-profile`,
+`steam-cloud-sync`, and `ram_saver_ab.py collect`) use the app already installed
+on the selected device. They never install, replace, downgrade, or uninstall APKs.
+Local builds do not update the device's app.
+
+Installation is a separate, explicitly authorized operation: specify the exact
+user-approved serial with `-DeviceSerial` / `-PdeviceSerial` / the positional
+argument to `scripts/build-debug-install.sh`. Missing serials and `auto` are
+rejected before building/installing; one online device is not authorization.
+Connector raw `adb`/`shell` RPCs also require explicit selection because arbitrary
+scripts can invoke the package manager. Auto discovery does not grant this access.
+
+Gradle connected/managed-device tests, macrobenchmark deployment, and AGP
+install/uninstall tasks are blocked before task execution, regardless of target
+selection. AGP/UTP can uninstall the main app after testing. Use local JVM/mock
+tests and `:app:compileDebugAndroidTestKotlin` instead. See `AGENTS.md`.
+
+Device-free safety regression (mocked connector/ADB, including rejected install
+requests, auto-selection provenance, target overrides, and test-flow AST checks):
+
+```bash
+python3 -m unittest scripts.tools.tests.test_device_safety -v
+```
+
 Harness commands must write `result.json` under the selected output directory. The JSON schema version is `1` and includes:
 
 - `success`: boolean command result.
@@ -50,11 +76,15 @@ TYPE<TAB>PROGRESS<TAB>MESSAGE
 
 ## Harness Commands
 
+Append `-DeviceSerial USER_APPROVED_SERIAL` to device commands below unless a
+serial is already shown. Replace it with the target approved for the current
+operation; historical example devices are not authorization.
+
 Windows:
 
 ```bat
 python .\scripts\tools\main.py sts-harness -Command doctor
-python .\scripts\tools\main.py sts-harness -Command install
+python .\scripts\tools\main.py sts-harness -Command install -DeviceSerial USER_APPROVED_SERIAL
 python .\scripts\tools\main.py sts-harness -Command start -LaunchMode mts_basemod
 python .\scripts\tools\main.py sts-harness -Command status
 python .\scripts\tools\main.py sts-harness -Command mods
@@ -83,7 +113,7 @@ python3 ./scripts/tools/main.py sts-harness -Command smoke -LaunchMode mts_basem
 
 Common options:
 
-- `-DeviceSerial <adb-serial>`: required when more than one device is online.
+- `-DeviceSerial <adb-serial>`: required for installation and commands using raw adb/shell. Must name the user-approved device; never infer authorization from discovery or an old environment variable.
 - `-OutDir <path>`: output base for `result.json` and artifacts. When set, each run writes under `<path>/<timestamp>/` (base is not cleared). When empty, defaults to `debug-artifacts/harness/<command>-<timestamp>`.
 - `-LaunchMode mts_basemod|mts|vanilla`: defaults to `mts_basemod`.
 - `-TimeoutSeconds <seconds>`: smoke/status wait timeout, default `120`; direct `-Autoplay` smoke defaults to `300` unless this option is explicitly set.
@@ -95,7 +125,7 @@ Common options:
 - `-SingleRoomSpec <path>`: local UTF-8 properties file for `single-room`, with `character=`, `monster=`, and `cards=`. Put ad hoc spec files under `agent-tmp/`.
 - `-ForceJvmCrash`: expects a boot bridge `FAIL` during `smoke`.
 - `-ForceRuntimeCrash`: expects a runtime crash marker during `smoke`.
-- `-SkipInstall`: skip APK build/install during `smoke`.
+- `-SkipInstall`: deprecated, accepted for compatibility only; tests never install APKs, even when omitted.
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
 - `-CacheHitRuns <count>`: for `startup-cache-profile`, number of cache-hit launches after the cache-build launch. Defaults to `1`.
 - `-NoClearStartupCache`: for `startup-cache-profile`, reuse the existing startup cache instead of clearing it before the first run.
@@ -124,11 +154,13 @@ Autoplay randomly handles `CardRewardScreen` discovery/card reward choice pages 
 
 Gradle wrapper tasks call the same Python harness:
 
+Append `-PdeviceSerial=USER_APPROVED_SERIAL` for device commands below.
+
 Windows:
 
 ```powershell
 .\gradlew.bat :app:stsHarnessDoctor
-.\gradlew.bat :app:stsHarnessInstall
+.\gradlew.bat :app:stsHarnessInstall -PdeviceSerial=USER_APPROVED_SERIAL
 .\gradlew.bat :app:stsHarnessStart
 .\gradlew.bat :app:stsHarnessStatus
 .\gradlew.bat :app:stsHarnessScreenshot
@@ -155,7 +187,7 @@ Gradle properties:
 - `-PharnessOutDir=<path>`
 - `-PharnessTimeoutSeconds=<seconds>`
 - `-PharnessPollIntervalSeconds=<seconds>`
-- `-PharnessSkipInstall=true`
+- `-PharnessSkipInstall`: obsolete; all tests unconditionally skip installation.
 - `-PpythonExecutable=<python-command>`
 - `-Pautoplay=true`
 - `-PautoplaySaveMode=fresh|continue`
@@ -183,13 +215,15 @@ Example:
 .\gradlew.bat :app:stsHarnessAutoplaySmoke -PdeviceSerial=emulator-5554 -PautoplaySaveMode=continue -PharnessOutDir=debug-artifacts\harness\autoplay-continue
 .\gradlew.bat :app:stsHarnessSingleRoom -PdeviceSerial=emulator-5554 -PsingleRoomCharacter=IRONCLAD -PsingleRoomMonster=Cultist -PsingleRoomCards=Strike_R,Defend_R,Bash -PharnessOutDir=debug-artifacts\harness\single-room
 .\gradlew.bat :app:stsHarnessSingleRoom -PdeviceSerial=emulator-5554 -PsingleRoomCharacter=IRONCLAD -PsingleRoomMonster=Looter -PsingleRoomCards=Strike_R -PdisableCardObtainEffectOwnershipCompat=true -PharnessOutDir=debug-artifacts\harness\card-obtain-ownership-unpatched
-.\gradlew.bat :app:stsHarnessStartupCacheProfile -PdeviceSerial=emulator-5554 -PstartupCacheHitRuns=2 -PharnessSkipInstall=true -PharnessOutDir=debug-artifacts\harness\startup-cache-profile
+.\gradlew.bat :app:stsHarnessStartupCacheProfile -PdeviceSerial=emulator-5554 -PstartupCacheHitRuns=2 -PharnessOutDir=debug-artifacts\harness\startup-cache-profile
 .\gradlew.bat :app:stsHarnessSteamCloudSync -PdeviceSerial=emulator-5554 -PcloudSyncPullIntervalSeconds=15 -PharnessOutDir=debug-artifacts\harness\steam-cloud-sync
 ```
 
 `:app:stsHarnessAutoplaySmoke` and `:app:stsHarnessSmoke -Pautoplay=true` default to a 300-second harness timeout so first-run desktop jar patching can finish; pass `-PharnessTimeoutSeconds=<seconds>` to override it.
 
-`:app:stsHarnessSteamCloudSync` always forwards `-SkipInstall` and assumes the target build is already installed on the device. Use the Python harness directly if the sync test also needs to rebuild/reinstall first.
+All Gradle and Python test flows assume the target build is already installed. If
+the build must change, obtain separate installation authorization for the exact
+device first; tests must not perform this preparation implicitly.
 
 ## Low-Level Gradle Tasks
 

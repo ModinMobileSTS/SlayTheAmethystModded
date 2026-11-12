@@ -4,7 +4,7 @@ performance report from the frame-probe incidents file.
 
 Flow
 ----
-1. Install APK (unless -SkipInstall).
+1. Use the application already installed on the selected device.
 2. Launch in normal autoplay mode (full dungeon, floor 1 onward).
 3. Poll until the :game process exits or timeout expires.
 4. Pull frame-probe-incidents.jsonl from the device.
@@ -48,7 +48,6 @@ from scripts.tools.harness._device import (
 )
 from scripts.tools.harness._runner import adb
 from scripts.tools.harness._status import harness_status
-from scripts.tools.harness.install import run_install
 from scripts.tools.harness.run import run_start
 
 DEFAULT_CHARACTER = "IRONCLAD"
@@ -78,10 +77,6 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
     tracer: Any = None
     tracer_collected = False
     try:
-        # ── 1. Optionally install ─────────────────────────────────────────
-        if not ctx.options.skip_install:
-            run_install(ctx)
-
         # ── 2. Configure normal autoplay (full dungeon run from floor 1) ──
         ctx.options.autoplay = True
         ctx.options.autoplay_mode = "normal"

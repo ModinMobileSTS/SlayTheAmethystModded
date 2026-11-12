@@ -933,7 +933,6 @@ private fun Project.registerHarnessTasks() {
     val harnessTimeoutSeconds = harnessTimeoutSecondsProperty.orElse("120").get()
     val autoplayHarnessTimeoutSeconds = harnessTimeoutSecondsProperty.orElse("300").get()
     val harnessPollIntervalSeconds = readGradleProperty("harnessPollIntervalSeconds", "2")
-    val harnessSkipInstall = readGradleProperty("harnessSkipInstall", "false")
     val forceJvmCrash = readGradleProperty("forceJvmCrash", "false")
     val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
     val autoplay = readGradleProperty("autoplay", "false")
@@ -1034,11 +1033,7 @@ private fun Project.registerHarnessTasks() {
             if (disableCardObtainEffectOwnershipCompat.toBooleanStrictOrNull() == true) {
                 args.add("-DisableCardObtainEffectOwnershipCompat")
             }
-            if (command == "smoke" && harnessSkipInstall.toBooleanStrictOrNull() == true) {
-                args.add("-SkipInstall")
-            }
             if (command == "steam-cloud-sync") {
-                args.add("-SkipInstall")
                 args.add("-CloudSyncRelativePath")
                 args.add(cloudSyncRelativePath)
                 args.add("-CloudSyncPullIntervalSeconds")

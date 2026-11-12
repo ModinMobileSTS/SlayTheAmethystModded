@@ -13,7 +13,7 @@ class RunInstallTest(unittest.TestCase):
             options=HarnessOptions(
                 command="install",
                 launch_mode="mts_basemod",
-                device_serial="",
+                device_serial="approved-test-device",
                 out_dir="",
                 timeout_seconds=300,
                 poll_interval_seconds=2,
@@ -29,6 +29,7 @@ class RunInstallTest(unittest.TestCase):
                 disable_all_mods=False,
             ),
             repo_root=Path("/fake/repo"),
+            resolved_device_serial="approved-test-device",
             result={"artifacts": {}},
         )
 
@@ -53,3 +54,29 @@ class RunInstallTest(unittest.TestCase):
         )
         self.assertTrue(ctx.result["success"])
         self.assertEqual(ctx.result["status"], "INSTALLED")
+
+    @patch("scripts.tools.harness.install.adb")
+    @patch("scripts.tools.harness.install.gradle")
+    def test_rejects_missing_or_automatic_device_before_build(self, mock_gradle, mock_adb):
+        for serial in ("", "auto", "AUTO", "*", "all", "default", "-d", " "):
+            with self.subTest(serial=serial):
+                ctx = self._make_ctx()
+                ctx.options.device_serial = serial
+                with self.assertRaisesRegex(RuntimeError, "explicit device"):
+                    run_install(ctx)
+        mock_gradle.assert_not_called()
+        mock_adb.assert_not_called()
+
+    @patch("scripts.tools.harness.install.adb")
+    @patch("scripts.tools.harness.install.gradle")
+    def test_rejects_mismatched_device_and_implicit_install(self, mock_gradle, mock_adb):
+        ctx = self._make_ctx()
+        ctx.resolved_device_serial = "other-device"
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            run_install(ctx)
+        ctx = self._make_ctx()
+        ctx.options.command = "smoke"
+        with self.assertRaisesRegex(RuntimeError, "explicit install command"):
+            run_install(ctx)
+        mock_gradle.assert_not_called()
+        mock_adb.assert_not_called()

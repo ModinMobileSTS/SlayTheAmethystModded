@@ -2,9 +2,14 @@ package io.stamethyst.ui.main
 
 import io.stamethyst.backend.mods.CommunityPatchMod
 import io.stamethyst.backend.mods.RemoteAgentPatch
+import io.stamethyst.backend.workshop.WorkshopItemRating
+import io.stamethyst.backend.workshop.WorkshopAuthor
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CommunityPatchDetailModelTest {
@@ -34,6 +39,33 @@ class CommunityPatchDetailModelTest {
         assertEquals(first.patchModId, second.patchModId)
         assertNotEquals(first.communityItemKey(), second.communityItemKey())
         assertEquals("${first.patchModId}:${first.sha256}", first.communityItemKey())
+    }
+
+    @Test fun pendingCommunityMetadataOnlyMarksMissingFieldsAsLoading() {
+        val summary = mod(10uL).workshopFallback()!!
+        val pending = CommunityPatchMarketState(summary, loading = true)
+        assertTrue(pending.authorLoading)
+        assertTrue(pending.ratingLoading)
+        assertFalse(pending.copy(summary = summary.copy(authorName = "Author")).authorLoading)
+        assertFalse(pending.copy(summary = summary.copy(author = WorkshopAuthor("Author", "https://steamcommunity.com/id/author"))).authorLoading)
+        assertFalse(pending.copy(summary = summary.copy(rating = WorkshopItemRating(4))).ratingLoading)
+        assertFalse(pending.copy(loading = false).authorLoading)
+        assertFalse(pending.copy(loading = false).ratingLoading)
+    }
+
+    @Test fun firstDetailFrameAlreadyUsesTheListSummary() = runBlocking {
+        val store = CommunityPatchSummaryStore(this)
+        val item = mod(10uL)
+        val summary = item.workshopFallback()!!.copy(previewUrl = "https://example.com/cover.jpg", downloadCount = 123)
+        store.load(summary.appId, summary.publishedFileId) { summary }
+
+        val state = CommunityPatchMarketViewModel(store).stateFor(item)
+
+        assertEquals(summary, state.summary)
+        assertTrue(state.authorLoading)
+        assertTrue(state.ratingLoading)
+        assertNull(CommunityPatchMarketViewModel(store).stateFor(mod(11uL)).summary)
+        assertFalse(CommunityPatchMarketViewModel(store).stateFor(mod(null)).loading)
     }
 
     private fun mod(workshopId: ULong?) = CommunityPatchMod("chronomuncher", "The Disciple", workshopId, emptyList())

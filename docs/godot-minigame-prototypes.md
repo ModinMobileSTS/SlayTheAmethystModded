@@ -104,7 +104,7 @@ python3 -m http.server 18765 --bind 127.0.0.1 --directory agent-tmp/godot-spike/
 
 ```sh
 adb reverse tcp:18765 tcp:18765
-adb install -r agent-tmp/godot-spike/slaytheamethyst-godot-prototype.apk
+adb -s USER_APPROVED_SERIAL install -r agent-tmp/godot-spike/slaytheamethyst-godot-prototype.apk
 adb shell am start -n io.stamethyst/io.stamethyst.godot.GodotPrototypeSetupActivity
 ```
 

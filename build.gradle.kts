@@ -1,3 +1,7 @@
+import com.android.build.gradle.internal.tasks.AndroidTestTask
+import com.android.build.gradle.internal.tasks.DeviceSerialTestTask
+import com.android.build.gradle.internal.tasks.InstallVariantTask
+import com.android.build.gradle.internal.tasks.UninstallTask
 import java.io.File
 import java.net.SocketTimeoutException
 import java.net.URI
@@ -10,6 +14,34 @@ plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.protobuf) apply false
+}
+
+// AGP/UTP instrumentation tasks deploy APKs and can uninstall the main app after
+// testing. Never let a verification command implicitly change a device's apps.
+fun Task.deploysAndroidPackages(): Boolean =
+    this is AndroidTestTask || this is DeviceSerialTestTask ||
+        this is InstallVariantTask || this is UninstallTask
+
+val deviceDeploymentDenied =
+    "Automatic Android deployment is disabled. Compile Android tests or run JVM/mock tests locally. " +
+        "For an explicitly authorized install, use scripts/build-debug-install.sh <device-serial>; " +
+        "never use connected/managed-device tests to install or uninstall apps. See AGENTS.md."
+
+allprojects {
+    tasks.configureEach {
+        if (deploysAndroidPackages()) {
+            doFirst { throw GradleException(deviceDeploymentDenied) }
+        }
+    }
+}
+
+gradle.taskGraph.whenReady {
+    val deploymentTasks = allTasks.filter { it.deploysAndroidPackages() }
+    if (deploymentTasks.isNotEmpty()) {
+        throw GradleException(
+            "$deviceDeploymentDenied Blocked tasks: ${deploymentTasks.joinToString { it.path }}"
+        )
+    }
 }
 
 data class BuildDepSpec(

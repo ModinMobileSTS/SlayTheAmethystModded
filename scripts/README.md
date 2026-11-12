@@ -123,7 +123,7 @@ Alternatively pass `-ConnectorPort 39999` / `--connector-port 39999` on each har
 Harness commands:
 
 - `doctor`: validate connector, Gradle wrapper, package id, device selection, storage access, and runtime status signals.
-- `install`: build and install the debug APK using `install --fastdeploy -r` by default (also used by harness flows that install, and `build-debug-install.sh`). Use the project-local platform-tools 35.0.2 configured in `.env.local`; ADB 37.0.0/37.0.1 incorrectly skip fast deploy on the tested API 29 device. Unsupported fast deploy may fall back to a full install in ADB; passing the flag alone does not guarantee differential transfer. The shell shortcut still uses `ADB_BIN`/PATH; invoke it through `local_adb run` with `ADB_BIN` set to the project-local binary to use the workspace-owned server.
+- `install`: explicitly build and install the debug APK using `install --fastdeploy -r`; requires `-DeviceSerial` for the user-approved target and is never invoked by test flows. Use the project-local platform-tools 35.0.2 configured in `.env.local`; ADB 37.0.0/37.0.1 incorrectly skip fast deploy on the tested API 29 device. Unsupported fast deploy may fall back to a full install in ADB; passing the flag alone does not guarantee differential transfer. The shell shortcut still uses `ADB_BIN`/PATH; invoke it through `local_adb run` with `ADB_BIN` set to the project-local binary to use the workspace-owned server.
 - `start`: start the app through `:app:stsStart`.
 - `stop`: force-stop the app through `:app:stsStop`.
 - `logs`: export runtime logs and a harness logcat dump.
@@ -131,7 +131,7 @@ Harness commands:
 - `status`: capture current process, boot bridge, crash marker, package, and storage state.
 - `mods`: list device required mods, optional mods in `sts/mods_library`, legacy runtime mods in `sts/mods`, the current `enabled_mods.txt`, and the current `.mts_mod_file_list`.
 - `set-mods`: replace the enabled optional mod selection by writing `enabled_mods.txt`.
-- `smoke`: install when needed, clear runtime signals, start, wait for an expected state, capture screenshot/logs, and stop unless requested otherwise.
+- `smoke`: use the already installed app, clear runtime signals, start, wait for an expected state, capture screenshot/logs, and stop unless requested otherwise. Never installs/uninstalls APKs.
 - `decompil`: pull device jars and decompile classes with CFR.
 - `agent-attach` / `agent-detach` / `agent-list` / `agent-status`: game-probe monitor agents.
 - `play`: interactive game-probe OBSERVE/EXEC session.
@@ -143,10 +143,18 @@ Harness commands:
 - `startup-cache-profile`: run one cache-build launch and then one or more cache-hit launches, exporting per-run logs and a startup timing summary.
 - `steam-cloud-sync`: modify a device-side `sts/` file, open the launcher to trigger Steam Cloud sync, poll Steam Cloud diagnostics/runtime logs into per-interval snapshots, export the full log bundle, and stop the app.
 
+All tests (including performance, startup-cache, Steam Cloud and RAM Saver A/B
+collection) use the already installed app. Installation requires a separate
+explicit request and an exact device serial; missing/`auto` serials are refused.
+The Gradle connected/managed-device, AGP install/uninstall and macrobenchmark
+deployment tasks are blocked because they may automatically uninstall the main
+app. Prefer JVM/mock tests and Android test compilation; see `AGENTS.md` and
+[`docs/debug-automation/README.md`](../docs/debug-automation/README.md).
+
 Common harness options:
 
 - `-ConnectorPort <port>` / `--connector-port`: connector daemon TCP port (or set `STS_CONNECTOR_PORT`).
-- `-DeviceSerial <adb-serial>`: required when more than one device is online.
+- `-DeviceSerial <adb-serial>`: required for installation and raw adb/shell commands; use the explicitly user-approved device. Automatic discovery is not authorization.
 - `-OutDir <path>`: output base for `result.json` and artifacts. When set, each run writes under `<path>/<timestamp>/` (base is not cleared). When empty, defaults to `debug-artifacts/harness/<command>-<timestamp>`.
 - `-LaunchMode mts_basemod|mts|vanilla`: defaults to `mts_basemod`.
 - `-TimeoutSeconds <seconds>` and `-PollIntervalSeconds <seconds>`: runtime observation controls.
@@ -158,7 +166,7 @@ Common harness options:
 - `-SingleRoomSpec <path>`: local UTF-8 properties file with `character=`, `monster=`, and `cards=` for single-room tests. Put ad hoc spec files under `agent-tmp/`.
 - `-ForceJvmCrash` and `-ForceRuntimeCrash`: smoke expectations for crash-path validation.
 - `-DebugMode`: enable the game-probe Java agent (port 9099) for diagnostics without enabling autoplay. Required for Arthas, tracing, and OBSERVE/EXEC commands. When omitted, game-probe only starts if one of `-Autoplay`, `-ForceJvmCrash`, `-ForceRuntimeCrash`, or the launcher's performance deep diagnostics is active.
-- `-SkipInstall`: skip APK build/install during `smoke`.
+- `-SkipInstall`: deprecated compatibility flag. Every test flow skips installation unconditionally.
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
 - `-CacheHitRuns <count>`: for `startup-cache-profile`, number of cache-hit launches after the cache-build launch. Defaults to `1`.
 - `-NoClearStartupCache`: for `startup-cache-profile`, reuse the existing startup cache instead of clearing it before the first run.
@@ -177,6 +185,10 @@ Mod selection options for `set-mods`:
 `set-mods` controls optional mods only. Required mods such as BaseMod, StSLib, Amethyst Runtime Compat, Amethyst Floating Tools, and Ram Saver are controlled by app runtime/settings behavior, not by `enabled_mods.txt`.
 
 Examples:
+
+For device commands below, append `-DeviceSerial USER_APPROVED_SERIAL` if not
+already shown, replacing the placeholder with the target approved for this run.
+Do not treat the historical serials in examples as authorization.
 
 ```bash
 export STS_CONNECTOR_PORT=39999

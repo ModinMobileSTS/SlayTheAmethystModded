@@ -32,6 +32,7 @@ import io.stamethyst.backend.launch.StartupTraceEvents
 import io.stamethyst.backend.presence.GamePresenceStateMarker
 import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.backend.render.DisplayPerformanceController
+import io.stamethyst.backend.render.DisplayRefreshRatePolicy
 import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
@@ -202,6 +203,7 @@ open class StsGameActivity : AppCompatActivity(), SensorEventListener {
         val startupBackground = StartupWindowBackground.gameColor(this)
         StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
+        DisplayRefreshRatePolicy.requestHighestRefreshRate(this, window)
         StartupTraceEvents.append(
             this,
             "game_activity_on_create",
@@ -283,6 +285,7 @@ open class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onResume() {
         super.onResume()
+        DisplayRefreshRatePolicy.requestHighestRefreshRate(this, window)
         registerGyroscope()
         StartupTraceEvents.append(
             this,

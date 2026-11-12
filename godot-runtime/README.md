@@ -9,6 +9,14 @@ registers a `SlingPrototype` plugin for script readiness and save acknowledgemen
 `EngineContext` supplies the container's resources and a stable prototype-only
 save directory. No Godot engine patches are applied.
 
+The minigame's progress import/export uses Godot's native `FileDialog` mode,
+which opens Android's Storage Access Framework document picker. The launcher
+forwards `Activity.onActivityResult` (including cancellation) through the existing
+`PrototypeHost.getGodot()` API to `Godot.onActivityResult`; Godot dispatches the
+result on its render thread and opens the returned `content://` URI itself.
+This works with the existing pinned engine container: deploy the updated launcher
+and game PCK together; no engine-container update or storage permission is needed.
+
 Android's official release template rejects `--main-pack` pointing to a normal
 external file when path overrides are disabled. The launcher therefore derives a
 code-free ZIP containing only the verified PCK at `assets/game.pck`, mounts it in
