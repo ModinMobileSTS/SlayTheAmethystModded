@@ -581,6 +581,7 @@ fun LauncherContent(
         Surface(
             modifier = Modifier
                 .fillMaxSize()
+                .then(rememberHighRefreshRateModifier())
                 .semantics { testTagsAsResourceId = true },
             color = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground

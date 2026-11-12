@@ -21,6 +21,8 @@ import io.stamethyst.backend.render.ForegroundResyncScheduler
 import io.stamethyst.backend.render.RenderSurfaceState
 import io.stamethyst.backend.render.VirtualResolutionPolicy
 import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.render.ViewFrameRateVote
+import io.stamethyst.backend.render.shouldRequestHighViewFrameRate
 import net.kdt.pojavlaunch.utils.JREUtils
 import org.lwjgl.glfw.CallbackBridge
 
@@ -78,6 +80,7 @@ class RenderSurfaceManager(
         SurfaceViewHost(activity)
     }
     private var destroyed = false
+    private var viewFrameRateVote: ViewFrameRateVote? = null
     private var pendingSurfaceReadyCallback = false
     private var lastResyncReasonSummary = "init"
     private var resyncApplyCount = 0
@@ -164,6 +167,7 @@ class RenderSurfaceManager(
         renderHost.attach(root, object : RenderSurfaceHost.Callbacks {
             override fun onSurfaceAvailable(surfaceGeneration: Int, width: Int, height: Int) {
                 state.markSurfaceAvailable(surfaceGeneration, width, height)
+                syncViewFrameRateVote()
                 println("RenderSurfaceRefresh: surface_lifecycle event=available surfaceGeneration=$surfaceGeneration")
                 val requestedRefreshRateHz = DisplayRefreshRatePolicy.requestHighestRefreshRate(
                     context = activity,
@@ -194,6 +198,7 @@ class RenderSurfaceManager(
                 pendingSurfaceReadyCallback = false
                 disconnectBridgeSurfaceIfNeeded()
                 state.markSurfaceDestroyed()
+                syncViewFrameRateVote()
                 println("RenderSurfaceRefresh: surface_lifecycle event=destroyed surfaceGeneration=$surfaceGeneration")
                 publishActiveRefreshRateForPacing("surface_destroyed")
             }
@@ -204,6 +209,8 @@ class RenderSurfaceManager(
             }
         })
         renderView = renderHost.renderView
+        viewFrameRateVote = ViewFrameRateVote(renderView)
+        syncViewFrameRateVote()
         renderView.isFocusable = true
         renderView.isFocusableInTouchMode = true
         state.rememberPhysicalSize(renderView.width, renderView.height)
@@ -245,6 +252,8 @@ class RenderSurfaceManager(
 
     fun onDestroy() {
         destroyed = true
+        viewFrameRateVote?.setActive(false)
+        viewFrameRateVote = null
         if (::renderView.isInitialized) {
             renderView.removeCallbacks(foregroundResyncRunnable)
             renderView.removeCallbacks(windowConfigurationResyncRetryRunnable)
@@ -263,6 +272,7 @@ class RenderSurfaceManager(
 
     fun onForegroundChanged(foreground: Boolean) {
         state.markForeground(foreground)
+        syncViewFrameRateVote()
         publishActiveRefreshRateForPacing(if (foreground) "resume" else "pause")
         if (foreground) {
             requestForegroundResync("resume")
@@ -271,6 +281,7 @@ class RenderSurfaceManager(
 
     fun onWindowFocusChanged(hasFocus: Boolean) {
         state.markWindowFocus(hasFocus)
+        syncViewFrameRateVote()
         publishActiveRefreshRateForPacing(if (hasFocus) "focus_gain" else "focus_loss")
         if (hasFocus) {
             requestForegroundResync("focus")
@@ -563,6 +574,17 @@ class RenderSurfaceManager(
         CallbackBridge.windowHeight = plan.windowHeight
         state.recordWindowSizeDispatch(plan, dispatched = true)
         return true
+    }
+
+    private fun syncViewFrameRateVote() {
+        viewFrameRateVote?.setActive(
+            shouldRequestHighViewFrameRate(
+                sdkInt = Build.VERSION.SDK_INT,
+                foreground = state.isForeground,
+                focused = state.hasWindowFocus,
+                contentAvailable = !destroyed && state.surfaceGeneration > 0,
+            )
+        )
     }
 
     private fun publishActiveRefreshRateForPacing(reason: String) {
