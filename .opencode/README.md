@@ -90,7 +90,7 @@ These tests use a fake Python CLI and do not need an Android device. Integration
 ## Implementation verification
 
 For changes needing systematic post-implementation tests, use the lightweight
-[verification skill](skills/post-implementation-verification/SKILL.md). It keeps acceptance criteria
+[Test-After skill](skills/test-after/SKILL.md). It keeps acceptance criteria
 before implementation, selects risk-based tests afterward and reports gaps without automatic delegation.
 Routine changes still need appropriate verification even when the skill is not loaded.
 

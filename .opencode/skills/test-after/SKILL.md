@@ -1,9 +1,9 @@
 ---
-name: post-implementation-verification
+name: test-after
 description: Verify implementation changes with risk-based tests after implementation, including focused regression coverage and honest reporting. Use for changes needing systematic post-implementation testing or when explicitly requested.
 ---
 
-# Post-implementation verification
+# Test-After
 
 Use this lightweight workflow for implementation changes needing systematic testing. The main agent
 owns implementation, tests and final acceptance; do not automatically delegate or require independent
@@ -30,7 +30,7 @@ review. Follow applicable AGENTS.md rules and preserve existing user changes.
 Select existing commands and prerequisites from the affected module's build files, tests and docs;
 do not assume a single runner covers the repository. Examples, from the repository root:
 
-- OpenCode workflow: `node --test .opencode/tests/post-implementation-verification.test.mjs`;
+- OpenCode workflow: `node --test .opencode/tests/test-after.test.mjs`;
   broader plugin tests: `npm test --prefix .opencode`; type check: `npm run typecheck --prefix .opencode`.
 - Android JVM: `./gradlew :app:testDebugUnitTest --tests '<test class>'`.
 - JVM modules: select the affected module's existing test task and tests, for example

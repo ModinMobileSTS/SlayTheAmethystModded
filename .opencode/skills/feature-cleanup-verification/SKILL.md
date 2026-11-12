@@ -6,7 +6,7 @@ description: 新路径实际接入后，按确认清单集中删除旧实现、�
 # 集中清理与回归
 
 先读[共同约定](../feature-refactoring/references/handoff.md)，加载
-`post-implementation-verification`。
+`test-after`。
 
 ## 清理前提
 

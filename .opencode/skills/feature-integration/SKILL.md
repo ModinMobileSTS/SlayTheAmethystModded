@@ -6,7 +6,7 @@ description: 按人类确认的接入设计连接真实入口与新能力，复�
 # 新路径接入
 
 先读[共同约定](../feature-refactoring/references/handoff.md)，加载
-`post-implementation-verification`。核对确认的业务契约、接入方案、清单和独立验证证据。
+`test-after`。核对确认的业务契约、接入方案、清单和独立验证证据。
 缺少关键设计确认时返回 `feature-integration-design`，不自行决定切换范围。
 
 ## 接入执行

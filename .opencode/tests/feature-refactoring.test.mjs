@@ -52,9 +52,9 @@ test("value design and integration design retain distinct human decision gates",
 
 test("each writing stage reuses Test-After without deferring integration evidence", () => {
   for (const id of [stages[1], stages[3], stages[4]]) {
-    assert.match(read(id), /加载\s*`post-implementation-verification`/)
+    assert.match(read(id), /加载\s*`test-after`/)
   }
-  assert.ok(read("post-implementation-verification").length > 0)
+  assert.ok(read("test-after").length > 0)
   assert.match(read(stages[3]), /不能把所有测试拖到最后/)
   assert.match(read(stages[3]), /接入尚未完成/)
   assert.match(read(stages[4]), /接入未完成或证据不足时，先返回接入阶段/)

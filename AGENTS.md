@@ -29,7 +29,7 @@
 
 ## Implementation and verification
 
-- For changes needing systematic post-implementation testing, or when explicitly requested, use `.opencode/skills/post-implementation-verification/SKILL.md`. Routine changes still require verification appropriate to their risk without necessarily loading the skill.
+- For changes needing systematic post-implementation testing, or when explicitly requested, use `.opencode/skills/test-after/SKILL.md`. Routine changes still require verification appropriate to their risk without necessarily loading the skill.
 
 ## Git conventions
 

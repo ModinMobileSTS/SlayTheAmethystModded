@@ -6,7 +6,7 @@ description: 按确认的业务能力独立实现新功能，重大技术架构�
 # 独立实现与测试
 
 先读[共同约定](../feature-refactoring/references/handoff.md)，加载
-`post-implementation-verification`，复用其实现后测试流程。
+`test-after`，复用其实现后测试流程。
 
 ## 前提与技术设计关口
 
