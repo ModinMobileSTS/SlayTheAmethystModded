@@ -108,3 +108,6 @@ scripts/tools/arthas/resource/jdk-companion/
 /.openchamber/screenshots/
 /opendesign/
 /test.md
+
+# Local third-party JAR corpus; never redistribute downloaded Workshop files.
+/jar-delta/test-corpus/
