@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
 import org.junit.Assert.assertEquals
@@ -112,11 +113,14 @@ class ModToolsMenuInstrumentedTest {
     @Test fun bottomToolbarKeepsMoveButNotDelete() {
         compose.setContent {
             MaterialTheme {
-                BatchEditToolbar(selectedCount = 2, controlsEnabled = true,
-                    onMove = {}, onDelete = {}, onEnable = {}, onDisable = {}, onCancel = {})
+                BatchEditToolbar(hazeState = rememberHazeState(),
+                    state = BatchEditBarState(selectedCount = 2, totalCount = 100,
+                    controlsEnabled = true, onMove = {}, onDelete = {},
+                    onEnable = {}, onDisable = {}, onCancel = {}))
             }
         }
         compose.onNodeWithText(context.getString(R.string.main_batch_action_move)).assertExists()
+        compose.onNodeWithText("2/100").assertExists()
         compose.onNodeWithText(context.getString(R.string.main_batch_action_delete)).assertDoesNotExist()
     }
 

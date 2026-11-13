@@ -649,6 +649,7 @@ Do you still want to continue?</string>
     <string name="main_mod_move_folder_current_format">%1$s (current)</string>
     <string name="main_batch_move_dialog_title_format">Move %1$d selected mods to folder</string>
     <string name="main_batch_edit_selected_format">%1$d selected</string>
+    <string name="main_batch_edit_selection_count_format" translatable="false">%1$d/%2$d</string>
     <string name="main_batch_action_move">Move</string>
     <string name="main_batch_action_enable">Enable</string>
     <string name="main_batch_action_disable">Disable</string>

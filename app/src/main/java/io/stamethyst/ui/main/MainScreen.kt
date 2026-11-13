@@ -664,7 +664,6 @@ private fun GameLaunchActionBar(
 
 @Composable
 private fun ModsHeaderPinnedContent(
-    selectedMods: List<ModItemUi> = emptyList(),
     batchActions: BatchEditBarState? = null,
     localMods: List<ModItemUi>,
     folderControlsEnabled: Boolean,
@@ -691,30 +690,29 @@ private fun ModsHeaderPinnedContent(
         subtitle = "",
         iconSize = 28.dp,
     ) {
-        batchActions?.let { BatchSelectAllAction(it) }
         AgentWorkingIndicator()
         WorkshopUpdatesAction(
             localMods = localMods,
             lastCheckedAtMs = workshopUpdateCheckState.lastCompletedAtMs,
             enabled = folderControlsEnabled && hostAvailable,
         )
-        ModsActionsMenu(
-            batchActions = batchActions,
-            selectedMods = selectedMods,
-            canEditFolders = folderControlsEnabled && hostAvailable,
-            dragLocked = dragLocked,
-            showEnabledModsOnly = showEnabledModsOnly,
-            showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
-            feedbackUnreadCount = feedbackUnreadCount,
-            checkingUpdates = workshopUpdateCheckState.checking,
-            onToggleDragLocked = onToggleDragLocked,
-            onShowEnabledModsOnlyChange = onShowEnabledModsOnlyChange,
-            onShowUpdateAvailableModsOnlyChange = onShowUpdateAvailableModsOnlyChange,
-            onAddFolderClick = onAddFolderClick,
-            onCheckWorkshopUpdates = onCheckWorkshopUpdates,
-            onOpenFeedbackUpdates = onOpenFeedbackUpdates,
-            onOpenCommunityPatches = onOpenCommunityPatches,
-        )
+        if (batchActions == null) {
+            ModsActionsMenu(
+                canEditFolders = folderControlsEnabled && hostAvailable,
+                dragLocked = dragLocked,
+                showEnabledModsOnly = showEnabledModsOnly,
+                showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
+                feedbackUnreadCount = feedbackUnreadCount,
+                checkingUpdates = workshopUpdateCheckState.checking,
+                onToggleDragLocked = onToggleDragLocked,
+                onShowEnabledModsOnlyChange = onShowEnabledModsOnlyChange,
+                onShowUpdateAvailableModsOnlyChange = onShowUpdateAvailableModsOnlyChange,
+                onAddFolderClick = onAddFolderClick,
+                onCheckWorkshopUpdates = onCheckWorkshopUpdates,
+                onOpenFeedbackUpdates = onOpenFeedbackUpdates,
+                onOpenCommunityPatches = onOpenCommunityPatches,
+            )
+        }
     }
 }
 
@@ -5326,7 +5324,6 @@ private fun LauncherMainScreenContent(
                                 pinnedContent = {
                                     ModsHeaderPinnedContent(
                                         batchActions = batchEditBarState,
-                                        selectedMods = batchEditBarState?.selectedMods.orEmpty(),
                                         localMods = uiState.optionalMods,
                                         folderControlsEnabled = uiState.controlsEnabled,
                                         dragLocked = uiState.dragLocked,
@@ -5383,7 +5380,27 @@ private fun LauncherMainScreenContent(
                         ModBatchEditBottomBar(
                             modifier = Modifier.align(Alignment.BottomCenter),
                             batchEditBarState = batchEditBarState,
+                            hazeState = hazeState,
                             onHeightChanged = { batchEditBarHeightPx = it },
+                            actionsMenu = { state ->
+                                ModsActionsMenu(
+                                    batchActions = state,
+                                    selectedMods = state.selectedMods,
+                                    canEditFolders = uiState.controlsEnabled && actions.isHostAvailable,
+                                    dragLocked = uiState.dragLocked,
+                                    showEnabledModsOnly = showEnabledModsOnly,
+                                    showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
+                                    feedbackUnreadCount = feedbackUnreadCount,
+                                    checkingUpdates = workshopUpdateCheckState.checking,
+                                    onToggleDragLocked = actions.onToggleDragLocked,
+                                    onShowEnabledModsOnlyChange = { showEnabledModsOnly = it },
+                                    onShowUpdateAvailableModsOnlyChange = { showUpdateAvailableModsOnly = it },
+                                    onAddFolderClick = { showCreateFolderDialog = true },
+                                    onCheckWorkshopUpdates = onCheckWorkshopUpdates,
+                                    onOpenFeedbackUpdates = onOpenFeedbackUpdates,
+                                    onOpenCommunityPatches = onOpenCommunityPatches,
+                                )
+                            },
                         )
                     }
             }
@@ -6467,43 +6484,41 @@ internal fun NotificationBadge(
 }
 
 @Composable
-private fun ModBatchEditBottomBar(
+internal fun ModBatchEditBottomBar(
     modifier: Modifier = Modifier,
     batchEditBarState: BatchEditBarState?,
+    hazeState: HazeState,
     onHeightChanged: (Int) -> Unit,
+    actionsMenu: @Composable (BatchEditBarState) -> Unit = {},
 ) {
     AnimatedContent(
-        targetState = batchEditBarState != null,
+        targetState = batchEditBarState,
+        contentKey = { it != null },
+        contentAlignment = Alignment.BottomCenter,
         modifier = modifier
             .fillMaxWidth()
             .onSizeChanged { onHeightChanged(it.height) },
         transitionSpec = {
             val slideIn = slideInVertically(
-                initialOffsetY = { fullHeight -> fullHeight / 2 },
+                initialOffsetY = { fullHeight -> fullHeight },
                 animationSpec = tween(durationMillis = BOTTOM_BAR_SWITCH_ANIMATION_MS)
-            ) + fadeIn(animationSpec = tween(durationMillis = BOTTOM_BAR_SWITCH_ANIMATION_MS))
+            )
             val slideOut = slideOutVertically(
-                targetOffsetY = { fullHeight -> fullHeight / 2 },
+                targetOffsetY = { fullHeight -> fullHeight },
                 animationSpec = tween(durationMillis = BOTTOM_BAR_SWITCH_ANIMATION_MS)
-            ) + fadeOut(animationSpec = tween(durationMillis = BOTTOM_BAR_SWITCH_ANIMATION_MS))
+            )
             slideIn togetherWith slideOut using SizeTransform(clip = false)
         },
         label = "modBatchEditBottomBar"
-    ) { showingBatchBar ->
-        if (showingBatchBar) {
-            val state = batchEditBarState
-            if (state != null) {
-                BatchEditToolbar(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    selectedCount = state.selectedCount,
-                    controlsEnabled = state.controlsEnabled,
-                    onMove = state.onMove,
-                    onDelete = state.onDelete,
-                    onEnable = state.onEnable,
-                    onDisable = state.onDisable,
-                    onCancel = state.onCancel
-                )
-            }
+    ) { state ->
+        // Use this transition's snapshot, not the nullable live state: the outgoing
+        // toolbar must stay composed until its slide/fade-out has finished.
+        if (state != null) {
+            BatchEditToolbar(
+                state = state,
+                hazeState = hazeState,
+                actionsMenu = { actionsMenu(state) },
+            )
         }
     }
 }
