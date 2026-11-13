@@ -178,6 +178,10 @@ internal fun SettingsPerformanceSection(
         )
     )
 
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_force_high_refresh_rate_title) {
+        ForceHighRefreshRateSetting(enabled = !uiState.busy)
+    }
+
     if (settingTitleResId == null && uiState.mtsPatchCacheEnabled) {
         SettingsActionListItem(
             title = stringResource(R.string.settings_mts_cache_optimizations_title),

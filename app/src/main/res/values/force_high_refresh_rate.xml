@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_force_high_refresh_rate_title">Force high refresh rate</string>
+    <string name="settings_force_high_refresh_rate_desc">Animates a nearly invisible 1-pixel line while the launcher or game is in the foreground to reduce LTPO refresh-rate drops. Uses more power and may not work on every device; cannot override system limits or guarantee 120 Hz.</string>
+</resources>

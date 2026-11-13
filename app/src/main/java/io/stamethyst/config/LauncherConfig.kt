@@ -57,6 +57,7 @@ object LauncherConfig {
     private const val PREF_KEY_FLOATING_TOOL_BUTTONS = "floating_tool_buttons"
     private const val PREF_KEY_HIDDEN_MAIN_CARDS = "hidden_main_cards"
     private const val PREF_KEY_SHOW_REFRESH_RATE_DETECTOR = "show_refresh_rate_detector"
+    private const val PREF_KEY_FORCE_HIGH_REFRESH_RATE = "force_high_refresh_rate"
     private const val PREF_KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
@@ -340,6 +341,7 @@ object LauncherConfig {
     )
     val DEFAULT_HIDDEN_MAIN_CARDS: Set<String> = emptySet()
     const val DEFAULT_SHOW_REFRESH_RATE_DETECTOR = true
+    const val DEFAULT_FORCE_HIGH_REFRESH_RATE = false
     val MAIN_CARD_IDS: List<String> = listOf(
         "overview",
         "feedback",
@@ -880,6 +882,17 @@ object LauncherConfig {
         prefs(context).edit {
             putBoolean(PREF_KEY_SHOW_REFRESH_RATE_DETECTOR, enabled)
         }
+    }
+
+    fun isForceHighRefreshRateEnabled(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_FORCE_HIGH_REFRESH_RATE,
+            DEFAULT_FORCE_HIGH_REFRESH_RATE,
+        )
+    }
+
+    fun setForceHighRefreshRateEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit { putBoolean(PREF_KEY_FORCE_HIGH_REFRESH_RATE, enabled) }
     }
 
     fun isHapticFeedbackEnabled(context: Context): Boolean {

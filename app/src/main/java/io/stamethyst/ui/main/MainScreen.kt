@@ -194,6 +194,7 @@ import io.stamethyst.ui.icon.PlayArrow
 import io.stamethyst.ui.icon.Settings
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.settings.common.ForceHighRefreshRateSetting
 import io.stamethyst.ui.LauncherNavigationRequestBus
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.WorkshopDownloadActionButton
@@ -454,7 +455,15 @@ private fun LauncherGamePage(
         AlertDialog(
             onDismissRequest = { showRefreshRateSettingsDialog = false },
             title = { Text(stringResource(R.string.main_refresh_rate_mismatch_title)) },
-            text = { Text(stringResource(R.string.main_refresh_rate_settings_message)) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(stringResource(R.string.main_refresh_rate_settings_message))
+                    ForceHighRefreshRateSetting(enabled = !uiState.busy)
+                }
+            },
             dismissButton = {
                 TextButton(onClick = { openDisplayRefreshRateSettings(context) }) {
                     Text(stringResource(R.string.main_refresh_rate_open_settings))

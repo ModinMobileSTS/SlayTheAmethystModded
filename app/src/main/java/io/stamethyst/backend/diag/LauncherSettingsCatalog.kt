@@ -352,6 +352,12 @@ private fun renderingSection(
                 zh,
             ),
             boolField(
+                "forceHighRefreshRateEnabled",
+                R.string.settings_force_high_refresh_rate_title,
+                LauncherConfig.isForceHighRefreshRateEnabled(context),
+                zh,
+            ),
+            boolField(
                 "showGamePerformanceOverlay",
                 R.string.settings_performance_overlay_enabled,
                 LauncherConfig.isGamePerformanceOverlayEnabled(context),

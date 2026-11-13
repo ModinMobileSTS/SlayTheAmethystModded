@@ -200,6 +200,12 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsPerformance,
     ),
     entry(
+        titleResId = R.string.settings_force_high_refresh_rate_title,
+        subtitleResId = R.string.settings_force_high_refresh_rate_desc,
+        categoryTitleResId = R.string.settings_category_performance_title,
+        route = Route.SettingsPerformance,
+    ),
+    entry(
         titleResId = R.string.settings_mts_cache_optimizations_title,
         subtitleResId = R.string.settings_mts_cache_optimizations_desc,
         categoryTitleResId = R.string.settings_category_performance_title,
