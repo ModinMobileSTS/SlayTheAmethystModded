@@ -7,6 +7,24 @@ import org.junit.Test
 
 class SettingsScreenViewModelLocalSettingsFeedbackTest {
     @Test
+    fun launcherBlurChangesUpdateLocallyAndRestoreWithConfiguration() {
+        val source = repositorySource(SETTINGS_VIEW_MODEL_PATH)
+        val body = functionBody(source, "onLauncherBlurDisabledChanged")
+        assertTrue(body.contains("uiState.busy || uiState.launcherBlurDisabled == disabled"))
+        assertTrue(body.indexOf("uiState = uiState.copy(launcherBlurDisabled = disabled)") <
+            body.indexOf("LauncherPreferences.saveLauncherBlurDisabled(host, disabled)"))
+        assertTrue(body.contains("refreshConfiguration(host)"))
+        assertFalse(body.contains("refreshStatus("))
+        assertTrue(functionBody(source, "applySnapshot").contains(
+            "launcherBlurDisabled = snapshot.launcherBlurDisabled",
+        ))
+        val repository = repositorySource("app/src/main/java/io/stamethyst/ui/settings/core/SettingsRepository.kt")
+        assertTrue(functionBody(repository, "resetLauncherSettingsToDefaults").contains(
+            "LauncherPreferences.DEFAULT_LAUNCHER_BLUR_DISABLED",
+        ))
+    }
+
+    @Test
     fun steamAndMarketSettingsUpdateLocalUiStateBeforeRefreshing() {
         val source = repositorySource(SETTINGS_VIEW_MODEL_PATH)
 

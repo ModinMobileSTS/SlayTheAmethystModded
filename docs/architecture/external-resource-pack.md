@@ -46,3 +46,17 @@ A failed copy or other I/O error during migration does not quarantine the source
 ## Diagnostics
 
 Resource-pack state is written to `sts/resource_pack/state.txt` in diagnostics archives. The rotating diagnostics log also records preparation, source selection, migration, and failure events.
+
+## Loading artwork
+
+The full-screen art loading page defaults to the new poster pair in
+`app/src/main/assets/boot-art/`. These small assets stay embedded in both APK
+variants (outside the externalized `ui/**` directory), so an existing resource
+pack does not need to be downloaded again after an app update.
+
+The original `ui/boot_dark.png` / `ui/boot_bright.png` pair remains in the resource
+pack. Select either pair under **Settings → Appearance → Custom loading image →
+Built-in loading artwork**. Both the loading screen and settings previews use the
+same persisted selection. Custom images still take priority; resetting custom
+images keeps the selected built-in pair, while resetting all launcher settings
+restores the new pair.

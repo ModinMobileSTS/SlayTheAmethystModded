@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.test.platform.app.InstrumentationRegistry
@@ -32,10 +33,11 @@ class ModToolsMenuInstrumentedTest {
             }
         }
         listOf(R.string.mod_check_updates_single, R.string.mod_check_community_single,
-            R.string.mod_details_move, R.string.main_mod_delete).forEach {
+            R.string.mod_details_move, R.string.main_mod_delete, R.string.main_mod_favorite_add,
+            R.string.main_mod_favorite_remove, R.string.mod_remove_association).forEach {
             compose.onNodeWithText(context.getString(it)).assertDoesNotExist()
         }
-        listOf(R.string.main_mod_favorite_add, R.string.main_mod_priority_adjust,
+        listOf(R.string.main_mod_priority_adjust,
             R.string.main_mod_associate, R.string.main_mod_export, R.string.main_mod_share).forEach {
             compose.onNodeWithText(context.getString(it)).assertExists()
         }
@@ -51,7 +53,7 @@ class ModToolsMenuInstrumentedTest {
         assertEquals(1, deletes)
     }
 
-    @Test fun normalMenuHidesSelectionActionsAndBothChecks() {
+    @Test fun normalMenuShowsGlobalChecksButHidesSelectionActions() {
         compose.setContent {
             MaterialTheme {
                 ModsActionsMenu(
@@ -65,6 +67,8 @@ class ModToolsMenuInstrumentedTest {
         }
         compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).performClick()
         compose.onNodeWithText(context.getString(R.string.main_action_add_folder)).assertExists()
+        compose.onNodeWithText(context.getString(R.string.community_patches_view_all)).assertIsEnabled()
+        compose.onNodeWithText(context.getString(R.string.main_mod_check_updates)).assertIsEnabled()
         listOf(R.string.mod_check_updates_all, R.string.mod_check_community_all,
             R.string.main_mod_export, R.string.main_mod_delete).forEach {
             compose.onNodeWithText(context.getString(it)).assertDoesNotExist()
@@ -81,6 +85,8 @@ class ModToolsMenuInstrumentedTest {
 
     @Test fun singleSelectionDisablesGroupAssociationButDispatchesExport() {
         var exports = 0
+        var updateChecks = 0
+        var communityOpens = 0
         val mod = ModItemUi(
             modId = "menu-test", manifestModId = "menu-test", storagePath = "/menu-test.jar",
             name = "Menu Test", version = "1", fileSizeBytes = 0,
@@ -94,7 +100,8 @@ class ModToolsMenuInstrumentedTest {
                     showUpdateAvailableModsOnly = false, feedbackUnreadCount = 0, checkingUpdates = false,
                     onToggleDragLocked = {}, onShowEnabledModsOnlyChange = {},
                     onShowUpdateAvailableModsOnlyChange = {}, onAddFolderClick = {},
-                    onCheckWorkshopUpdates = {}, onOpenFeedbackUpdates = {}, selectedMods = listOf(mod),
+                    onCheckWorkshopUpdates = { updateChecks++ }, onOpenFeedbackUpdates = {},
+                    onOpenCommunityPatches = { communityOpens++ }, selectedMods = listOf(mod),
                     batchActions = BatchEditBarState(
                         selectedMods = listOf(mod), selectedCount = 1, controlsEnabled = true,
                         onMove = {}, onDelete = {}, onEnable = {}, onDisable = {}, onCancel = {},
@@ -104,9 +111,15 @@ class ModToolsMenuInstrumentedTest {
             }
         }
         compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).performClick()
+        compose.onNodeWithText(context.getString(R.string.community_patches_view_all)).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).performClick()
+        compose.onNodeWithText(context.getString(R.string.main_mod_check_updates)).performClick()
+        assertEquals(1, communityOpens)
+        assertEquals(1, updateChecks)
+        compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).performClick()
         compose.onNodeWithText(context.getString(R.string.main_mod_associate)).assertIsNotEnabled()
         compose.onNodeWithText(context.getString(R.string.main_mod_favorite_remove)).assertIsNotEnabled()
-        compose.onNodeWithText(context.getString(R.string.main_mod_export)).performClick()
+        compose.onNodeWithText(context.getString(R.string.main_mod_export)).performScrollTo().performClick()
         assertEquals(1, exports)
     }
 
@@ -124,20 +137,23 @@ class ModToolsMenuInstrumentedTest {
         compose.onNodeWithText(context.getString(R.string.main_batch_action_delete)).assertDoesNotExist()
     }
 
-    @Test fun unassociatedModCannotRemoveAssociation() {
+    @Test fun unassociatedModStartsBindingDirectly() {
+        var associations = 0
         compose.setContent {
             MaterialTheme {
                 ModActionsList(
                     controlsEnabled = true, favorite = false, deleteEnabled = true,
                     onFavoriteChange = {}, onEditPriority = {}, showOpenWorkshopDetails = false,
                     onOpenWorkshopDetails = {}, showAiEditorNewBadge = false, onOpenAiEditor = {},
-                    onAssociate = {}, onExport = {}, onShare = {}, onRename = {}, onDelete = {},
+                    onAssociate = { associations++ }, onExport = {}, onShare = {}, onRename = {}, onDelete = {},
                     associationPresent = false,
                 )
             }
         }
-        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).assertExists()
-        compose.onNodeWithText(context.getString(R.string.mod_remove_association)).assertIsNotEnabled()
+        compose.onNodeWithText(context.getString(R.string.mod_remove_association)).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).performClick()
+        assertEquals(1, associations)
+        compose.onNodeWithText(context.getString(R.string.mod_binding_options_title)).assertDoesNotExist()
     }
 
     @Test fun mixedSelectionAllowsGroupingAndRemoval() {
@@ -169,14 +185,14 @@ class ModToolsMenuInstrumentedTest {
             }
         }
         compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).performClick()
-        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).assertIsEnabled().performClick()
+        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).assertIsEnabled().performScrollTo().performClick()
         compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).performClick()
-        compose.onNodeWithText(context.getString(R.string.mod_remove_association)).performClick()
+        compose.onNodeWithText(context.getString(R.string.mod_remove_association)).performScrollTo().performClick()
         assertEquals(1, associations)
         assertEquals(1, removals)
     }
 
-    @Test fun associatedModDispatchesRemoveSeparatelyFromAssociate() {
+    @Test fun associatedModOffersRemovalOrBindingMoreAndAllowsCancel() {
         var removals = 0
         var associations = 0
         compose.setContent {
@@ -190,8 +206,48 @@ class ModToolsMenuInstrumentedTest {
                 )
             }
         }
+        compose.onNodeWithText(context.getString(R.string.mod_remove_association)).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).performClick()
+        assertEquals(0, removals)
+        assertEquals(0, associations)
+        compose.onNodeWithText(context.getString(R.string.mod_remove_association)).assertExists()
+        compose.onNodeWithText(context.getString(R.string.mod_bind_more)).assertExists()
+        compose.onNodeWithText(context.getString(R.string.main_folder_dialog_cancel)).performClick()
+        assertEquals(0, removals)
+        assertEquals(0, associations)
+        compose.onNodeWithText(context.getString(R.string.mod_binding_options_title)).assertDoesNotExist()
+
+        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).performClick()
         compose.onNodeWithText(context.getString(R.string.mod_remove_association)).performClick()
         assertEquals(1, removals)
         assertEquals(0, associations)
+        compose.onNodeWithText(context.getString(R.string.mod_binding_options_title)).assertDoesNotExist()
+
+        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).performClick()
+        compose.onNodeWithText(context.getString(R.string.mod_bind_more)).performClick()
+        assertEquals(1, removals)
+        assertEquals(1, associations)
+        compose.onNodeWithText(context.getString(R.string.mod_binding_options_title)).assertDoesNotExist()
+    }
+
+    @Test fun disabledBindingCannotOpenChoicesOrDispatch() {
+        var associations = 0
+        var removals = 0
+        compose.setContent {
+            MaterialTheme {
+                ModActionsList(
+                    controlsEnabled = false, favorite = true, deleteEnabled = false,
+                    onFavoriteChange = {}, onEditPriority = {}, showOpenWorkshopDetails = false,
+                    onOpenWorkshopDetails = {}, showAiEditorNewBadge = false, onOpenAiEditor = {},
+                    onAssociate = { associations++ }, onExport = {}, onShare = {}, onRename = {}, onDelete = {},
+                    associationPresent = true, onRemoveAssociation = { removals++ },
+                )
+            }
+        }
+        compose.onNodeWithText(context.getString(R.string.main_mod_favorite_remove)).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.main_mod_associate)).assertIsNotEnabled().performClick()
+        compose.onNodeWithText(context.getString(R.string.mod_binding_options_title)).assertDoesNotExist()
+        assertEquals(0, associations)
+        assertEquals(0, removals)
     }
 }

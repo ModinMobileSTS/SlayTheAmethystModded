@@ -49,6 +49,7 @@ import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.navigation.Route
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayArtwork
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
@@ -332,12 +333,14 @@ internal fun LauncherSettingsLauncherScreenContent(
     onThemeColorChanged: (LauncherThemeColor) -> Unit = {},
     onLauncherIconModeChanged: (LauncherIconMode) -> Unit = {},
     onChromeBackgroundOpacityChanged: (Float) -> Unit = {},
+    onLauncherBlurDisabledChanged: (Boolean) -> Unit = {},
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit = {},
     onPrepareSlingBreak: () -> Unit = {},
     onDismissSlingBreakDependencyFailure: () -> Unit = {},
     onSwitchSlingBreakDownloadMirror: () -> Unit = {},
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit = {},
     onBootOverlayImageModeChanged: (BootOverlayImageMode) -> Unit = {},
+    onBootOverlayArtworkChanged: (BootOverlayArtwork) -> Unit = {},
     onPickBootOverlayImage: (BootOverlayImageSlot) -> Unit = {},
     onResetBootOverlayImages: () -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
@@ -376,12 +379,14 @@ internal fun LauncherSettingsLauncherScreenContent(
                         onThemeColorChanged = onThemeColorChanged,
                         onLauncherIconModeChanged = onLauncherIconModeChanged,
                         onChromeBackgroundOpacityChanged = onChromeBackgroundOpacityChanged,
+                        onLauncherBlurDisabledChanged = onLauncherBlurDisabledChanged,
                         onBootOverlayStyleChanged = onBootOverlayStyleChanged,
                         onPrepareSlingBreak = onPrepareSlingBreak,
                         onDismissSlingBreakDependencyFailure = onDismissSlingBreakDependencyFailure,
                         onSwitchSlingBreakDownloadMirror = onSwitchSlingBreakDownloadMirror,
                         onBootOverlayAnimationChanged = onBootOverlayAnimationChanged,
                         onBootOverlayImageModeChanged = onBootOverlayImageModeChanged,
+                        onBootOverlayArtworkChanged = onBootOverlayArtworkChanged,
                         onPickBootOverlayImage = onPickBootOverlayImage,
                         onResetBootOverlayImages = onResetBootOverlayImages,
                         onShowModFileNameChanged = onShowModFileNameChanged,

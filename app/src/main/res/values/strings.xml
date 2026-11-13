@@ -741,9 +741,9 @@ Do you still want to continue?</string>
     <string name="main_mod_favorite_remove">Remove from special favorites</string>
     <string name="main_mod_action_desc_favorite_add">Keep this mod at the top of your favorites.</string>
     <string name="main_mod_action_desc_favorite_remove">Remove this mod from your favorites list.</string>
-    <string name="main_mod_associate">Associate</string>
+    <string name="main_mod_associate">Bind other mods</string>
     <string name="main_mod_action_desc_priority">Lower numbers load earlier; dependency order is still enforced.</string>
-    <string name="main_mod_action_desc_associate">Group related mods so they can be managed together.</string>
+    <string name="main_mod_action_desc_associate">Bind with other mods to toggle them together</string>
     <string name="main_mod_action_desc_market">View this mod page in the workshop.</string>
     <string name="main_mod_action_desc_ai_edit">Inspect and edit this mod in the AI editor.</string>
     <string name="main_mod_action_desc_export">Save a copy of the mod file to device storage.</string>
@@ -1194,6 +1194,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_theme_color_guanjie">Watcher</string>
     <string name="settings_theme_color_colorless">Colorless</string>
     <string name="settings_chrome_background_opacity_title">Top bar and bottom bar background opacity</string>
+    <string name="settings_launcher_blur_disabled_title">Disable launcher blur</string>
+    <string name="settings_launcher_blur_disabled_desc">Disable background blur on launcher bars and panels while keeping translucent backgrounds. Takes effect immediately.</string>
     <string name="settings_chrome_background_opacity_desc">Adds an opaque surface behind the glass top bar and bottom bar on every launcher page.</string>
     <string name="settings_boot_overlay_style_title">Loading screen style</string>
     <string name="settings_boot_overlay_style_desc">Choose the loading screen shown while the game starts.</string>

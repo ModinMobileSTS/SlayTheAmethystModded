@@ -137,6 +137,7 @@ import io.stamethyst.config.FramePacingMode
 import kotlin.math.roundToInt
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
+import io.stamethyst.config.BootOverlayArtwork
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
@@ -399,6 +400,7 @@ class SettingsScreenViewModel : ViewModel() {
         val launcherIconMode: LauncherIconMode = LauncherPreferences.DEFAULT_LAUNCHER_ICON_MODE,
         val chromeBackgroundOpacity: Float =
             LauncherPreferences.DEFAULT_CHROME_BACKGROUND_OPACITY,
+        val launcherBlurDisabled: Boolean = LauncherPreferences.DEFAULT_LAUNCHER_BLUR_DISABLED,
         val bootOverlayStyle: BootOverlayStyle =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE,
         val slingBreakDependencyProgress: Int? = null,
@@ -742,6 +744,7 @@ class SettingsScreenViewModel : ViewModel() {
             themeColor = SettingsRepository.loadThemeColor(host),
             launcherIconMode = SettingsRepository.loadLauncherIconMode(host),
             chromeBackgroundOpacity = SettingsRepository.loadChromeBackgroundOpacity(host),
+            launcherBlurDisabled = SettingsRepository.loadLauncherBlurDisabled(host),
             bootOverlayStyle = SettingsRepository.loadBootOverlayStyle(host),
             slingBreakInstalledVersion = SlingBreakInstallation.read(host)?.rawTagName.orEmpty(),
             bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host),
@@ -767,6 +770,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         saveLauncherIconModeSelection(host, iconMode)
         syncThemeAppearance(host)
+        refreshConfiguration(host)
+    }
+
+    fun onLauncherBlurDisabledChanged(host: Activity, disabled: Boolean) {
+        if (uiState.busy || uiState.launcherBlurDisabled == disabled) {
+            return
+        }
+        uiState = uiState.copy(launcherBlurDisabled = disabled)
+        LauncherPreferences.saveLauncherBlurDisabled(host, disabled)
         refreshConfiguration(host)
     }
 
@@ -894,6 +906,16 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     fun retrySlingBreakInstallation(host: Activity) = prepareSlingBreak(host, uiState.slingBreakUpdateRelease)
+
+    fun onBootOverlayArtworkChanged(host: Activity, artwork: BootOverlayArtwork) {
+        if (uiState.busy || uiState.bootOverlayImageConfig.artwork == artwork) {
+            return
+        }
+        val nextConfig = uiState.bootOverlayImageConfig.copy(artwork = artwork)
+        LauncherPreferences.saveBootOverlayImageConfig(host, nextConfig)
+        uiState = uiState.copy(bootOverlayImageConfig = nextConfig)
+        refreshConfiguration(host)
+    }
 
     fun onBootOverlayImageModeChanged(host: Activity, mode: BootOverlayImageMode) {
         if (uiState.busy || uiState.bootOverlayImageConfig.mode == mode) {
@@ -4725,6 +4747,7 @@ class SettingsScreenViewModel : ViewModel() {
             themeColor = snapshot.themeColor,
             launcherIconMode = snapshot.launcherIconMode,
             chromeBackgroundOpacity = snapshot.chromeBackgroundOpacity,
+            launcherBlurDisabled = snapshot.launcherBlurDisabled,
             bootOverlayStyle = snapshot.bootOverlayStyle,
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
             bootOverlayImageConfig = snapshot.bootOverlayImageConfig,

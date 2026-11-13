@@ -95,6 +95,9 @@ fun LauncherSettingsLauncherScreen(
         onChromeBackgroundOpacityChanged = { opacity ->
             viewModel.onChromeBackgroundOpacityChanged(activity, opacity)
         },
+        onLauncherBlurDisabledChanged = { disabled ->
+            viewModel.onLauncherBlurDisabledChanged(activity, disabled)
+        },
         onBootOverlayStyleChanged = { style ->
             viewModel.onBootOverlayStyleChanged(activity, style)
         },
@@ -108,6 +111,9 @@ fun LauncherSettingsLauncherScreen(
         },
         onBootOverlayImageModeChanged = { mode ->
             viewModel.onBootOverlayImageModeChanged(activity, mode)
+        },
+        onBootOverlayArtworkChanged = { artwork ->
+            viewModel.onBootOverlayArtworkChanged(activity, artwork)
         },
         onPickBootOverlayImage = viewModel::onPickBootOverlayImage,
         onResetBootOverlayImages = { viewModel.onResetBootOverlayImages(activity) },

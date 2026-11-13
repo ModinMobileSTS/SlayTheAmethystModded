@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_boot_overlay_artwork_title">内置加载图片</string>
+    <string name="settings_boot_overlay_artwork_poster">新版插画</string>
+    <string name="settings_boot_overlay_artwork_original">旧版插画</string>
+    <string name="settings_boot_overlay_artwork_custom_hint">自定义图片优先显示；重置自定义图片后显示所选的内置插画。</string>
+</resources>

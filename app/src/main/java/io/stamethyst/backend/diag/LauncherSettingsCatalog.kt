@@ -150,6 +150,11 @@ private fun appearanceSection(
                 opacityPercent,
                 zh,
             ),
+            boolField(
+                "launcher.blurDisabled",
+                "关闭启动器模糊",
+                LauncherConfig.readLauncherBlurDisabled(context),
+            ),
             field(
                 "bootOverlayStyle",
                 zh.getString(R.string.settings_boot_overlay_style_title),
@@ -168,6 +173,18 @@ private fun appearanceSection(
                 bootOverlayImageModeEn(imageConfig),
                 bootOverlayImageModeZh(imageConfig),
                 zh,
+            ),
+            field(
+                "bootOverlayArtwork",
+                zh.getString(R.string.settings_boot_overlay_artwork_title),
+                imageConfig.artwork.persistedValue,
+                zh.getString(
+                    if (imageConfig.artwork == io.stamethyst.config.BootOverlayArtwork.POSTER) {
+                        R.string.settings_boot_overlay_artwork_poster
+                    } else {
+                        R.string.settings_boot_overlay_artwork_original
+                    }
+                ),
             ),
             boolField("showModFileName", "显示 Mod 文件名", LauncherConfig.readShowModFileName(context)),
             boolField("firstRunSetupCompleted", "已完成首次引导", LauncherConfig.isFirstRunSetupCompleted(context)),

@@ -56,6 +56,7 @@ internal object SettingsRepository {
         val themeColor: LauncherThemeColor,
         val launcherIconMode: LauncherIconMode,
         val chromeBackgroundOpacity: Float,
+        val launcherBlurDisabled: Boolean,
         val bootOverlayStyle: BootOverlayStyle,
         val bootOverlayAnimation: BootOverlayAnimation,
         val bootOverlayImageConfig: BootOverlayImageConfig,
@@ -199,6 +200,10 @@ internal object SettingsRepository {
         return LauncherPreferences.readLauncherIconMode(context)
     }
 
+    fun loadLauncherBlurDisabled(context: Context): Boolean {
+        return LauncherPreferences.readLauncherBlurDisabled(context)
+    }
+
     fun loadChromeBackgroundOpacity(context: Context): Float {
         return LauncherPreferences.readChromeBackgroundOpacity(context)
     }
@@ -226,6 +231,7 @@ internal object SettingsRepository {
             themeColor = LauncherPreferences.readThemeColor(context),
             launcherIconMode = LauncherPreferences.readLauncherIconMode(context),
             chromeBackgroundOpacity = LauncherPreferences.readChromeBackgroundOpacity(context),
+            launcherBlurDisabled = LauncherPreferences.readLauncherBlurDisabled(context),
             bootOverlayStyle = LauncherPreferences.readBootOverlayStyle(context),
             bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
             bootOverlayImageConfig = LauncherPreferences.readBootOverlayImageConfig(context),
@@ -367,6 +373,10 @@ internal object SettingsRepository {
     }
 
     fun resetLauncherSettingsToDefaults(context: Context) {
+        LauncherPreferences.saveLauncherBlurDisabled(
+            context,
+            LauncherPreferences.DEFAULT_LAUNCHER_BLUR_DISABLED
+        )
         LauncherPreferences.saveThemeMode(context, LauncherPreferences.DEFAULT_THEME_MODE)
         LauncherPreferences.saveThemeColor(context, LauncherPreferences.DEFAULT_THEME_COLOR)
         LauncherPreferences.saveLauncherIconMode(
@@ -386,6 +396,7 @@ internal object SettingsRepository {
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION
         )
         BootOverlayImageService.reset(context)
+        LauncherPreferences.saveBootOverlayImageConfig(context, BootOverlayImageConfig())
         LauncherPreferences.savePlayerName(context, LauncherPreferences.DEFAULT_PLAYER_NAME)
         RenderScaleService.reset(context)
         LauncherPreferences.saveTargetFps(context, LauncherPreferences.DEFAULT_TARGET_FPS)

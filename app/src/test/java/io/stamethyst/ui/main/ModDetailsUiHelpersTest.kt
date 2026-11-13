@@ -57,4 +57,20 @@ class ModDetailsUiHelpersTest {
         assertNull(mod.copy(workshop = WorkshopModUi(646570u, 1uL, WorkshopModState.Downloading,
             statusText = "  ")).detailsStatusText())
     }
+
+    @Test fun technicalDependenciesAreTrimmedUniqueAndInManifestOrder() {
+        assertEquals(listOf("basemod", "stslib"), mod.copy(
+            dependencies = listOf(" basemod ", "", "stslib", "basemod", "  "),
+        ).detailsDependencies())
+        assertTrue(mod.copy(dependencies = listOf(" ", "")).detailsDependencies().isEmpty())
+        assertTrue(mod.detailsDependencies().isEmpty())
+    }
+
+    @Test fun technicalPathUsesLocalStorageBeforeWorkshopFallback() {
+        val workshop = WorkshopModUi(646570u, 1uL, WorkshopModState.ImportedPatched, localJarPath = "/workshop/mod.jar")
+        assertEquals("/test.jar", mod.copy(workshop = workshop).detailsStoragePath())
+        assertEquals("/workshop/mod.jar", mod.copy(storagePath = " ", workshop = workshop).detailsStoragePath())
+        assertNull(mod.copy(storagePath = "").detailsStoragePath())
+        assertNull(mod.copy(storagePath = "", workshop = workshop.copy(localJarPath = " ")).detailsStoragePath())
+    }
 }

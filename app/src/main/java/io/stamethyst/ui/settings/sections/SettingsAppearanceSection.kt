@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.BootOverlayArtBackground
 import io.stamethyst.R
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayArtwork
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
@@ -93,6 +94,8 @@ internal data class AppearanceSettingsActions(
     val onPickBootOverlayImage: (BootOverlayImageSlot) -> Unit,
     val onResetBootOverlayImages: () -> Unit,
     val onShowModFileNameChanged: (Boolean) -> Unit,
+    val onLauncherBlurDisabledChanged: (Boolean) -> Unit = {},
+    val onBootOverlayArtworkChanged: (BootOverlayArtwork) -> Unit = {},
 )
 
 
@@ -152,6 +155,18 @@ internal fun SettingsAppearanceSection(
                 onClick = { showThemeColorDialog = true }
             )
             ThemeColorPreviewRow(selectedThemeColor = uiState.themeColor)
+        }
+
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_launcher_blur_disabled_title) {
+            SettingsSwitchItem(
+                SettingsSwitchSpec(
+                    checked = uiState.launcherBlurDisabled,
+                    enabled = !uiState.busy,
+                    title = stringResource(R.string.settings_launcher_blur_disabled_title),
+                    description = stringResource(R.string.settings_launcher_blur_disabled_desc),
+                    onCheckedChange = actions.onLauncherBlurDisabledChanged,
+                )
+            )
         }
 
         if (settingTitleResId == null || settingTitleResId == R.string.settings_chrome_background_opacity_title) {
@@ -265,6 +280,7 @@ internal fun SettingsAppearanceSection(
                     onModeChanged = actions.onBootOverlayImageModeChanged,
                     onPickImage = actions.onPickBootOverlayImage,
                     onReset = actions.onResetBootOverlayImages,
+                    onArtworkChanged = actions.onBootOverlayArtworkChanged,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 520.dp)
@@ -354,7 +370,7 @@ internal fun bootOverlayStyleDisplayName(style: BootOverlayStyle): String {
 @Composable
 internal fun bootOverlayCustomImageSummary(config: BootOverlayImageConfig): String {
     return when {
-        !config.hasCustomImages -> stringResource(R.string.settings_boot_overlay_custom_image_default)
+        !config.hasCustomImages -> bootOverlayArtworkDisplayName(config.artwork)
         config.mode == BootOverlayImageMode.SINGLE ->
             stringResource(R.string.settings_boot_overlay_custom_image_single_summary)
         else -> stringResource(R.string.settings_boot_overlay_custom_image_dual_summary)
@@ -370,6 +386,7 @@ internal fun BootOverlayCustomImageDialogContent(
     onPickImage: (BootOverlayImageSlot) -> Unit,
     onReset: () -> Unit,
     modifier: Modifier = Modifier,
+    onArtworkChanged: (BootOverlayArtwork) -> Unit = {},
 ) {
     val scrollState = rememberScrollState()
     val configuration = LocalConfiguration.current
@@ -390,6 +407,24 @@ internal fun BootOverlayCustomImageDialogContent(
                 .fillMaxWidth()
                 .aspectRatio(previewAspectRatio)
         )
+        SettingsChoiceDialogItem(
+            SettingsChoiceSpec(
+                title = stringResource(R.string.settings_boot_overlay_artwork_title),
+                valueText = bootOverlayArtworkDisplayName(config.artwork),
+                enabled = enabled,
+                selectedValue = config.artwork,
+                options = BootOverlayArtwork.entries,
+                optionLabel = { bootOverlayArtworkDisplayName(it) },
+                onOptionSelected = onArtworkChanged,
+            )
+        )
+        if (config.hasCustomImages) {
+            Text(
+                text = stringResource(R.string.settings_boot_overlay_artwork_custom_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         BootOverlayImageModeSelector(
             mode = config.mode,
             enabled = enabled,
@@ -441,6 +476,15 @@ internal fun BootOverlayCustomImageDialogContent(
         }
     }
 }
+
+
+@Composable
+internal fun bootOverlayArtworkDisplayName(artwork: BootOverlayArtwork): String = stringResource(
+    when (artwork) {
+        BootOverlayArtwork.POSTER -> R.string.settings_boot_overlay_artwork_poster
+        BootOverlayArtwork.ORIGINAL -> R.string.settings_boot_overlay_artwork_original
+    }
+)
 
 
 @Composable

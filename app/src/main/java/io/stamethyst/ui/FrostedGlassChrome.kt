@@ -20,15 +20,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.ExperimentalHazeApi
+import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
 
 val LocalChromeBackgroundOpacity = compositionLocalOf { 0f }
+val LocalLauncherBlurDisabled = compositionLocalOf { false }
 
 @Composable
-@OptIn(ExperimentalHazeMaterialsApi::class)
+@OptIn(ExperimentalHazeApi::class, ExperimentalHazeMaterialsApi::class)
 fun FrostedGlassChrome(
     modifier: Modifier = Modifier,
     hazeState: HazeState,
@@ -39,6 +42,7 @@ fun FrostedGlassChrome(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val opaqueBackgroundAlpha = LocalChromeBackgroundOpacity.current.coerceIn(0f, 1f)
+    val launcherBlurEnabled = !LocalLauncherBlurDisabled.current
     val opaqueBackgroundColor =
         MaterialTheme.colorScheme.surface.copy(alpha = opaqueBackgroundAlpha)
     val materialStyle = HazeMaterials.ultraThin()
@@ -62,7 +66,11 @@ fun FrostedGlassChrome(
                 state = hazeState,
                 style = materialStyle,
             ) {
+                blurEnabled = launcherBlurEnabled && hazeState.blurEnabled
                 blurRadius = 12.dp
+                inputScale = HazeInputScale.Auto
+                // Keep the grain texture from being enlarged by input downsampling.
+                noiseFactor = 0f
                 blurredEdgeTreatment = BlurredEdgeTreatment(shape)
             },
         shape = shape,

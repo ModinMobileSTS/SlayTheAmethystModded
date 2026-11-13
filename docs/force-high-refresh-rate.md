@@ -28,3 +28,9 @@ and hardware restrictions still apply; enabling it does not prove the physical p
 Actual LTPO behavior, visual impact and device compatibility require separately authorized device
 verification. Offline session tests cover enable/disable, repeated updates, foreground transitions
 and attachment failure/retry; compilation does not establish device behavior.
+
+The mismatch dialog uses `RefreshRateSettingsDialog` with ordinary, non-scrolling content inside
+`LauncherAlertDialog`, which already owns the scroll viewport. Adding an unbounded inner vertical
+scroller crashes Compose measurement when the card is tapped (reported on Huawei Android 16).
+The dialog's UI regression tests cover constrained height, larger fonts, reachable controls and
+actions, and a disabled switch; they require a separately authorized runtime to execute.

@@ -16,10 +16,9 @@
     <string name="mod_manager_tools">Tools</string>
     <string name="mod_details_effective_priority">Effective load priority: #%1$d</string>
     <string name="mod_drag_count">Moving %1$d mods</string>
-    <string name="mod_folder_all_enabled">All enabled %1$d/%2$d</string>
-    <string name="mod_folder_part_enabled">Partly enabled %1$d/%2$d</string>
-    <string name="mod_folder_none_enabled">Enabled %1$d/%2$d</string>
+    <string name="mod_folder_enabled_count">%1$d/%2$d</string>
     <string name="mod_folder_select_results">Select matching items in this folder: %1$d of %2$d selected</string>
     <string name="mod_folder_visible_results">Showing %1$d matching items</string>
     <string name="mod_folder_disable_all">Disable all items in folder</string>
+    <string name="mod_folder_enable_all">Enable all items in folder</string>
 </resources>

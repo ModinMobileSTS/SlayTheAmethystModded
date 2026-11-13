@@ -4,21 +4,20 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.layout.Layout
 import io.stamethyst.R
+import io.stamethyst.ui.LauncherAlertDialog
 
-/** All tools share a single two-column grid; information and AI management have their own pages. */
+/** All tools share a single-column list; information and AI management have their own pages. */
 @Composable
 internal fun ModActionsList(
     controlsEnabled: Boolean,
@@ -43,72 +42,61 @@ internal fun ModActionsList(
     associationPresent: Boolean = false,
     onRemoveAssociation: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ModActionGrid {
-            ModActionListItem(
-                if (favorite) R.string.main_mod_favorite_remove else R.string.main_mod_favorite_add,
-                if (favorite) R.string.main_mod_action_desc_favorite_remove else R.string.main_mod_action_desc_favorite_add,
-                R.drawable.ic_favorite_heart, controlsEnabled,
-                onClick = { onFavoriteChange(!favorite) },
-            )
-            ModActionListItem(
-                R.string.main_mod_priority_adjust, R.string.main_mod_action_desc_priority,
-                R.drawable.ic_speed, controlsEnabled, onClick = onEditPriority,
-            )
-            ModActionListItem(
-                R.string.main_mod_associate, R.string.main_mod_action_desc_associate,
-                R.drawable.ic_link, controlsEnabled, onClick = onAssociate,
-            )
-            ModActionListItem(
-                R.string.mod_remove_association, R.string.mod_remove_association_description,
-                R.drawable.ic_link, controlsEnabled && associationPresent, onClick = onRemoveAssociation,
-            )
-            ModActionListItem(
-                R.string.main_mod_ai_edit, R.string.main_mod_action_desc_ai_edit,
-                R.drawable.ic_code, controlsEnabled,
-                badge = if (showAiEditorNewBadge) stringResource(R.string.main_mod_ai_edit_new_badge) else null,
-                onClick = onOpenAiEditor,
-            )
-            ModActionListItem(
-                R.string.main_mod_export, R.string.main_mod_action_desc_export,
-                R.drawable.ic_workshop_download, controlsEnabled, onClick = onExport,
-            )
-            ModActionListItem(
-                R.string.main_mod_share, R.string.main_mod_action_desc_share,
-                R.drawable.ic_lan_room_share, controlsEnabled, onClick = onShare,
-            )
-            ModActionListItem(
-                R.string.main_mod_rename, R.string.main_mod_action_desc_rename,
-                R.drawable.ic_edit, controlsEnabled, onClick = onRename,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ModActionGrid(content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Layout(content = { ColumnScopeContent(content) }) { measurables, constraints ->
-            val gap = 8.dp.roundToPx()
-            val cellWidth = ((constraints.maxWidth - gap) / 2).coerceAtLeast(0)
-            val cells = measurables.map {
-                it.measure(constraints.copy(minWidth = cellWidth, maxWidth = cellWidth, minHeight = 0))
-            }
-            val heights = cells.chunked(2).map { row -> row.maxOf { it.height } }
-            layout(constraints.maxWidth, heights.sum() + gap * (heights.size - 1).coerceAtLeast(0)) {
-                var y = 0
-                cells.chunked(2).forEachIndexed { rowIndex, row ->
-                    row.forEachIndexed { column, cell -> cell.placeRelative(column * (cellWidth + gap), y) }
-                    y += heights[rowIndex] + gap
+    var showBindingOptions by remember(associationPresent) { mutableStateOf(false) }
+    if (showBindingOptions && associationPresent) {
+        LauncherAlertDialog(
+            onDismissRequest = { showBindingOptions = false },
+            title = { Text(stringResource(R.string.mod_binding_options_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ModActionListItem(
+                        R.string.mod_remove_association, R.string.mod_remove_association_description,
+                        R.drawable.ic_link, controlsEnabled,
+                        onClick = { showBindingOptions = false; onRemoveAssociation() },
+                    )
+                    ModActionListItem(
+                        R.string.mod_bind_more, R.string.main_mod_action_desc_associate,
+                        R.drawable.ic_link, controlsEnabled,
+                        onClick = { showBindingOptions = false; onAssociate() },
+                    )
                 }
-            }
-        }
+            },
+            confirmButton = {
+                PillCancelButton(onClick = { showBindingOptions = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_cancel))
+                }
+            },
+        )
     }
-}
-
-@Composable
-private fun ColumnScope.ColumnScopeContent(content: @Composable ColumnScope.() -> Unit) {
-    content()
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ModActionListItem(
+            R.string.main_mod_priority_adjust, R.string.main_mod_action_desc_priority,
+            R.drawable.ic_speed, controlsEnabled, onClick = onEditPriority,
+        )
+        ModActionListItem(
+            R.string.main_mod_associate, R.string.main_mod_action_desc_associate,
+            R.drawable.ic_link, controlsEnabled,
+            onClick = { if (associationPresent) showBindingOptions = true else onAssociate() },
+        )
+        ModActionListItem(
+            R.string.main_mod_ai_edit, R.string.main_mod_action_desc_ai_edit,
+            R.drawable.ic_code, controlsEnabled,
+            badge = if (showAiEditorNewBadge) stringResource(R.string.main_mod_ai_edit_new_badge) else null,
+            onClick = onOpenAiEditor,
+        )
+        ModActionListItem(
+            R.string.main_mod_export, R.string.main_mod_action_desc_export,
+            R.drawable.ic_workshop_download, controlsEnabled, onClick = onExport,
+        )
+        ModActionListItem(
+            R.string.main_mod_share, R.string.main_mod_action_desc_share,
+            R.drawable.ic_lan_room_share, controlsEnabled, onClick = onShare,
+        )
+        ModActionListItem(
+            R.string.main_mod_rename, R.string.main_mod_action_desc_rename,
+            R.drawable.ic_edit, controlsEnabled, onClick = onRename,
+        )
+    }
 }
 
 @Composable

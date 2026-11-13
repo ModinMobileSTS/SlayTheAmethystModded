@@ -194,7 +194,6 @@ import io.stamethyst.ui.icon.PlayArrow
 import io.stamethyst.ui.icon.Settings
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
-import io.stamethyst.ui.settings.common.ForceHighRefreshRateSetting
 import io.stamethyst.ui.LauncherNavigationRequestBus
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.WorkshopDownloadActionButton
@@ -452,28 +451,10 @@ private fun LauncherGamePage(
     }
 
     if (showRefreshRateSettingsDialog) {
-        AlertDialog(
+        RefreshRateSettingsDialog(
             onDismissRequest = { showRefreshRateSettingsDialog = false },
-            title = { Text(stringResource(R.string.main_refresh_rate_mismatch_title)) },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(stringResource(R.string.main_refresh_rate_settings_message))
-                    ForceHighRefreshRateSetting(enabled = !uiState.busy)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { openDisplayRefreshRateSettings(context) }) {
-                    Text(stringResource(R.string.main_refresh_rate_open_settings))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showRefreshRateSettingsDialog = false }) {
-                    Text(stringResource(R.string.common_action_confirm))
-                }
-            },
+            enabled = !uiState.busy,
+            onOpenDisplaySettings = { openDisplayRefreshRateSettings(context) },
         )
     }
 }
@@ -5338,11 +5319,7 @@ private fun LauncherMainScreenContent(
                                             showUpdateAvailableModsOnly = it
                                         },
                                         onAddFolderClick = { showCreateFolderDialog = true },
-                                        onCheckWorkshopUpdates = {
-                                            if (!batchSelectionMode) {
-                                                onCheckWorkshopUpdates()
-                                            }
-                                        },
+                                        onCheckWorkshopUpdates = onCheckWorkshopUpdates,
                                         onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                                         onOpenCommunityPatches = onOpenCommunityPatches,
                                     )

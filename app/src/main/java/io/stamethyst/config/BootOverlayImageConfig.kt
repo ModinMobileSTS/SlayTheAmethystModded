@@ -1,5 +1,19 @@
 package io.stamethyst.config
 
+enum class BootOverlayArtwork(
+    val persistedValue: String,
+    val startResourcePath: String,
+    val endResourcePath: String,
+) {
+    POSTER("poster", "boot-art/poster_dark.jpg", "boot-art/poster_bright.jpg"),
+    ORIGINAL("original", "ui/boot_dark.png", "ui/boot_bright.png");
+
+    companion object {
+        fun fromPersistedValue(value: String?): BootOverlayArtwork =
+            entries.firstOrNull { it.persistedValue == value } ?: POSTER
+    }
+}
+
 enum class BootOverlayImageMode(
     val persistedValue: String
 ) {
@@ -25,10 +39,19 @@ data class BootOverlayImageConfig(
     val startImagePath: String? = null,
     val endImagePath: String? = null,
     val startImageVersion: Long = 0L,
-    val endImageVersion: Long = 0L
+    val endImageVersion: Long = 0L,
+    val artwork: BootOverlayArtwork = BootOverlayArtwork.POSTER,
 ) {
     val hasCustomImages: Boolean
         get() = !startImagePath.isNullOrBlank() || !endImagePath.isNullOrBlank()
+
+    fun startResourcePath(): String = artwork.startResourcePath
+
+    fun endResourcePath(): String = if (mode == BootOverlayImageMode.SINGLE) {
+        artwork.startResourcePath
+    } else {
+        artwork.endResourcePath
+    }
 
     fun imagePathFor(slot: BootOverlayImageSlot): String? {
         return when (slot) {

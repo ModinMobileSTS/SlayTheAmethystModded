@@ -727,9 +727,9 @@
     <string name="main_mod_favorite_remove">從特別喜歡中移除</string>
     <string name="main_mod_action_desc_favorite_add">將模組置頂顯示在特別喜歡區域。</string>
     <string name="main_mod_action_desc_favorite_remove">將模組從特別喜歡清單中移除。</string>
-    <string name="main_mod_associate">關聯</string>
+    <string name="main_mod_associate">綁定其他模組</string>
     <string name="main_mod_action_desc_priority">數字越小越先載入；依賴順序仍會優先保證。</string>
-    <string name="main_mod_action_desc_associate">關聯相關模組，方便將它們作為一組管理。</string>
+    <string name="main_mod_action_desc_associate">和其他模組一同綁定開關</string>
     <string name="main_mod_action_desc_market">檢視該模組在創意工坊中的詳情頁。</string>
     <string name="main_mod_action_desc_ai_edit">在 AI 編輯器中檢視並修改模組。</string>
     <string name="main_mod_action_desc_export">將模組檔案副本儲存到裝置儲存空間。</string>
@@ -3353,6 +3353,8 @@
     <string name="save_import_apply">匯入 · %1$d</string>
     <string name="save_import_run_count">新增 %1$d / 覆蓋 %2$d 局</string>
     <string name="settings_chrome_background_opacity_title">頂欄和底欄背景不透明度</string>
+    <string name="settings_launcher_blur_disabled_title">關閉啟動器模糊</string>
+    <string name="settings_launcher_blur_disabled_desc">關閉啟動器頂欄、底欄和面板的背景模糊，保留半透明背景，立即生效。</string>
     <string name="settings_chrome_background_opacity_desc">調整啟動器所有頁面頂欄和底欄玻璃背景後方的不透明度。</string>
     <string name="settings_developer_slingbreak_clear_title">清除小遊戲資料和快取</string>
     <string name="settings_developer_slingbreak_clear_summary">清除小遊戲 WebView 的快取、Cookie、儲存和瀏覽狀態。</string>
