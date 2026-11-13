@@ -1,20 +1,18 @@
 package io.stamethyst.ui
 
-import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,7 +29,6 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,7 +60,8 @@ import androidx.compose.ui.unit.lerp
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.NavKey
 import dev.chrisbanes.haze.HazeState
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -73,34 +71,74 @@ internal object DockBannerKey
 
 /** Page state belongs to the page, but its chrome is composed only by the outer host. */
 @Stable
-internal class LauncherBannerPageState {
+internal class LauncherBannerPageState(initialCollapseFraction: Float = 0f) {
+    private val collapse = Animatable(initialCollapseFraction.coerceIn(0f, 1f))
     var content by mutableStateOf<(@Composable () -> Unit)?>(null)
     var locals by mutableStateOf<CompositionLocalContext?>(null)
-    var collapseOffsetPx by mutableFloatStateOf(0f)
-    var collapseRangePx by mutableFloatStateOf(1f)
     var expandedHeightPx by mutableIntStateOf(0)
     var hidden by mutableStateOf(false)
-    val collapseFraction: Float get() = (collapseOffsetPx / collapseRangePx).coerceIn(0f, 1f)
+    val collapseFraction: Float get() = collapse.value
 
-    suspend fun expand() {
-        animate(
-            initialValue = collapseOffsetPx,
-            targetValue = 0f,
-            animationSpec = spring(dampingRatio = 1f, stiffness = 450f),
-        ) { value, _ -> collapseOffsetPx = value.coerceIn(0f, collapseRangePx) }
+    suspend fun animateCollapsed(collapsed: Boolean) {
+        val target = if (collapsed) 1f else 0f
+        // Repeated scroll/fling frames must not restart the animation. Animatable also makes
+        // reversal and an explicit expand() mutually exclusive, continuing from the current frame.
+        if (collapse.targetValue == target && (collapse.isRunning || collapse.value == target)) return
+        collapse.animateTo(
+            targetValue = target,
+            animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+        )
     }
+
+    suspend fun expand() = animateCollapsed(collapsed = false)
 
     companion object {
         val Saver = listSaver<LauncherBannerPageState, Number>(
-            save = { listOf(it.collapseOffsetPx, it.collapseRangePx, it.expandedHeightPx) },
+            // Restore a settled state, even when the page was saved halfway through an animation.
+            save = { listOf(it.collapse.targetValue, it.expandedHeightPx) },
             restore = { values ->
-                LauncherBannerPageState().apply {
-                    collapseOffsetPx = values[0].toFloat()
-                    collapseRangePx = values[1].toFloat()
-                    expandedHeightPx = values[2].toInt()
+                LauncherBannerPageState(initialCollapseFraction = values[0].toFloat()).apply {
+                    expandedHeightPx = values[1].toInt()
                 }
             },
         )
+    }
+}
+
+/** Scroll only selects a destination; elapsed animation time controls the visible fraction. */
+internal class LauncherBannerScrollConnection(
+    private val page: LauncherBannerPageState,
+    private val scope: CoroutineScope,
+    private val triggerDistancePx: Float,
+) : NestedScrollConnection {
+    private var directionalScrollPx = 0f
+
+    override fun onPostScroll(
+        consumed: Offset,
+        available: Offset,
+        source: NestedScrollSource,
+    ): Offset {
+        // At the top, a downward overscroll can still reveal the banner. An unconsumed upward
+        // scroll at the bottom (or in a non-scrollable page) must not collapse it.
+        val delta = consumed.y + available.y.coerceAtLeast(0f)
+        if (delta == 0f) return Offset.Zero
+        directionalScrollPx = if ((directionalScrollPx > 0f) == (delta > 0f)) {
+            directionalScrollPx + delta
+        } else {
+            delta
+        }
+        if (abs(directionalScrollPx) >= triggerDistancePx) {
+            directionalScrollPx = 0f
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                page.animateCollapsed(collapsed = delta < 0f)
+            }
+        }
+        return Offset.Zero
+    }
+
+    override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+        directionalScrollPx = 0f
+        return Velocity.Zero
     }
 }
 
@@ -130,8 +168,8 @@ internal fun launcherBannerEntryProvider(
 }
 
 /**
- * Observe, but never consume, vertical scroll. The list and banner move on the same frame;
- * changing the banner's height never changes a list's scroll offset or its top spacer.
+ * Observe, but never consume, vertical scroll. A small directional threshold filters jitter;
+ * the banner then animates independently of drag/fling speed, without changing the list inset.
  */
 @Composable
 internal fun LauncherBannerPage(pageKey: Any, content: @Composable () -> Unit) {
@@ -142,50 +180,10 @@ internal fun LauncherBannerPage(pageKey: Any, content: @Composable () -> Unit) {
     }
     val page = rememberSaveable(pageKey, saver = LauncherBannerPageState.Saver) { LauncherBannerPageState() }
     val density = LocalDensity.current
-    val compactHeightPx = with(density) { 64.dp.toPx() } + WindowInsets.statusBars.getTop(density)
-    val rangePx = maxOf(with(density) { 96.dp.toPx() }, page.expandedHeightPx - compactHeightPx)
+    val triggerDistancePx = with(density) { 8.dp.toPx() }
     val scope = rememberCoroutineScope()
-    val connection = remember(page, scope) {
-        object : NestedScrollConnection {
-            var settling: Job? = null
-
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y != 0f) settling?.cancel()
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                val delta = consumed.y + available.y.coerceAtLeast(0f)
-                page.collapseOffsetPx = (page.collapseOffsetPx - delta)
-                    .coerceIn(0f, page.collapseRangePx)
-                return Offset.Zero
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                val target = if (page.collapseFraction < 0.5f) 0f else page.collapseRangePx
-                settling?.cancel()
-                settling = scope.launch {
-                    animate(
-                        initialValue = page.collapseOffsetPx,
-                        targetValue = target,
-                        animationSpec = spring(dampingRatio = 1f, stiffness = 450f),
-                    ) { value, _ -> page.collapseOffsetPx = value.coerceIn(0f, page.collapseRangePx) }
-                }
-                return Velocity.Zero
-            }
-        }
-    }
-    DisposableEffect(connection) { onDispose { connection.settling?.cancel() } }
-    SideEffect {
-        val fraction = page.collapseFraction
-        if (page.collapseRangePx != rangePx) {
-            page.collapseRangePx = rangePx
-            page.collapseOffsetPx = fraction * rangePx
-        }
+    val connection = remember(page, scope, triggerDistancePx) {
+        LauncherBannerScrollConnection(page, scope, triggerDistancePx)
     }
     DisposableEffect(host, pageKey, page) {
         host.pages[pageKey] = page
@@ -355,7 +353,7 @@ internal fun LauncherBannerHost(
     }
 }
 
-/** Collapse a measured slot continuously, rather than toggling visibility at a scroll threshold. */
+/** Reveal a measured slot using the banner's shared animated fraction. */
 @Composable
 internal fun BannerReveal(fraction: Float, content: @Composable () -> Unit) {
     val reveal = (1f - fraction).coerceIn(0f, 1f)
