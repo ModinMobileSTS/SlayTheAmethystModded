@@ -1,5 +1,6 @@
 package io.stamethyst.backend.mods
 
+import io.stamethyst.ui.main.communityItemKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,6 +47,23 @@ class AgentPatchCatalogueServiceTest {
         assertEquals("Earlier Author", result.patches.first().authorName)
         assertTrue(result.patches.none { it.patchModId == "amethyst_example" })
         assertTrue(!result.fromCache)
+    }
+
+    @Test
+    fun renamedVersionsSharingAModIdRemainDistinctCatalogueItems() {
+        val patchId = "amethyst.ai.patch.chronomuncher.patch-1793399884157-536381f1"
+        val original = patch("信徒中文补丁", "3.7.0", patchId, 10)
+        val renamed = patch("时序·信徒中文补丁", "3.7.1", patchId, 20, hash = "b".repeat(64))
+        val bytes = index(original, renamed).toByteArray()
+
+        val parent = AgentPatchCatalogueService.parseForParent(bytes, "basemod")
+        val mod = AgentPatchCatalogueService.parseMods(bytes).single()
+
+        for (patches in listOf(parent.patches, mod.patches)) {
+            assertEquals(setOf("3.7.0", "3.7.1"), patches.map { it.version }.toSet())
+            assertEquals(listOf(patchId, patchId), patches.map { it.patchModId })
+            assertEquals(2, patches.map { it.communityItemKey() }.toSet().size)
+        }
     }
 
     @Test
