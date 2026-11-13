@@ -62,6 +62,28 @@ Implementation files:
 - `scripts/build/lib/commands.py`: implements Gradle builds, release preparation, and cloud function packaging.
 - `scripts/build/lib/doctor.py`: implements the `doctor` environment checks and report rendering.
 
+### Build daemon memory
+
+Gradle and the Kotlin compiler run in separate reusable JVMs; concurrent builds
+can also start additional Gradle daemons. The root `gradle.properties` keeps the
+4 GiB maximum heap per JVM for compilation, but starts at 128 MiB and configures
+both JVMs to use G1 with a 60-second periodic concurrent collection interval.
+This lets unused heap return to the OS after compilation instead of remaining
+committed until another build. The free-heap target is 20–40%; live compiler and
+build caches, metaspace and other native allocations still take memory, so
+128 MiB is not a total process-memory limit.
+
+Both daemons are configured to exit after 10 minutes idle (instead of Gradle's
+3 hours and Kotlin's 2 hours). The next build after exit pays a cold-start cost;
+incremental compilation remains enabled. Kotlin's idle timeout is passed as
+`-Dkotlin.daemon.options=autoshutdownIdleSeconds=600` in Gradle's JVM arguments;
+its GC settings must be supplied separately through `kotlin.daemon.jvmargs`.
+
+These settings apply to newly started daemons, not JVMs already running. Do not
+stop daemons while another build is using them. When overriding
+`org.gradle.jvmargs` or `kotlin.daemon.jvmargs` locally, retain these GC/lifetime
+options if you want the same idle-memory behavior.
+
 Sling Break source-layout regression tests (current `game/`, direct runtime, legacy flat refs, and cache/override resolution):
 
 ```bash
