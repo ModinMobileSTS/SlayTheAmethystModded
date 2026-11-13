@@ -5,13 +5,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 GRADLE_BIN="${GRADLE_BIN:-$PROJECT_DIR/gradlew}"
-ADB_BIN="${ADB_BIN:-adb}"
 DEVICE_SERIAL="${1:-}"
+
+if [[ "$#" -ne 1 ]]; then
+    printf 'Exactly one explicit, user-approved device target is required.\n' >&2
+    printf 'Usage: %s <device-host|host:port>\n' "$0" >&2
+    exit 1
+fi
 
 case "$DEVICE_SERIAL" in
     ""|[aA][uU][tT][oO]|[dD][eE][fF][aA][uU][lL][tT]|[aA][lL][lL]|\*|-*|*[[:space:]]*)
         printf 'An explicit, user-approved device serial is required; automatic selection is forbidden.\n' >&2
-        printf 'Usage: %s <device-serial>\n' "$0" >&2
+        printf 'Usage: %s <device-host|host:port>\n' "$0" >&2
         exit 1
         ;;
 esac
@@ -22,18 +27,33 @@ if [[ ! -x "$GRADLE_BIN" ]]; then
     exit 1
 fi
 
-if ! command -v "$ADB_BIN" >/dev/null 2>&1; then
-    printf 'adb was not found. Set ADB_BIN to its full path if needed.\n' >&2
+if ! command -v python3 >/dev/null 2>&1; then
+    printf 'python3 is required for the project-local ADB connection.\n' >&2
     exit 1
 fi
 
-adb_args=(-s "$DEVICE_SERIAL")
+cd "$PROJECT_DIR"
+# Resolve only the explicitly named device. A bare host may borrow its configured
+# wireless port, but must never select a different host from local configuration.
+DEVICE_SERIAL="$(python3 - "$DEVICE_SERIAL" <<'PY'
+import sys
+from scripts.tools.local_adb import config
+
+try:
+    endpoint = config()["STS_ADB_DEVICE_ENDPOINT"]
+    host = endpoint.rpartition(":")[0]
+    if sys.argv[1] not in (endpoint, host):
+        raise RuntimeError("Requested device does not match STS_ADB_DEVICE_ENDPOINT in local configuration")
+    print(endpoint)
+except (RuntimeError, ValueError, OSError) as error:
+    sys.exit(f"Local ADB configuration error: {error}")
+PY
+)"
+# Pin the approved endpoint across build/install, even if .env.local changes.
+export STS_ADB_DEVICE_ENDPOINT="$DEVICE_SERIAL"
 
 printf 'Building debug APK...\n'
-(
-    cd "$PROJECT_DIR"
-    "$GRADLE_BIN" :app:assembleDebug
-)
+python3 -m scripts.tools.local_adb run -- "$GRADLE_BIN" :app:assembleDebug
 
 shopt -s nullglob
 apk_files=("$PROJECT_DIR"/app/build/outputs/apk/debug/*.apk)
@@ -47,5 +67,5 @@ fi
 
 APK_PATH="${apk_files[0]}"
 printf 'Installing %s...\n' "$APK_PATH"
-"$ADB_BIN" "${adb_args[@]}" install --fastdeploy -r "$APK_PATH"
+python3 -m scripts.tools.local_adb adb -- install --fastdeploy -r "$APK_PATH"
 printf 'Debug APK installed successfully on %s.\n' "$DEVICE_SERIAL"
