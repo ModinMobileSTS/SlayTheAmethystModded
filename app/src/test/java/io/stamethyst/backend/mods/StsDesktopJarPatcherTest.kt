@@ -9,6 +9,17 @@ import org.junit.Test
 
 class StsDesktopJarPatcherTest {
     @Test
+    fun resourceFileHandleCompat_isRequiredAndInjected_withoutReplacingTheWholeFileHandle() {
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry", String::class.java
+        ).apply { isAccessible = true }
+        assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_RESOURCE_FILE_HANDLE_COMPAT_CLASS))
+        assertTrue(method.invoke(StsDesktopJarPatcher, STS_PATCH_RESOURCE_FILE_HANDLE_COMPAT_CLASS) as Boolean)
+        assertFalse(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_FILE_HANDLE_CLASS))
+        assertFalse(method.invoke(StsDesktopJarPatcher, STS_PATCH_FILE_HANDLE_CLASS) as Boolean)
+    }
+
+    @Test
     fun runtimeStageDiagnosticsAndNestedClasses_areRequiredAndInjected() {
         val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
             "shouldPatchStsEntry", String::class.java

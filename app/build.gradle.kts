@@ -417,6 +417,13 @@ android {
         unitTests.isReturnDefaultValues = true
         unitTests.all {
             it.maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+            // FileHandle integration tests execute real game bytecode with the current helper jar.
+            it.dependsOn(":patches:gdx-patch:jar")
+            it.inputs.files(
+                rootProject.file("build-deps/desktop.jar"),
+                rootProject.file("patches/gdx-patch/build/libs/gdx-patch.jar")
+            ).withPropertyName("resourceFileHandleRuntime")
+                .withPathSensitivity(PathSensitivity.RELATIVE)
             // LauncherConfigFloatingToolButtonsDefaultsTest reads the mod source to check that
             // both sides agree on the tool button ids, so edits to it must invalidate the task.
             it.inputs.file(

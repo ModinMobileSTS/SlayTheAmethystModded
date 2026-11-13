@@ -2,6 +2,23 @@
 
 启动器使用的 libGDX 兼容层补丁。
 
+## Windows 风格模组资源路径兼容
+
+- **症状：** 模组使用反斜杠拼接资源路径时，Linux/Android 上 atlas 本身可以从 classpath 读取，
+  但 `FileHandle.parent()` 丢失目录；页图落到根目录，出现找不到图片，或误读同名资源导致白块。
+  铃兰的 `wild.png` 报错和默认皮肤误读游戏字体 `default.png` 是同一类问题。
+- **修复：** `ResourceFileHandleCompat` 在 `FileHandle(String, FileType)` 和
+  `FileHandle(File, FileType)` 构造入口统一 Internal/Classpath 路径的 `\` 为 `/`，
+  使读取、名称、父目录、子路径和 sibling 使用一致的底层 `File`。规则不依赖模组名或资源扩展名。
+  Local/External/Absolute 保持原有文件系统语义；不按文件名搜索、不吞掉真正的缺失资源错误。
+- **接线：** `StsResourceFileHandlePatcher` 对游戏原类的两个构造方法做幂等字节码注入，
+  保留其余方法；`StsDesktopJarPatcher` 注入 helper、检查构造方法补丁状态，启动时更新旧缓存。
+  `REQUIRED_STS_PATCH_CLASSES` 登记 helper，避免只有构造调用而缺少运行时依赖。
+- **验证：** `ResourceFileHandleCompatTest` 验证类型范围、混合分隔符、Unicode/空格、空值和幂等；
+  `StsResourceFileHandlePatcherTest` 加载真实游戏 FileHandle/LwjglFileHandle/atlas 解析器，
+  对照原版的根目录误匹配，覆盖两种构造、嵌套页图、读/exists、parent/child/sibling 和缺失资源。
+  JVM 验证不等同于 Android GPU 画面实测；直接绕过 libGDX 的自定义文件加载器不在此入口范围内。
+
 ## 资源创建/销毁可视事件
 
 - **症状：** 原释放提示和时序图缺少图像创建事件，颜色不能区分创建与销毁，提示超时消失且无法滚动。

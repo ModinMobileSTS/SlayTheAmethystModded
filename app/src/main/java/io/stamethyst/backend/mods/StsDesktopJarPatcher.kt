@@ -145,7 +145,13 @@ internal object StsDesktopJarPatcher {
                             }
                             zipOut.putNextEntry(outEntry)
                             val patchBytes = patchEntries[name]
-                            if (name == STS_PATCH_SHADER_PROGRAM_CLASS) {
+                            if (name == STS_PATCH_FILE_HANDLE_CLASS) {
+                                zipOut.write(
+                                    StsResourceFileHandlePatcher.patchFileHandleClass(
+                                        JarFileIoUtils.readAll(zipIn)
+                                    )
+                                )
+                            } else if (name == STS_PATCH_SHADER_PROGRAM_CLASS) {
                                 val originalBytes = JarFileIoUtils.readAll(zipIn)
                                 zipOut.write(
                                     StsShaderPrecisionCompatPatcher.patchShaderProgramClass(
@@ -201,6 +207,11 @@ internal object StsDesktopJarPatcher {
                             }
                         }
 
+                        if (!seenNames.contains(STS_PATCH_FILE_HANDLE_CLASS)) {
+                            throw IOException(
+                                "desktop-1.0.jar is missing required class: $STS_PATCH_FILE_HANDLE_CLASS"
+                            )
+                        }
                         if (!seenNames.contains(STS_PATCH_FREETYPE_BITMAP_FONT_DATA_CLASS)) {
                             throw IOException(
                                 "desktop-1.0.jar is missing required class: " +
@@ -316,6 +327,7 @@ internal object StsDesktopJarPatcher {
             entryName.startsWith(STS_PATCH_GL_FRAMEBUFFER_INNER_PREFIX) ||
             STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS == entryName ||
             STS_PATCH_FREETYPE_GLYPH_FALLBACK_COMPAT_CLASS == entryName ||
+            STS_PATCH_RESOURCE_FILE_HANDLE_COMPAT_CLASS == entryName ||
             (STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS == entryName ||
             entryName.startsWith(STS_PATCH_FRAGMENT_SHADER_COMPAT_INNER_PREFIX)) ||
             STS_PATCH_COLOR_TAB_BAR_CLASS == entryName ||
@@ -357,6 +369,13 @@ internal object StsDesktopJarPatcher {
                     } else if (!actual.contentEquals(expected)) {
                         return false
                     }
+                }
+                val fileHandleEntry = zipFile.getEntry(STS_PATCH_FILE_HANDLE_CLASS)
+                    ?: return false
+                if (!StsResourceFileHandlePatcher.isPatchedFileHandleClass(
+                        JarFileIoUtils.readEntryBytes(zipFile, fileHandleEntry)
+                    )) {
+                    return false
                 }
                 val shaderProgramEntry = zipFile.getEntry(STS_PATCH_SHADER_PROGRAM_CLASS)
                     ?: return false
