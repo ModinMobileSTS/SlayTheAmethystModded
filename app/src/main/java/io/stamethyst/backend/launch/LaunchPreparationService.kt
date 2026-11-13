@@ -48,16 +48,18 @@ object LaunchPreparationService {
             2,
             context.progressText(R.string.startup_progress_checking_external_resources)
         )
-        ExternalResourcePackService.ensureAvailable(context, mapProgressRange(progressCallback, 2, 20))
-
-        throwIfInterrupted()
-        reportProgress(
-            progressCallback,
-            21,
-            context.progressText(R.string.startup_progress_installing_launcher_components)
-        )
-        ComponentInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 21, 43))
-        ExternalResourcePackService.installNativeLibraries(context)
+        ExternalResourcePackService.ensureAvailableForLaunch(
+            context,
+            mapProgressRange(progressCallback, 2, 20)
+        ) {
+            throwIfInterrupted()
+            reportProgress(
+                progressCallback,
+                21,
+                context.progressText(R.string.startup_progress_installing_launcher_components)
+            )
+            ComponentInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 21, 43))
+        }
 
         throwIfInterrupted()
         reportProgress(

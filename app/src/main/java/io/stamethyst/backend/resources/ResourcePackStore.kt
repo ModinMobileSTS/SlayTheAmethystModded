@@ -25,7 +25,8 @@ internal data class ResourcePackInspection(
     val generationDir: File?,
     val issues: List<String>,
     val legacyPaths: List<String>,
-    val state: String?
+    val state: String?,
+    val manifest: ResourcePackManifest? = null
 )
 
 internal object ResourcePackStore {
@@ -48,7 +49,7 @@ internal object ResourcePackStore {
     @JvmStatic
     fun inspect(context: Context): ResourcePackInspection = inspect(
         context = context,
-        verifyContentHashes = true,
+        validateGeneration = ::validateGeneration,
     )
 
     /**
@@ -59,12 +60,18 @@ internal object ResourcePackStore {
     @JvmStatic
     fun inspectQuick(context: Context): ResourcePackInspection = inspect(
         context = context,
-        verifyContentHashes = false,
+        validateGeneration = { generation ->
+            ResourcePackArchive.validateGeneration(
+                generation,
+                BuildConfig.RESOURCE_PACK_VERSION.trim(),
+                verifyContentHashes = false,
+            )
+        },
     )
 
     private fun inspect(
         context: Context,
-        verifyContentHashes: Boolean,
+        validateGeneration: (File) -> ResourcePackGenerationValidation,
     ): ResourcePackInspection {
         val root = RuntimePaths.externalResourcesRoot(context)
         val pointer = readActivePointer(root)
@@ -99,19 +106,26 @@ internal object ResourcePackStore {
         }
 
         val generation = generationDir(root, pointer.packId)
-        val validation = ResourcePackArchive.validateGeneration(
-            generation,
-            BuildConfig.RESOURCE_PACK_VERSION.trim(),
-            verifyContentHashes = verifyContentHashes,
-        )
+        return inspectionForGeneration(context, generation, validateGeneration(generation))
+    }
+
+    private fun validateGeneration(generation: File): ResourcePackGenerationValidation =
+        ResourcePackArchive.validateGeneration(generation, BuildConfig.RESOURCE_PACK_VERSION.trim())
+
+    private fun inspectionForGeneration(
+        context: Context,
+        generation: File,
+        validation: ResourcePackGenerationValidation
+    ): ResourcePackInspection {
         return ResourcePackInspection(
             ready = validation.issues.isEmpty(),
-            packId = validation.manifest?.packId ?: pointer.packId,
+            packId = validation.manifest?.packId ?: generation.name,
             version = validation.manifest?.resourcePackVersion,
             generationDir = generation,
             issues = validation.issues,
-            legacyPaths = legacyPaths,
-            state = state
+            legacyPaths = legacyCandidateRoots(context).map { it.absolutePath },
+            state = readState(RuntimePaths.externalResourcesRoot(context))?.getProperty(STATE_PHASE_KEY),
+            manifest = validation.manifest
         )
     }
 
@@ -189,23 +203,35 @@ internal object ResourcePackStore {
     @JvmStatic
     @Throws(IOException::class)
     fun recover(context: Context) {
-        withExclusiveLock(context) {
+        recoverAndInspect(context)
+    }
+
+    /**
+     * Returns recovery's full integrity result without another content sweep. Consumers that
+     * reuse its manifest for derived installation must keep the same exclusive lock held;
+     * this is an operation-local snapshot, not a verification cache for later launches.
+     */
+    @Throws(IOException::class)
+    internal fun recoverAndInspect(
+        context: Context,
+        validateGeneration: (File) -> ResourcePackGenerationValidation = ::validateGeneration
+    ): ResourcePackInspection {
+        return withExclusiveLock(context) {
             ensureRepositoryDirs(context)
             cleanupInterruptedArtifacts(context)
 
             val root = RuntimePaths.externalResourcesRoot(context)
             val pointer = readActivePointer(root)
-            if (pointer != null && ResourcePackArchive.validateGeneration(
-                    generationDir(root, pointer.packId),
-                    BuildConfig.RESOURCE_PACK_VERSION.trim()
-                ).issues.isEmpty()
-            ) {
+            val activeGeneration = pointer?.let { generationDir(root, it.packId) }
+            val activeValidation = activeGeneration?.let(validateGeneration)
+            if (activeGeneration != null && activeValidation != null && activeValidation.issues.isEmpty()) {
                 quarantineLegacyResources(context, root)
-                return@withExclusiveLock
+                return@withExclusiveLock inspectionForGeneration(context, activeGeneration, activeValidation)
             }
 
-            val recoveredGeneration = findNewestValidGeneration(context)
-            if (recoveredGeneration != null) {
+            val recovered = findNewestValidGeneration(context, activeGeneration, validateGeneration)
+            if (recovered != null) {
+                val (recoveredGeneration, validation) = recovered
                 activatePointer(root, recoveredGeneration.name)
                 quarantineLegacyResources(context, root)
                 writeState(
@@ -215,7 +241,7 @@ internal object ResourcePackStore {
                     source = "local-generation",
                     error = null
                 )
-                return@withExclusiveLock
+                return@withExclusiveLock inspectionForGeneration(context, recoveredGeneration, validation)
             }
 
             val migrationFailure = runCatching { importLegacyResources(context) }.exceptionOrNull()
@@ -233,12 +259,9 @@ internal object ResourcePackStore {
                 // Leave the legacy tree in place so a later retry can import it.
                 // Invalid legacy content is already quarantined inside importLegacyResources.
             }
-            val recoveredPointer = readActivePointer(root)
-            if (recoveredPointer == null || ResourcePackArchive.validateGeneration(
-                    generationDir(root, recoveredPointer.packId),
-                    BuildConfig.RESOURCE_PACK_VERSION.trim()
-                ).issues.isNotEmpty()
-            ) {
+            // Migration can activate or replace a generation, so inspect its final state afresh.
+            val inspection = inspect(context, validateGeneration)
+            if (!inspection.ready) {
                 writeState(
                     root = root,
                     operationId = "recovery-${System.currentTimeMillis()}",
@@ -247,6 +270,7 @@ internal object ResourcePackStore {
                     error = "No valid local resource generation"
                 )
             }
+            inspection.copy(state = readState(root)?.getProperty(STATE_PHASE_KEY))
         }
     }
 
@@ -580,15 +604,18 @@ internal object ResourcePackStore {
             .forEach(::quarantineOrDelete)
     }
 
-    private fun findNewestValidGeneration(context: Context): File? {
-        val expectedVersion = BuildConfig.RESOURCE_PACK_VERSION.trim()
+    private fun findNewestValidGeneration(
+        context: Context,
+        alreadyRejected: File?,
+        validateGeneration: (File) -> ResourcePackGenerationValidation
+    ): Pair<File, ResourcePackGenerationValidation>? {
         return RuntimePaths.externalResourcesGenerationsDir(context).listFiles().orEmpty()
             .asSequence()
             .filter { file -> file.isDirectory && ResourcePackArchive.isSafePackId(file.name) }
+            .filter { file -> file != alreadyRejected }
             .sortedWith(compareByDescending<File> { it.lastModified() }.thenByDescending { it.name })
-            .firstOrNull {
-                file -> ResourcePackArchive.validateGeneration(file, expectedVersion).issues.isEmpty()
-            }
+            .map { file -> file to validateGeneration(file) }
+            .firstOrNull { (_, validation) -> validation.issues.isEmpty() }
     }
 
     private fun importLegacyResources(context: Context) {
