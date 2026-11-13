@@ -9,6 +9,18 @@ import org.junit.Test
 
 class StsDesktopJarPatcherTest {
     @Test
+    fun runtimeStageDiagnosticsAndNestedClasses_areRequiredAndInjected() {
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry", String::class.java
+        ).apply { isAccessible = true }
+        for (entry in listOf(STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_CLASS,
+            "${STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_PREFIX}Stage.class",
+            "${STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_PREFIX}1.class")) {
+            assertTrue(entry, REQUIRED_STS_PATCH_CLASSES.contains(entry))
+            assertTrue(entry, method.invoke(StsDesktopJarPatcher, entry) as Boolean)
+        }
+    }
+    @Test
     fun resourceTimingBridgeAndAllNestedClasses_areRequiredAndInjected() {
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_RESOURCE_LIFECYCLE_TIMINGS_CLASS))
         val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(

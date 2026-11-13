@@ -238,9 +238,15 @@ public class LwjglGraphics implements Graphics {
 	 * Only needed when setupDisplay() is not called.
 	 */
 	void initiateGL() {
-		extractVersion();
-		extractExtensions();
-		initiateGLInstances();
+		try (RuntimeStageDiagnostics.Stage ignored = RuntimeStageDiagnostics.begin("gl_version")) {
+			extractVersion();
+		}
+		try (RuntimeStageDiagnostics.Stage ignored = RuntimeStageDiagnostics.begin("gl_extensions")) {
+			extractExtensions();
+		}
+		try (RuntimeStageDiagnostics.Stage ignored = RuntimeStageDiagnostics.begin("gl_instances")) {
+			initiateGLInstances();
+		}
 	}
 
 	private static void extractVersion () {

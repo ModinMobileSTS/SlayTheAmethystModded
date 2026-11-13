@@ -231,18 +231,26 @@ public class LwjglApplication implements Application {
 	private void initializeAudioOnMainLoop () {
 		if (LwjglApplicationConfiguration.disableAudio) {
 			Gdx.audio = null;
+			publishAudioRuntimeState(3);
 			return;
 		}
-		try {
+		try (RuntimeStageDiagnostics.Stage ignored = RuntimeStageDiagnostics.begin("audio_constructor")) {
 			audio = new OpenALAudio(graphics.config.audioDeviceSimultaneousSources,
 				graphics.config.audioDeviceBufferCount, graphics.config.audioDeviceBufferSize);
 			Gdx.audio = audio;
+			publishAudioRuntimeState(org.lwjgl.openal.AL.isCreated() ? 1 : 2);
 		} catch (Throwable t) {
 			audio = null;
 			Gdx.audio = null;
 			log("LwjglApplication", "Couldn't initialize audio, disabling audio", t);
 			LwjglApplicationConfiguration.disableAudio = true;
+			publishAudioRuntimeState(3);
 		}
+	}
+
+	private static void publishAudioRuntimeState(int state) {
+		try { CallbackBridge.nativeSetAudioRuntimeState(state); }
+		catch (Throwable error) { markAudioCommandBridgeUnavailable(error); }
 	}
 
 	private static void installNoContextDiagnostics () {
@@ -336,7 +344,9 @@ public class LwjglApplication implements Application {
 			@Override
 			public void run () {
 				graphics.config.vSyncEnabled = false;
-				graphics.setVSync(false);
+				try (RuntimeStageDiagnostics.Stage ignored = RuntimeStageDiagnostics.begin("vsync_before_display")) {
+					graphics.setVSync(false);
+				}
 				try {
 					LwjglApplication.this.mainLoop();
 				} catch (Throwable t) {
@@ -1536,17 +1546,21 @@ public class LwjglApplication implements Application {
 	void mainLoop () {
 		SnapshotArray<LifecycleListener> lifecycleListeners = this.lifecycleListeners;
 
-		try {
-		graphics.setupDisplay();
+		try (RuntimeStageDiagnostics.Stage ignored = RuntimeStageDiagnostics.begin("display_setup")) {
+			graphics.setupDisplay();
 		} catch (LWJGLException e) {
 			throw new GdxRuntimeException(e);
 		}
 		// The first setVSync(false) runs before setupDisplay(), when the Android EGL bridge has no
 		// display yet. Reapply it after the window/surface exists so eglSwapInterval(0) is effective.
-		graphics.setVSync(false);
-		applyLauncherFrameRateOverride();
+		try (RuntimeStageDiagnostics.Stage ignored = RuntimeStageDiagnostics.begin("vsync_and_frame_override")) {
+			graphics.setVSync(false);
+			applyLauncherFrameRateOverride();
+		}
 		initializeAudioOnMainLoop();
-		if (audio != null) processQueuedAudioCommands();
+		try (RuntimeStageDiagnostics.Stage ignored = RuntimeStageDiagnostics.begin("initial_audio_commands")) {
+			if (audio != null) processQueuedAudioCommands();
+		}
 		System.out.println("[gdx-patch] Frame pacing: targetFps=" + graphics.config.foregroundFPS + ", activeRefreshRate="
 			+ resolveActiveRefreshRate() + " (launcherReported=" + LAUNCHER_ACTIVE_REFRESH_RATE + ")");
 		int configuredVirtualWidth = resolveConfiguredVirtualWidth();

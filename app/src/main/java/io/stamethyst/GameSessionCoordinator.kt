@@ -20,6 +20,7 @@ import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.ExpectedGameExitNotice
 import io.stamethyst.backend.launch.ExpectedGameExitReturnPolicy
+import io.stamethyst.backend.launch.UserExitProcessFallback
 import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.GameWindowVisibilityPolicy
@@ -67,7 +68,6 @@ internal class GameSessionCoordinator(
         private const val EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS = 1500L
         private const val EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS = 180L
         private const val LANDSCAPE_WAIT_TIMEOUT_MS = 4000L
-        private val FOREGROUND_AUDIO_RESTORE_DELAYS_MS = longArrayOf(150L, 400L, 1000L, 2200L)
 
         internal fun shouldAttemptPostBootSurfaceSoftRefresh(
             useTextureViewSurface: Boolean,
@@ -138,8 +138,6 @@ internal class GameSessionCoordinator(
     private val slingBreakBootMode =
         LauncherConfig.readBootOverlayStyle(activity) == BootOverlayStyle.GODOT_SLING_BREAK
     private val expectedGameExitReturnPolicy = ExpectedGameExitReturnPolicy()
-    private var pendingAudioDeviceRecovery = false
-    private val foregroundAudioRestoreRunnables = mutableListOf<Runnable>()
     private val foregroundAudioPolicy = ForegroundAudioPolicy()
     private val audioManager = activity.getSystemService(AudioManager::class.java)
     private var audioHealthBridgeFailureLogged = false
@@ -154,7 +152,10 @@ internal class GameSessionCoordinator(
                 null
             }
         },
-        requestHealthCheck = { reason -> requestRuntimeAudioHealthCheck(reason) }
+        requestHealthCheck = { reason -> requestRuntimeAudioHealthCheck(reason) },
+        setRecoveryAllowed = { allowed ->
+            runCatching { CallbackBridge.nativeSetAudioRecoveryAllowed(allowed) }
+        }
     )
     private val inGameEasyTierOverlayController by lazy {
         InGameEasyTierOverlayController(
@@ -169,11 +170,11 @@ internal class GameSessionCoordinator(
         startCheckPosted = false
         tryStartJvmWhenSurfaceReady()
     }
-    private val backExitForceRestartRunnable = Runnable {
-        if (backExitRequested) {
-            forceRestartLauncherAndTerminateProcess()
-        }
-    }
+    private val userExitProcessFallback = UserExitProcessFallback(
+        postDelayed = { task, delay -> mainHandler.postDelayed(task, delay) },
+        delayMs = BACK_FORCE_KILL_FALLBACK_MS,
+        terminateProcess = { forceRestartLauncherAndTerminateProcess() }
+    )
     private val expectedGameExitReturnWatchdogRunnable = object : Runnable {
         override fun run() {
             pollExpectedGameExitReturn()
@@ -215,7 +216,6 @@ internal class GameSessionCoordinator(
             trySchedulePostBootSurfaceSoftRefresh("overlay_dismissed")
         },
         onRuntimePauseRequested = {
-            cancelForegroundAudioRestoreRetries()
             foregroundAudioHealthMonitor.stop()
             syncRuntimeForegroundState(false)
             setRuntimeAudioMuted(true)
@@ -317,17 +317,14 @@ internal class GameSessionCoordinator(
     fun onDestroy() {
         destroyed = true
         cancelStartCheck()
-        cancelBackExitForceRestart()
         cancelExpectedGameExitReturnWatchdog()
         stopRuntimeRequestPolling()
         inGameEasyTierOverlayController.onDestroy()
         inGameAchievementOverlayController.onDestroy()
         RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
         reportEasyTierInGameState(EasyTierInGameSessionState.Online)
-        cancelForegroundAudioRestoreRetries()
         foregroundAudioHealthMonitor.stop()
         activityResumed = false
-        pendingAudioDeviceRecovery = false
         foregroundAudioPolicy.markActivityResumed(false)
         updateSystemGameState()
         syncRuntimeForegroundState(false)
@@ -373,7 +370,7 @@ internal class GameSessionCoordinator(
             return
         }
         stopRuntimeRequestPolling()
-        cancelForegroundAudioRestoreRetries()
+        foregroundAudioHealthMonitor.stop()
         syncRuntimeForegroundState(false)
         applyBackgroundWindowState()
         updateSystemGameState()
@@ -384,7 +381,7 @@ internal class GameSessionCoordinator(
         activityResumed = false
         stopRuntimeRequestPolling()
         foregroundAudioPolicy.markActivityResumed(false)
-        cancelForegroundAudioRestoreRetries()
+        foregroundAudioHealthMonitor.stop()
         syncRuntimeForegroundState(false)
         applyBackgroundWindowState()
         updateSystemGameState()
@@ -403,7 +400,6 @@ internal class GameSessionCoordinator(
         activityResumed = false
         stopRuntimeRequestPolling()
         foregroundAudioPolicy.markActivityResumed(false)
-        cancelForegroundAudioRestoreRetries()
         foregroundAudioHealthMonitor.stop()
         syncRuntimeForegroundState(false)
         setRuntimeAudioMuted(true)
@@ -453,17 +449,14 @@ internal class GameSessionCoordinator(
 
     fun onPlatformAudioFocusChanged(granted: Boolean) {
         if (!granted) {
-            cancelForegroundAudioRestoreRetries()
+            foregroundAudioHealthMonitor.stop()
             setRuntimeAudioMuted(true)
             return
         }
-        pendingAudioDeviceRecovery = true
-        requestForegroundAudioRecovery(forceMuteFirst = true)
+        foregroundAudioHealthMonitor.checkNow("foreground")
     }
 
     fun onAudioOutputRouteChanged() {
-        pendingAudioDeviceRecovery = true
-        requestForegroundAudioRecovery(forceMuteFirst = true)
         foregroundAudioHealthMonitor.checkNow("output_route_changed")
     }
 
@@ -472,7 +465,6 @@ internal class GameSessionCoordinator(
         syncFocusStateToNative(hasFocus)
         if (hasFocus) {
             foregroundAudioHealthMonitor.checkNow("window_focus_gained")
-            scheduleForegroundAudioRestoreRetries()
         }
     }
 
@@ -666,7 +658,6 @@ internal class GameSessionCoordinator(
             )
         )
         if (backExitRequested) {
-            cancelBackExitForceRestart()
             activity.runOnUiThread {
                 if (heapPressureNotice != null) {
                     activity.startActivity(
@@ -743,7 +734,6 @@ internal class GameSessionCoordinator(
             )
         )
         if (backExitRequested) {
-            cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
             return
         }
@@ -778,7 +768,6 @@ internal class GameSessionCoordinator(
             )
         )
         if (backExitRequested) {
-            cancelBackExitForceRestart()
             activity.runOnUiThread { activity.finish() }
             return
         }
@@ -820,12 +809,7 @@ internal class GameSessionCoordinator(
         if (destroyed || backExitRequested) return
         activity.markGodotBootCancelled()
         requestBackExitToLauncher()
-        // Interrupt alone cannot stop a JVM already executing native code, especially while
-        // paused at the boot gate. Terminate only this :game process after launching the app UI.
-        // Use a handler not tied to a View that CLEAR_TASK will detach during return.
-        mainHandler.postDelayed({
-            android.os.Process.killProcess(android.os.Process.myPid())
-        }, 220L)
+        // The common explicit-exit fallback owns process termination, including the boot gate.
     }
 
     private fun requestBackExitToLauncher() {
@@ -836,12 +820,18 @@ internal class GameSessionCoordinator(
         MemoryDiagnosticsLogger.logEvent(
             activity,
             "game_session_back_exit_requested",
-            mapOf("launchMode" to config.launchMode)
+            mapOf(
+                "launchMode" to config.launchMode,
+                "pid" to android.os.Process.myPid(),
+                "fallbackDelayMs" to BACK_FORCE_KILL_FALLBACK_MS
+            )
         )
         backExitRequested = true
+        // Own this promise independently of the render View and Activity destruction.
+        // This is the existing explicit user-exit timeout, never an audio-stall timeout.
+        userExitProcessFallback.request()
         backExitLauncherShown = false
         stopRuntimeRequestPolling()
-        cancelForegroundAudioRestoreRetries()
         foregroundAudioHealthMonitor.stop()
         syncRuntimeForegroundState(false)
         setRuntimeAudioMuted(true)
@@ -880,7 +870,6 @@ internal class GameSessionCoordinator(
             forceRestartLauncherAndTerminateProcess()
             return
         }
-        scheduleBackExitForceRestart()
     }
 
     private fun requestJvmCloseSignal(): Boolean {
@@ -888,21 +877,6 @@ internal class GameSessionCoordinator(
             CallbackBridge.nativeRequestCloseWindow()
         } catch (_: Throwable) {
             false
-        }
-    }
-
-    private fun scheduleBackExitForceRestart() {
-        cancelBackExitForceRestart()
-        renderSurfaceManager.renderView.postDelayed(
-            backExitForceRestartRunnable,
-            BACK_FORCE_KILL_FALLBACK_MS
-        )
-    }
-
-    private fun cancelBackExitForceRestart() {
-        try {
-            renderSurfaceManager.renderView.removeCallbacks(backExitForceRestartRunnable)
-        } catch (_: UninitializedPropertyAccessException) {
         }
     }
 
@@ -921,6 +895,11 @@ internal class GameSessionCoordinator(
             return
         }
         backExitHardRestartTriggered = true
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "game_session_user_exit_process_termination",
+            mapOf("pid" to android.os.Process.myPid(), "launcherShown" to backExitLauncherShown)
+        )
         if (!backExitLauncherShown) {
             LauncherReturnCoordinator.scheduleLauncherRestart(
                 context = activity,
@@ -1060,7 +1039,7 @@ internal class GameSessionCoordinator(
                 )
             }
             activity.finishAffinity()
-            renderSurfaceManager.renderView.postDelayed({
+            mainHandler.postDelayed({
                 android.os.Process.killProcess(android.os.Process.myPid())
             }, 220L)
             return
@@ -1089,7 +1068,6 @@ internal class GameSessionCoordinator(
 
     private fun applyForegroundWindowState() {
         if (bootOverlayController.shouldPauseRuntimeUntilEntry) {
-            cancelForegroundAudioRestoreRetries()
             foregroundAudioHealthMonitor.stop()
             syncRuntimeForegroundState(false)
             setRuntimeAudioMuted(true)
@@ -1101,7 +1079,7 @@ internal class GameSessionCoordinator(
         }
         try {
             CallbackBridge.nativeSetInputReady(true)
-            CallbackBridge.nativeSetAudioMuted(!shouldAllowForegroundAudio() || pendingAudioDeviceRecovery)
+            CallbackBridge.nativeSetAudioMuted(!shouldAllowForegroundAudio())
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_ICONIFIED, 0)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 1)
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_FOCUSED, 1)
@@ -1110,10 +1088,8 @@ internal class GameSessionCoordinator(
         }
         if (shouldAllowForegroundAudio()) {
             foregroundAudioHealthMonitor.start()
-            scheduleForegroundAudioRestoreRetries()
         } else {
             foregroundAudioHealthMonitor.stop()
-            cancelForegroundAudioRestoreRetries()
         }
     }
 
@@ -1132,42 +1108,6 @@ internal class GameSessionCoordinator(
             CallbackBridge.nativeSetWindowAttrib(LwjglGlfwKeycode.GLFW_VISIBLE, 0)
         } catch (_: Throwable) {
         }
-    }
-
-    private fun scheduleForegroundAudioRestoreRetries() {
-        cancelForegroundAudioRestoreRetries()
-        if (!shouldAllowForegroundAudio()) {
-            return
-        }
-        for (delayMs in FOREGROUND_AUDIO_RESTORE_DELAYS_MS) {
-            val runnable = Runnable {
-                restoreForegroundAudioIfNeeded()
-            }
-            foregroundAudioRestoreRunnables += runnable
-            renderSurfaceManager.renderView.postDelayed(runnable, delayMs)
-        }
-    }
-
-    private fun cancelForegroundAudioRestoreRetries() {
-        try {
-            for (runnable in foregroundAudioRestoreRunnables) {
-                renderSurfaceManager.renderView.removeCallbacks(runnable)
-            }
-        } catch (_: UninitializedPropertyAccessException) {
-        }
-        foregroundAudioRestoreRunnables.clear()
-    }
-
-    private fun restoreForegroundAudioIfNeeded() {
-        if (!shouldAllowForegroundAudio()) {
-            return
-        }
-        if (pendingAudioDeviceRecovery && recoverRuntimeAudioOutput()) {
-            pendingAudioDeviceRecovery = false
-        } else if (pendingAudioDeviceRecovery) {
-            requestRuntimeAudioRecovery()
-        }
-        setRuntimeAudioMuted(false)
     }
 
     private fun syncRuntimeForegroundState(foreground: Boolean) {
@@ -1520,19 +1460,6 @@ internal class GameSessionCoordinator(
         )
     }
 
-    private fun requestForegroundAudioRecovery(forceMuteFirst: Boolean) {
-        if (!shouldAllowForegroundAudio()) {
-            return
-        }
-        cancelForegroundAudioRestoreRetries()
-        if (forceMuteFirst) {
-            setRuntimeAudioMuted(true)
-        }
-        requestRuntimeAudioRecovery()
-        restoreForegroundAudioIfNeeded()
-        scheduleForegroundAudioRestoreRetries()
-    }
-
     private fun setRuntimeAudioMuted(muted: Boolean) {
         if (!jvmLaunchController.runtimeLifecycleReady) {
             return
@@ -1543,31 +1470,18 @@ internal class GameSessionCoordinator(
         }
     }
 
-    private fun recoverRuntimeAudioOutput(): Boolean {
-        if (!jvmLaunchController.runtimeLifecycleReady) {
-            return false
-        }
-        return try {
-            CallbackBridge.nativeRecoverAudioOutput()
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
-    private fun requestRuntimeAudioRecovery() {
-        if (!jvmLaunchController.runtimeLifecycleReady) {
-            return
-        }
-        try {
-            CallbackBridge.nativeRequestAudioRecovery()
-        } catch (_: Throwable) {
-        }
-    }
-
     private fun requestRuntimeAudioHealthCheck(reason: String?) {
         if (!shouldAllowForegroundAudio()) return
         try {
-            CallbackBridge.nativeRequestAudioHealthCheck(reason != null)
+            // Events before the constructor completes are satisfied by the newly opened device.
+            // Keep the scheduler alive so a genuine disconnect is checked after initialization.
+            if (CallbackBridge.nativeGetAudioRuntimeState() != 1) return
+            if (reason == "output_route_changed") {
+                CallbackBridge.nativeRequestAudioRouteRecovery()
+            } else {
+                CallbackBridge.nativeRequestAudioHealthCheck(reason != null)
+            }
+            setRuntimeAudioMuted(false)
             if (reason != null) {
                 println("[amethyst-audio-route] event=health_check_requested trigger=$reason")
             }

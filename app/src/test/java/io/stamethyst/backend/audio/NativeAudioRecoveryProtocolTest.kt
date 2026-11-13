@@ -33,6 +33,11 @@ class NativeAudioRecoveryProtocolTest {
             .substringBefore("fun onSurfaceReady()")
         assertTrue(focusEntry.contains("foregroundAudioHealthMonitor.checkNow(\"window_focus_gained\")"))
         assertTrue(coordinator.contains("CallbackBridge.nativeRequestAudioHealthCheck(reason != null)"))
+        assertFalse(coordinator.contains("pendingAudioDeviceRecovery"))
+        assertFalse(coordinator.contains("CallbackBridge.nativeRecoverAudioOutput()"))
+        assertFalse(coordinator.contains("CallbackBridge.nativeRequestAudioRecovery()"))
+        assertTrue(coordinator.contains("CallbackBridge.nativeRequestAudioRouteRecovery()"))
+        assertTrue(coordinator.contains("CallbackBridge.nativeGetAudioRuntimeState() != 1"))
     }
 
     @Test

@@ -323,6 +323,8 @@ internal object StsDesktopJarPatcher {
             entryName == STS_PATCH_LWJGL_HOT_LOOP_CONFIG_CLASS ||
             entryName == STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS ||
             entryName == STS_PATCH_WINDOW_ICON_COMPAT_CLASS ||
+            entryName == STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_CLASS ||
+            entryName.startsWith(STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_PREFIX) ||
             entryName == STS_PATCH_FRAME_RING_BUFFER_CLASS ||
             entryName.startsWith(STS_PATCH_FRAME_RING_BUFFER_PREFIX) ||
             entryName == STS_PATCH_SPRITE_BATCH_CLASS ||

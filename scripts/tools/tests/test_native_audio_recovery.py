@@ -18,6 +18,57 @@ from scripts.tools.lib.native_audio_recovery_probe import (
 
 
 class NativeAudioRecoveryTest(unittest.TestCase):
+    def test_explicit_and_health_share_one_bounded_interruption_budget(self):
+        explicit, health, renewed = self.scenario("explicit_shared_budget", 3)
+        self.assertEqual(4, explicit["reset_calls"])
+        self.assertEqual(4, health["reset_calls"])
+        self.assertEqual(5, renewed["reset_calls"])
+        self.assertEqual(1, renewed["running"])
+
+    def test_explicit_failure_obeys_same_backoff_before_health_retry(self):
+        states = self.scenario("explicit_backoff", 4)
+        self.assertEqual([1, 1, 1, 2], [s["reset_calls"] for s in states])
+        self.assertEqual(1, states[-1]["running"])
+
+    def test_bridge_ready_does_not_mean_audio_is_ready(self):
+        initializing, ready = self.scenario("audio_not_ready", 2)
+        self.assertEqual(0, initializing["reset_calls"])
+        self.assertEqual(0, initializing["completed_generation"])
+        self.assertEqual(1, ready["reset_calls"])
+
+    def test_communication_gate_prevents_queued_recovery_from_touching_device(self):
+        gated, ready = self.scenario("communication_gate", 2)
+        self.assertEqual(0, gated["reset_calls"])
+        self.assertEqual(0, gated["connection_reads"])
+        self.assertEqual(1, ready["running"])
+
+    def test_route_event_atomically_combines_renewal_and_recovery_without_two_jni_requests(self):
+        first, periodic = self.scenario("route_atomic_coalesced", 2)
+        self.assertEqual(1, first["reset_calls"])
+        self.assertEqual(1, first["requested_generation"])
+        self.assertEqual(1, first["reported_success"])
+        self.assertEqual(1, periodic["reset_calls"])
+
+    def test_independent_snapshot_observes_pause_and_initial_mute_without_openal_lock(self):
+        for scenario, stage in (("observe_pause_block", 6), ("observe_mute_block", 1)):
+            with self.subTest(scenario=scenario):
+                blocked, released = self.scenario(scenario, 2)
+                self.assertEqual(stage, blocked["stage"])
+                self.assertEqual(1, blocked["requested_generation"])
+                self.assertEqual(0, blocked["completed_generation"])
+                self.assertEqual(1, released["reported_success"])
+
+    def test_native_recovery_stages_have_matched_begin_end_and_no_extra_device_operation(self):
+        state, = self.scenario("healthy")
+        log = (self.out_dir / "healthy.log").read_text()
+        for stage in range(3, 11):
+            begin = f"event=operation_begin stage={stage} "
+            end = f"event=operation_end stage={stage} "
+            self.assertGreater(log.count(begin), 0, log)
+            self.assertEqual(log.count(begin), log.count(end), log)
+        self.assertEqual(1, state["pause_calls"])
+        self.assertEqual(1, state["reset_calls"])
+
     @classmethod
     def setUpClass(cls):
         artifact_root = REPO_ROOT / "agent-tmp/native-audio-recovery-tests"

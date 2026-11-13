@@ -13,6 +13,19 @@ static int pause_calls, reset_calls, resume_calls, alc_error, injected_error;
 static int error_reads, connection_reads;
 static float listener_gain = 1.0f;
 static uint64_t fake_now_ms = 10000;
+static pthread_mutex_t block_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t block_condition = PTHREAD_COND_INITIALIZER;
+static int blocked_stage;
+static bool block_entered, block_released;
+
+static void maybe_block(int stage) {
+    if (blocked_stage != stage) return;
+    pthread_mutex_lock(&block_lock);
+    block_entered = true;
+    pthread_cond_broadcast(&block_condition);
+    while (!block_released) pthread_cond_wait(&block_condition, &block_lock);
+    pthread_mutex_unlock(&block_lock);
+}
 
 static int fake_clock_gettime(clockid_t clock, struct timespec* now) {
     (void)clock;
@@ -43,6 +56,7 @@ static void fake_integer(void* device, int param, int size, int* values) {
     *values = connected;
 }
 static void fake_pause(void* device) {
+    maybe_block(6);
     (void)device;
     ++pause_calls;
     output_running = false;
@@ -70,9 +84,13 @@ static void fake_resume(void* device) {
 }
 static void fake_process(void* context) { (void)context; }
 static void fake_gain(int param, float value) { (void)param; listener_gain = value; }
-static void fake_get_gain(int param, float* value) { (void)param; *value = listener_gain; }
+static void fake_get_gain(int param, float* value) {
+    maybe_block(1);
+    (void)param; *value = listener_gain;
+}
 
 static void initialize(void) {
+    atomic_store(&pojav_audio_runtime_state, 1);
     /* Scope starts after symbol resolution, before the first recovery request. */
     pojav_openal_resolved = true;
     pojav_alcGetCurrentContext = fake_context;
@@ -133,6 +151,12 @@ static void report(const char* phase, int result) {
 static void* concurrent_request(void* unused) {
     (void)unused;
     request_recovery();
+    return NULL;
+}
+
+static void* audio_worker(void* unused) {
+    (void)unused;
+    game_audio_tick();
     return NULL;
 }
 
@@ -204,6 +228,7 @@ int main(int argc, char** argv) {
         processQueuedAudioCommandsOnCurrentThread();
         report("resume_failed", poll_recovery());
         resume_ok = true;
+        fake_now_ms += 250;
         request_recovery();
         processQueuedAudioCommandsOnCurrentThread();
         report("retry_success", poll_recovery());
@@ -328,6 +353,81 @@ int main(int argc, char** argv) {
         request_recovery();
         game_audio_tick();
         report("single_recovery", poll_recovery());
+    } else if (strcmp(scenario, "explicit_shared_budget") == 0) {
+        resume_ok = false;
+        for (int i = 0; i < 12; ++i) {
+            request_recovery();
+            game_audio_tick();
+            fake_now_ms += 10000;
+        }
+        report("explicit_exhausted", poll_recovery());
+        for (int i = 0; i < 12; ++i) periodic_health_tick(10000);
+        report("health_cannot_bypass", poll_recovery());
+        resume_ok = true;
+        request_health(true); // Only an actual route/call interruption renews this budget.
+        game_audio_tick();
+        report("new_interruption", poll_recovery());
+    } else if (strcmp(scenario, "explicit_backoff") == 0) {
+        resume_ok = false;
+        request_recovery(); game_audio_tick();
+        report("failed", poll_recovery());
+        resume_ok = true;
+        request_recovery(); game_audio_tick();
+        report("early_explicit", poll_recovery());
+        periodic_health_tick(249);
+        report("early_health", poll_recovery());
+        periodic_health_tick(1);
+        report("recovered", poll_recovery());
+    } else if (strcmp(scenario, "audio_not_ready") == 0) {
+        Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRuntimeState(NULL, NULL, 0);
+        request_health(false);
+        request_recovery();
+        game_audio_tick();
+        report("initializing", poll_recovery());
+        Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRuntimeState(NULL, NULL, 1);
+        game_audio_tick();
+        report("ready", poll_recovery());
+    } else if (strcmp(scenario, "route_atomic_coalesced") == 0) {
+        connected = output_running = true;
+        for (int i = 0; i < 50; ++i) {
+            request_health(false);
+            Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioRouteRecovery(NULL, NULL);
+        }
+        game_audio_tick();
+        report("route_recovered_once", poll_recovery());
+        periodic_health_tick(1000);
+        report("no_duplicate_recovery", poll_recovery());
+    } else if (strcmp(scenario, "communication_gate") == 0) {
+        request_health(false);
+        request_recovery();
+        Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRecoveryAllowed(NULL, NULL, JNI_FALSE);
+        game_audio_tick();
+        report("communication", poll_recovery());
+        Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRecoveryAllowed(NULL, NULL, JNI_TRUE);
+        request_health(false); game_audio_tick();
+        report("stable_normal", poll_recovery());
+    } else if (strcmp(scenario, "observe_pause_block") == 0 ||
+               strcmp(scenario, "observe_mute_block") == 0) {
+        blocked_stage = strcmp(scenario, "observe_pause_block") == 0 ? 6 : 1;
+        if (blocked_stage == 1) {
+            PojavAudioCommand mute = {.type = AUDIO_COMMAND_SET_MUTED, .muted = true};
+            enqueueAudioCommand(mute);
+        }
+        request_recovery();
+        pthread_t worker;
+        if (pthread_create(&worker, NULL, audio_worker, NULL) != 0) return 3;
+        pthread_mutex_lock(&block_lock);
+        while (!block_entered) pthread_cond_wait(&block_condition, &block_lock);
+        // The owner is deliberately inside OpenAL. This JNI getter must still return.
+        jlong snapshot = Java_org_lwjgl_glfw_CallbackBridge_nativeGetAudioOperationSnapshot(NULL, NULL);
+        printf("{\"phase\":\"blocked\",\"stage\":%d,\"requested_generation\":%d,\"completed_generation\":%d}\n",
+               (int)(snapshot & 255), atomic_load(&pojav_audio_recovery_requested_generation),
+               atomic_load(&pojav_audio_recovery_completed_generation));
+        block_released = true;
+        pthread_cond_broadcast(&block_condition);
+        pthread_mutex_unlock(&block_lock);
+        pthread_join(worker, NULL);
+        report("released", poll_recovery());
     } else {
         fprintf(stderr, "Unknown scenario: %s\n", scenario);
         return 2;

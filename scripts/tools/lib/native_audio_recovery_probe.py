@@ -34,6 +34,8 @@ HOST_HEADERS = """
 typedef void JNIEnv;
 typedef void* jclass;
 typedef unsigned char jboolean;
+typedef int jint;
+typedef long long jlong;
 typedef struct { atomic_bool runtimeForeground; } HostPojavEnvironment;
 static HostPojavEnvironment host_environ = {true};
 static HostPojavEnvironment* pojav_environ = &host_environ;
@@ -83,8 +85,13 @@ def build_probe(out_dir: Path) -> Path:
     )
     health_bridge = "\n".join(_extract_function(source, signature) for signature in (
         "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioHealthCheck(",
+        "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioRouteRecovery(",
         "JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAudioCommands(",
         "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeProcessQueuedAudioCommands(",
+        "JNIEXPORT jlong JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetAudioOperationSnapshot(",
+        "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRecoveryAllowed(",
+        "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRuntimeState(",
+        "JNIEXPORT jint JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetAudioRuntimeState(",
     ))
     out_dir.mkdir(parents=True, exist_ok=True)
     generated = out_dir / "native_audio_recovery_probe.c"

@@ -100,6 +100,10 @@ internal const val STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS =
     "com/badlogic/gdx/backends/lwjgl/LwjglFramePacerSchedule.class"
 internal const val STS_PATCH_WINDOW_ICON_COMPAT_CLASS =
     "com/badlogic/gdx/backends/lwjgl/WindowIconCompat.class"
+internal const val STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_CLASS =
+    "com/badlogic/gdx/backends/lwjgl/RuntimeStageDiagnostics.class"
+internal const val STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_PREFIX =
+    "com/badlogic/gdx/backends/lwjgl/RuntimeStageDiagnostics$"
 internal const val STS_PATCH_FRAME_RING_BUFFER_CLASS =
     "com/badlogic/gdx/backends/lwjgl/FrameRingBuffer.class"
 internal const val STS_PATCH_FRAME_RING_BUFFER_PREFIX =
@@ -210,6 +214,9 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_LWJGL_HOT_LOOP_CONFIG_CLASS,
         STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS,
         STS_PATCH_WINDOW_ICON_COMPAT_CLASS,
+        STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_CLASS,
+        "${STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_PREFIX}Stage.class",
+        "${STS_PATCH_RUNTIME_STAGE_DIAGNOSTICS_PREFIX}1.class",
         STS_PATCH_FRAME_RING_BUFFER_CLASS,
         STS_PATCH_SPRITE_BATCH_CLASS,
         "com/badlogic/gdx/backends/lwjgl/LwjglGraphics.class",

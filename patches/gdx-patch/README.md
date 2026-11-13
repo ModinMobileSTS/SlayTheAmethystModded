@@ -53,8 +53,38 @@
   合并后的健康检查标记，空队列不再阻止前台每秒检查及获焦后的即时检查。
   `GameSessionCoordinator` / `ForegroundAudioHealthMonitor` 负责触发和生命周期约束，
   `input_bridge_v3.c` 检查 `ALC_CONNECTED`，断流时建立新批次并有界退避重试。
+  路由变化通过单次原子标记同时合并预算续开与必要恢复，避免 health/explicit 两次 JNI
+  调用之间游戏线程先完成一次恢复、随后又收到第二次重建。
 - **边界：** 正常获焦不重建设备，不强抢系统音频焦点；后台、启动遮罩暂停及退出时
-  不进行自动恢复。健康检查最多自动尝试 4 次，后续前台/路由/音频模式事件可续开预算。
+  不进行自动恢复。显式/健康恢复共享每次中断最多 4 次及 250/1000/2000/4000ms
+  单调时钟退避；仅真实输出路由变化或观察到通信结束可续开预算，重复获焦/前台事件不续开。
 - **测试：** `scripts.tools.tests.test_native_audio_recovery` 验证空队列、迟发/重复断流、
   健康输出不重建、重试耗尽及后台取消；`ForegroundAudioHealthMonitorTest` 验证调度。
   宿主机 stub 通过不等于真实 Android 通话后的可听输出已验证。
+
+## 通话恢复停滞与 96% 启动阶段诊断（#674）
+
+- **症状：** 通话后无必要的设备 pause/reset 可能停住游戏线程；后续启动的
+  `GL context detected` 与首次音频之间缺少日志，96% 不能判定为同一旧进程/旧音频锁。
+- **恢复约束：** `GameAudioController` / `AudioOutputRouteBaseline` 将初始设备清单
+  作为基线。`ForegroundAudioHealthMonitor` 在非正常音频模式及回到正常模式后的
+  1 秒稳定期禁止恢复，代际隔离过期回调。`GameSessionCoordinator` 普通前台/获焦
+  只恢复静音状态并探测，不轮询补发显式重建；仅 audio-ready 后的真实路由变化显式恢复。
+  `LwjglApplication` 发布 initializing/ready/no-device/disabled-failed 状态，不能把
+  Android bridge-ready 当成 OpenAL 已创建。真实断流与 connected-but-paused 的失败设备
+  仍由 `input_bridge_v3.c` 共用预算恢复。
+- **诊断：** `LwjglGraphics` 记录 GL version/extensions/instances，`LwjglApplication`
+  记录 display/VSync/frame override/audio constructor/initial commands begin/end。
+  `RuntimeStageDiagnostics` 独立守护线程在同一阶段持续 5 秒时仅报告一次，含 JVM PID
+  和会话 UUID、执行线程及 Java 栈；native 的独立原子序号/阶段快照细分 gain、context、
+  device、error、pause、reset、resume、process、connected 和健康查询。观察线程只读
+  快照，不查询 `ALC_CONNECTED`、不进恢复锁、不取消/销毁/并发重置设备。Java JNI 栈
+  不冒充 native 完整栈；整个首次 audio constructor 打点不冒充已细分原生 open/create。
+- **注入：** `StsDesktopJarPatcher` 与必需类清单包含 `RuntimeStageDiagnostics` 及嵌套类，
+  保证实际游戏 jar 路径携带诊断，而不只在源码/测试中存在。
+- **退出：** `UserExitProcessFallback` 在用户明确返回启动器时承诺原有 1.5 秒终止兜底，
+  包括未 ready 与启动遮罩分支；Handler 不依赖已分离的渲染 View，Activity 销毁不撤销。
+  正常游戏仍先发关闭请求，保留原保存机会；不是音频停滞自动杀进程。
+  `LauncherActivity` debug 直启在旧进程清理失败后停止，不继续覆盖启动。
+- **验证边界：** Kotlin/JVM、实际 C helpers 宿主 stub 与本地 Android 编译不证明原华为
+  电话/驱动故障已解决。本轮不换 `.so`、不删档/设置、不切换音频后端、不自动重启或安装。

@@ -310,7 +310,9 @@ class LauncherActivity : AppCompatActivity() {
                         "direct_debug_launch_cleanup_game_process",
                         mapOf("launchMode" to request.launchMode)
                     )
-                    GameLaunchReturnTracker.terminateTrackedGameProcessAndWait(this)
+                    check(GameLaunchReturnTracker.terminateTrackedGameProcessAndWait(this)) {
+                        "Previous game process did not stop; refusing direct debug launch"
+                    }
                     GameLaunchReturnTracker.clearPendingGameLaunch(this)
                 }
                 MainProcessLaunchPreparationCoordinator.prepareBeforeLaunch(

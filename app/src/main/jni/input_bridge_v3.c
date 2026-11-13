@@ -66,6 +66,7 @@ do {                                                                       \
 #define AUDIO_COMMAND_RECOVER_OUTPUT 2
 #define AUDIO_HEALTH_CHECK_PENDING 1
 #define AUDIO_HEALTH_RENEW_BUDGET 2
+#define AUDIO_HEALTH_ROUTE_CHANGED 4
 #define AUDIO_HEALTH_MAX_RETRIES 4
 
 static bool isValidScreenSize(int width, int height) {
@@ -127,6 +128,33 @@ static atomic_bool pojav_audio_recovery_last_result = false;
 static pthread_mutex_t pojav_audio_recovery_lock = PTHREAD_MUTEX_INITIALIZER;
 // Coalesced separately from the command ring: an idle game must still check for disconnects.
 static atomic_int pojav_audio_health_check_pending = 0;
+// Bridge readiness is not OpenAL readiness: 0=initializing, 1=ready, 2=no device, 3=disabled/failed.
+static atomic_int pojav_audio_runtime_state = 0;
+static atomic_bool pojav_audio_recovery_allowed = true;
+// Independent diagnostics: readers never acquire an OpenAL, command or recovery mutex.
+static atomic_uint_fast64_t pojav_audio_operation_snapshot = 0;
+static uint64_t pojav_audio_operation_sequence = 0; // game-thread owned
+
+static void audioOperationStage(int stage) {
+    atomic_store_explicit(&pojav_audio_operation_snapshot,
+                          (++pojav_audio_operation_sequence << 8) | (unsigned)stage,
+                          memory_order_release);
+    if (stage != 0 && stage < 20) {
+        printf("%s event=operation_begin stage=%d thread=%lu\n", AUDIO_ROUTE_LOG_PREFIX,
+               stage, (unsigned long)pthread_self());
+        fflush(stdout);
+    }
+}
+
+static void audioOperationEnd(void) {
+    uint64_t previous = atomic_load_explicit(&pojav_audio_operation_snapshot, memory_order_acquire);
+    if ((previous & 255) != 0 && (previous & 255) < 20) {
+        printf("%s event=operation_end stage=%d thread=%lu\n", AUDIO_ROUTE_LOG_PREFIX,
+               (int)(previous & 255), (unsigned long)pthread_self());
+        fflush(stdout);
+    }
+    audioOperationStage(0);
+}
 // The following health/retry state is owned exclusively by the OpenAL/game thread.
 static bool pojav_audio_health_recovery_needed = false;
 static bool pojav_audio_health_exhausted_logged = false;
@@ -142,7 +170,8 @@ static uint64_t audioMonotonicMillis(void) {
 
 static bool audioHealthChecksAllowed(void) {
     return pojav_environ != NULL &&
-           atomic_load_explicit(&pojav_environ->runtimeForeground, memory_order_acquire);
+           atomic_load_explicit(&pojav_environ->runtimeForeground, memory_order_acquire) &&
+           atomic_load_explicit(&pojav_audio_recovery_allowed, memory_order_acquire);
 }
 
 static void resolveOpenalSymbolsFromHandle(void* handle) {
@@ -324,11 +353,10 @@ static void logNoOpenalContextOnce(void) {
 }
 
 static void applyAudioMutedOnCurrentThread(bool muted) {
-    if (!resolveOpenalSymbols()) {
-        return;
-    }
-
-    if (pojav_alcGetCurrentContext() == NULL) {
+    audioOperationStage(11); // mute symbol/context lookup, separate from gain reads/writes
+    bool hasContext = resolveOpenalSymbols() && pojav_alcGetCurrentContext() != NULL;
+    audioOperationEnd();
+    if (!hasContext) {
         logNoOpenalContextOnce();
         return;
     }
@@ -340,13 +368,17 @@ static void applyAudioMutedOnCurrentThread(bool muted) {
         }
         if (pojav_alGetListenerf != NULL) {
             float currentGain = 1.0f;
+            audioOperationStage(1); // mute: read gain
             pojav_alGetListenerf(AL_GAIN, &currentGain);
+            audioOperationEnd();
             if (currentGain >= 0.0f && currentGain <= 16.0f) {
                 pojav_saved_listener_gain = currentGain;
                 pojav_saved_listener_gain_valid = true;
             }
         }
+        audioOperationStage(2); // mute: write gain
         pojav_alListenerf(AL_GAIN, 0.0f);
+        audioOperationEnd();
         pojav_audio_force_muted = true;
         return;
     }
@@ -355,7 +387,9 @@ static void applyAudioMutedOnCurrentThread(bool muted) {
         return;
     }
     float restoredGain = pojav_saved_listener_gain_valid ? pojav_saved_listener_gain : 1.0f;
+    audioOperationStage(2);
     pojav_alListenerf(AL_GAIN, restoredGain);
+    audioOperationEnd();
     pojav_audio_force_muted = false;
 }
 
@@ -382,48 +416,74 @@ static bool recoverAudioOutputOnCurrentThread(void) {
         return failAudioOutputRecovery("symbols", ALC_NO_ERROR);
     }
 
+    audioOperationStage(3);
     void* currentContext = pojav_alcGetCurrentContext();
+    audioOperationEnd();
     if (currentContext == NULL) {
         logNoOpenalContextOnce();
         return false;
     }
 
+    audioOperationStage(4);
     void* device = pojav_alcGetContextsDevice(currentContext);
+    audioOperationEnd();
     if (device == NULL) {
         return false;
     }
 
     // ALC errors are sticky. Discard errors from before this recovery attempt.
+    audioOperationStage(5);
     pojav_alcGetError(device);
+    audioOperationEnd();
+    audioOperationStage(6);
     pojav_alcDevicePauseSOFT(device);
+    audioOperationEnd();
+    audioOperationStage(5);
     int error = pojav_alcGetError(device);
+    audioOperationEnd();
     if (error != ALC_NO_ERROR) {
         return failAudioOutputRecovery("pause", error);
     }
 
+    audioOperationStage(7);
     bool resetSucceeded = pojav_alcResetDeviceSOFT(device, NULL) != 0;
+    audioOperationEnd();
+    audioOperationStage(5);
     error = pojav_alcGetError(device);
+    audioOperationEnd();
     if (!resetSucceeded || error != ALC_NO_ERROR) {
         return failAudioOutputRecovery("reset", error);
     }
 
     // Resetting a paused device doesn't start its backend. Resume can still fail.
+    audioOperationStage(8);
     pojav_alcDeviceResumeSOFT(device);
+    audioOperationEnd();
+    audioOperationStage(5);
     error = pojav_alcGetError(device);
+    audioOperationEnd();
     if (error != ALC_NO_ERROR) {
         return failAudioOutputRecovery("resume", error);
     }
     if (pojav_alcProcessContext != NULL) {
+        audioOperationStage(9);
         pojav_alcProcessContext(currentContext);
+        audioOperationEnd();
+        audioOperationStage(5);
         error = pojav_alcGetError(device);
+        audioOperationEnd();
         if (error != ALC_NO_ERROR) {
             return failAudioOutputRecovery("process_context", error);
         }
     }
 
     int connected = 0;
+    audioOperationStage(10);
     pojav_alcGetIntegerv(device, ALC_CONNECTED, 1, &connected);
+    audioOperationEnd();
+    audioOperationStage(5);
     error = pojav_alcGetError(device);
+    audioOperationEnd();
     if (error != ALC_NO_ERROR) {
         return failAudioOutputRecovery("connection_check", error);
     }
@@ -440,6 +500,7 @@ static void processAudioHealthCheckOnCurrentThread(void) {
     if (!(flags & AUDIO_HEALTH_CHECK_PENDING) || !audioHealthChecksAllowed()) {
         return;
     }
+    // A new route/call event can arrive after the command drain's initial flag exchange.
     if (flags & AUDIO_HEALTH_RENEW_BUDGET) {
         pojav_audio_health_retry_attempts = 0;
         pojav_audio_health_next_retry_ms = 0;
@@ -448,13 +509,17 @@ static void processAudioHealthCheckOnCurrentThread(void) {
     if (pojav_alcGetContextsDevice == NULL || pojav_alcGetIntegerv == NULL || pojav_alcGetError == NULL) {
         return;
     }
+    audioOperationStage(20); // health query includes context/device/error/connected (may lock in OpenAL)
     void* device = pojav_alcGetContextsDevice(pojav_alcGetCurrentContext());
+    audioOperationEnd();
     if (device == NULL) return;
     // Isolate this query from pre-existing sticky errors, just like recovery itself.
+    audioOperationStage(20);
     pojav_alcGetError(device);
     int connected = 0;
     pojav_alcGetIntegerv(device, ALC_CONNECTED, 1, &connected);
     int error = pojav_alcGetError(device);
+    audioOperationEnd();
     if (error != ALC_NO_ERROR) {
         if (!pojav_audio_health_query_failed_logged) {
             printf("%s event=audio_health_query_failed alc_error=0x%x\n", AUDIO_ROUTE_LOG_PREFIX, error);
@@ -466,7 +531,7 @@ static void processAudioHealthCheckOnCurrentThread(void) {
     pojav_audio_health_query_failed_logged = false;
     // A failed reset can leave a connected-but-paused backend. Only a completed recovery
     // clears recovery_needed; ALC_CONNECTED alone must not abandon that retry window.
-    if (connected && !pojav_audio_health_recovery_needed) return;
+    if (connected && !pojav_audio_health_recovery_needed && !(flags & AUDIO_HEALTH_ROUTE_CHANGED)) return;
     if (!pojav_audio_health_recovery_needed) {
         printf("%s event=audio_health_disconnected connected=%d muted=%d requested=%d completed=%d\n",
                AUDIO_ROUTE_LOG_PREFIX, connected, pojav_audio_force_muted,
@@ -503,7 +568,18 @@ static void drainAudioCommandsOnCurrentThread(void) {
                 fflush(stdout);
                 continue;
             }
-            if (command.healthRecovery) ++pojav_audio_health_retry_attempts;
+            // Both explicit route recovery and health recovery belong to the same interruption.
+            // Polls/focus callbacks cannot bypass the budget or its monotonic backoff.
+            pojav_audio_health_recovery_needed = true;
+            if (pojav_audio_health_retry_attempts >= AUDIO_HEALTH_MAX_RETRIES ||
+                audioMonotonicMillis() < pojav_audio_health_next_retry_ms) {
+                completeAudioRecoveryCommand(command.recoveryGeneration, false);
+                printf("%s event=audio_recovery_skipped generation=%d reason=retry_budget_or_backoff\n",
+                       AUDIO_ROUTE_LOG_PREFIX, command.recoveryGeneration);
+                fflush(stdout);
+                continue;
+            }
+            ++pojav_audio_health_retry_attempts;
             printf("%s event=audio_recovery_executing generation=%d trigger=%s attempt=%d muted=%d\n",
                    AUDIO_ROUTE_LOG_PREFIX, command.recoveryGeneration,
                    command.healthRecovery ? "health_check" : "explicit",
@@ -520,7 +596,7 @@ static void drainAudioCommandsOnCurrentThread(void) {
                 if (command.healthRecovery && audioHealthChecksAllowed()) {
                     applyAudioMutedOnCurrentThread(false);
                 }
-            } else if (command.healthRecovery) {
+            } else {
                 static const uint64_t retryDelaysMs[] = {250, 1000, 2000, 4000};
                 pojav_audio_health_next_retry_ms = audioMonotonicMillis() +
                         retryDelaysMs[pojav_audio_health_retry_attempts - 1];
@@ -542,8 +618,20 @@ static void processQueuedAudioCommandsOnCurrentThread(void) {
         !atomic_load_explicit(&pojav_audio_health_check_pending, memory_order_acquire)) {
         return;
     }
-    if (!resolveOpenalSymbols()) return;
-    if (pojav_alcGetCurrentContext == NULL || pojav_alcGetCurrentContext() == NULL) {
+    if (atomic_load_explicit(&pojav_audio_runtime_state, memory_order_acquire) != 1) return;
+    // Consume a genuine new interruption before either kind of recovery executes.
+    int flags = atomic_fetch_and_explicit(&pojav_audio_health_check_pending,
+                                         ~AUDIO_HEALTH_RENEW_BUDGET, memory_order_acq_rel);
+    if ((flags & AUDIO_HEALTH_RENEW_BUDGET) && audioHealthChecksAllowed()) {
+        pojav_audio_health_retry_attempts = 0;
+        pojav_audio_health_next_retry_ms = 0;
+        pojav_audio_health_exhausted_logged = false;
+    }
+    audioOperationStage(21); // symbol resolution / current-context guard
+    bool hasContext = resolveOpenalSymbols() && pojav_alcGetCurrentContext != NULL &&
+                      pojav_alcGetCurrentContext() != NULL;
+    audioOperationEnd();
+    if (!hasContext) {
         if (!pojav_audio_command_context_unavailable_logged) {
             printf("%s event=queued_audio_commands_skipped reason=no_current_context\n", AUDIO_ROUTE_LOG_PREFIX);
             fflush(stdout);
@@ -568,8 +656,16 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeProcessQueuedAud
         JNIEnv* env,
         jclass clazz
 );
+JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRuntimeState(
+        JNIEnv* env, jclass clazz, jint state);
+JNIEXPORT jlong JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetAudioOperationSnapshot(
+        JNIEnv* env, jclass clazz);
 
 static const JNINativeMethod jvm_audio_bridge_fcns[] = {
+        {"nativeGetAudioOperationSnapshot", "()J",
+         Java_org_lwjgl_glfw_CallbackBridge_nativeGetAudioOperationSnapshot},
+        {"nativeSetAudioRuntimeState", "(I)V",
+         Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRuntimeState},
         {
                 "nativeHasQueuedAudioCommands",
                 "()Z",
@@ -1426,6 +1522,37 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioHeal
     int flags = AUDIO_HEALTH_CHECK_PENDING;
     if (renewRetryBudget == JNI_TRUE) flags |= AUDIO_HEALTH_RENEW_BUDGET;
     atomic_fetch_or_explicit(&pojav_audio_health_check_pending, flags, memory_order_release);
+}
+
+JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRecoveryAllowed(
+        __attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jboolean allowed) {
+    atomic_store_explicit(&pojav_audio_recovery_allowed, allowed == JNI_TRUE, memory_order_release);
+}
+
+JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioRouteRecovery(
+        __attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz) {
+    if (!audioHealthChecksAllowed()) return;
+    // One atomic route event, not health()+explicit(): the owner may run between JNI calls.
+    atomic_fetch_or_explicit(&pojav_audio_health_check_pending,
+                             AUDIO_HEALTH_CHECK_PENDING | AUDIO_HEALTH_RENEW_BUDGET |
+                             AUDIO_HEALTH_ROUTE_CHANGED, memory_order_release);
+}
+
+JNIEXPORT jint JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetAudioRuntimeState(
+        __attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz) {
+    return atomic_load_explicit(&pojav_audio_runtime_state, memory_order_acquire);
+}
+
+JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRuntimeState(
+        __attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jint state) {
+    atomic_store_explicit(&pojav_audio_runtime_state, state, memory_order_release);
+    printf("%s event=audio_runtime_state state=%d\n", AUDIO_ROUTE_LOG_PREFIX, state);
+    fflush(stdout);
+}
+
+JNIEXPORT jlong JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetAudioOperationSnapshot(
+        __attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz) {
+    return (jlong)atomic_load_explicit(&pojav_audio_operation_snapshot, memory_order_acquire);
 }
 const static JNINativeMethod critical_fcns[] = {
         {"nativeSetUseInputStackQueue", "(Z)V", critical_set_stackqueue},
