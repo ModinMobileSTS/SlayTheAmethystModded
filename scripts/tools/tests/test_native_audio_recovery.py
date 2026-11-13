@@ -18,6 +18,55 @@ from scripts.tools.lib.native_audio_recovery_probe import (
 
 
 class NativeAudioRecoveryTest(unittest.TestCase):
+    def test_periodic_unmutes_cannot_fill_ring_or_drop_background_mute(self):
+        pending, background, foreground = self.scenario("mute_mailbox_background", 3)
+        self.assertEqual(0, pending["queued"])
+        self.assertEqual(1, background["muted"])
+        self.assertEqual(0, background["listener_gain"])
+        self.assertEqual(0, foreground["muted"])
+        self.assertAlmostEqual(0.65, foreground["listener_gain"])
+
+    def test_latest_gain_target_wins_and_background_rejects_stale_unmute(self):
+        mute, unmute, background = self.scenario("mute_latest_wins", 3)
+        self.assertEqual([1, 0, 1], [s["muted"] for s in (mute, unmute, background)])
+        self.assertEqual([0, 1, 0], [s["listener_gain"] for s in (mute, unmute, background)])
+        self.assertTrue(all(s["queued"] == 0 for s in (mute, unmute, background)))
+
+    def test_latest_mute_survives_initialization_and_missing_context(self):
+        for scenario in ("mute_before_ready", "mute_without_context"):
+            with self.subTest(scenario=scenario):
+                waiting, ready = self.scenario(scenario, 2)
+                self.assertEqual(0, waiting["muted"])
+                self.assertEqual(1, ready["muted"])
+                self.assertEqual(0, ready["listener_gain"])
+
+    def test_successful_health_recovery_does_not_override_explicit_mute(self):
+        state, = self.scenario("recovery_preserves_mute")
+        self.assertEqual(1, state["reported_success"])
+        self.assertEqual(1, state["muted"])
+        self.assertEqual(0, state["listener_gain"])
+
+    def test_pause_during_blocked_recovery_applies_latest_mute_on_return(self):
+        state, = self.scenario("mute_during_recovery")
+        self.assertEqual(1, state["reported_success"])
+        self.assertEqual(1, state["muted"])
+        self.assertEqual(0, state["listener_gain"])
+
+    def test_route_obligation_survives_pause_query_error_and_gate_races(self):
+        for scenario in ("route_then_pause", "route_while_gated", "route_query_error", "route_gate_during_query"):
+            with self.subTest(scenario=scenario):
+                deferred, recovered, periodic = self.scenario(scenario, 3)
+                self.assertEqual(0, deferred["reset_calls"])
+                self.assertEqual(1, recovered["reset_calls"])
+                self.assertEqual(1, recovered["reported_success"])
+                self.assertEqual(1, periodic["reset_calls"])
+
+    def test_retained_route_does_not_renew_budget_but_settled_return_does(self):
+        exhausted, periodic, resumed = self.scenario("route_query_retry_budget", 3)
+        self.assertEqual([4, 4, 5], [s["reset_calls"] for s in (exhausted, periodic, resumed)])
+        self.assertEqual(0, periodic["running"])
+        self.assertEqual(1, resumed["running"])
+
     def test_explicit_and_health_share_one_bounded_interruption_budget(self):
         explicit, health, renewed = self.scenario("explicit_shared_budget", 3)
         self.assertEqual(4, explicit["reset_calls"])

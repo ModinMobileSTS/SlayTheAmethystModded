@@ -6,7 +6,8 @@ internal class ForegroundAudioHealthMonitor(
     private val removeCallbacks: (Runnable) -> Unit,
     private val canCheckHealth: () -> Boolean,
     private val readAudioMode: () -> Int?,
-    private val requestHealthCheck: (String?) -> Unit,
+    // False means the bridge is not ready; retain the interruption until it accepts it.
+    private val requestHealthCheck: (String?) -> Boolean,
     private val setRecoveryAllowed: (Boolean) -> Unit = {},
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 }
 ) {
@@ -20,6 +21,7 @@ internal class ForegroundAudioHealthMonitor(
     private var communicationSeen = false
     private var normalSinceMs: Long? = null
     private var pendingRouteChange = false
+    private var resumePending = false
 
     fun start() {
         if (!canCheckHealth()) {
@@ -45,11 +47,11 @@ internal class ForegroundAudioHealthMonitor(
     }
 
     fun checkNow(reason: String) {
+        if (reason == "output_route_changed") pendingRouteChange = true
         if (!canCheckHealth()) {
             stop()
             return
         }
-        if (reason == "output_route_changed") pendingRouteChange = true
         if (probe == null) start() else check()
     }
 
@@ -62,9 +64,11 @@ internal class ForegroundAudioHealthMonitor(
             setRecoveryAllowed(false)
             return
         }
-        if (communicationSeen) {
-            // An unreadable mode after communication is not evidence that the call ended.
+        if (communicationSeen || resumePending) {
+            // A stopped scheduler cannot observe a call that starts AND ends in the background.
+            // Every actual observation gap therefore needs a fresh stable-normal interval.
             if (mode == null) {
+                normalSinceMs = null
                 setRecoveryAllowed(false)
                 return
             }
@@ -78,15 +82,20 @@ internal class ForegroundAudioHealthMonitor(
         val reason = when {
             pendingRouteChange -> "output_route_changed"
             communicationSeen -> "communication_ended"
+            resumePending -> "foreground_resumed"
             else -> null
         }
-        pendingRouteChange = false
-        communicationSeen = false
-        normalSinceMs = null
-        requestHealthCheck(reason)
+        if (requestHealthCheck(reason)) {
+            pendingRouteChange = false
+            communicationSeen = false
+            resumePending = false
+            normalSinceMs = null
+        }
     }
 
     fun stop() {
+        // Repeated stop/focus/start calls do not manufacture extra retry budgets.
+        if (probe != null) resumePending = true
         ++generation
         probe?.let(removeCallbacks)
         probe = null

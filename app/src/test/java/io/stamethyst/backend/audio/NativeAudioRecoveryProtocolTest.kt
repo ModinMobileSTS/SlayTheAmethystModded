@@ -50,6 +50,6 @@ class NativeAudioRecoveryProtocolTest {
             .substringBefore("static void registerFunctions")
         assertTrue(nativeProcessor.contains("pojav_audio_health_check_pending"))
         assertTrue(nativeProcessor.contains("audioHealthChecksAllowed()"))
-        assertTrue(nativeProcessor.contains("processAudioHealthCheckOnCurrentThread();"))
+        assertTrue(nativeProcessor.contains("processAudioHealthCheckOnCurrentThread(flags);"))
     }
 }

@@ -57,7 +57,8 @@
   调用之间游戏线程先完成一次恢复、随后又收到第二次重建。
 - **边界：** 正常获焦不重建设备，不强抢系统音频焦点；后台、启动遮罩暂停及退出时
   不进行自动恢复。显式/健康恢复共享每次中断最多 4 次及 250/1000/2000/4000ms
-  单调时钟退避；仅真实输出路由变化或观察到通信结束可续开预算，重复获焦/前台事件不续开。
+  单调时钟退避；真实输出路由变化、观察到通信结束，或调度器实际停止后的稳定前台恢复
+  可续开一次预算，重复获焦/start 回调及周期检查不续开，也不强制重建健康设备。
 - **测试：** `scripts.tools.tests.test_native_audio_recovery` 验证空队列、迟发/重复断流、
   健康输出不重建、重试耗尽及后台取消；`ForegroundAudioHealthMonitorTest` 验证调度。
   宿主机 stub 通过不等于真实 Android 通话后的可听输出已验证。
@@ -73,6 +74,19 @@
   `LwjglApplication` 发布 initializing/ready/no-device/disabled-failed 状态，不能把
   Android bridge-ready 当成 OpenAL 已创建。真实断流与 connected-but-paused 的失败设备
   仍由 `input_bridge_v3.c` 共用预算恢复。
+- **静音请求可靠性：** 游戏线程长时间停顿时，每秒解除静音曾会塞满 64 格命令队列，
+  导致随后后台静音被丢弃。`input_bridge_v3.c` 将静音改为独立原子“最新目标状态”，
+  保留未 ready/无 context 时的请求；恢复完成后遵守最新静音目标和后台约束，暂停在
+  OpenAL 操作中途到达时，所有者返回后仍会应用它。恢复命令继续使用原有有界队列。
+- **路由事件保留：** `AudioOutputRouteBaseline` / `GameAudioController` 保留被暂停取消的
+  防抖事件；`ForegroundAudioHealthMonitor` 在遮罩、后台和 bridge 未 ready 时保留待办，
+  由 `GameSessionCoordinator` 确认已交给 native 后才清除。`input_bridge_v3.c` 接收事件与
+  执行门控分离，在连接查询前转交为游戏线程的恢复责任；暂停、查询错误或退避不会丢失
+  路由，也不会因重试同一事件反复续开预算。
+- **后台通话观察空窗：** 通话可能在调度器停止期间完整发生，返回时已是正常模式。
+  `ForegroundAudioHealthMonitor` 对实际 stop/start 的观察空窗同样等待正常模式稳定 1 秒，
+  然后仅续开一次预算；未读到模式或再次进入通信会重新计时。路由/已观察的通信结束与
+  此次恢复合并处理，重复窗口获焦不绕过稳定期或制造新预算。
 - **诊断：** `LwjglGraphics` 记录 GL version/extensions/instances，`LwjglApplication`
   记录 display/VSync/frame override/audio constructor/initial commands begin/end。
   `RuntimeStageDiagnostics` 独立守护线程在同一阶段持续 5 秒时仅报告一次，含 JVM PID

@@ -62,8 +62,9 @@ do {                                                                       \
 #define MAX_VALID_SCREEN_SIZE 32768
 #define AUDIO_ROUTE_LOG_PREFIX "[amethyst-audio-route-native]"
 #define AUDIO_COMMAND_QUEUE_SIZE 64
-#define AUDIO_COMMAND_SET_MUTED 1
 #define AUDIO_COMMAND_RECOVER_OUTPUT 2
+#define AUDIO_MUTE_PENDING 1
+#define AUDIO_MUTE_REQUESTED 2
 #define AUDIO_HEALTH_CHECK_PENDING 1
 #define AUDIO_HEALTH_RENEW_BUDGET 2
 #define AUDIO_HEALTH_ROUTE_CHANGED 4
@@ -89,7 +90,6 @@ typedef void (*POJAV_alGetListenerf_fn)(int param, float* value);
 
 typedef struct {
     int type;
-    bool muted;
     int recoveryGeneration;
     bool healthRecovery;
 } PojavAudioCommand;
@@ -118,6 +118,9 @@ static int pojav_audio_command_head = 0;
 static int pojav_audio_command_tail = 0;
 static int pojav_audio_command_count = 0;
 static atomic_bool pojav_audio_command_pending = false;
+// Latest desired gain state, independent of the bounded recovery command ring.
+// Consuming PENDING leaves REQUESTED intact so recovery cannot override a later mute.
+static atomic_int pojav_audio_mute_request = 0;
 static bool pojav_audio_command_context_unavailable_logged = false;
 static bool pojav_audio_command_queue_full_logged = false;
 static atomic_int pojav_audio_recovery_requested_generation = 0;
@@ -318,7 +321,6 @@ static bool queueAudioRecoveryCommandWithTrigger(bool healthRecovery) {
     ) + 1;
     PojavAudioCommand command = {
             .type = AUDIO_COMMAND_RECOVER_OUTPUT,
-            .muted = false,
             .recoveryGeneration = generation,
             .healthRecovery = healthRecovery
     };
@@ -391,6 +393,14 @@ static void applyAudioMutedOnCurrentThread(bool muted) {
     pojav_alListenerf(AL_GAIN, restoredGain);
     audioOperationEnd();
     pojav_audio_force_muted = false;
+}
+
+static void applyRequestedAudioMutedOnCurrentThread(void) {
+    int request = atomic_fetch_and_explicit(&pojav_audio_mute_request,
+                                           ~AUDIO_MUTE_PENDING, memory_order_acq_rel);
+    bool background = pojav_environ == NULL ||
+            !atomic_load_explicit(&pojav_environ->runtimeForeground, memory_order_acquire);
+    applyAudioMutedOnCurrentThread(background || (request & AUDIO_MUTE_REQUESTED));
 }
 
 static bool failAudioOutputRecovery(const char* stage, int error) {
@@ -495,16 +505,9 @@ static bool recoverAudioOutputOnCurrentThread(void) {
     return true;
 }
 
-static void processAudioHealthCheckOnCurrentThread(void) {
-    int flags = atomic_exchange_explicit(&pojav_audio_health_check_pending, 0, memory_order_acq_rel);
-    if (!(flags & AUDIO_HEALTH_CHECK_PENDING) || !audioHealthChecksAllowed()) {
+static void processAudioHealthCheckOnCurrentThread(int flags) {
+    if (!flags || !audioHealthChecksAllowed()) {
         return;
-    }
-    // A new route/call event can arrive after the command drain's initial flag exchange.
-    if (flags & AUDIO_HEALTH_RENEW_BUDGET) {
-        pojav_audio_health_retry_attempts = 0;
-        pojav_audio_health_next_retry_ms = 0;
-        pojav_audio_health_exhausted_logged = false;
     }
     if (pojav_alcGetContextsDevice == NULL || pojav_alcGetIntegerv == NULL || pojav_alcGetError == NULL) {
         return;
@@ -531,7 +534,7 @@ static void processAudioHealthCheckOnCurrentThread(void) {
     pojav_audio_health_query_failed_logged = false;
     // A failed reset can leave a connected-but-paused backend. Only a completed recovery
     // clears recovery_needed; ALC_CONNECTED alone must not abandon that retry window.
-    if (connected && !pojav_audio_health_recovery_needed && !(flags & AUDIO_HEALTH_ROUTE_CHANGED)) return;
+    if (connected && !pojav_audio_health_recovery_needed) return;
     if (!pojav_audio_health_recovery_needed) {
         printf("%s event=audio_health_disconnected connected=%d muted=%d requested=%d completed=%d\n",
                AUDIO_ROUTE_LOG_PREFIX, connected, pojav_audio_force_muted,
@@ -557,9 +560,7 @@ static void processAudioHealthCheckOnCurrentThread(void) {
 static void drainAudioCommandsOnCurrentThread(void) {
     PojavAudioCommand command;
     while (dequeueAudioCommand(&command)) {
-        if (command.type == AUDIO_COMMAND_SET_MUTED) {
-            applyAudioMutedOnCurrentThread(command.muted);
-        } else if (command.type == AUDIO_COMMAND_RECOVER_OUTPUT) {
+        if (command.type == AUDIO_COMMAND_RECOVER_OUTPUT) {
             // A request can outlive onStop/exit while waiting for the game thread.
             if (!audioHealthChecksAllowed()) {
                 completeAudioRecoveryCommand(command.recoveryGeneration, false);
@@ -594,7 +595,7 @@ static void drainAudioCommandsOnCurrentThread(void) {
                 pojav_audio_health_next_retry_ms = 0;
                 pojav_audio_health_exhausted_logged = false;
                 if (command.healthRecovery && audioHealthChecksAllowed()) {
-                    applyAudioMutedOnCurrentThread(false);
+                    applyRequestedAudioMutedOnCurrentThread();
                 }
             } else {
                 static const uint64_t retryDelaysMs[] = {250, 1000, 2000, 4000};
@@ -612,21 +613,17 @@ static void drainAudioCommandsOnCurrentThread(void) {
 
 static void processQueuedAudioCommandsOnCurrentThread(void) {
     if (!audioHealthChecksAllowed()) {
-        atomic_store_explicit(&pojav_audio_health_check_pending, 0, memory_order_release);
+        // Drop only the disposable poll. A route/budget event survives a pause or call.
+        atomic_fetch_and_explicit(&pojav_audio_health_check_pending,
+                                  ~AUDIO_HEALTH_CHECK_PENDING, memory_order_acq_rel);
     }
     if (!atomic_load_explicit(&pojav_audio_command_pending, memory_order_acquire) &&
-        !atomic_load_explicit(&pojav_audio_health_check_pending, memory_order_acquire)) {
+        !(atomic_load_explicit(&pojav_audio_mute_request, memory_order_acquire) & AUDIO_MUTE_PENDING) &&
+        !(audioHealthChecksAllowed() &&
+          atomic_load_explicit(&pojav_audio_health_check_pending, memory_order_acquire))) {
         return;
     }
     if (atomic_load_explicit(&pojav_audio_runtime_state, memory_order_acquire) != 1) return;
-    // Consume a genuine new interruption before either kind of recovery executes.
-    int flags = atomic_fetch_and_explicit(&pojav_audio_health_check_pending,
-                                         ~AUDIO_HEALTH_RENEW_BUDGET, memory_order_acq_rel);
-    if ((flags & AUDIO_HEALTH_RENEW_BUDGET) && audioHealthChecksAllowed()) {
-        pojav_audio_health_retry_attempts = 0;
-        pojav_audio_health_next_retry_ms = 0;
-        pojav_audio_health_exhausted_logged = false;
-    }
     audioOperationStage(21); // symbol resolution / current-context guard
     bool hasContext = resolveOpenalSymbols() && pojav_alcGetCurrentContext != NULL &&
                       pojav_alcGetCurrentContext() != NULL;
@@ -640,10 +637,29 @@ static void processQueuedAudioCommandsOnCurrentThread(void) {
         return;
     }
     pojav_audio_command_context_unavailable_logged = false;
+    if (atomic_load_explicit(&pojav_audio_mute_request, memory_order_acquire) & AUDIO_MUTE_PENDING) {
+        applyRequestedAudioMutedOnCurrentThread();
+    }
+    int flags = 0;
+    if (audioHealthChecksAllowed()) {
+        flags = atomic_exchange_explicit(&pojav_audio_health_check_pending, 0, memory_order_acq_rel);
+        // Transfer the interruption to game-thread state BEFORE any fallible query or recovery.
+        // Query errors, a closing gate, backoff and queue saturation must not lose the route.
+        if (flags & AUDIO_HEALTH_RENEW_BUDGET) {
+            pojav_audio_health_retry_attempts = 0;
+            pojav_audio_health_next_retry_ms = 0;
+            pojav_audio_health_exhausted_logged = false;
+        }
+        if (flags & AUDIO_HEALTH_ROUTE_CHANGED) pojav_audio_health_recovery_needed = true;
+    }
     drainAudioCommandsOnCurrentThread();
-    processAudioHealthCheckOnCurrentThread();
+    processAudioHealthCheckOnCurrentThread(flags);
     // A disconnected idle device gets a new generation and executes on this context-owning thread.
     drainAudioCommandsOnCurrentThread();
+    // A pause can arrive while an OpenAL recovery is blocked. Apply its latest gain on return.
+    if (atomic_load_explicit(&pojav_audio_mute_request, memory_order_acquire) & AUDIO_MUTE_PENDING) {
+        applyRequestedAudioMutedOnCurrentThread();
+    }
 }
 
 static void registerFunctions(JNIEnv *env);
@@ -1441,16 +1457,9 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioMuted(
         __attribute__((unused)) jclass clazz,
         jboolean muted
 ) {
-    PojavAudioCommand command = {
-            .type = AUDIO_COMMAND_SET_MUTED,
-            .muted = muted == JNI_TRUE,
-            .recoveryGeneration = 0
-    };
-    if (!enqueueAudioCommand(command) && !pojav_audio_command_queue_full_logged) {
-        printf("%s event=audio_command_queue_full\n", AUDIO_ROUTE_LOG_PREFIX);
-        fflush(stdout);
-        pojav_audio_command_queue_full_logged = true;
-    }
+    atomic_store_explicit(&pojav_audio_mute_request,
+                          AUDIO_MUTE_PENDING | (muted == JNI_TRUE ? AUDIO_MUTE_REQUESTED : 0),
+                          memory_order_release);
 }
 
 JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAudioCommands(
@@ -1458,6 +1467,7 @@ JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAud
         __attribute__((unused)) jclass clazz
 ) {
     return (atomic_load_explicit(&pojav_audio_command_pending, memory_order_acquire) ||
+            (atomic_load_explicit(&pojav_audio_mute_request, memory_order_acquire) & AUDIO_MUTE_PENDING) ||
             atomic_load_explicit(&pojav_audio_health_check_pending, memory_order_acquire))
             ? JNI_TRUE
             : JNI_FALSE;
@@ -1518,7 +1528,7 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioHeal
         __attribute__((unused)) jclass clazz,
         jboolean renewRetryBudget
 ) {
-    if (!audioHealthChecksAllowed()) return;
+    if (!audioHealthChecksAllowed() && renewRetryBudget != JNI_TRUE) return;
     int flags = AUDIO_HEALTH_CHECK_PENDING;
     if (renewRetryBudget == JNI_TRUE) flags |= AUDIO_HEALTH_RENEW_BUDGET;
     atomic_fetch_or_explicit(&pojav_audio_health_check_pending, flags, memory_order_release);
@@ -1531,8 +1541,8 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRecovery
 
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioRouteRecovery(
         __attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz) {
-    if (!audioHealthChecksAllowed()) return;
     // One atomic route event, not health()+explicit(): the owner may run between JNI calls.
+    // Acceptance is independent of the execution gate, which may close between JNI calls.
     atomic_fetch_or_explicit(&pojav_audio_health_check_pending,
                              AUDIO_HEALTH_CHECK_PENDING | AUDIO_HEALTH_RENEW_BUDGET |
                              AUDIO_HEALTH_ROUTE_CHANGED, memory_order_release);

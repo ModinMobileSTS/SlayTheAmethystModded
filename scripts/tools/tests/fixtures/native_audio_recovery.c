@@ -8,6 +8,7 @@ static bool context_available = true;
 static bool reset_ok = true, resume_ok = true;
 static bool pause_ok = true, query_ok = true;
 static bool reset_error, resume_disconnect_only;
+static bool gate_during_query;
 static bool connected, output_running;
 static int pause_calls, reset_calls, resume_calls, alc_error, injected_error;
 static int error_reads, connection_reads;
@@ -49,6 +50,10 @@ static int fake_error(void* device) {
 static void fake_integer(void* device, int param, int size, int* values) {
     (void)device;
     ++connection_reads;
+    if (gate_during_query) {
+        gate_during_query = false;
+        atomic_store(&pojav_audio_recovery_allowed, false);
+    }
     if (!query_ok || param != ALC_CONNECTED || size != 1) {
         inject_error(0xA003); /* ALC_INVALID_ENUM */
         return;
@@ -115,6 +120,14 @@ static int poll_recovery(void) {
 
 static void request_health(bool renew) {
     Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioHealthCheck(NULL, NULL, renew);
+}
+
+static void set_muted(bool muted) {
+    Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioMuted(NULL, NULL, muted);
+}
+
+static void request_route(void) {
+    Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioRouteRecovery(NULL, NULL);
 }
 
 static void game_audio_tick(void) {
@@ -242,7 +255,7 @@ int main(int argc, char** argv) {
         processQueuedAudioCommandsOnCurrentThread();
         report("completed", poll_recovery());
     } else if (strcmp(scenario, "queue_full") == 0) {
-        PojavAudioCommand command = {.type = AUDIO_COMMAND_SET_MUTED, .muted = false};
+        PojavAudioCommand command = {.type = 0}; // Fill the ring with no-ops, not gain state.
         for (int i = 0; i < AUDIO_COMMAND_QUEUE_SIZE; ++i) {
             if (!enqueueAudioCommand(command)) return 3;
         }
@@ -290,7 +303,7 @@ int main(int argc, char** argv) {
         resume_ok = true;
         for (int i = 0; i < 10; ++i) periodic_health_tick(1000);
         report("periodic_does_not_renew", poll_recovery());
-        request_health(true); /* New window-focus/audio-mode/foreground event. */
+        request_health(true); /* A real interruption, not a repeated focus callback. */
         game_audio_tick();
         report("renewed_recovered", poll_recovery());
     } else if (strcmp(scenario, "health_backoff") == 0) {
@@ -319,7 +332,7 @@ int main(int argc, char** argv) {
         game_audio_tick();
         report("context_returned", poll_recovery());
     } else if (strcmp(scenario, "health_background") == 0) {
-        request_health(true);
+        request_health(false);
         request_recovery();
         applyAudioMutedOnCurrentThread(true);
         atomic_store(&host_environ.runtimeForeground, false);
@@ -364,7 +377,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 12; ++i) periodic_health_tick(10000);
         report("health_cannot_bypass", poll_recovery());
         resume_ok = true;
-        request_health(true); // Only an actual route/call interruption renews this budget.
+        request_health(true); // Route/call events or a settled lifecycle return renew the budget.
         game_audio_tick();
         report("new_interruption", poll_recovery());
     } else if (strcmp(scenario, "explicit_backoff") == 0) {
@@ -406,12 +419,112 @@ int main(int argc, char** argv) {
         Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRecoveryAllowed(NULL, NULL, JNI_TRUE);
         request_health(false); game_audio_tick();
         report("stable_normal", poll_recovery());
+    } else if (strcmp(scenario, "mute_mailbox_background") == 0) {
+        connected = output_running = true;
+        listener_gain = 0.65f;
+        for (int i = 0; i < 100; ++i) {
+            request_health(false);
+            set_muted(false);
+            fake_now_ms += 1000;
+        }
+        atomic_store(&host_environ.runtimeForeground, false);
+        set_muted(true);
+        report("background_mute_pending", 0);
+        game_audio_tick();
+        report("background_thread_returned", 0);
+        atomic_store(&host_environ.runtimeForeground, true);
+        set_muted(false);
+        game_audio_tick();
+        report("foreground_restored", 0);
+    } else if (strcmp(scenario, "mute_latest_wins") == 0) {
+        connected = output_running = true;
+        set_muted(true); set_muted(false); set_muted(true);
+        game_audio_tick();
+        report("latest_mute", 0);
+        for (int i = 0; i < 100; ++i) { set_muted(true); set_muted(false); }
+        game_audio_tick();
+        report("latest_unmute", 0);
+        atomic_store(&host_environ.runtimeForeground, false);
+        set_muted(false); // A stale unmute cannot override the native foreground guard.
+        game_audio_tick();
+        report("background_guard", 0);
+    } else if (strcmp(scenario, "mute_before_ready") == 0 ||
+               strcmp(scenario, "mute_without_context") == 0) {
+        bool no_context = strcmp(scenario, "mute_without_context") == 0;
+        if (no_context) context_available = false;
+        else atomic_store(&pojav_audio_runtime_state, 0);
+        set_muted(false); set_muted(true);
+        game_audio_tick();
+        report("not_ready", 0);
+        context_available = true;
+        atomic_store(&pojav_audio_runtime_state, 1);
+        game_audio_tick();
+        report("ready_muted", 0);
+    } else if (strcmp(scenario, "recovery_preserves_mute") == 0) {
+        set_muted(true);
+        request_health(false);
+        game_audio_tick();
+        report("recovered_still_muted", poll_recovery());
+    } else if (strcmp(scenario, "route_then_pause") == 0 ||
+               strcmp(scenario, "route_while_gated") == 0 ||
+               strcmp(scenario, "route_query_error") == 0 ||
+               strcmp(scenario, "route_gate_during_query") == 0) {
+        connected = output_running = true;
+        bool query_error = strcmp(scenario, "route_query_error") == 0;
+        gate_during_query = strcmp(scenario, "route_gate_during_query") == 0;
+        if (strcmp(scenario, "route_while_gated") == 0) {
+            atomic_store(&pojav_audio_recovery_allowed, false);
+        }
+        request_route();
+        if (strcmp(scenario, "route_then_pause") == 0) {
+            atomic_store(&host_environ.runtimeForeground, false);
+            atomic_store(&pojav_audio_recovery_allowed, false);
+        }
+        if (query_error) query_ok = false;
+        game_audio_tick();
+        report("deferred", poll_recovery());
+        query_ok = true;
+        atomic_store(&host_environ.runtimeForeground, true);
+        atomic_store(&pojav_audio_recovery_allowed, true);
+        periodic_health_tick(1000);
+        report("route_recovered", poll_recovery());
+        for (int i = 0; i < 10; ++i) periodic_health_tick(1000);
+        report("no_duplicate", poll_recovery());
+    } else if (strcmp(scenario, "route_query_retry_budget") == 0) {
+        connected = true;
+        query_ok = false;
+        request_route(); game_audio_tick();
+        query_ok = true;
+        resume_ok = false;
+        for (int i = 0; i < 20; ++i) periodic_health_tick(1000);
+        report("route_budget_exhausted", poll_recovery());
+        resume_ok = true;
+        for (int i = 0; i < 10; ++i) periodic_health_tick(1000);
+        report("polls_cannot_renew", poll_recovery());
+        // Models the single foreground_resumed event AFTER Kotlin's stable-normal interval.
+        request_health(true); game_audio_tick();
+        report("settled_return_renews", poll_recovery());
+    } else if (strcmp(scenario, "mute_during_recovery") == 0) {
+        blocked_stage = 6;
+        request_health(false);
+        pthread_t worker;
+        if (pthread_create(&worker, NULL, audio_worker, NULL) != 0) return 3;
+        pthread_mutex_lock(&block_lock);
+        while (!block_entered) pthread_cond_wait(&block_condition, &block_lock);
+        // Main thread receives a pause while the OpenAL owner is blocked inside recovery.
+        atomic_store(&host_environ.runtimeForeground, false);
+        atomic_store(&pojav_audio_recovery_allowed, false);
+        set_muted(true);
+        block_released = true;
+        pthread_cond_broadcast(&block_condition);
+        pthread_mutex_unlock(&block_lock);
+        pthread_join(worker, NULL);
+        report("recovery_returned_in_background", poll_recovery());
     } else if (strcmp(scenario, "observe_pause_block") == 0 ||
                strcmp(scenario, "observe_mute_block") == 0) {
         blocked_stage = strcmp(scenario, "observe_pause_block") == 0 ? 6 : 1;
         if (blocked_stage == 1) {
-            PojavAudioCommand mute = {.type = AUDIO_COMMAND_SET_MUTED, .muted = true};
-            enqueueAudioCommand(mute);
+            set_muted(true);
         }
         request_recovery();
         pthread_t worker;

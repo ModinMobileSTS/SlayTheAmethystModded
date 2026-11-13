@@ -30,7 +30,7 @@ internal class GameAudioController(
     private val routeBaseline = AudioOutputRouteBaseline()
 
     private val routeChangeRunnable = Runnable {
-        if (activityResumed) {
+        if (activityResumed && routeBaseline.consumePendingChange()) {
             onAudioOutputRouteChanged()
         }
     }
@@ -57,6 +57,8 @@ internal class GameAudioController(
         activityResumed = true
         registerRouteCallbacks()
         dispatchAudioActive(true)
+        // onPause cancels the debounce task, not the route change it was going to deliver.
+        if (routeBaseline.hasPendingChange) scheduleAudioOutputRouteChanged()
     }
 
     fun onPause() {
@@ -112,6 +114,7 @@ internal class GameAudioController(
     }
 
     private fun scheduleAudioOutputRouteChanged() {
+        routeBaseline.markChanged()
         if (!activityResumed) {
             return
         }

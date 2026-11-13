@@ -1470,12 +1470,11 @@ internal class GameSessionCoordinator(
         }
     }
 
-    private fun requestRuntimeAudioHealthCheck(reason: String?) {
-        if (!shouldAllowForegroundAudio()) return
-        try {
-            // Events before the constructor completes are satisfied by the newly opened device.
-            // Keep the scheduler alive so a genuine disconnect is checked after initialization.
-            if (CallbackBridge.nativeGetAudioRuntimeState() != 1) return
+    private fun requestRuntimeAudioHealthCheck(reason: String?): Boolean {
+        if (!shouldAllowForegroundAudio()) return false
+        return try {
+            // The monitor retains interruptions until the actual OpenAL device is ready.
+            if (CallbackBridge.nativeGetAudioRuntimeState() != 1) return false
             if (reason == "output_route_changed") {
                 CallbackBridge.nativeRequestAudioRouteRecovery()
             } else {
@@ -1486,11 +1485,13 @@ internal class GameSessionCoordinator(
                 println("[amethyst-audio-route] event=health_check_requested trigger=$reason")
             }
             audioHealthBridgeFailureLogged = false
+            true
         } catch (error: Throwable) {
             if (!audioHealthBridgeFailureLogged) {
                 println("[amethyst-audio-route] event=health_bridge_failed error=$error")
                 audioHealthBridgeFailureLogged = true
             }
+            false
         }
     }
 }
