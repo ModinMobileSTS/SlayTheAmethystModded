@@ -7,6 +7,23 @@ patch cache and the cache-hit runtime optimizations stay inactive.
 
 ## Launcher and boot-bridge caches
 
+### Reusing preparation work
+
+Normal launch preparation reuses the resource generation's authoritative recovery
+validation for the subsequent readiness decision. It does not hash the same healthy
+generation again immediately after recovery. Native library preparation is owned by
+resource availability preparation, including its repair and installation paths, rather
+than being repeated by the common launch preparation service. The launch-specific
+entrypoint keeps the repository lock across component installation and repairs native
+libraries afterward, since component replacement can replace their target directory.
+Native source digests come from the already verified generation manifest; installed
+targets are still hashed. A healthy launch therefore scans the generation once and
+each native target once.
+
+This reuse is scoped to the preparation operation under the resource repository lock.
+Later operations still validate content, including same-size mutations; there is no
+process-wide size/mtime shortcut for authoritative resource checks.
+
 ### MTS classpath warmup cache
 
 Implemented by `MtsClasspathWarmupCoordinator`.
@@ -21,6 +38,18 @@ artifacts during later starts.
 This warmup deliberately runs in the main process before launching the game process.
 That keeps the old `:prep` process out of the launch path and lets the main process
 release its preparation resources once the game process is running.
+
+The coordinated launch path also carries the game-body verification result into
+classpath warmup, avoiding a second deep patch comparison of the same verified inputs.
+The result is bound to desktop/patch central-directory fingerprints, captured before
+deep verification and checked against a fresh warmup snapshot. A same-size/mtime
+replacement therefore cannot inherit the verification. Standalone warmup and cache
+checks still perform their own verification, and rebuilding captures a new marker
+after any jar rewrites.
+
+Classpath marker comparisons normalize the trailing whitespace on both sides. The
+schema-4 marker builder ends its last line with a newline; trimming only the on-disk
+marker previously made an otherwise identical marker miss on every launch.
 
 ### MTS patch output cache
 
@@ -42,7 +71,7 @@ patching flow and directly invokes the cached `PackageJar.PrepackagedLauncher` w
 
 The cache key includes the desktop jar, ModTheSpire, BaseMod, StSLib, boot bridge,
 GDX patch jar, the MTS mod file list content, and every enabled mod jar's path,
-length, and last-modified timestamp.
+length, and central-directory digest (with the non-zip fallback described below).
 
 ### Cached MTS annotation database
 
@@ -55,6 +84,10 @@ annotations.
 
 If the annotation DB cache is missing or incomplete, boot bridge falls back to MTS's
 original `Patcher.findPatches(...)` scan.
+
+Deserialization reads through a 64 KiB input buffer so object-stream tokens do not
+each become a small file read. The serialized schema and classloader-specific class
+resolution remain compatible with existing cache files.
 
 ### Cached main-jar SpireEnum index
 
@@ -188,8 +221,13 @@ cache, but the ratio is what motivated the choice: correctness against in-place 
 for roughly a third of the cost of hashing whole files, against a cache hit that saves
 seconds.
 
-Two launch-path measures keep that per-launch cost down without weakening the marker:
+Launch-path measures keep that per-launch cost down without weakening the marker:
 
+- Within one marker calculation, repeated references to the same jar reuse its
+  fingerprint. Labels and load order still contribute separately to the marker. The
+  reuse does not survive into another calculation, so rebuilding a user jar in place
+  with unchanged size and mtime is still detected. Main-process warmup and game-process
+  JVM argument construction have separate lifetimes and do not share a global memo.
 - The mod-jar fingerprints fan out across a small fixed pool (capped at
   `min(availableProcessors, 4)`, mirroring the cache build's package-jar pool) because
   each one is an open plus a central-directory seek against storage that may be cold.
