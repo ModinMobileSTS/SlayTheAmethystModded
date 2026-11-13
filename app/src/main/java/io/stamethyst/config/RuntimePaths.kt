@@ -718,6 +718,10 @@ object RuntimePaths {
     fun lwjglJar(context: Context): File = File(lwjglDir(context), "lwjgl-glfw-classes.jar")
 
     @JvmStatic
+    fun callbackBridgeJar(context: Context): File =
+        File(componentRoot(context), "callback_bridge/callback-bridge.jar")
+
+    @JvmStatic
     fun lwjgl2InjectorDir(context: Context): File = File(componentRoot(context), "lwjgl2_methods_injector")
 
     @JvmStatic

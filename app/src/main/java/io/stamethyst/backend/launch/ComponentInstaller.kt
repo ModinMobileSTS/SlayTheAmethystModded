@@ -18,6 +18,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
@@ -28,6 +29,7 @@ object ComponentInstaller {
     private const val DEFAULT_PREFS_ASSET_DIR = "components/default_saves/preferences"
     private const val BUNDLED_RUNTIME_NATIVE_ASSET_DIR = "components/bundled_runtime_natives"
     private const val LWJGL_BRIDGE_ASSET_DIR = "components/lwjgl3"
+    private const val CALLBACK_BRIDGE_ASSET = "components/callback_bridge/callback-bridge.jar"
     private const val LEGACY_HINA_VIDEO_PATCH_JAR = "hina-video-compat.jar"
     private const val PREF_FILE_PLAYER = "STSPlayer"
     private const val PREF_FILE_PLAYER_BACKUP = "STSPlayer.backUp"
@@ -236,6 +238,9 @@ object ComponentInstaller {
             context.getString(R.string.startup_progress_installing_lwjgl_bridge)
         )
         replaceAssetTree(resources, "components/lwjgl3", RuntimePaths.lwjglDir(context))
+        // Bypass RuntimeResourceProvider: this JNI contract belongs to the APK, even
+        // when an old or future resource pack contains an asset with the same name.
+        copyFile(RuntimePaths.callbackBridgeJar(context)) { context.assets.open(CALLBACK_BRIDGE_ASSET) }
         throwIfInterrupted()
         reportProgress(
             progressCallback,
@@ -530,6 +535,11 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     private fun copyFile(resources: RuntimeResourceProvider, assetPath: String, targetFile: File) {
+        copyFile(targetFile) { resources.open(assetPath) }
+    }
+
+    @Throws(IOException::class)
+    internal fun copyFile(targetFile: File, openResource: () -> InputStream) {
         throwIfInterrupted()
         val parent = targetFile.parentFile
             ?: throw IOException("Component target has no parent: ${targetFile.absolutePath}")
@@ -539,7 +549,7 @@ object ComponentInstaller {
         val temporary = File(parent, ".${targetFile.name}.installing-${System.nanoTime()}")
         val backup = File(parent, ".${targetFile.name}.previous-${System.nanoTime()}")
         try {
-            resources.open(assetPath).use { input ->
+            openResource().use { input ->
                 FileOutputStream(temporary, false).use { output ->
                     val buffer = ByteArray(8192)
                     while (true) {
@@ -900,6 +910,12 @@ object ComponentInstaller {
         if (!isLwjglBridgeCurrent(context, resources)) {
             missing += "lwjgl3"
         }
+        if (!isComponentFileCurrent(RuntimePaths.callbackBridgeJar(context)) {
+                context.assets.open(CALLBACK_BRIDGE_ASSET)
+            }
+        ) {
+            missing += "callback_bridge"
+        }
         if (!RuntimePaths.bootBridgeJar(context).isFile) {
             missing += "boot_bridge"
         }
@@ -989,11 +1005,15 @@ object ComponentInstaller {
         assetPath: String,
         installedFile: File
     ): Boolean {
+        return isComponentFileCurrent(installedFile) { resources.open(assetPath) }
+    }
+
+    internal fun isComponentFileCurrent(installedFile: File, openExpected: () -> InputStream): Boolean {
         if (!installedFile.isFile || installedFile.length() <= 0L) {
             return false
         }
         return runCatching {
-            resources.open(assetPath).use { expected ->
+            openExpected().use { expected ->
                 FileInputStream(installedFile).use { installed ->
                     streamsHaveSameBytes(expected, installed)
                 }
@@ -1026,9 +1046,10 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     /**
-     * The LWJGL bridge is supplied by the versioned resource pack. Compare the
+     * The bulk LWJGL runtime is supplied by the versioned resource pack. Compare the
      * generated version file before reusing the persistent component directory
-     * so a changed callback contract is installed after a resource-pack update.
+     * so changed bindings are installed after a resource-pack update. CallbackBridge
+     * is installed separately from the APK and checked by content, not this version.
      */
     private fun isLwjglBridgeCurrent(
         context: Context,

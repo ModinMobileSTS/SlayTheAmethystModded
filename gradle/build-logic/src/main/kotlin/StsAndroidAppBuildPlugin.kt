@@ -132,6 +132,7 @@ private fun Project.configureStsAndroidAppBuild() {
         prepareExternalizedAssetsTask = packagedAssetTasks.prepareExternalizedAssets,
         embeddedResourcePackAssetsDir = embeddedResourcePackAssetsDir
     )
+    registerCallbackBridgePackagingVerification()
     val adb = androidComponents().sdkComponents.adb.map { it.asFile.absolutePath }
     registerAdbTasks(adb, packageName)
     registerHarnessTasks()
@@ -466,7 +467,8 @@ private fun Project.registerRuntimeAssetTasks(
     val callbackBridgeBaseJar = rootProject.layout.projectDirectory.file("gradle/callback-bridge/lwjgl-glfw-classes-base.jar")
     val generatedJvmCallbackBridgeSourceDir = layout.buildDirectory.dir("generated/source/callbackBridge/jvm")
     val generatedJvmCallbackBridgeClassesDir = layout.buildDirectory.dir("generated/classes/callbackBridge/jvm")
-    val packagedLwjglBridgeJarDir = layout.buildDirectory.dir("generated/callbackBridgeRuntimeJar")
+    val packagedCallbackBridgeJarDir = layout.buildDirectory.dir("generated/apkCallbackBridgeJar")
+    val packagedLwjglBridgeJarDir = layout.buildDirectory.dir("generated/lwjglRuntimeJar")
     val generatedLwjglBridgeVersionDir = layout.buildDirectory.dir("generated/callbackBridgeVersion")
     val generatedLwjglBridgeAssetDir = generatedRuntimeAssetsDir.map { it.dir("components/lwjgl3") }
     val runtimePackZip = rootProject.layout.projectDirectory.file("build-deps/jre8-pojav.zip")
@@ -543,12 +545,26 @@ private fun Project.registerRuntimeAssetTasks(
         classpath = files()
     }
 
-    val packageLwjglCallbackBridgeJar = tasks.register<Zip>("packageLwjglCallbackBridgeJar") {
+    val packageJvmCallbackBridgeJar = tasks.register<Zip>("packageJvmCallbackBridgeJar") {
         dependsOn(compileJvmCallbackBridge)
-        // Keep the generated bridge ahead of the base runtime's stale class.
-        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         from(generatedJvmCallbackBridgeClassesDir)
-        from(zipTree(callbackBridgeBaseJar))
+        destinationDirectory.set(packagedCallbackBridgeJarDir)
+        archiveFileName.set("callback-bridge.jar")
+        archiveExtension.set("jar")
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
+    }
+
+    val installJvmCallbackBridgeAssets = tasks.register<Sync>("installJvmCallbackBridgeAssets") {
+        from(packageJvmCallbackBridgeJar)
+        // APK-owned JNI declarations must never depend on the external resource-pack version.
+        into(generatedRuntimeAssetsDir.map { it.dir("components/callback_bridge") })
+    }
+
+    val packageLwjglRuntimeJar = tasks.register<Zip>("packageLwjglRuntimeJar") {
+        from(zipTree(callbackBridgeBaseJar)) {
+            exclude("org/lwjgl/glfw/CallbackBridge.class", "org/lwjgl/glfw/CallbackBridge\$*.class")
+        }
         destinationDirectory.set(packagedLwjglBridgeJarDir)
         archiveFileName.set("lwjgl-glfw-classes.jar")
         archiveExtension.set("jar")
@@ -557,32 +573,23 @@ private fun Project.registerRuntimeAssetTasks(
     }
 
     val generateLwjglBridgeVersion = tasks.register<DefaultTask>("generateLwjglBridgeVersion") {
-        val androidTemplate = callbackBridgeTemplatesDir.file("android/CallbackBridge.java.tmpl")
-        val jvmTemplate = callbackBridgeTemplatesDir.file("jvm/CallbackBridge.java.tmpl")
+        val runtimeJar = packageLwjglRuntimeJar.flatMap { it.archiveFile }
         val outputFile = generatedLwjglBridgeVersionDir.map { it.file("version") }
-        inputs.file(callbackBridgeBaseJar)
-        inputs.file(androidTemplate)
-        inputs.file(jvmTemplate)
-        inputs.property("callbackBridgeContractHash", CallbackBridgeCodegen.contractHash)
+        inputs.file(runtimeJar)
         outputs.file(outputFile)
         doLast {
             val targetFile = outputFile.get().asFile
             targetFile.parentFile?.mkdirs()
             targetFile.writeText(
-                CallbackBridgeCodegen.fingerprint(
-                    CallbackBridgeCodegen.contractHash,
-                    androidTemplate.asFile.readText(StandardCharsets.UTF_8),
-                    jvmTemplate.asFile.readText(StandardCharsets.UTF_8),
-                    callbackBridgeBaseJar.asFile.length().toString(),
-                    callbackBridgeBaseJar.asFile.lastModified().toString()
-                ),
+                MessageDigest.getInstance("SHA-256").digest(runtimeJar.get().asFile.readBytes())
+                    .joinToString("") { "%02x".format(it) },
                 StandardCharsets.UTF_8
             )
         }
     }
 
     val installLwjglBridgeAssets = tasks.register<Sync>("installLwjglBridgeAssets") {
-        dependsOn(packageLwjglCallbackBridgeJar)
+        dependsOn(packageLwjglRuntimeJar)
         dependsOn(generateLwjglBridgeVersion)
         from(packagedLwjglBridgeJarDir) {
             include("lwjgl-glfw-classes.jar")
@@ -663,6 +670,7 @@ private fun Project.registerRuntimeAssetTasks(
         generateAndroidCallbackBridgeSource,
         installBootBridgeJar,
         installGameProbeJar,
+        installJvmCallbackBridgeAssets,
         installLwjglBridgeAssets,
         installPatchJars,
         installBundledModJars,
