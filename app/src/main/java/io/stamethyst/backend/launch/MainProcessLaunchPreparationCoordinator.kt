@@ -48,8 +48,8 @@ object MainProcessLaunchPreparationCoordinator {
                         performanceDeepDiagnosticsOverride = performanceDeepDiagnosticsOverride
                     )
                 }
-                measureStep(appContext, "game_body_patch") {
-                    MainProcessGameBodyPatchCoordinator.prepareBeforeLaunch(
+                val gameBodyVerification = measureStep(appContext, "game_body_patch") {
+                    MainProcessGameBodyPatchCoordinator.prepareVerifiedBeforeLaunch(
                         context = appContext,
                         launchMode = launchMode,
                         progressCallback = mapProgressRange(
@@ -69,7 +69,8 @@ object MainProcessLaunchPreparationCoordinator {
                             100
                         ),
                         launchSnapshot = launchSnapshot,
-                        assumeCommonPreparationDone = true
+                        assumeCommonPreparationDone = true,
+                        verifiedGameBodyPatch = gameBodyVerification
                     )
                 }
                 return

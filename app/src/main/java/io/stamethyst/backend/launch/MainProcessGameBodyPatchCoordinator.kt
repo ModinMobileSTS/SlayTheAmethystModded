@@ -20,8 +20,18 @@ object MainProcessGameBodyPatchCoordinator {
         progressCallback: StartupProgressCallback? = null,
         assumeComponentInstallComplete: Boolean = false
     ) {
+        prepareVerifiedBeforeLaunch(context, launchMode, progressCallback, assumeComponentInstallComplete)
+    }
+
+    @Throws(IOException::class)
+    internal fun prepareVerifiedBeforeLaunch(
+        context: Context,
+        launchMode: String,
+        progressCallback: StartupProgressCallback? = null,
+        assumeComponentInstallComplete: Boolean = false
+    ): GameBodyPatchVerification? {
         if (!StsLaunchSpec.isMtsLaunchMode(launchMode)) {
-            return
+            return null
         }
         val appContext = context.applicationContext
         if (!AppProcess.isDefaultProcess(appContext)) {
@@ -32,9 +42,12 @@ object MainProcessGameBodyPatchCoordinator {
         val patchJar = RuntimePaths.gdxPatchJar(appContext)
         val packagedComponentsCurrent = assumeComponentInstallComplete ||
             ComponentInstaller.arePackagedComponentsCurrent(appContext)
-        val alreadyPatchedBeforeInstall = packagedComponentsCurrent &&
-            StsDesktopJarPatcher.isPatchedWithCurrentPatch(stsJar, patchJar)
-        val visibleProgressCallback = if (alreadyPatchedBeforeInstall) {
+        val verificationBeforeInstall = if (packagedComponentsCurrent) {
+            GameBodyPatchVerification.verify(stsJar, patchJar)
+        } else {
+            null
+        }
+        val visibleProgressCallback = if (verificationBeforeInstall != null) {
             null
         } else {
             progressCallback
@@ -51,11 +64,12 @@ object MainProcessGameBodyPatchCoordinator {
             )
         }
 
-        val alreadyPatched = if (packagedComponentsCurrent) {
-            alreadyPatchedBeforeInstall
+        val verification = if (packagedComponentsCurrent) {
+            verificationBeforeInstall
         } else {
-            StsDesktopJarPatcher.isPatchedWithCurrentPatch(stsJar, patchJar)
+            GameBodyPatchVerification.verify(stsJar, patchJar)
         }
+        val alreadyPatched = verification != null
         MemoryDiagnosticsLogger.logEvent(
             context = appContext,
             event = "main_process_game_body_patch_started",
@@ -73,7 +87,7 @@ object MainProcessGameBodyPatchCoordinator {
                 extras = linkedMapOf<String, Any?>("launchMode" to launchMode),
                 includeMemorySnapshot = false
             )
-            return
+            return verification
         }
 
         StsDesktopJarPatcher.ensurePatchedStsJar(
@@ -91,6 +105,9 @@ object MainProcessGameBodyPatchCoordinator {
             extras = linkedMapOf<String, Any?>("launchMode" to launchMode),
             includeMemorySnapshot = false
         )
+        // Patching rewrites the desktop jar. Let the cache-miss builder validate its
+        // new inputs rather than passing a proof captured before that write.
+        return null
     }
 
     private fun buildPatchProgressCallback(

@@ -12,10 +12,67 @@ import org.junit.Test
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class MtsPatchCacheCoordinatorTest {
+    @Test
+    fun duplicateCoreAndBundledJarsAreReadOnceWithoutChangingSchemaNineMarker() {
+        val root = Files.createTempDirectory("mts-patch-cache-deduplicated-").toFile()
+        try {
+            val jars = listOf("desktop", "mts", "basemod", "stslib", "bridge", "gdx", "compat", "floating", "ram")
+                .associateWith { name -> writeJar(root, "$name.jar", "payload" to name) }
+            val baseModAlias = File(root, "./basemod.jar")
+            val enabled = listOf(baseModAlias, jars.getValue("stslib"), jars.getValue("compat"),
+                jars.getValue("floating"), jars.getValue("ram"))
+            val bundled = listOf(jars.getValue("compat"), jars.getValue("floating"), jars.getValue("ram"))
+            val modList = writeFile(root, "mods.txt", enabled.joinToString("\n", postfix = "\n") { it.absolutePath })
+            val reads = ConcurrentHashMap<String, AtomicInteger>()
+
+            val actual = MtsPatchCacheCoordinator.buildCacheMarkerValue(
+                jars.getValue("desktop"), jars.getValue("mts"), jars.getValue("basemod"),
+                jars.getValue("stslib"), jars.getValue("bridge"), jars.getValue("gdx"), modList,
+                bundledMods = bundled,
+                readJarFingerprint = { file ->
+                    reads.computeIfAbsent(file.canonicalPath) { AtomicInteger() }.incrementAndGet()
+                    LaunchJarFingerprints.read(file)
+                }
+            )
+
+            // Independent schema fixture: each jar contains one entry of known content.
+            fun sha(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+                .digest(bytes).joinToString("") { "%02x".format(it) }
+            fun expectedLine(label: String, file: File): String {
+                val content = file.nameWithoutExtension.toByteArray(StandardCharsets.UTF_8)
+                val crc = CRC32().apply { update(content) }.value
+                val digest = sha("payload|${content.size}|$crc|".toByteArray(StandardCharsets.UTF_8))
+                return "$label|${file.absolutePath}|${file.length()}|$digest"
+            }
+            val gdx = jars.getValue("gdx")
+            val expectedLines = listOf(
+                "schema|9",
+                expectedLine("desktop", jars.getValue("desktop")),
+                expectedLine("modthespire", jars.getValue("mts")),
+                expectedLine("basemod", jars.getValue("basemod")),
+                expectedLine("stslib", jars.getValue("stslib")),
+                expectedLine("bootbridge", jars.getValue("bridge")),
+                "gdxpatch|${gdx.absolutePath}|${gdx.length()}|${sha(gdx.readBytes())}",
+                "mod_file_list|${modList.absolutePath}|${modList.length()}|${sha(modList.readBytes())}"
+            ) + enabled.mapIndexed { index, file -> expectedLine("mod[$index]", file) } +
+                bundled.mapIndexed { index, file -> expectedLine("bundled[$index]", file) }
+
+            assertEquals(sha(expectedLines.joinToString("\n").toByteArray(StandardCharsets.UTF_8)), actual)
+            assertEquals(8, reads.size) // GDX keeps its distinct full-file digest contract.
+            assertTrue(reads.values.all { it.get() == 1 })
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test
     fun cacheMarkerChangesWhenModJarIsRebuiltInPlaceWithSameSizeAndMtime() {
         val root = Files.createTempDirectory("mts-patch-cache-rebuilt-mod-").toFile()

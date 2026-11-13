@@ -10,14 +10,9 @@ import java.io.FileInputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.concurrent.Callable
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
-import java.util.zip.ZipFile
 
 internal object MtsPatchCacheCoordinator {
     private const val MIN_CACHE_JAR_BYTES = 1024L * 1024L
-    private val SEPARATOR_BYTE = byteArrayOf('|'.code.toByte())
     private const val PROPERTY_ENABLED = "amethyst.mts.patch_cache.enabled"
     private const val PROPERTY_CURRENT = "amethyst.mts.patch_cache.current"
     private const val PROPERTY_JAR = "amethyst.mts.patch_cache.jar"
@@ -26,7 +21,6 @@ internal object MtsPatchCacheCoordinator {
     private const val PROPERTY_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir"
     private const val PROPERTY_EXPECTED = "amethyst.mts.patch_cache.expected"
     private const val PROPERTY_GAME_DIR = "amethyst.mts.patch_cache.game_dir"
-    private const val FINGERPRINT_POOL_CAP = 4
 
     @JvmStatic
     fun expectedMarker(context: Context): String = buildCacheMarkerValue(
@@ -168,61 +162,35 @@ internal object MtsPatchCacheCoordinator {
         gdxPatchJar: File,
         modFileList: File,
         bundledMods: List<File> = emptyList(),
-        gdxPatchDigestCache: File? = null
+        gdxPatchDigestCache: File? = null,
+        readJarFingerprint: (File) -> LaunchJarFingerprint = LaunchJarFingerprints::read
     ): String {
-        val coreLines = listOf(
-            "schema|9",
-            jarFingerprint("desktop", desktopJar),
-            jarFingerprint("modthespire", mtsJar),
-            jarFingerprint("basemod", baseModJar),
-            jarFingerprint("stslib", stsLibJar),
-            jarFingerprint("bootbridge", bootBridgeJar),
-            persistedFileFingerprint("gdxpatch", gdxPatchJar, gdxPatchDigestCache),
-            textFileFingerprint("mod_file_list", modFileList)
-        )
         val labelledModFiles = readModFiles(modFileList).mapIndexed { index, modFile ->
             "mod[$index]" to modFile
         } + bundledMods.mapIndexed { index, modFile ->
             "bundled[$index]" to modFile
         }
-        val modFingerprints = fingerprintInParallel(labelledModFiles)
+        // Core mods also occur in the enabled list, and bundled mods can occur in
+        // both lists. Read each distinct jar once, retaining every label and its order.
+        val fingerprints = LaunchJarFingerprints.capture(
+            listOf(desktopJar, mtsJar, baseModJar, stsLibJar, bootBridgeJar) +
+                labelledModFiles.map { it.second },
+            readJarFingerprint
+        )
+        val coreLines = listOf(
+            "schema|9",
+            fingerprints.line("desktop", desktopJar),
+            fingerprints.line("modthespire", mtsJar),
+            fingerprints.line("basemod", baseModJar),
+            fingerprints.line("stslib", stsLibJar),
+            fingerprints.line("bootbridge", bootBridgeJar),
+            persistedFileFingerprint("gdxpatch", gdxPatchJar, gdxPatchDigestCache),
+            textFileFingerprint("mod_file_list", modFileList)
+        )
+        val modFingerprints = labelledModFiles.map { (label, file) ->
+            fingerprints.line(label, file)
+        }
         return sha256((coreLines + modFingerprints).joinToString(separator = "\n"))
-    }
-
-    /**
-     * Fingerprints every jar on a small fixed pool and returns the results in input order.
-     *
-     * The marker is computed on the launch path before the game process can spawn, and its
-     * per-jar cost is an open plus a central-directory seek against flash storage, so the
-     * serial fan-out over dozens of enabled mods was storage-bound wall time. Work is bound
-     * by storage as much as by CPU, so the pool stays small; the cap mirrors the cache
-     * build's package-jar pool.
-     *
-     * Order is part of the marker value: results are reassembled in input order regardless
-     * of completion order, so the digest stays deterministic across launches.
-     */
-    private fun fingerprintInParallel(labelledFiles: List<Pair<String, File>>): List<String> {
-        if (labelledFiles.isEmpty()) {
-            return emptyList()
-        }
-        val threadCount = minOf(Runtime.getRuntime().availableProcessors(), FINGERPRINT_POOL_CAP, labelledFiles.size)
-        if (threadCount <= 1) {
-            return labelledFiles.map { (label, file) -> jarFingerprint(label, file) }
-        }
-        val pool = Executors.newFixedThreadPool(threadCount)
-        try {
-            return labelledFiles.map { (label, file) ->
-                pool.submit(Callable { jarFingerprint(label, file) })
-            }.map { future ->
-                try {
-                    future.get()
-                } catch (error: ExecutionException) {
-                    throw error.cause ?: error
-                }
-            }
-        } finally {
-            pool.shutdownNow()
-        }
     }
 
     private fun readModFiles(modFileList: File): List<File> {
@@ -237,51 +205,6 @@ internal object MtsPatchCacheCoordinator {
         } catch (_: Throwable) {
             emptyList()
         }
-    }
-
-    /**
-     * Fingerprints a jar by its central directory rather than by mtime.
-     *
-     * Size and mtime alone let a jar that was rebuilt in place — same size, mtime
-     * preserved or reset by a copy — pass as unchanged, which yields a stale cache hit
-     * against mod bytecode that no longer exists. Hashing the whole file would be
-     * correct but has to read every byte of every mod on each launch, which cancels out
-     * the cache hit it is protecting.
-     *
-     * The central directory is the middle ground: it already stores a per-entry CRC32
-     * that the writer computed over the entry's uncompressed bytes, so any content
-     * change moves it. Reading it costs a few KB of seeks instead of the whole archive.
-     *
-     * Falls back to size and mtime when the file is not a readable zip, so non-jar or
-     * corrupt entries still contribute something rather than silently collapsing to a
-     * constant.
-     */
-    private fun jarFingerprint(label: String, file: File): String {
-        if (!file.isFile) {
-            return "$label|${file.absolutePath}|-1|-1"
-        }
-        val entryDigest = try {
-            ZipFile(file).use { zip ->
-                val digest = MessageDigest.getInstance("SHA-256")
-                // Enumeration order follows the central directory, which is stable for a
-                // given archive, so no extra sort is needed to keep this deterministic.
-                for (entry in zip.entries()) {
-                    digest.update(entry.name.toByteArray(StandardCharsets.UTF_8))
-                    digest.update(SEPARATOR_BYTE)
-                    digest.update(entry.size.toString().toByteArray(StandardCharsets.UTF_8))
-                    digest.update(SEPARATOR_BYTE)
-                    digest.update(entry.crc.toString().toByteArray(StandardCharsets.UTF_8))
-                    digest.update(SEPARATOR_BYTE)
-                }
-                digestToHex(digest.digest())
-            }
-        } catch (_: Throwable) {
-            null
-        }
-        if (entryDigest == null) {
-            return "$label|${file.absolutePath}|${file.length()}|${file.lastModified()}|nozip"
-        }
-        return "$label|${file.absolutePath}|${file.length()}|$entryDigest"
     }
 
     /**
