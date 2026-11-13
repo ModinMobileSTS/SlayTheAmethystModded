@@ -96,6 +96,10 @@ internal fun ModActionsList(
             R.string.main_mod_rename, R.string.main_mod_action_desc_rename,
             R.drawable.ic_edit, controlsEnabled, onClick = onRename,
         )
+        ModActionListItem(
+            R.string.main_mod_delete, R.string.main_mod_action_desc_delete,
+            R.drawable.ic_delete, deleteEnabled, danger = true, onClick = onDelete,
+        )
     }
 }
 

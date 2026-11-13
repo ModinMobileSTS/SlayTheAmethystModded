@@ -687,11 +687,6 @@ internal fun ModCard(
                     showSuggestionDialog = true
                 }
             },
-            deleteEnabled = actionsEnabled,
-            onDelete = {
-                showDetailsDialog = false
-                callbacks.onDeleteMod(mod)
-            },
             badgesContent = { onScrollToAi ->
                 ModDetailsBadges(
                     mod = mod,

@@ -13,7 +13,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SecondaryTabRow
@@ -51,8 +50,6 @@ internal fun ModDetailsDialog(
     badgesContent: @Composable (onScrollToAi: () -> Unit) -> Unit,
     aiContent: @Composable () -> Unit,
     actionsContent: @Composable () -> Unit,
-    onDelete: (() -> Unit)? = null,
-    deleteEnabled: Boolean = fileActionsEnabled,
     suggestionContent: @Composable () -> Unit = {},
 ) {
     val pager = rememberPagerState(initialPage = if (startAtActions) 0 else 1, pageCount = { 3 })
@@ -85,10 +82,6 @@ internal fun ModDetailsDialog(
                         tint = (if (mod.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             .copy(alpha = if (fileActionsEnabled) 1f else 0.38f),
                     )
-                }
-                onDelete?.let { ModDeleteOverflow(deleteEnabled, it) }
-                IconButton(onClick = onDismiss) {
-                    Icon(painterResource(R.drawable.ic_close), stringResource(R.string.mod_details_close))
                 }
             }
             SecondaryTabRow(

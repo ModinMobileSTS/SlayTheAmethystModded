@@ -111,6 +111,38 @@ class ModDetailsDialogInstrumentedTest {
         compose.onNodeWithTag("mod_details_frosted_background").assertDoesNotExist()
     }
 
+    @Test fun deleteIsLastToolAndHeaderHasNoCloseOrDeleteMenu() {
+        var deletedMod: ModItemUi? = null
+        setCard(callbacks = ModCardCallbacks(onDeleteMod = { deletedMod = it }))
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.mod_details_close)).assertDoesNotExist()
+        compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).assertDoesNotExist()
+        compose.onNodeWithTag("mod_details_favorite").assertIsDisplayed()
+
+        compose.onNodeWithTag("mod_manager_tab_0").performClick()
+        val delete = compose.onNode(
+            hasText(context.getString(R.string.main_mod_delete)) and
+                hasAnyAncestor(hasTestTag("mod_details_scroll_0")),
+        )
+        delete.performScrollTo().assertIsDisplayed().assertIsEnabled()
+        val rename = compose.onNodeWithText(context.getString(R.string.main_mod_rename))
+        assertTrue(delete.getUnclippedBoundsInRoot().top >= rename.getUnclippedBoundsInRoot().bottom)
+        delete.performClick()
+        compose.runOnIdle { assertEquals(mod, deletedMod) }
+        compose.onNodeWithTag("mod_details_dialog").assertDoesNotExist()
+    }
+
+    @Test fun disabledToolsCannotDelete() {
+        var deleted = false
+        setCard(controlsEnabled = false, callbacks = ModCardCallbacks(onDeleteMod = { deleted = true }))
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_manager_tab_0").performClick()
+        compose.onNodeWithText(context.getString(R.string.main_mod_delete))
+            .performScrollTo().assertIsNotEnabled().performClick()
+        compose.runOnIdle { assertTrue(!deleted) }
+        compose.onNodeWithTag("mod_details_dialog").assertIsDisplayed()
+    }
+
     @Test fun detailsUsesCardArtworkAsFrostedBackground() {
         val previewFile = File.createTempFile("mod-details-preview-", ".png", context.cacheDir)
         try {
