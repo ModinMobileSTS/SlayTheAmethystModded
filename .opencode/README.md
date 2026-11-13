@@ -78,6 +78,56 @@ For example, request `sts.get_game_status({deviceSerial: "USER_APPROVED_SERIAL"}
 
 All harness calls are serialized in the plugin runtime because device selection and Gradle operations share connector/ADB state. Cancellation stops the Python process group (not the separate connector daemon); a cancelled or timed-out run is never reported as successful, even if a partial `result.json` exists. The lock is local to this OpenCode process, not a cross-process lock for standalone harness runs.
 
+## Workshop mod tools
+
+`.opencode/plugins/sts-workshop.ts` registers **`sts_workshop`** tools for the local
+agent. They use a desktop JVM CLI backed by the same `workshop-core` download engine
+as the launcher, with anonymous Steam sessions and both direct URL and SteamPipe/UGC
+downloads. No Steam account, API key, ADB or Android device is required.
+
+- `search_mods`: keyword search or empty-query browsing, pagination, language,
+  category tags, popularity/recent/update/subscriber sorting.
+- `get_mod_details`: title, description, creator Steam ID, size, update time,
+  tags, API-reported children and available download source.
+- `download_mod`: download one exact `publishedFileId` into a fresh local directory;
+  return paths, byte sizes, SHA-256, metadata, log and `result.json`.
+
+Build the CLI once after cloning, and rebuild after changing the CLI or its shared
+libraries (JDK 21 and the repository's existing Gradle dependencies are required):
+
+```sh
+mkdir -p agent-tmp
+flock agent-tmp/ai-agent-gradle.lock ./gradlew --offline :tools:workshop-agent:installDist --console=plain --max-workers=2
+```
+
+OpenCode loads the plugin automatically. Missing CLI binaries produce the build
+command above. Builds are explicit, so searches do not launch Gradle or download
+build dependencies. The optional plugin `executable` setting selects a prebuilt CLI.
+
+Example Code Mode calls (item IDs must remain strings):
+
+```js
+await tools.sts_workshop.search_mods({ query: "BaseMod", pageSize: 10 })
+await tools.sts_workshop.get_mod_details({ publishedFileId: "1605833019" })
+await tools.sts_workshop.download_mod({ publishedFileId: "1605833019" })
+```
+
+Downloads default to `agent-tmp/workshop-mods/<id>-<unique>/`. `outDir` changes the
+base directory inside this checkout; existing downloads are never overwritten.
+The CLI downloads original Workshop files, without launcher-specific import,
+patching, dependency installation, subscription changes or Android deployment.
+API children are not guaranteed to contain every dependency. Collections are
+rejected. Search uses the launcher's public HTML/SSR formats, without its
+account-authenticated fallback. Steam restrictions and rate limits are surfaced
+as errors. Timeouts default to 90 seconds for reads and 900 seconds for downloads;
+session cancellation and plugin unload terminate the child process group.
+
+Full results remain in `result.json`; only the first 100 downloaded files are
+shown to the model. Failed/cancelled downloads retain partial artifacts and logs
+with their directory in the error, but do not produce a success result.
+See [`tools/workshop-agent/README.md`](../tools/workshop-agent/README.md) for the
+CLI protocol, desktop Zstd adapter and offline verification.
+
 ## Verification
 
 ```sh
