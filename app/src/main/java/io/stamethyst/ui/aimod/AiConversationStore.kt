@@ -30,14 +30,20 @@ import kotlinx.serialization.json.Json
 internal class AiConversationStore(root: File) {
     private val root = if (root.extension == "json") root.parentFile ?: root else root
     private val json = Json { ignoreUnknownKeys = true }
+    private val contextStorage = AiContextStorage()
 
     fun load(): List<AiEditorSession> {
         migrateLegacyConversations()
         return databaseFiles()
             .mapNotNull { file ->
                 withDatabaseFile(file) { db ->
-                    readSession(db, null)?.let { session ->
-                        session to readUpdatedAt(db)
+                    db.beginWriteTransactionWithRetry()
+                    try {
+                        readSession(db, null)?.let { session ->
+                            session to readUpdatedAt(db)
+                        }.also { db.setTransactionSuccessful() }
+                    } finally {
+                        db.endTransaction()
                     }
                 }
             }
@@ -118,9 +124,15 @@ internal class AiConversationStore(root: File) {
         return withLockedDatabase(sessionId, create = true) { db ->
             db.beginWriteTransactionWithRetry()
             try {
-                val previous = readSession(db, sessionId) ?: create ?: return@withLockedDatabase null
-                val next = transform(previous).copy(revision = previous.revision + 1)
-                writeSession(db, previous, next)
+                val stored = readSession(db, sessionId)
+                val previous = stored ?: create ?: return@withLockedDatabase null
+                val transformed = transform(previous).copy(revision = previous.revision)
+                if (stored != null && transformed == stored) {
+                    db.setTransactionSuccessful()
+                    return@withLockedDatabase stored
+                }
+                val next = transformed.copy(revision = previous.revision + 1)
+                writeSession(db, stored, next)
                 db.setTransactionSuccessful()
                 next
             } finally {
@@ -179,19 +191,20 @@ internal class AiConversationStore(root: File) {
         return withLockedDatabase(sessionId, create = false) { db ->
             db.beginWriteTransactionWithRetry()
             try {
-                val values = ContentValues().apply {
-                    put(COLUMN_CONTEXT, json.encodeToString(context))
-                    put(COLUMN_UPDATED_AT, System.currentTimeMillis())
+                val revisions = db.query(TABLE_CONVERSATION, arrayOf(COLUMN_REVISION, "context_revision"),
+                    "id = ?", arrayOf(sessionId), null, null, null, "1").use {
+                    if (!it.moveToFirst()) return@withLockedDatabase false
+                    it.getLong(0) to it.getLong(1)
                 }
-                val updated = db.update(TABLE_CONVERSATION, values, "id = ?", arrayOf(sessionId))
-                if (updated > 0) {
+                if (contextStorage.write(db.path, revisions.second, revisions.first + 1, context, contextRows(db))) {
                     db.execSQL(
-                        "UPDATE $TABLE_CONVERSATION SET context_revision = $COLUMN_REVISION + 1, $COLUMN_REVISION = $COLUMN_REVISION + 1 WHERE $COLUMN_ID = ?",
-                        arrayOf(sessionId),
+                        "UPDATE $TABLE_CONVERSATION SET context_revision = $COLUMN_REVISION + 1, " +
+                            "$COLUMN_REVISION = $COLUMN_REVISION + 1, $COLUMN_UPDATED_AT = ? WHERE $COLUMN_ID = ?",
+                        arrayOf<Any>(System.currentTimeMillis(), sessionId),
                     )
                 }
                 db.setTransactionSuccessful()
-                updated > 0
+                true
             } finally {
                 db.endTransaction()
             }
@@ -318,7 +331,14 @@ internal class AiConversationStore(root: File) {
     }
 
     private fun loadWithoutMigration(sessionId: String): AiEditorSession? =
-        withDatabase(sessionId, create = false) { db -> readSession(db, sessionId) }
+        withDatabase(sessionId, create = false) { db ->
+            db.beginWriteTransactionWithRetry()
+            try {
+                readSession(db, sessionId).also { db.setTransactionSuccessful() }
+            } finally {
+                db.endTransaction()
+            }
+        }
 
     private fun readUpdatedAt(db: SQLiteDatabase): Long = db.query(
         TABLE_CONVERSATION,
@@ -367,6 +387,10 @@ internal class AiConversationStore(root: File) {
         }
         try {
             block(database)
+        } catch (error: Throwable) {
+            // A failed commit/transform must never leave uncommitted context in the revision cache.
+            contextStorage.invalidate(database.path)
+            throw error
         } finally {
             database.close()
         }
@@ -529,6 +553,29 @@ internal class AiConversationStore(root: File) {
             )
         """.trimIndent())
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_execution_step_order ON execution_steps(message_id, position)")
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS context_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                generation TEXT NOT NULL,
+                message_count INTEGER NOT NULL,
+                messages_revision INTEGER NOT NULL,
+                metadata_json TEXT
+            )
+        """.trimIndent())
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS context_messages (
+                position INTEGER PRIMARY KEY NOT NULL,
+                changed_revision INTEGER NOT NULL,
+                data_json TEXT NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_context_changed ON context_messages(changed_revision)")
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS context_legacy (
+                id INTEGER PRIMARY KEY,
+                data_json TEXT NOT NULL
+            )
+        """.trimIndent())
     }
 
     private fun addColumnIfMissing(
@@ -620,13 +667,7 @@ internal class AiConversationStore(root: File) {
                 id = cursor.getString(0),
                 title = cursor.getString(1),
                 revision = cursor.getLong(2),
-                context = if (previous != null && cursor.getLong(3) <= previous.revision) previous.context else
-                    db.queryWindowSafe(TABLE_CONVERSATION, arrayOf(COLUMN_CONTEXT), expectedId?.let { "$COLUMN_ID = ?" },
-                        expectedId?.let { arrayOf(it) }, null, null, null, "1").use { contextCursor ->
-                        if (!contextCursor.moveToFirst()) null else contextCursor.getStringOrNull(0)?.let { value ->
-                            runCatching { json.decodeFromString<AgentContextState>(value) }.getOrNull()
-                        }
-                    },
+                context = contextStorage.read(db.path, cursor.getLong(3), contextRows(db)),
             )
         }
         val messages = if (previous == null) {
@@ -716,19 +757,88 @@ internal class AiConversationStore(root: File) {
         }
     }
 
+    /** All calls are inside the same transaction as the conversation revision update. */
+    private fun contextRows(db: SQLiteDatabase): AiContextStorage.Rows = object : AiContextStorage.Rows {
+        override fun header(): AiContextStorage.Header? = db.query(
+            "context_state", arrayOf("generation", "message_count", "messages_revision", "metadata_json IS NOT NULL"),
+            "id = 1", null, null, null, null,
+        ).use {
+            if (it.moveToFirst()) AiContextStorage.Header(it.getString(0), it.getInt(1), it.getLong(2), it.getInt(3) != 0) else null
+        }
+
+        override fun metadata(): String? = readValue("context_state", "metadata_json")
+
+        override fun legacy(): String? = readValue(TABLE_CONVERSATION, COLUMN_CONTEXT)
+
+        override fun archiveLegacy() {
+            db.execSQL("INSERT INTO context_legacy(data_json) SELECT $COLUMN_CONTEXT FROM $TABLE_CONVERSATION WHERE $COLUMN_CONTEXT IS NOT NULL")
+            db.execSQL("UPDATE $TABLE_CONVERSATION SET $COLUMN_CONTEXT = NULL WHERE $COLUMN_CONTEXT IS NOT NULL")
+        }
+
+        private fun readValue(table: String, column: String): String? = db.queryWindowSafe(
+            table, arrayOf(column), null, null, null, null, null, "1",
+        ).use { if (it.moveToFirst()) it.getStringOrNull(0) else null }
+
+        override fun messages(afterRevision: Long?): List<AiContextStorage.MessageRow> = db.queryWindowSafe(
+            "context_messages", arrayOf("position", "data_json"),
+            afterRevision?.let { "changed_revision > ?" }, afterRevision?.let { arrayOf(it.toString()) },
+            null, null, "position ASC",
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(AiContextStorage.MessageRow(cursor.getInt(0), cursor.getString(1)))
+            }
+        }
+
+        override fun hasMessages(): Boolean = db.rawQuery("SELECT EXISTS(SELECT 1 FROM context_messages)", null).use {
+            it.moveToFirst() && it.getInt(0) != 0
+        }
+
+        override fun putMessage(position: Int, revision: Long, json: String) {
+            val values = ContentValues().apply {
+                put("position", position)
+                put("changed_revision", revision)
+                put("data_json", json)
+            }
+            if (db.update("context_messages", values, "position = ?", arrayOf(position.toString())) == 0) {
+                db.insertOrThrow("context_messages", null, values)
+            }
+        }
+
+        override fun truncateMessages(size: Int) {
+            db.delete("context_messages", "position >= ?", arrayOf(size.toString()))
+        }
+
+        override fun putHeader(header: AiContextStorage.Header, metadata: String?, metadataChanged: Boolean) {
+            val values = ContentValues().apply {
+                put("id", 1)
+                put("generation", header.generation)
+                put("message_count", header.messageCount)
+                put("messages_revision", header.messagesRevision)
+                if (metadataChanged) {
+                    metadata?.let { put("metadata_json", it) } ?: putNull("metadata_json")
+                }
+            }
+            if (db.update("context_state", values, "id = 1", null) == 0) {
+                db.insertOrThrow("context_state", null, values)
+            }
+        }
+    }
+
     private fun writeSession(db: SQLiteDatabase, previous: AiEditorSession?, next: AiEditorSession) {
         ensureConversationRow(db, next.id)
+        val contextRevision = db.rawQuery("SELECT context_revision FROM conversation LIMIT 1", null).use {
+            if (it.moveToFirst()) it.getLong(0) else 0L
+        }
+        val contextChanged = contextStorage.write(db.path, contextRevision, next.revision, next.context, contextRows(db))
         val metadata = ContentValues().apply {
             put(COLUMN_ID, next.id)
             put(COLUMN_TITLE, next.title)
             put("inbox_json", json.encodeToString(next.inbox))
             put(COLUMN_REVISION, next.revision)
-            put("context_revision", if (previous == null || previous.context != next.context) next.revision else
-                db.rawQuery("SELECT context_revision FROM conversation LIMIT 1", null).use { if (it.moveToFirst()) it.getLong(0) else 0L })
+            put("context_revision", if (contextChanged) next.revision else contextRevision)
             put(COLUMN_UPDATED_AT, System.currentTimeMillis())
-            next.context?.let { put(COLUMN_CONTEXT, json.encodeToString(it)) } ?: putNull(COLUMN_CONTEXT)
         }
-        check(db.insertWithOnConflict(TABLE_CONVERSATION, null, metadata, SQLiteDatabase.CONFLICT_REPLACE) != -1L) {
+        check(db.update(TABLE_CONVERSATION, metadata, "id = ?", arrayOf(next.id)) == 1) {
             "Failed to save conversation metadata"
         }
 
@@ -1013,7 +1123,7 @@ internal class AiConversationStore(root: File) {
     private companion object {
         const val LOG_TAG = "AiModStore"
         /** Bump when [createSchema] changes so existing files are migrated on next open. */
-        const val SCHEMA_VERSION = 7
+        const val SCHEMA_VERSION = 8
         const val DATABASE_EXTENSION = "db"
         const val LEGACY_CONVERSATIONS_FILE = "conversations.json"
         const val LEGACY_JOBS_FILE = "agent_jobs.json"

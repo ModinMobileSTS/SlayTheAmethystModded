@@ -44,7 +44,12 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.io.IOException
+import java.io.InputStreamReader
+import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 
@@ -63,9 +68,6 @@ private const val DEFAULT_MAX_READ_BYTES = 16L * 1024L
 
 /** Refuse to decode an enormous image before it is downscaled for the model. */
 private const val MAX_IMAGE_INPUT_BYTES = 24L * 1024L * 1024L
-
-/** Text reads above this size are refused rather than streamed into an unbounded line buffer. */
-private const val MAX_TEXT_READ_BYTES = 16L * 1024L * 1024L
 
 /** Tool results are capped at this many lines and bytes before they become model context. */
 private const val MAX_TOOL_RESULT_LINES = 2000
@@ -301,6 +303,9 @@ class AgentToolRegistry(
     fun concurrency(request: ToolExecutionRequest): AgentToolConcurrency = toolsByName[request.name()]
         ?.takeIf(policyGate::allows)?.concurrency ?: AgentToolConcurrency.EXCLUSIVE
 
+    internal fun canChangeState(request: ToolExecutionRequest): Boolean = toolsByName[request.name()]
+        ?.takeIf(policyGate::allows)?.safety?.let { it !in setOf(AgentToolSafety.READ_ONLY, AgentToolSafety.MOD_INSPECTION) } ?: false
+
     private fun notifyExecution(event: AgentToolExecutionEvent, checkCancelled: () -> Unit) = synchronized(eventLock) {
         checkCancelled()
         onToolExecution(event)
@@ -331,7 +336,11 @@ class AgentToolRegistry(
                 throw java.util.concurrent.CancellationException("Agent tool cancelled").apply { initCause(error) }
             } catch (error: Exception) {
                 executionError = agentErrorDetail(error)
-                failure("tool_execution_failed")
+                AgentToolOutput(buildJsonObject {
+                    put("error", JsonPrimitive("tool_execution_failed"))
+                    put("reason", JsonPrimitive(executionError))
+                    put("hint", JsonPrimitive("Inspect the cause and current file/target state, then correct the arguments or environment before retrying. Do not repeat the unchanged call."))
+                }.toString())
             }
         }
         if (Thread.currentThread().isInterrupted) {
@@ -491,7 +500,9 @@ class AgentWorkspaceFileTool(
                 "is true. For long lines or tool_output files use encoding=utf8_chars with a zero-based character " +
                 "offset and limit; follow next_offset. Use encoding=base64 for binary files, where offsets are bytes. " +
                 "PNG, JPEG, WebP and GIF files are returned as images the model can see, with a short JSON summary " +
-                "instead of file text.",
+                "instead of file text. UTF-8 reads return sha256 of the entire original file, even for a page. " +
+                "Pass it as expected_sha256 to edit_agent_workspace_file. Use utf8_chars for exact replacement " +
+                "text including line endings; line-number prefixes are not file content.",
         )
         .parameters(
             JsonObjectSchema.builder()
@@ -587,16 +598,19 @@ class AgentWorkspaceFileTool(
         }.toString())
 
     private fun readCharacters(path: String, file: File, json: JsonObject): String {
-        if (file.length() > MAX_TEXT_READ_BYTES) return failure("file_too_large")
+        if (file.length() > MAX_WORKSPACE_TEXT_BYTES) return failure("file_too_large")
         val offset = json.intParam("offset")?.coerceAtLeast(0) ?: 0
         val limit = (json.intParam("limit") ?: 8_000).coerceIn(2, 8_000)
-        val text = runCatching { file.readText(Charsets.UTF_8) }.getOrElse { return failure("read_failed") }
+        val bytes = runCatching { file.readBytes() }.getOrElse { return failure("read_failed") }
+        if (bytes.size > MAX_WORKSPACE_TEXT_BYTES) return failure("file_too_large")
+        val text = runCatching { decodeWorkspaceUtf8(bytes) }.getOrElse { return failure("invalid_utf8_text: use encoding=base64 for binary files") }
         if (offset > text.length) return failure("offset_past_end_of_file")
         var end = minOf(text.length.toLong(), offset.toLong() + limit).toInt()
         if (end < text.length && end > offset && Character.isHighSurrogate(text[end - 1])) end--
         return buildJsonObject {
             put("path", JsonPrimitive(path))
             put("encoding", JsonPrimitive("utf8_chars"))
+            put("sha256", JsonPrimitive(workspaceTextSha256(bytes)))
             put("offset", JsonPrimitive(offset))
             put("content", JsonPrimitive(text.substring(offset, end)))
             put("truncated", JsonPrimitive(end < text.length))
@@ -606,39 +620,83 @@ class AgentWorkspaceFileTool(
 
     /** Reads a window of lines and prefixes each with its 1-indexed line number, like the host's read tool. */
     private fun readText(relativePath: String, file: File, json: JsonObject): String {
-        if (file.length() > MAX_TEXT_READ_BYTES) return failure("file_too_large")
+        if (file.length() > MAX_WORKSPACE_TEXT_BYTES) return failure("file_too_large")
         val startLine = json.intParam("offset")?.coerceAtLeast(1) ?: 1
         val lineLimit = (json.intParam("limit") ?: json.intParam("length"))
             ?.coerceAtLeast(1)?.coerceAtMost(maxLines) ?: maxLines
         val content = StringBuilder()
+        val preview = StringBuilder()
+        val digest = MessageDigest.getInstance("SHA-256")
+        var lineNumber = 1
+        var lineLength = 0
         var linesReturned = 0
-        var hasMore = false
         var longLines = false
-        try {
-            java.io.BufferedReader(
-                java.io.InputStreamReader(java.io.FileInputStream(file), Charsets.UTF_8),
-            ).use { reader ->
-                var skipped = 0
-                while (skipped < startLine - 1) {
-                    if (reader.readLine() == null) return failure("offset_past_end_of_file")
-                    skipped++
-                }
-                while (linesReturned < lineLimit) {
-                    val line = reader.readLine() ?: break
-                    if (line.length > maxLineChars) longLines = true
-                    content.append(skipped + linesReturned + 1).append(": ")
-                    content.append(if (line.length > maxLineChars) line.take(maxLineChars) else line)
-                    content.append('\n')
-                    linesReturned++
-                }
-                hasMore = reader.readLine() != null
+        var previousWasCr = false
+        fun finishLine() {
+            if (lineNumber >= startLine && linesReturned < lineLimit) {
+                content.append(lineNumber).append(": ").append(preview).append('\n')
+                longLines = longLines || lineLength > maxLineChars
+                linesReturned++
             }
-        } catch (error: java.io.IOException) {
+            lineNumber++
+            lineLength = 0
+            preview.setLength(0)
+        }
+        try {
+            // The digest and decoder consume the same stream. Scan to EOF for the whole-file
+            // hash and strict validity, but never retain skipped lines or a full-file String.
+            val input = object : DigestInputStream(file.inputStream(), digest) {
+                private var bytesRead = 0L
+                private fun record(count: Int) {
+                    if (count > 0) bytesRead += count
+                    if (bytesRead > MAX_WORKSPACE_TEXT_BYTES) throw TextReadLimitExceeded()
+                }
+                override fun read(): Int = super.read().also { if (it >= 0) record(1) }
+                override fun read(bytes: ByteArray, offset: Int, length: Int): Int =
+                    super.read(bytes, offset, length).also(::record)
+            }
+            val decoder = Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+            InputStreamReader(input, decoder).use { reader ->
+                val buffer = CharArray(8192)
+                while (true) {
+                    val count = reader.read(buffer)
+                    if (count < 0) break
+                    for (index in 0 until count) {
+                        val char = buffer[index]
+                        if (char == '\u0000') return failure("invalid_utf8_text: use encoding=base64 for binary files")
+                        if (previousWasCr) {
+                            previousWasCr = false
+                            if (char == '\n') continue
+                        }
+                        if (char == '\r' || char == '\n') {
+                            finishLine()
+                            previousWasCr = char == '\r'
+                        } else {
+                            if (lineNumber >= startLine && linesReturned < lineLimit && lineLength < maxLineChars) {
+                                preview.append(char)
+                            }
+                            lineLength++
+                        }
+                    }
+                }
+            }
+        } catch (_: TextReadLimitExceeded) {
+            return failure("file_too_large")
+        } catch (_: java.nio.charset.CharacterCodingException) {
+            return failure("invalid_utf8_text: use encoding=base64 for binary files")
+        } catch (_: IOException) {
             return failure("read_failed")
         }
+        if (lineLength > 0) finishLine()
+        val totalLines = lineNumber - 1
+        if (startLine - 1 > totalLines) return failure("offset_past_end_of_file")
+        val hasMore = totalLines.toLong() >= startLine.toLong() + linesReturned
         return buildJsonObject {
             put("path", JsonPrimitive(relativePath))
             put("encoding", JsonPrimitive("utf8"))
+            put("sha256", JsonPrimitive(digest.digest().joinToString("") { "%02x".format(it) }))
             put("start_line", JsonPrimitive(startLine))
             put("returned_lines", JsonPrimitive(linesReturned))
             put("truncated", JsonPrimitive(hasMore))
@@ -648,6 +706,8 @@ class AgentWorkspaceFileTool(
             put("content", JsonPrimitive(content.toString()))
         }.toString()
     }
+
+    private class TextReadLimitExceeded : IOException()
 
     /** Reads a byte range and returns it base64-encoded, so binary resources stay copyable. */
     private fun readBytes(relativePath: String, file: File, json: JsonObject): String {
@@ -903,7 +963,7 @@ class AgentWorkspaceWriteTool(
 ) : AgentTool {
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("write_agent_workspace_file")
-        .description("Create or replace a file under patch_source/<patch_id>/ in the selected mod's agent workspace. Use the patch_workspace_path returned by create_agent_patch_workspace. The source/ tree is read-only and cannot be modified by the agent.")
+        .description("Create or replace a file under patch_source/<patch_id>/ in the selected mod's agent workspace. Prefer edit_agent_workspace_file for small changes to existing text files; use this tool for creation or intentional full replacement. Use the patch_workspace_path returned by create_agent_patch_workspace. The source/ tree is read-only and cannot be modified by the agent.")
         .parameters(
             JsonObjectSchema.builder()
                 .addStringProperty("path", "Workspace-relative path under patch_source/<patch_id>/.")
@@ -969,7 +1029,7 @@ class AgentWorkspaceDeleteTool(
         val relativePath = json["path"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
             ?: return failure("invalid_arguments")
         val recursive = json["recursive"]?.jsonPrimitive?.booleanOrNull ?: false
-        val target = resolvePatchSourceFile(workspaceRoot, relativePath) ?: return failure("path_outside_patch_source")
+        val target = resolvePatchSourceFile(workspaceRoot, relativePath, allowRoot = true) ?: return failure("path_outside_patch_source")
         val targetPath = target.toPath()
         if (targetPath == File(workspaceRoot, "patch_source").canonicalFile.toPath()) {
             return failure("cannot_delete_patch_source_root")
@@ -1081,7 +1141,9 @@ class AgentModClassDecompileTool(
         .description(
             "Decompile one class from the parent or another installed mod on demand. Use mod_id from " +
                 "list_installed_mods and list_agent_mod_entries to discover its classes. Other mods " +
-                "are read-only: their source is returned inline, never added to the patch workspace.",
+                "are read-only: their source is returned inline, never added to the patch workspace. " +
+                "For parent classes this tool prepares the source snapshot itself; no separate " +
+                "decompile_agent_mod_source call is needed. Reuse current-version source already in context.",
         )
         .parameters(
             JsonObjectSchema.builder()
@@ -1262,7 +1324,8 @@ class AgentApiClassDecompileTool(
                 )
             }
 
-        val cached = cacheRoot?.let { AgentApiSourceCache.read(it, jar, binaryName) }
+        val sourceToken = AgentApiSourceCache.capture(jar, classpath)
+        val cached = cacheRoot?.let { AgentApiSourceCache.read(it, jar, binaryName, classpath = classpath, sourceToken = sourceToken) }
         val source = if (cached != null) {
             cached
         } else {
@@ -1287,7 +1350,8 @@ class AgentApiClassDecompileTool(
                     )
                 }
             }.also { decompiled ->
-                if (cacheRoot != null) AgentApiSourceCache.write(cacheRoot, jar, binaryName, decompiled)
+                if (cacheRoot != null) AgentApiSourceCache.write(cacheRoot, jar, binaryName, decompiled,
+                    classpath = classpath, sourceToken = sourceToken)
             }
         }
         val entry = AgentModJarReader.classEntryName(jar, binaryName) ?: binaryName
@@ -1647,8 +1711,8 @@ class AgentPatchWorkspaceCreateTool(
                 "extracting the full original mod. This does " +
                 "not compile, package, install, or enable a mod. Call this once only when the user requests a new " +
                 "patch and no existing patch workspace should be reused. For changes to an existing patch, reuse its " +
-                "patch_source/<patch_id>/ tree and update it instead. Call decompile_agent_mod_source independently " +
-                "if you only need to read the parent mod's classes.",
+                "patch_source/<patch_id>/ tree and update it instead. Use inspect_agent_class or " +
+                "decompile_agent_class directly if you only need to read the parent mod's classes.",
         )
         .parameters(
             JsonObjectSchema.builder()
@@ -1790,7 +1854,8 @@ class AgentModSourceDecompileTool(
         .name("decompile_agent_mod_source")
         .description(
             "Prepare an on-demand source snapshot for the selected parent mod without extracting the " +
-                "full JAR. Use decompile_agent_class for a class and read_agent_mod_resource for a resource.",
+                "full JAR. Optional explicit preparation/metadata inspection only: decompile_agent_class " +
+                "prepares its own snapshot. Use that tool directly for a class and read_agent_mod_resource for a resource.",
         )
         .parameters(JsonObjectSchema.builder().additionalProperties(false).build())
         .build()
@@ -1831,7 +1896,8 @@ class AgentPatchTargetInspectTool(
         .name("inspect_agent_patch_target")
         .description(
             "Inspect the exact constructors, methods, and fields of a target class from the installed " +
-                "game/mod bytecode. Always call this before writing a patch; use the returned overload_index " +
+                "game/mod bytecode. Call this when reliable evidence for the current target version is missing " +
+                "or the target changed; reuse existing current-version inspection results. Use the returned overload_index " +
                 "and descriptor instead of guessing signatures. By default it also returns a structured " +
                 "local_variables list and a javap-style bytecode listing for each overload, including " +
                 "LocalVariableTable names when the class was compiled with debug information; pass " +
@@ -1943,7 +2009,8 @@ class AgentPatchSkeletonTool(
         .description(
             "Generate a Java 8 ModTheSpire patch skeleton from an inspected exact target signature. " +
                 "The tool writes under the current patch_source/<patch_id>/src/ and includes the selected paramtypez. Call " +
-                "inspect_agent_patch_target first; provide its overload_index when the target is overloaded.",
+                "inspect_agent_patch_target if current-version evidence is missing; provide its overload_index " +
+                "when the target is overloaded. Locally edit an existing correct skeleton rather than generating it again.",
         )
         .parameters(
             JsonObjectSchema.builder()
@@ -2016,7 +2083,8 @@ class AgentPatchPreflightTool(
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("validate_agent_patch_mod")
         .description(
-            "Validate compiled patch bytecode before packaging. Checks every ModTheSpire patch annotation " +
+            "Optional standalone validation of compiled patch bytecode for diagnostics. Package/update already " +
+                "run this preflight, so do not routinely call it immediately before them. Checks every ModTheSpire patch annotation " +
                 "against the real target class and rejects missing classes, methods, constructors, and " +
                 "ambiguous or mismatched parameter signatures. Defaults to the current session's patch " +
                 "workspace; pass patch_id to validate an existing revision.",
@@ -2080,7 +2148,8 @@ class AgentPatchModPackageTool(
         .name("package_agent_patch_mod")
         .description(
             "Validate and package the files under the current patch_source/<patch_id>/ into a versioned patch mod. Packaging " +
-                "always runs the bytecode preflight and refuses to create a JAR when it fails.",
+                "always runs the bytecode preflight and refuses to create a JAR when it fails. After compiling, " +
+                "call this directly; a separate validate_agent_patch_mod call is optional. Returns preflight warnings too.",
         )
         .parameters(
             JsonObjectSchema.builder()
@@ -2132,6 +2201,7 @@ class AgentPatchModPackageTool(
         }.getOrElse { return failure(it.message ?: "package_failed") }
         return buildJsonObject {
             put("status", JsonPrimitive("packaged"))
+            put("preflight", preflightJson)
             put("parent_mod_id", JsonPrimitive(activeWorkspace.parentModId))
             put("patch_id", JsonPrimitive(info.patchId))
             put("patch_mod_id", JsonPrimitive(info.patchModId))
@@ -2164,7 +2234,9 @@ class AgentPatchModUpdateTool(
         .description(
             "Update an already packaged AI patch mod in place. Repackages its patch workspace with a new " +
                 "version (and optionally a new name or description) while keeping the same patch_id, modid, " +
-                "and enabled state. Compile the patch workspace first when its sources changed. Use " +
+                "and enabled state. Compile the patch workspace first when its sources changed. Always runs " +
+                "the final bytecode preflight and returns its warnings; a separate validate_agent_patch_mod " +
+                "call is optional. Use " +
                 "list_agent_patch_mods to find the patch_id.",
         )
         .parameters(
@@ -2229,6 +2301,7 @@ class AgentPatchModUpdateTool(
         onUpdated()
         return buildJsonObject {
             put("status", JsonPrimitive("updated"))
+            put("preflight", preflightJson)
             put("parent_mod_id", JsonPrimitive(info.parentModId))
             put("patch_id", JsonPrimitive(info.patchId))
             put("patch_mod_id", JsonPrimitive(info.patchModId))
@@ -2372,18 +2445,22 @@ private fun resolveWorkspaceFile(root: File, relativePath: String): File? {
 private fun JsonObject.intParam(name: String): Int? =
     this[name]?.jsonPrimitive?.content?.toIntOrNull()
 
-private fun resolvePatchSourceFile(root: File, relativePath: String): File? {
-    val candidate = resolveWorkspaceFile(root, relativePath) ?: return null
-    val patchSourceRoot = File(root, "patch_source").canonicalFile
+internal fun resolvePatchSourceFile(root: File, relativePath: String, allowRoot: Boolean = false): File? = runCatching {
+    if (File(relativePath).isAbsolute) return@runCatching null
+    val candidate = resolveWorkspaceFile(root, relativePath) ?: return@runCatching null
+    val patchSourceRoot = File(root.canonicalFile, "patch_source")
+    // A symlinked patch_source root must not turn source/ (or another tree) into writable data.
+    if (patchSourceRoot.canonicalFile != patchSourceRoot) return@runCatching null
     val candidatePath = candidate.toPath()
     val patchSourcePath = patchSourceRoot.toPath()
-    if (!candidatePath.startsWith(patchSourcePath)) return null
-    if (candidatePath == patchSourcePath) return candidate
+    if (!candidatePath.startsWith(patchSourcePath)) return@runCatching null
+    // Delete needs to distinguish this case for its explicit cannot-delete-root error.
+    if (candidatePath == patchSourcePath) return@runCatching candidate.takeIf { allowRoot }
     val relative = patchSourcePath.relativize(candidatePath)
-    return candidate.takeIf {
+    candidate.takeIf {
         relative.nameCount >= 2 && relative.getName(0).toString().startsWith("patch-")
     }
-}
+}.getOrNull()
 
 private fun failure(code: String): String = buildJsonObject {
     put("error", JsonPrimitive(code))
@@ -2443,6 +2520,12 @@ data class AgentReply(
 class AgentEmptyResponseException(finishReason: String = "unknown") :
     IllegalStateException("The model returned an empty response with no text and no tool call (finish reason: $finishReason).")
 
+class AgentResponseTerminatedException(reason: String) : IllegalStateException(
+    "The provider returned no usable content ($reason). " +
+        if (reason == "LENGTH") "Increase the output budget or reduce reasoning/request size before retrying."
+        else "Review the request against the provider's content policy before retrying.",
+)
+
 class PolicyGatedAgentGateway(
     private val chatModel: ChatModel,
     private val toolRegistry: AgentToolRegistry,
@@ -2480,56 +2563,22 @@ class PolicyGatedAgentGateway(
      */
     private val evictConnectionPool: () -> Unit = {},
     private val onExecutionStep: (AgentExecutionStep) -> Unit = {},
+    requestControl: AgentRequestControl? = null,
+    private val requestClock: AgentRequestClock = AgentRequestClock.SYSTEM,
+    private val sleep: (Long) -> Unit = { Thread.sleep(it) },
+    /** Stable configuration snapshot; includes endpoint/model/reasoning changes, never logged. */
+    private val currentModelConfiguration: (() -> Any)? = null,
 ) {
     private val toolScheduler = AgentToolScheduler(toolRegistry, maxParallelTools, checkCancelled)
+    private val ownsRequestControl = requestControl == null
+    private val control = requestControl ?: AgentRequestControl(clock = requestClock)
+    private val progressGuard = AgentProgressGuard(control.executionPolicy.repeatedBatchLimit)
+    private var modelConfiguration: Any? = null
+    private var streamDegraded = false
+    private var progressStop: String? = null
 
-    fun respond(systemPrompt: String, userPrompt: String): AgentReply {
-        val messages = if (contextManager != null) mutableListOf() else mutableListOf<ChatMessage>(
-            SystemMessage.from(systemPrompt),
-            UserMessage.from(userPrompt),
-        )
-
-        var round = 0
-        while (true) {
-            receiveInbox(false)
-            var lastResponse: ChatResponse? = null
-            var response: ChatResponse? = null
-            for (attempt in 0..MAX_EMPTY_RETRIES) {
-                val candidate = modelTurn(messages) {
-                    val startedAt = System.nanoTime()
-                    (currentChatModel?.invoke() ?: chatModel).chat(chatRequest(it)).also { response ->
-                        val elapsed = System.nanoTime() - startedAt
-                        response.tokenUsage()?.outputTokenCount()?.takeIf { count -> count > 0 }?.let { count ->
-                            if (elapsed > 0L) onOutputSpeed(count.toDouble() * 1_000_000_000.0 / elapsed)
-                        }
-                    }
-                }
-                val message = candidate.aiMessage()
-                lastResponse = candidate
-                if (message.hasToolExecutionRequests() || message.text().orEmpty().isNotBlank()) {
-                    response = candidate
-                    break
-                }
-                Log.i(TAG, "empty non-streaming round=$round attempt=$attempt finish=${finishReason(candidate)}")
-            }
-            val completed = response ?: run {
-                logAssistantRound(round, "", lastResponse!!.aiMessage(), "non-streaming", lastResponse)
-                throw AgentEmptyResponseException(finishReason(lastResponse))
-            }
-            val aiMessage = normalizeToolCallMessage(completed.aiMessage())
-            messages += aiMessage
-            contextManager?.append(aiMessage)
-            val text = aiMessage.text().orEmpty()
-            if (text.isNotBlank()) onNonStreamingText(text)
-            logAssistantRound(round, text, aiMessage, "non-streaming", completed)
-            if (!aiMessage.hasToolExecutionRequests()) {
-                if (receiveInbox(true)) continue
-                return AgentReply(text = text, toolRounds = round, contextTokens = completed.tokenUsage()?.totalTokenCount())
-            }
-            executeTools(aiMessage, messages)
-            round++
-        }
-    }
+    fun respond(systemPrompt: String, userPrompt: String): AgentReply =
+        runConversation(systemPrompt, userPrompt, null, onNonStreamingText, {})
 
     fun respondStreaming(
         systemPrompt: String,
@@ -2537,7 +2586,13 @@ class PolicyGatedAgentGateway(
         streamingModel: StreamingChatModel,
         onText: (String) -> Unit,
         onThinking: (String) -> Unit = {},
+    ): AgentReply = runConversation(systemPrompt, userPrompt, streamingModel, onText, onThinking)
+
+    private fun runConversation(
+        systemPrompt: String, userPrompt: String, initialStreamingModel: StreamingChatModel?,
+        onText: (String) -> Unit, onThinking: (String) -> Unit,
     ): AgentReply {
+      try {
         val messages = if (contextManager != null) mutableListOf() else mutableListOf<ChatMessage>(
             SystemMessage.from(systemPrompt),
             UserMessage.from(userPrompt),
@@ -2545,16 +2600,32 @@ class PolicyGatedAgentGateway(
 
         var round = 0
         while (true) {
-            receiveInbox(false)
+            if (receiveInbox(false)) { progressGuard.reset(); progressStop = null }
+            checkCancelled()
+            control.checkActive()
+            val activeModel = currentChatModel?.invoke() ?: chatModel
+            val stream = if (currentStreamingModel != null) currentStreamingModel.invoke() else initialStreamingModel
+            val configuration = currentModelConfiguration?.invoke() ?: (activeModel to stream)
+            if (configuration != modelConfiguration) {
+                modelConfiguration = configuration
+                streamDegraded = false
+                progressGuard.reset()
+                progressStop = null
+            }
+            progressStop?.let { explanation ->
+                publishExecutionStep(agentErrorStep("PROGRESS", explanation))
+                throw AgentExecutionLimitException(explanation)
+            }
+            // One budget spans retries, empty responses, fallback, backoff and radio recovery.
+            val budget = AgentRoundBudget(streamingTimeoutMillis, requestClock)
             var lastResult: StreamingResult? = null
             var accepted: StreamingResult? = null
+            val useStream = stream != null && !streamDegraded
             for (attempt in 0..MAX_EMPTY_RETRIES) {
-                val candidate = modelTurn(messages) { activeMessages -> streamRequest(
-                    streamingModel = currentStreamingModel?.invoke() ?: streamingModel,
-                    messages = activeMessages,
-                    onText = onText,
-                    onThinking = onThinking,
-                ) }
+                val candidate = modelTurn(messages, budget, useStream) { activeMessages, scope ->
+                    if (useStream) streamRequest(requireNotNull(stream), activeMessages, onText, onThinking, scope)
+                    else syncRequest(activeModel, activeMessages)
+                }
                 val message = candidate.response.aiMessage()
                 lastResult = candidate
                 val candidateText = candidate.text.ifBlank { message.text().orEmpty() }
@@ -2562,32 +2633,33 @@ class PolicyGatedAgentGateway(
                     accepted = candidate
                     break
                 }
+                rejectTerminatedEmpty(candidate.response)
                 Log.i(
                     TAG,
                     "empty streaming round=$round attempt=$attempt finish=${finishReason(candidate.response)}",
                 )
             }
-            if (accepted == null) {
+            if (accepted == null && useStream) {
                 // Some OpenAI-compatible proxies stream tool calls in a shape the streaming client
                 // cannot assemble, so the round arrives with no text and no tool call. Retrying the
                 // same streamed request rarely helps; re-issue it non-streaming, where the tool call
                 // is read straight from the response body.
-                val fallback = modelTurn(messages) { (currentChatModel?.invoke() ?: chatModel).chat(chatRequest(it)) }
-                val fallbackMessage = fallback?.aiMessage()
-                val fallbackText = fallbackMessage?.text().orEmpty()
-                if (fallback != null && fallbackMessage != null &&
-                    (fallbackMessage.hasToolExecutionRequests() || fallbackText.isNotBlank())
-                ) {
+                val fallback = modelTurn(messages, budget, false) { activeMessages, _ -> syncRequest(activeModel, activeMessages) }
+                lastResult = fallback
+                val fallbackMessage = fallback.response.aiMessage()
+                val fallbackText = fallback.text
+                if (fallbackMessage.hasToolExecutionRequests() || fallbackText.isNotBlank()) {
                     Log.i(
                         TAG,
                         "round=$round recovered via non-streaming fallback toolCalls=" +
                             "${fallbackMessage.toolExecutionRequests().size} textChars=${fallbackText.length} " +
-                            "finish=${finishReason(fallback)}",
+                            "finish=${finishReason(fallback.response)}",
                     )
                     // The streamed attempt produced nothing, so surface the fallback text instead.
                     if (fallbackText.isNotBlank()) onText(fallbackText)
-                    accepted = StreamingResult(fallback, fallbackText)
-                }
+                    accepted = fallback
+                    streamDegraded = true
+                } else rejectTerminatedEmpty(fallback.response)
             }
             val result = accepted ?: run {
                 logAssistantRound(round, "", lastResult!!.response.aiMessage(), "streaming", lastResult.response)
@@ -2597,24 +2669,45 @@ class PolicyGatedAgentGateway(
             messages += aiMessage
             contextManager?.append(aiMessage)
             val text = result.text.ifBlank { aiMessage.text().orEmpty() }
+            if (!useStream && text.isNotBlank()) onText(text)
             logAssistantRound(round, text, aiMessage, "streaming", result.response)
             if (!aiMessage.hasToolExecutionRequests()) {
-                if (receiveInbox(true)) continue
+                if (receiveInbox(true)) { progressGuard.reset(); continue }
                 return AgentReply(text = text, toolRounds = round, contextTokens = result.response.tokenUsage()?.totalTokenCount())
             }
             executeTools(aiMessage, messages)
             round++
         }
+      } finally {
+        if (ownsRequestControl) control.close()
+      }
+    }
+
+    private fun rejectTerminatedEmpty(response: ChatResponse) {
+        val reason = finishReason(response)
+        if (reason == "LENGTH" || reason == "CONTENT_FILTER") throw AgentResponseTerminatedException(reason)
+    }
+
+    private fun syncRequest(model: ChatModel, messages: List<ChatMessage>): StreamingResult {
+        val startedAt = requestClock.nowMillis()
+        val response = model.chat(chatRequest(messages))
+        val elapsed = requestClock.nowMillis() - startedAt
+        response.tokenUsage()?.outputTokenCount()?.takeIf { it > 0 }?.let {
+            if (elapsed > 0) onOutputSpeed(it.toDouble() * 1_000 / elapsed)
+        }
+        return StreamingResult(response, response.aiMessage().text().orEmpty())
     }
 
     private fun executeTools(aiMessage: AiMessage, messages: MutableList<ChatMessage>) {
         val media = ArrayList<AgentContextAttachment>()
+        val batch = ArrayList<Pair<ToolExecutionRequest, AgentToolOutput>>()
         toolScheduler.execute(aiMessage.toolExecutionRequests()) { request, output ->
             val result = ToolExecutionResultMessage.from(request, boundedToolResult(output.text))
             messages += result
             val images = output.attachments.filter { it.isImage }
             contextManager?.append(result, images)
             media += images
+            batch += request to output
         }
         // Without a context manager the caller owns the history; mirror the context path so a
         // tool-read image still reaches the model. The next model turn follows this turn, so the
@@ -2622,16 +2715,21 @@ class PolicyGatedAgentGateway(
         if (contextManager == null && media.isNotEmpty()) {
             messages += agentMediaUserMessage(media, supportsImageInput)
         }
+        val changed = batch.any { (request, output) -> toolRegistry.canChangeState(request) && agentToolFailure(output.text) == null }
+        // Decide at the next complete boundary, after admitting new user input/model settings.
+        // Every result above has its durable checkpoint before stopping; never replay this batch.
+        progressStop = progressGuard.completed(batch, changed)
     }
 
-    private fun <T> modelTurn(history: List<ChatMessage>, request: (List<ChatMessage>) -> T): T {
+    private fun <T> modelTurn(history: List<ChatMessage>, budget: AgentRoundBudget, streaming: Boolean,
+        request: (List<ChatMessage>, AgentRequestScope) -> T): T {
         checkCancelled()
         var active = contextManager?.prepare() ?: history
         var lastError: Exception? = null
         repeat(MAX_ABORT_RETRIES + 1) { attempt ->
             val result = try {
                 checkCancelled()
-                requestWithHistory(active, request)
+                requestWithHistory(active, budget, streaming, request)
             } catch (error: Exception) {
                 checkCancelled()
                 if (error is AgentHistoryCheckpointException) throw error
@@ -2639,7 +2737,7 @@ class PolicyGatedAgentGateway(
                 if (contextManager != null && isAgentContextOverflow(error)) {
                     // Context overflow gets an immediate compaction retry, not a delayed network retry.
                     active = contextManager.prepare(force = true)
-                    return observeTurn(requestWithHistory(active, request))
+                    return observeTurn(requestWithHistory(active, budget, streaming, request))
                 }
                 if (!isRetryableAgentRequestFailure(error)) throw error
                 // A dropped socket may need tens of seconds for the radio to come back, so it earns
@@ -2647,13 +2745,14 @@ class PolicyGatedAgentGateway(
                 val maxRetries = if (isConnectionAbort(error)) MAX_ABORT_RETRIES else MAX_REQUEST_RETRIES
                 if (attempt >= maxRetries) throw error
                 val delaySeconds = retryDelaySeconds(attempt, error)
+                if (!budget.canWait(delaySeconds * 1_000)) throw AgentRequestTimeoutException(AgentRequestTimeoutKind.ROUND_BUDGET)
                 onRetry(attempt + 1, delaySeconds, error)
                 // A dropped socket must not be handed to the next attempt.
                 if (isConnectionAbort(error)) evictConnectionPool()
                 val wait = AgentStepTimer(AgentStepKind.RETRY, detail = error.javaClass.simpleName)
                 publishExecutionStep(wait.step)
                 try {
-                    awaitNetworkAndBackoff(delaySeconds)
+                    awaitNetworkAndBackoff(delaySeconds, budget)
                 } catch (cancelled: Exception) {
                     publishProblem(wait, cancelled)
                     throw cancelled
@@ -2668,11 +2767,19 @@ class PolicyGatedAgentGateway(
     }
 
     /** Keep persistence failures outside the request catch: never replay a billable request. */
-    private fun <T> requestWithHistory(messages: List<ChatMessage>, request: (List<ChatMessage>) -> T): T {
+    private fun <T> requestWithHistory(messages: List<ChatMessage>, budget: AgentRoundBudget, streaming: Boolean,
+        request: (List<ChatMessage>, AgentRequestScope) -> T): T {
         val timer = AgentStepTimer(AgentStepKind.MODEL)
         publishExecutionStep(timer.step)
         val result = try {
-            request(messages)
+            val total = budget.requestTimeoutMillis(streamingTimeoutMillis)
+            control.newRequest(agentAttemptPolicy(total, streaming)).use { scope ->
+                try {
+                    scope.bind { request(messages, scope) }.also { scope.throwIfStopped() }
+                } catch (error: Throwable) {
+                    throw (scope.stopReason ?: error)
+                }
+            }
         } catch (error: Exception) {
             publishProblem(timer, error)
             throw error
@@ -2683,6 +2790,7 @@ class PolicyGatedAgentGateway(
             else -> null
         }
         val message = response?.aiMessage()
+        response?.let(control.executionBudget::observe)
         val detail = buildString {
             append(message?.text().orEmpty().take(320))
             val tools = message?.toolExecutionRequests().orEmpty()
@@ -2741,27 +2849,29 @@ class PolicyGatedAgentGateway(
      * hang forever: after [MAX_NETWORK_WAIT_MS] the caller retries anyway and reports the real
      * error if it fails again.
      */
-    private fun awaitNetworkAndBackoff(delaySeconds: Long) {
-        sleepCancellable(delaySeconds * 1_000L)
+    private fun awaitNetworkAndBackoff(delaySeconds: Long, budget: AgentRoundBudget) {
+        sleepCancellable(delaySeconds * 1_000L, budget)
         if (hasUsableNetwork()) return
-        val deadlineAtMs = System.nanoTime() / 1_000_000L + MAX_NETWORK_WAIT_MS
+        val deadlineAtMs = requestClock.nowMillis() + MAX_NETWORK_WAIT_MS
         while (!hasUsableNetwork()) {
-            if (System.nanoTime() / 1_000_000L >= deadlineAtMs) {
+            if (requestClock.nowMillis() >= deadlineAtMs) {
                 Log.w(TAG, "Network still unavailable after ${MAX_NETWORK_WAIT_MS}ms; retrying anyway")
                 return
             }
-            sleepCancellable(NETWORK_POLL_INTERVAL_MS)
+            sleepCancellable(minOf(NETWORK_POLL_INTERVAL_MS, budget.requestTimeoutMillis(streamingTimeoutMillis)), budget)
         }
     }
 
     /** Sleeps in slices so cancellation is noticed promptly instead of after the whole delay. */
-    private fun sleepCancellable(totalMs: Long) {
+    private fun sleepCancellable(totalMs: Long, budget: AgentRoundBudget) {
         var remaining = totalMs
         while (remaining > 0L) {
             checkCancelled()
+            control.checkActive()
+            budget.requestTimeoutMillis(streamingTimeoutMillis)
             val slice = minOf(remaining, CANCELLABLE_SLEEP_SLICE_MS)
             try {
-                Thread.sleep(slice)
+                sleep(slice)
             } catch (interrupted: InterruptedException) {
                 Thread.currentThread().interrupt()
                 throw java.util.concurrent.CancellationException("LLM retry cancelled")
@@ -2769,6 +2879,7 @@ class PolicyGatedAgentGateway(
             remaining -= slice
         }
         checkCancelled()
+        budget.requestTimeoutMillis(streamingTimeoutMillis)
     }
 
     private fun <T> observeTurn(result: T): T {
@@ -2929,6 +3040,7 @@ class PolicyGatedAgentGateway(
         messages: List<ChatMessage>,
         onText: (String) -> Unit,
         onThinking: (String) -> Unit,
+        scope: AgentRequestScope,
     ): StreamingResult {
         val startedAt = System.nanoTime()
         val lock = Object()
@@ -2936,12 +3048,14 @@ class PolicyGatedAgentGateway(
         val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
         val closed = java.util.concurrent.atomic.AtomicBoolean(false)
         val text = StringBuilder()
-        streamingModel.chat(
+        try {
+          streamingModel.chat(
             chatRequest(messages),
             object : StreamingChatResponseHandler {
                 override fun onPartialResponse(partialResponse: String) {
                     synchronized(lock) {
                         if (closed.get()) return
+                        if (partialResponse.isNotEmpty()) scope.onMeaningfulEvent()
                         text.append(partialResponse)
                         onText(partialResponse)
                     }
@@ -2952,8 +3066,15 @@ class PolicyGatedAgentGateway(
                         if (closed.get()) return
                         val value = partialThinking.text()
                         if (value.isNotEmpty()) {
+                            scope.onMeaningfulEvent()
                             onThinking(value)
                         }
+                    }
+                }
+
+                override fun onPartialToolCall(partialToolCall: dev.langchain4j.model.chat.response.PartialToolCall) {
+                    synchronized(lock) {
+                        if (!closed.get() && !partialToolCall.partialArguments().isNullOrEmpty()) scope.onMeaningfulEvent()
                     }
                 }
 
@@ -2974,16 +3095,14 @@ class PolicyGatedAgentGateway(
                 }
             },
         )
-        try {
             synchronized(lock) {
                 while (response.get() == null && failure.get() == null) {
                     checkCancelled()
-                    val remaining = streamingTimeoutMillis -
-                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
-                    if (remaining <= 0L) throw java.net.SocketTimeoutException("Streaming model response timed out")
-                    lock.wait(minOf(1000L, remaining))
+                    scope.throwIfStopped()
+                    lock.wait(100L)
                 }
             }
+            scope.throwIfStopped()
         } catch (interrupted: InterruptedException) {
             Thread.currentThread().interrupt()
             throw java.util.concurrent.CancellationException("Streaming request cancelled")

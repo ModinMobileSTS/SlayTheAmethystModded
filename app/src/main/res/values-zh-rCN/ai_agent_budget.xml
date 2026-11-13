@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ai_agent_budget_input_hint">留空：保守的 32,000 输入预算，并非模型能力声明。包含系统、工具和历史；输出另计，下次任务生效。</string>
+    <string name="ai_agent_budget_output_target">主任务输出 token 预算</string>
+    <string name="ai_agent_budget_output_hint">留空：4,000 tokens。这是任务目标，与模型能力分开设置。摘要另有独立的 2,000-token 输出目标。</string>
+    <string name="ai_agent_budget_capabilities_hint">可选的模型级能力覆盖。留空使用可用的模型目录元数据，否则能力保持未知。已知共享窗口限制输入与输出之和。两种输出目标均受模型上限约束。</string>
+    <string name="ai_agent_budget_window">共享上下文窗口（输入 + 输出）</string>
+    <string name="ai_agent_budget_max_input">模型最大输入 tokens</string>
+    <string name="ai_agent_budget_max_output">模型最大输出 tokens</string>
+    <string name="ai_agent_budget_effective">已保存的有效预算：输入 %1$d · 主任务输出 %2$d · 摘要输出 %3$d tokens</string>
+    <string name="ai_agent_budget_reasoning_off_hint">OFF 会在支持时请求关闭推理。未知服务商可能继续使用自己的默认行为；仅省略字段不保证已关闭推理。</string>
+</resources>

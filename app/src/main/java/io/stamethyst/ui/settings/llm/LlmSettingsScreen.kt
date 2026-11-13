@@ -80,7 +80,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class LlmSettingsViewModel(private val repository: LlmSettingsRepository) : ViewModel() {
+class LlmSettingsViewModel(
+    private val repository: LlmSettingsRepository,
+    private val cacheCatalog: (String, List<NewApiModel>) -> Unit = { _, _ -> },
+) : ViewModel() {
     var settings by mutableStateOf(repository.get())
         private set
     var remoteModels by mutableStateOf<List<NewApiModel>>(emptyList())
@@ -156,7 +159,9 @@ class LlmSettingsViewModel(private val repository: LlmSettingsRepository) : View
         remoteModels = emptyList()
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) {
-                NewApiModelService().fetchModels(baseUrl, apiKey)
+                NewApiModelService().fetchModels(baseUrl, apiKey).also { models ->
+                    cacheCatalog(baseUrl, models)
+                }
             } }
                 .onSuccess { models -> remoteModels = models; remoteModelsEmpty = models.isEmpty() }
                 .onFailure { error ->
@@ -194,7 +199,9 @@ class LlmSettingsViewModel(private val repository: LlmSettingsRepository) : View
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    LlmSettingsViewModel(LlmSettingsRepository(context.applicationContext)) as T
+                    LlmSettingsViewModel(LlmSettingsRepository(context.applicationContext)) { baseUrl, models ->
+                        io.stamethyst.ui.aimod.AiContextLimits.cacheCatalog(context.applicationContext, baseUrl, models)
+                    } as T
             }
     }
 }

@@ -330,7 +330,7 @@ class AgentToolSchedulerTest {
             AgentModEntriesListTool(root), AgentModClassInspectTool("parent", root)).forEach {
             assertEquals(it.specification.name(), AgentToolConcurrency.PARALLEL, it.concurrency)
         }
-        listOf(AgentWorkspaceWriteTool(root), AgentWorkspaceDeleteTool(root)).forEach {
+        listOf(AgentWorkspaceWriteTool(root), AgentWorkspaceEditTool(root), AgentWorkspaceDeleteTool(root)).forEach {
             assertEquals(it.specification.name(), AgentToolConcurrency.EXCLUSIVE, it.concurrency)
         }
         val context = android.app.Application()

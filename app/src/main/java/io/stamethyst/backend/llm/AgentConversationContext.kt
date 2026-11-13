@@ -20,7 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.ceil
 
-const val DEFAULT_AGENT_CONTEXT_LIMIT = 200_000
+const val DEFAULT_AGENT_CONTEXT_LIMIT = 32_000
 
 /**
  * Leading text of the user message that carries images read by a tool.
@@ -225,14 +225,6 @@ data class AgentContextState(
     }
 }
 
-data class AgentContextBudget(val limit: Int = DEFAULT_AGENT_CONTEXT_LIMIT) {
-    init { require(limit > 0) }
-    // The configured limit applies to input only; output is budgeted separately.
-    val outputReserve: Int = maxOf(limit / 10, if (limit >= 32_000) 16_000 else 1)
-    val inputLimit: Int = limit
-    val summaryOutputLimit: Int = minOf(32_000, maxOf(1_024, outputReserve), limit / 2).coerceAtLeast(1)
-}
-
 /** Approximation for unknown provider tokenizers; calibrated upwards by actual prompt usage. */
 object AgentTokenEstimate {
     fun text(value: String): Int {
@@ -253,6 +245,13 @@ object AgentTokenEstimate {
 class AgentContextCapacityException(message: String) : IllegalStateException(message)
 class AgentCompactionException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
 
+/** One snapshot per compaction: the transport pair and its own budget must change together. */
+data class AgentCompactionTarget(
+    val model: ChatModel,
+    val streamingModel: StreamingChatModel? = null,
+    val budget: AgentContextBudget,
+)
+
 /** Only successful, validated summaries replace the active prefix. The archive is never deleted. */
 class AgentContextManager(
     initial: AgentContextState,
@@ -270,13 +269,27 @@ class AgentContextManager(
     /** When false, images are replaced by a short text notice instead of an image part. */
     val supportsImageInput: Boolean = true,
     private val onExecutionStep: (AgentExecutionStep) -> Unit = {},
+    private val currentCompactionTarget: (() -> AgentCompactionTarget)? = null,
+    private val requestControl: AgentRequestControl? = null,
+    private val requestClock: AgentRequestClock = AgentRequestClock.SYSTEM,
 ) {
     var state: AgentContextState = initial.closeInterruptedTools()
         private set
 
+    private var compactionTarget: AgentCompactionTarget? = null
+
+    fun updateCompactionTarget(target: AgentCompactionTarget) {
+        compactionTarget = target
+    }
+
     fun switchModel(modelKey: String, contextLimit: Int) {
+        switchModel(modelKey, AgentContextBudget(contextLimit))
+    }
+
+    fun switchModel(modelKey: String, nextBudget: AgentContextBudget, summaryTarget: AgentCompactionTarget? = null) {
+        budget = nextBudget
+        if (summaryTarget != null) updateCompactionTarget(summaryTarget)
         if (state.modelKey == modelKey) return
-        budget = AgentContextBudget(contextLimit)
         state = state.copy(modelKey = modelKey, estimateScale = 1.0,
             lastInputTokens = null, lastOutputTokens = null, measuredMessageCount = null,
             cacheStats = AgentCacheStats(endpoint = state.cacheStats.endpoint))
@@ -293,9 +306,12 @@ class AgentContextManager(
 
     private fun memory(value: AgentContextState): String = AgentContextCompaction.memory(value.summary, value.recent)
 
+    private fun fixedEstimate(value: AgentContextState): Long =
+        AgentTokenEstimate.text(systemPrompt).toLong() + AgentTokenEstimate.text(memory(value)) +
+            AgentTokenEstimate.text(toolSchema) + 64L
+
     private fun rawEstimate(value: AgentContextState): Int {
-        val total = AgentTokenEstimate.text(systemPrompt).toLong() + AgentTokenEstimate.text(memory(value)) +
-            AgentTokenEstimate.text(toolSchema) + 64L +
+        val total = fixedEstimate(value) +
             activeRecords(value).sumOf { AgentTokenEstimate.message(it).toLong() }
         return total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
@@ -373,7 +389,7 @@ class AgentContextManager(
             persist()
         }
         appendPatchStateIfNeeded()
-        if (manual || force || estimate(state) >= budget.inputLimit) {
+        if (manual || force || shouldCompactAutomatically()) {
             compact(if (manual) "manual" else if (force) "overflow" else "auto")
             appendPatchStateIfNeeded()
         }
@@ -402,6 +418,26 @@ class AgentContextManager(
         }
     }
 
+    private fun shouldCompactAutomatically(): Boolean {
+        val tokens = estimate(state)
+        if (tokens >= budget.inputLimit) return true
+        val tail = state.messages.drop(state.summarizedCount)
+        // A user-only request cannot usefully be summarized. A checkpoint by itself must not
+        // repeatedly compact simply because the summary landed inside the reserved headroom.
+        if (tail.none { it.role == "assistant" || it.role == "tool" }) return false
+        val batch = tail.takeLastWhile { it.role == "tool" }
+            .sumOf { AgentTokenEstimate.message(it).toLong() }.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val threshold = budget.compactionThreshold(batch)
+        if (tokens < threshold) return false
+        if (state.summary.isNotBlank() && state.checkpointVersion >= 2) {
+            val baseline = ceil(fixedEstimate(state) * state.estimateScale)
+                .coerceAtMost(Int.MAX_VALUE.toDouble()).toInt()
+            val minimumGrowth = maxOf(1, (budget.inputLimit - threshold) / 2)
+            if (tokens.toLong() - baseline < minimumGrowth) return false
+        }
+        return true
+    }
+
     /** Never rewrite an earlier prompt when a workspace is created or selected. */
     private fun appendPatchStateIfNeeded() {
         val patch = state.activePatchId ?: return
@@ -415,8 +451,11 @@ class AgentContextManager(
 
     private fun compact(reason: String) {
         val original = state
-        val compactor = AgentContextCompaction(model, streamingModel, systemPrompt, toolSchema,
-            toolSpecifications, budget, summaryTimeoutMillis, checkCancelled, onCompaction, onExecutionStep)
+        val target = currentCompactionTarget?.invoke() ?: compactionTarget
+            ?: AgentCompactionTarget(model, streamingModel, budget)
+        val compactor = AgentContextCompaction(target.model, target.streamingModel, systemPrompt, toolSchema,
+            toolSpecifications, target.budget, summaryTimeoutMillis, checkCancelled, onCompaction, onExecutionStep,
+            requestControl, requestClock)
         compactor.run(original, reason) { summary, recent ->
             val candidate = original.copy(summary = summary, recent = recent, checkpointVersion = 2,
                 summarizedCount = original.messages.size, compactionCount = original.compactionCount + 1,

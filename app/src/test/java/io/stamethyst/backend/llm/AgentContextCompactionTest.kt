@@ -91,7 +91,7 @@ class AgentContextCompactionTest {
         val model = fake { request ->
             assertEquals("session system", (request.messages().first() as SystemMessage).text())
             assertEquals(listOf(tool), request.toolSpecifications())
-            assertEquals(20_000, request.parameters().maxOutputTokens().toInt())
+            assertEquals(2_000, request.parameters().maxOutputTokens().toInt())
             answer()
         }
         val manager = AgentContextManager(history, "session system", "read schema", AgentContextBudget(), 5,
@@ -315,6 +315,92 @@ class AgentContextCompactionTest {
         assertEquals(2, manager.state.checkpointVersion)
         assertEquals(history.messages, manager.state.messages)
         assertEquals(history.messages.size, manager.state.summarizedCount)
+    }
+
+    @Test fun modelSwitchUpdatesBothSummaryTransportsAndTheirBudgetsInBothDirections() {
+        val requested = ArrayList<Pair<String, Int>>()
+        val smallModel = fake { request ->
+            requested += "small" to request.parameters().maxOutputTokens()
+            answer()
+        }
+        val largeStreaming = object : StreamingChatModel {
+            override fun doChat(request: ChatRequest, handler: StreamingChatResponseHandler) {
+                requested += "large-stream" to request.parameters().maxOutputTokens()
+                handler.onCompleteResponse(answer())
+            }
+        }
+        val smallBudget = AgentModelBudgetPolicy.resolve(metadata = AgentModelLimits(12_000, 9_000, 700))
+        val largeBudget = AgentModelBudgetPolicy.resolve(metadata = AgentModelLimits(64_000, 60_000, 1_400))
+        val manager = AgentContextManager(history.copy(modelKey = "small"), "system", "tools", smallBudget,
+            5, smallModel, {})
+        val largeTarget = AgentCompactionTarget(fake { error("must use new stream") }, largeStreaming, largeBudget)
+        manager.switchModel("large", largeBudget, largeTarget)
+        manager.prepare(manual = true)
+        manager.appendInput(AgentContextMessage(5, "user", "Continue"), 6)
+        manager.append(AiMessage.from("new work"))
+        manager.switchModel("small", smallBudget, AgentCompactionTarget(smallModel, budget = smallBudget))
+        manager.prepare(manual = true)
+        assertEquals(listOf("large-stream" to 1_400, "small" to 700), requested)
+        assertEquals("small", manager.state.modelKey)
+        assertEquals(2, manager.state.compactionCount)
+    }
+
+    @Test fun dynamicSummarySupplierIsReadOncePerCompactionAndCanChangeIndependently() {
+        var snapshots = 0
+        val outputs = ArrayList<Int>()
+        val model = fake { outputs += it.parameters().maxOutputTokens(); answer() }
+        var active = AgentCompactionTarget(model, budget = AgentContextBudget(summaryOutputTarget = 600))
+        val manager = AgentContextManager(history, "system", "tools", AgentContextBudget(), 5,
+            fake { error("startup model is stale") }, {}, currentCompactionTarget = { snapshots++; active })
+        manager.prepare(manual = true)
+        active = active.copy(budget = AgentContextBudget(summaryOutputTarget = 1_200))
+        manager.prepare(manual = true)
+        assertEquals(listOf(600, 1_200), outputs)
+        assertEquals(2, snapshots)
+    }
+
+    @Test fun sameModelKeyStillAcceptsBudgetAndSummaryTargetUpdates() {
+        val outputs = ArrayList<Int>()
+        val model = fake { outputs += it.parameters().maxOutputTokens(); answer() }
+        val manager = manager(state = history.copy(modelKey = "same"))
+        val next = AgentContextBudget(10_000, summaryOutputTarget = 500)
+        manager.switchModel("same", next, AgentCompactionTarget(model, budget = next))
+        manager.prepare(manual = true)
+        assertEquals(next, manager.budget)
+        assertEquals(listOf(500), outputs)
+    }
+
+    @Test fun smallerSummaryModelRejectsUnfittableLatestExchangeBeforeSendingIt() {
+        val state = AgentContextState(messages = listOf(
+            AgentContextMessage(1, "user", "Keep the newest exchange"),
+            AgentContextMessage(2, "assistant", "x".repeat(40_000)),
+        ))
+        val model = fake { error("must not send over-budget summary input") }
+        val manager = manager(state = state, model = model)
+        manager.updateCompactionTarget(AgentCompactionTarget(model, budget = AgentModelBudgetPolicy.resolve(
+            metadata = AgentModelLimits(contextWindow = 8_000, maxInputTokens = 6_000, maxOutputTokens = 500))))
+        assertThrows(AgentCompactionException::class.java) { manager.prepare(manual = true) }
+        assertEquals(state, manager.state)
+    }
+
+    @Test fun summaryPromptAndReminderMustFitItsOwnInputBudget() {
+        val model = fake { error("template alone exceeds input budget") }
+        val manager = manager(model = model)
+        manager.updateCompactionTarget(AgentCompactionTarget(model, budget = AgentContextBudget(256)))
+        assertThrows(AgentCompactionException::class.java) { manager.prepare(manual = true) }
+        assertEquals(history, manager.state)
+    }
+
+    @Test fun headingOnlySummaryIsNotAValidCheckpoint() {
+        var calls = 0
+        val manager = manager(model = fake {
+            calls++
+            ChatResponse.builder().aiMessage(AiMessage.from("## Objective\n\n## Requirements\n-"))
+                .finishReason(FinishReason.STOP).build()
+        })
+        assertThrows(AgentCompactionException::class.java) { manager.prepare(manual = true) }
+        assertEquals(2, calls)
+        assertEquals(history, manager.state)
     }
 
     private fun manager(

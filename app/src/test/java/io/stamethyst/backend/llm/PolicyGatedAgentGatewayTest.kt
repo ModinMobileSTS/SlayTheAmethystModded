@@ -288,10 +288,11 @@ class PolicyGatedAgentGatewayTest {
 
     @Test
     fun respond_continuesBeyondFormerToolRoundLimit() {
-        repeat(25) { server.enqueue(toolCallResponse()) }
+        // A long task must keep going while it obtains new evidence, not reread one unchanged file.
+        repeat(25) { server.enqueue(toolCallResponse(path = "note-$it.txt")) }
         server.enqueue(finalResponse("Inspection complete."))
         val workspace = createTempDirectory("agent-workspace").toFile().apply {
-            resolve("note.txt").writeText("artifact validation passed")
+            repeat(25) { resolve("note-$it.txt").writeText("artifact $it validation passed") }
         }
 
         val reply = newGateway(workspace).respond(
@@ -574,6 +575,8 @@ class PolicyGatedAgentGatewayTest {
         ).jsonObject
         assertEquals("updated", result["status"]!!.jsonPrimitive.content)
         assertEquals("1.1.0", result["version"]!!.jsonPrimitive.content)
+        assertEquals("valid", result["preflight"]!!.jsonObject["status"]!!.jsonPrimitive.content)
+        assertTrue(result["preflight"]!!.jsonObject["warnings"]!!.jsonArray.isNotEmpty())
 
         ZipFile(File(result["jar_path"]!!.jsonPrimitive.content)).use { jar ->
             val manifest = JSONObject(
@@ -1160,7 +1163,7 @@ class PolicyGatedAgentGatewayTest {
         override fun execute(arguments: String): String = payload
     }
 
-    private fun toolCallResponse(toolName: String = "read_workspace_file"): MockResponse = MockResponse.Builder()
+    private fun toolCallResponse(toolName: String = "read_workspace_file", path: String = "note.txt"): MockResponse = MockResponse.Builder()
         .code(200)
         .body(
             """
@@ -1178,7 +1181,7 @@ class PolicyGatedAgentGatewayTest {
                     "type": "function",
                     "function": {
                       "name": "$toolName",
-                      "arguments": "{\"path\":\"note.txt\"}"
+                      "arguments": "{\"path\":\"$path\"}"
                     }
                   }]
                 },

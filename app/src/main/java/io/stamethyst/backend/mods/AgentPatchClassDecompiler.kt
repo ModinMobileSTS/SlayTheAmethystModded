@@ -4,6 +4,7 @@ import org.benf.cfr.reader.api.CfrDriver
 import org.benf.cfr.reader.api.OutputSinkFactory
 import org.benf.cfr.reader.api.SinkReturns
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -35,6 +36,13 @@ data class AgentPatchJarDecompileResult(
  */
 object AgentPatchClassDecompiler {
     const val DEFAULT_MAX_DECOMPILE_CLASSES = 3000
+    private data class SourceKey(val identity: AgentDecompileIdentity, val binaryName: String)
+    private val sources = AgentSourceWorkCache<SourceKey, AgentSingleClassDecompileResult>(
+        maxEntries = 128,
+        maxWeight = 4L * 1024 * 1024,
+        weight = { it.source.length.toLong() * 2 },
+    )
+    internal val analysisCount = AtomicLong()
 
     /**
      * Decompiles one class without extracting the source archive. CFR receives a tiny temporary JAR
@@ -46,6 +54,24 @@ object AgentPatchClassDecompiler {
         binaryName: String,
         classpath: String,
         scratchDir: File? = null,
+    ): AgentSingleClassDecompileResult {
+        val identity = AgentDecompileIdentity.read(jarFile, classpath)
+        val compute = {
+            decompileUncached(jarFile, binaryName, classpath, scratchDir, identity).also {
+                check(identity == null || identity == AgentDecompileIdentity.read(jarFile, classpath)) {
+                    "Decompile inputs changed during analysis; retry with the current archives."
+                }
+            }
+        }
+        return if (identity == null) compute() else sources.getOrCompute(SourceKey(identity, binaryName), compute)
+    }
+
+    private fun decompileUncached(
+        jarFile: File,
+        binaryName: String,
+        classpath: String,
+        scratchDir: File?,
+        identity: AgentDecompileIdentity?,
     ): AgentSingleClassDecompileResult {
         val entryName = AgentModJarReader.classEntryName(jarFile, binaryName)
             ?: throw IllegalArgumentException("Class not found in archive: $binaryName")
@@ -64,12 +90,13 @@ object AgentPatchClassDecompiler {
             val source = StringBuilder()
             activeSink.set { _, _, java -> if (source.isEmpty()) source.append(java) }
             try {
-                val driver = driverFor(classpath)
+                val driver = driverFor(classpath, identity)
                 runCatching {
+                    analysisCount.incrementAndGet()
                     driver.analyse(listOf(temporaryJar.absolutePath))
                 }.getOrElse { error ->
                     // A driver that failed mid-analysis may hold a half-built type cache; rebuild it.
-                    drivers.get().remove(classpath)
+                    if (identity != null) drivers.get().remove(identity)
                     throw IllegalStateException(
                         "CFR failed for $binaryName: ${error.message ?: error.javaClass.simpleName}",
                         error,
@@ -79,6 +106,7 @@ object AgentPatchClassDecompiler {
                 activeSink.remove()
             }
             if (source.isEmpty()) {
+                if (identity != null) drivers.get().remove(identity)
                 throw IllegalStateException("CFR produced no source for $binaryName")
             }
             return AgentSingleClassDecompileResult(binaryName, entryName, source.toString())
@@ -89,13 +117,19 @@ object AgentPatchClassDecompiler {
 
     /**
      * CFR keeps its classpath source (and the archive handles behind it) inside the driver, so a
-     * driver reused for the same classpath keeps type lookups warm between calls. CFR's source is
+     * driver reused for the same input identity keeps type lookups warm between calls. CFR's source is
      * not thread-safe, so each thread owns its own cache; the API decompile tool is allowed to run
      * in parallel and relies on that isolation.
      */
-    private fun driverFor(classpath: String): CfrDriver {
+    private fun driverFor(classpath: String, identity: AgentDecompileIdentity?): CfrDriver {
         val cache = drivers.get()
-        cache[classpath]?.let { return it }
+        if (identity != null) cache[identity]?.let {
+            if (it.analyses < MAX_ANALYSES_PER_DRIVER) {
+                it.analyses++
+                return it.driver
+            }
+            cache.remove(identity)
+        }
         val options = buildMap {
             put("silent", "true")
             put("hideutf", "true")
@@ -107,7 +141,7 @@ object AgentPatchClassDecompiler {
             .withOptions(options)
             .withOutputSink(ThreadOutputSink)
             .build()
-        cache[classpath] = driver
+        if (identity != null) cache[identity] = CachedDriver(driver, analyses = 1)
         while (cache.size > MAX_CACHED_DRIVERS) {
             val eldest = cache.keys.firstOrNull() ?: break
             cache.remove(eldest)
@@ -189,9 +223,11 @@ object AgentPatchClassDecompiler {
     }
 
     private const val MAX_CACHED_DRIVERS = 2
+    private const val MAX_ANALYSES_PER_DRIVER = 32
+    private data class CachedDriver(val driver: CfrDriver, var analyses: Int)
 
-    /** One warm CFR driver per classpath, per thread. See [driverFor]. */
-    private val drivers = ThreadLocal.withInitial { LinkedHashMap<String, CfrDriver>() }
+    /** Bound each driver's internal archive/type history as well as the number of warm drivers. */
+    private val drivers = ThreadLocal.withInitial { LinkedHashMap<AgentDecompileIdentity, CachedDriver>() }
 
     /** Sink of the decompile call currently running on this thread. */
     private val activeSink = ThreadLocal<((String?, String?, String) -> Unit)?>()

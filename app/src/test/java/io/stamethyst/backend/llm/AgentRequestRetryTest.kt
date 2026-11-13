@@ -69,17 +69,15 @@ class AgentRequestRetryTest {
         val gateway = PolicyGatedAgentGateway(
             object : ChatModel {}, AgentToolRegistry(emptyList()),
             streamingTimeoutMillis = 20,
-            onRetry = { _, _, error ->
-                assertTrue(error is java.net.SocketTimeoutException)
-                throw CancellationException("stop after first timeout")
-            },
+            onRetry = { _, _, _ -> fail("An exhausted round must not schedule another request") },
         )
         val error = runCatching {
             gateway.respondStreaming("system", "user", object : StreamingChatModel {
                 override fun doChat(request: ChatRequest, handler: StreamingChatResponseHandler) = Unit
             }, {})
         }.exceptionOrNull()
-        assertTrue(error is CancellationException)
+        assertTrue(error is AgentRequestTimeoutException)
+        assertEquals(AgentRequestTimeoutKind.ROUND_BUDGET, (error as AgentRequestTimeoutException).kind)
     }
 
     @Test(timeout = 4_000)
@@ -157,7 +155,7 @@ class AgentRequestRetryTest {
         assertTrue(isConnectionAbort(java.net.SocketException("Software caused connection abort")))
         assertTrue(isConnectionAbort(java.net.SocketException("Connection reset")))
         assertTrue(isConnectionAbort(java.net.SocketException("Broken pipe")))
-        assertTrue(isConnectionAbort(java.net.SocketTimeoutException("timeout")))
+        assertFalse(isConnectionAbort(java.net.SocketTimeoutException("timeout")))
         assertTrue(isConnectionAbort(java.io.EOFException()))
         // Transport wrappers hide the socket failure one level down.
         assertTrue(isConnectionAbort(RuntimeException("wrapped", java.net.SocketException("Connection reset"))))

@@ -1414,11 +1414,12 @@
     <string name="ai_mod_editor_tools_empty">当前没有可用工具。</string>
     <string name="ai_mod_editor_tool_desc_unknown">暂无说明。</string>
     <string name="ai_mod_editor_tool_desc_list_agent_workspace">列出补丁工作区中的文件。</string>
-    <string name="ai_mod_editor_tool_desc_read_agent_workspace_file">以文本或 base64 读取工作区文件。</string>
+    <string name="ai_mod_editor_tool_desc_read_agent_workspace_file">读取附带版本哈希的工作区文本、图片或 base64。</string>
     <string name="ai_mod_editor_tool_desc_glob_agent_workspace">按通配符模式查找工作区文件。</string>
     <string name="ai_mod_editor_tool_desc_grep_agent_workspace">以正则表达式搜索工作区文件内容。</string>
     <string name="ai_mod_editor_tool_desc_create_agent_patch_workspace">创建新的补丁工作区；不会打包、安装或启用模组。</string>
-    <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">在此模组工作目录内新建或覆盖任意文件。</string>
+    <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">在 patch_source 内新建或完整覆盖文件；文本小改优先局部编辑。</string>
+    <string name="ai_mod_editor_tool_desc_edit_agent_workspace_file">精确替换 patch_source 文本中的唯一匹配，可检查版本冲突。</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_workspace_file">删除此模组工作目录内的任意文件或目录。</string>
     <string name="ai_mod_editor_tool_desc_decompile_agent_mod_source">准备父模组 JAR 的按需源码快照。</string>
     <string name="ai_mod_editor_tool_desc_inspect_agent_class">无需解压 JAR 即可检查单个父模组类。</string>
@@ -1427,8 +1428,8 @@
     <string name="ai_mod_editor_tool_desc_read_agent_mod_resource">按需读取模组或游戏本体 JAR 的资源条目。</string>
     <string name="ai_mod_editor_tool_desc_list_agent_mod_entries">无需解压即可列出模组或游戏本体 JAR 条目。</string>
     <string name="ai_mod_editor_tool_desc_compile_agent_patch_source">将 patch/src 中的 Java 源码编译为补丁类。</string>
-    <string name="ai_mod_editor_tool_desc_package_agent_patch_mod">将 patch/ 打包为带版本的补丁模组 jar。</string>
-    <string name="ai_mod_editor_tool_desc_update_agent_patch_mod">原地更新已打包补丁模组的版本。</string>
+    <string name="ai_mod_editor_tool_desc_package_agent_patch_mod">验证并将 patch_source 打包为带版本的补丁模组 jar。</string>
+    <string name="ai_mod_editor_tool_desc_update_agent_patch_mod">验证并原地更新已打包补丁模组的版本。</string>
     <string name="ai_mod_editor_tool_desc_set_agent_patch_mod_enabled">启用或停用某个已打包的补丁版本。</string>
     <string name="ai_mod_editor_tool_desc_list_agent_patch_mods">列出已打包的补丁版本及其启用状态。</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_patch_mod">删除某个已打包的补丁版本。</string>

@@ -1410,11 +1410,12 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="ai_mod_editor_tools_empty">No tools are currently available.</string>
     <string name="ai_mod_editor_tool_desc_unknown">No description.</string>
     <string name="ai_mod_editor_tool_desc_list_agent_workspace">List the files in the patch workspace.</string>
-    <string name="ai_mod_editor_tool_desc_read_agent_workspace_file">Read a workspace file as text or base64.</string>
+    <string name="ai_mod_editor_tool_desc_read_agent_workspace_file">Read workspace text with a version hash, images, or base64.</string>
     <string name="ai_mod_editor_tool_desc_glob_agent_workspace">Find workspace files by glob pattern.</string>
     <string name="ai_mod_editor_tool_desc_grep_agent_workspace">Search workspace file contents by regular expression.</string>
     <string name="ai_mod_editor_tool_desc_create_agent_patch_workspace">Create a new patch workspace; this does not package, install, or enable a mod.</string>
-    <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">Create or replace any file in this mod workspace.</string>
+    <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">Create or fully replace a file under patch_source; prefer local edits for text changes.</string>
+    <string name="ai_mod_editor_tool_desc_edit_agent_workspace_file">Edit one exact text match under patch_source, with optional version conflict protection.</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_workspace_file">Delete any file or directory in this mod workspace.</string>
     <string name="ai_mod_editor_tool_desc_decompile_agent_mod_source">Prepare an on-demand parent JAR source snapshot.</string>
     <string name="ai_mod_editor_tool_desc_inspect_agent_class">Inspect one parent mod class without extracting the JAR.</string>
@@ -1423,8 +1424,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="ai_mod_editor_tool_desc_read_agent_mod_resource">Read a resource from a mod or the game JAR.</string>
     <string name="ai_mod_editor_tool_desc_list_agent_mod_entries">List mod or game JAR entries without extraction.</string>
     <string name="ai_mod_editor_tool_desc_compile_agent_patch_source">Compile patch/src Java sources into patch classes.</string>
-    <string name="ai_mod_editor_tool_desc_package_agent_patch_mod">Package patch/ into a versioned patch mod jar.</string>
-    <string name="ai_mod_editor_tool_desc_update_agent_patch_mod">Update a packaged patch mod\'s version in place.</string>
+    <string name="ai_mod_editor_tool_desc_package_agent_patch_mod">Validate and package patch_source into a versioned patch mod jar.</string>
+    <string name="ai_mod_editor_tool_desc_update_agent_patch_mod">Validate and update a packaged patch mod\'s version in place.</string>
     <string name="ai_mod_editor_tool_desc_set_agent_patch_mod_enabled">Enable or disable a packaged patch revision.</string>
     <string name="ai_mod_editor_tool_desc_list_agent_patch_mods">List packaged patch revisions and their enabled state.</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_patch_mod">Delete a packaged patch revision.</string>

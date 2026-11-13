@@ -167,6 +167,8 @@ class AiAgentExecutionService : Service() {
     @Volatile
     private var serviceDestroyed = false
     @Volatile
+    private var workerRequestControl: io.stamethyst.backend.llm.AgentRequestControl? = null
+    @Volatile
     private var wakeLock: PowerManager.WakeLock? = null
     @Volatile
     private var wifiLock: WifiManager.WifiLock? = null
@@ -208,6 +210,7 @@ class AiAgentExecutionService : Service() {
 
     override fun onDestroy() {
         serviceDestroyed = true
+        workerRequestControl?.cancel("AI service destroyed")
         workerJob = null
         workerJobId?.let(runningJobs::remove)
         workerThread?.interrupt()
@@ -246,21 +249,31 @@ class AiAgentExecutionService : Service() {
         runningJobs.add(jobId, job.editorRoute())
         acquireWakeLock()
         updateNotification("正在执行 AI 任务")
+        val requestControl = io.stamethyst.backend.llm.AgentRequestControl()
+        workerRequestControl = requestControl
         workerThread = thread(start = false, name = "STS-AiAgent-$jobId") {
             try {
-                runJob(job, jobStore, startId)
+                runJob(job, jobStore, startId, requestControl)
             } catch (error: Throwable) {
                 runCatching { markFailed(job, jobStore, error.message ?: error.javaClass.simpleName) }
                 finishWorker(job.jobId, startId)
+            } finally {
+                requestControl.close()
             }
         }
         workerThread?.start()
     }
 
+    internal fun cancelRunningJob(jobId: String): Boolean {
+        if (workerJobId != jobId) return false
+        cancellationRequested = true
+        workerRequestControl?.cancel("AI task stopped")
+        workerThread?.interrupt()
+        return true
+    }
+
     private fun cancelJob(jobId: String, modId: String) {
-        if (workerJobId == jobId) {
-            cancellationRequested = true
-            workerThread?.interrupt()
+        if (cancelRunningJob(jobId)) {
             updateNotification("正在停止 AI 任务")
             return
         }
@@ -283,6 +296,7 @@ class AiAgentExecutionService : Service() {
         job: AiAgentJobRecord,
         jobStore: AiAgentJobStore,
         startId: Int,
+        requestControl: io.stamethyst.backend.llm.AgentRequestControl,
     ) {
         val conversationStore = conversationStore(job.modId)
         val session = conversationStore.load(job.conversationId)
@@ -331,6 +345,7 @@ class AiAgentExecutionService : Service() {
             renewWakeLockIfDue(android.os.SystemClock.elapsedRealtime())
         }
         val executor = AiModAgentExecutor(
+            requestControl = requestControl,
             context = applicationContext,
             storagePath = job.storagePath,
             modName = job.modName,

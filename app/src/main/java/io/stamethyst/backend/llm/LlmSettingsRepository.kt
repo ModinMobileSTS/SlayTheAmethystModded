@@ -15,7 +15,7 @@ data class LlmSettings(
     val modelName: String = DEFAULT_LLM_MODEL_NAME,
     val endpoint: LlmEndpoint = LlmEndpoint.CHAT_COMPLETIONS,
     val requestTimeoutSeconds: Int = DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS,
-    val reasoningEffort: LlmReasoningEffort = LlmReasoningEffort.HIGH,
+    val reasoningEffort: LlmReasoningEffort = LlmReasoningEffort.LOW,
     val models: List<String> = listOf(modelName),
     /**
      * Whether the endpoint accepts image content parts. The agent sends screenshots as images only
@@ -33,12 +33,14 @@ enum class LlmReasoningEffort {
     MAX;
 
     companion object {
-        val selectable = listOf(LOW, HIGH, MAX)
+        val selectable = listOf(OFF, LOW, HIGH, MAX)
 
         fun fromStored(value: String?): LlmReasoningEffort = when (value) {
+            "OFF" -> OFF
             "LOW" -> LOW
             "MAX" -> MAX
-            else -> HIGH // Legacy OFF/MEDIUM and missing settings use the default tier.
+            "HIGH", "MEDIUM" -> HIGH // Preserve the legacy MEDIUM migration.
+            else -> LOW
         }
     }
 }

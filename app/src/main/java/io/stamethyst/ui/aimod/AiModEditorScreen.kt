@@ -252,7 +252,7 @@ internal class AiModEditorViewModel(
         private set
     var appliedBackupPath by mutableStateOf<String?>(null)
         private set
-    var reasoningEffort by mutableStateOf(LlmReasoningEffort.HIGH)
+    var reasoningEffort by mutableStateOf(LlmReasoningEffort.LOW)
         private set
     private val pendingInbox = AiPendingInbox()
     val inbox: List<AiInboxItem> get() = pendingInbox.itemsFor(

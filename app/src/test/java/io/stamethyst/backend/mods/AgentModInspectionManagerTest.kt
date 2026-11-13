@@ -16,6 +16,52 @@ import java.util.zip.ZipOutputStream
 
 class AgentModInspectionManagerTest {
     @Test
+    fun recordOnDemandClass_migratesLegacyCountsAndIgnoresStaleSnapshot() = withAgentSourceCacheRoot { root ->
+        val context = testContext(root)
+        val jar = File(root, "parent.jar")
+        ZipOutputStream(jar.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("ModTheSpire.json"))
+            zip.write("{\"modid\":\"sample\"}".toByteArray())
+            zip.closeEntry()
+        }
+        val workspace = AgentModInspectionManager.createInspection(context, "sample", jar)
+        File(workspace.sourceRoot, "Legacy.java").writeText("class Legacy {}")
+        val added = File(workspace.sourceRoot, "example/Added.java").apply {
+            parentFile.mkdirs(); writeText("class Added {}")
+        }
+        val metadataFile = File(workspace.root, "source-metadata.json")
+        repeat(5) { AgentModInspectionManager.recordOnDemandClass(workspace, "example.Added") }
+        assertEquals(2, JSONObject(metadataFile.readText()).getInt("source_materialized_classes"))
+        added.delete()
+        AgentModInspectionManager.recordOnDemandClass(workspace, "example.Added")
+        assertEquals(1, JSONObject(metadataFile.readText()).getInt("source_materialized_classes"))
+        val newer = JSONObject(metadataFile.readText()).put("source_sha256", "new-snapshot")
+        metadataFile.writeText(newer.toString())
+        val before = metadataFile.readText()
+        AgentModInspectionManager.recordOnDemandClass(workspace, "Legacy")
+        assertEquals(before, metadataFile.readText())
+    }
+
+    @Test
+    fun recordOnDemandClass_resolvesSourceStyleNestedNameWithoutDoubleCounting() = withAgentSourceCacheRoot { root ->
+        val context = testContext(root)
+        val jar = File(root, "parent.jar")
+        ZipOutputStream(jar.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("example/Outer\$Inner.class"))
+            zip.write(byteArrayOf(1))
+            zip.closeEntry()
+        }
+        val workspace = AgentModInspectionManager.createInspection(context, "sample", jar)
+        File(workspace.sourceRoot, "example/Outer.java").apply { parentFile.mkdirs(); writeText("outer") }
+        AgentModInspectionManager.recordOnDemandClass(workspace, "example.Outer")
+        File(workspace.sourceRoot, "example/Outer\$Inner.java").writeText("inner")
+        AgentModInspectionManager.recordOnDemandClass(workspace, "example.Outer.Inner")
+        AgentModInspectionManager.recordOnDemandClass(workspace, "example.Outer\$Inner")
+        val metadata = JSONObject(File(workspace.root, "source-metadata.json").readText())
+        assertEquals(2, metadata.getInt("source_materialized_classes"))
+    }
+
+    @Test
     fun createInspection_preparesOnDemandSourceCacheWithoutExtractingJar() {
         val root = Files.createTempDirectory("agent-mod-inspection").toFile()
         val context = testContext(root)
