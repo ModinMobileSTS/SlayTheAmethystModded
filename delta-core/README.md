@@ -3,8 +3,9 @@
 ## 状态与依赖
 
 独立 Kotlin/JVM 模块，当前只定义未来 Delta Task 的职责，**没有内容管理、增量或恢复实现及测试**。
-由 `:io-task-manager` 以 `implementation` 依赖；不依赖 Manager、Download Core 或 Android，
-`:app` 尚未接入。完整架构见 [IO Task Manager](../io-task-manager/README.md)。
+以 `api` 依赖 `:io-task-manager`，用于实现具体 Task/TaskPlan；Manager 不反向依赖本模块。
+不依赖 Download Core 或 Android，`:app` 尚未接入。
+完整架构见 [IO Task Manager](../io-task-manager/README.md)。
 
 ## 目标职责
 
@@ -27,15 +28,15 @@
 修改。永久删除不等于可撤销操作。具体存储布局、提交协议和保留策略尚未确定。
 
 Delta Core 未来以 `Task` 的具体类型接入 Manager；宿主不会直接创建或执行这些类型。
-任务使用标准检查点、完成/失败/等待/取消与恢复核对语义，交由 Worker 执行并受
-WorkerGroup 并行上限约束。恢复须核对已存在候选与提交结果，不能无条件重放转换。
-Core 子类真正落地前需要抽取共享 Task API 或在 Manager 内适配，避免反向依赖形成循环；
-当前不实现增量 Task 或撤销协议。
+任务使用 durable 包的 Context、Result 和 Recovery，由 TaskFactory 重建并受 Manager
+叶子并行上限约束。恢复须核对已存在候选与提交结果，不能无条件重放转换。
+当前尚无具体增量 Task 或内容撤销协议。采用块 revert、Task.revert(context) 和 Plan
+显式编排撤销，不支持任意 checkpoint 的 revertTo。长期历史不能放在 Plan 回收目录中。
 现有 `archive-delta-core` 和 `archive-delta-generator` 仍是独立实验，
 本模块未直接依赖它们，也不将其单写者等限制视作已解决。
 构建入口：`./gradlew --offline :delta-core:build`，目前只能验证模块配置。
 # TaskPlan 编排约定
 
 Delta 业务由 TaskPlan 组织可复用 Task；历史准备、候选生成、校验和发布的阶段元数据通过
-checkpoint 保存。回退节点需由业务显式验证，不把所有检查点都当作可回退节点；取消只清理
+checkpoint 保存。撤销针对块、Task 或 Plan 的业务效果，不提供目标节点；取消只清理
 拥有的未提交工作，不能删除已发布或共享历史。持久化模型见 `io-task-manager/DURABLE_TASKS.md`。

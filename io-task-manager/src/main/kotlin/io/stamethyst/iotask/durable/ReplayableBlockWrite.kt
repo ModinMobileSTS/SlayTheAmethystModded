@@ -73,12 +73,12 @@ class ReplayableBlockWrite private constructor(
             }
         }
         if (hex(digest.digest()) == block.sha256) return true
-        invalidate(index)
+        revert(index)
         return false
     }
 
-    /** Durable invalidation precedes any modification; does not erase bytes. */
-    @Synchronized fun invalidate(index: Int) {
+    /** Revert this block's logical completion durably; does not restore or erase bytes. */
+    @Synchronized fun revert(index: Int) {
         blocks[index]
         val record = store.read("blocks")!!
         store.write(record.copy(metadata = record.metadata - "done.$index"))
@@ -88,7 +88,7 @@ class ReplayableBlockWrite private constructor(
     @Synchronized fun write(index: Int, input: InputStream) {
         val block = blocks[index]
         validateLength()
-        invalidate(index)
+        revert(index)
         val digest = MessageDigest.getInstance("SHA-256")
         RandomAccessFile(candidate, "rw").use { file ->
             file.seek(block.offset)

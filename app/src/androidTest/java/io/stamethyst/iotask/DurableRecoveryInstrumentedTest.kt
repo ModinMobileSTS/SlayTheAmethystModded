@@ -40,7 +40,7 @@ class DurableRecoveryInstrumentedTest {
                 assertFalse(it.isComplete(0))
                 it.write(0, data.inputStream())
                 assertTrue(it.verified())
-                it.invalidate(0)
+                it.revert(0)
             }
             ReplayableBlockWrite.open(root, "v1", data.size.toLong(), layout).use {
                 assertFalse(it.isComplete(0))

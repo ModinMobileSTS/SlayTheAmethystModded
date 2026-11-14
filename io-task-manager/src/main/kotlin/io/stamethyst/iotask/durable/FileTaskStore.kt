@@ -56,13 +56,13 @@ class FileTaskStore(val root: File) : Closeable {
             "Corrupt task record: $id"
         }
         return DataInputStream(ByteArrayInputStream(payload)).use { input ->
-            require(input.readInt() == 1) { "Unsupported task record schema" }
+            require(input.readInt() == 2) { "Unsupported task record schema (expected 2)" }
             val savedId = input.readUTF()
             require(savedId == id)
             val definition = Definition(input.readUTF(), input.readInt(), input.readMap(), Kind.valueOf(input.readUTF()))
             Snapshot(savedId, definition, State.valueOf(input.readUTF()), Control.valueOf(input.readUTF()),
                 input.readMap(), input.readMap(), input.readNullable(), input.readNullable(),
-                input.readNullable(), input.readInt(), input.readNullable()).also {
+                input.readNullable(), input.readInt()).also {
                 require(input.available() == 0) { "Trailing task record data" }
             }
         }
@@ -73,7 +73,7 @@ class FileTaskStore(val root: File) : Closeable {
         key(record.id)
         val buffer = ByteArrayOutputStream()
         DataOutputStream(buffer).use { out ->
-            out.writeInt(1)
+            out.writeInt(2)
             out.writeUTF(record.id)
             out.writeUTF(record.definition.type)
             out.writeInt(record.definition.version)
@@ -87,7 +87,6 @@ class FileTaskStore(val root: File) : Closeable {
             out.writeNullable(record.parent)
             out.writeNullable(record.childKey)
             out.writeInt(record.attempt)
-            out.writeNullable(record.revertTarget)
         }
         val payload = buffer.toByteArray()
         require(payload.size + 32 <= MAX_RECORD) { "Task metadata too large" }

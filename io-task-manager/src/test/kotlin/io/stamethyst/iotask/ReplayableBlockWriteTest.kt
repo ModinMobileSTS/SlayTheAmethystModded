@@ -38,8 +38,15 @@ class ReplayableBlockWriteTest {
                 it.write(1, second.inputStream())
                 assertTrue(it.verified())
                 assertEquals("firstsecond", it.candidate.readText())
-                it.invalidate(0)
+                it.revert(0)
+                it.revert(0)
                 assertFalse(it.isComplete(0))
+                assertTrue(it.isComplete(1))
+                assertEquals("firstsecond", it.candidate.readText())
+            }
+            ReplayableBlockWrite.open(root, "v1", 11, layout).use {
+                assertFalse(it.isComplete(0))
+                assertTrue(it.isComplete(1))
                 it.write(0, first.inputStream())
             }
             File(root, "candidate").writeText("Xirstsecond")

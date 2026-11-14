@@ -31,7 +31,6 @@ data class Snapshot(
     val parent: String? = null,
     val childKey: String? = null,
     val attempt: Int = 0,
-    val revertTarget: String? = null,
 )
 
 sealed interface Result {
@@ -61,13 +60,14 @@ abstract class Task {
      * Published outputs must already live outside the managed workspace. */
     open suspend fun reclaim(context: Context) = Unit
 
-    /** Must validate the target and undo effects, not merely change a stage field. */
-    open suspend fun revert(context: Context, node: String) {
-        error("This task does not support reverting to $node")
+    /** Idempotently undo this object's business effects; checkpoints are not revert targets. */
+    open suspend fun revert(context: Context) {
+        error("This task does not support reverting")
     }
 }
 
-/** Coordinators do not occupy the leaf-I/O semaphore while awaiting children. */
+/** Coordinators do not occupy the leaf-I/O semaphore while awaiting children.
+ * Override revert to explicitly undo selected child effects; no automatic reverse traversal. */
 abstract class TaskPlan : Task()
 
 fun interface TaskFactory { fun create(definition: Definition): Task }
@@ -84,6 +84,13 @@ class Context internal constructor(private val manager: TaskManager, val id: Str
     fun requestCancel() = manager.requestCancel(id)
     fun child(key: String, definition: Definition): Handle = manager.child(id, key, definition)
     suspend fun await(child: Handle): Snapshot = manager.awaitChild(id, child.id)
+    /** A Plan explicitly chooses which child effects to undo and in which order. */
+    suspend fun revert(child: Handle): Snapshot {
+        val parent = manager.snapshot(id)
+        check(parent.definition.kind == Kind.PLAN && parent.state == State.REVERTING)
+        require(manager.snapshot(child.id).parent == id)
+        return manager.revert(child.id)
+    }
 }
 
 class Handle internal constructor(private val manager: TaskManager, val id: String) {

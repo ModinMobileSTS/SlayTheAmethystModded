@@ -210,8 +210,8 @@ class DurableTaskTest {
             object : Task() {
                 override suspend fun execute(context: Context) = Result.Fail("business failure")
                 override suspend fun recover(context: Context) = Recovery.Finished(Result.Success())
-                override suspend fun revert(context: Context, node: String) {
-                    context.checkpoint(mapOf("stage" to node))
+                override suspend fun revert(context: Context) {
+                    context.checkpoint(mapOf("reverted" to "true"))
                     if (interrupted) error("lost during revert")
                 }
                 override suspend fun cleanup(context: Context) = Unit
@@ -223,13 +223,13 @@ class DurableTaskTest {
                 manager.publish(Definition("copy"), "copy")
                 assertEquals(State.FAILED, manager.run("copy").state)
                 assertTrue(manager.recover().isEmpty())
-                try { manager.revertTo("copy", "prepared"); fail("Expected interruption") } catch (_: IllegalStateException) { }
+                try { manager.revert("copy"); fail("Expected interruption") } catch (_: IllegalStateException) { }
             }
             interrupted = false
             FileTaskStore(root).use {
                 val manager = TaskManager(it, factory, 1)
                 assertEquals(State.PAUSED, manager.recover().single().state)
-                assertEquals("prepared", manager.snapshot("copy").metadata["stage"])
+                assertEquals("true", manager.snapshot("copy").metadata["reverted"])
                 assertEquals(State.FAILED, manager.resume("copy").state)
                 assertEquals(State.SUCCEEDED, manager.retry("copy").state)
             }

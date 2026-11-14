@@ -11,7 +11,7 @@ open 指定 generation、目标长度与完整无重叠块布局（每块 offset
 
 write 先持久化失效，再流式完整覆写固定块，校验摘要、fd.sync 后提交完成标记。
 短输入、摘要错误或中断留下未完成块；重试从块起点覆写整个范围，不备份旧字节、不先清零。
-isComplete 对有完成标记的块重算摘要；校验失败持久化失效。invalidate 只撤销逻辑完成状态，
+isComplete 对有完成标记的块重算摘要；校验失败持久化失效。revert(index) 只撤销逻辑完成状态，
 不是恢复原文件。verified 检查所有块；发布仍由外层 Task/Plan 完成。
 输入流由调用者关闭，恰好消费块长度，支持较大输入流中的一段。实现有界缓冲、单 owner
 串行写入，不提供并行写；调用者不得在外部修改候选。长度调整不承诺物理空间预分配。
@@ -56,8 +56,8 @@ Task 提交的 metadata 使用 checkpoint 增量合并；当前存储实现每�
 不是增量 WAL。大量块索引应放在业务文件中，metadata 保存索引引用。
 业务数据必须先同步提交，然后 checkpoint，最后通知观察者。
 
-每条记录包含 schema=1、SHA-256 校验、定义、生命周期、控制请求、业务元数据、结果引用、
-父节点/稳定子键和回退目标。记录限制 4 MiB，单字符串受 DataOutput UTF 长度限制。
+每条记录包含 schema=2、SHA-256 校验、定义、生命周期、控制请求、业务元数据、结果引用、
+父节点/稳定子键，不保存回退节点。schema 1 明确拒绝，不自动迁移。记录限制 4 MiB，单字符串受 DataOutput UTF 长度限制。
 临时记录写入后 fd.sync，再使用 ATOMIC_MOVE 替换；不支持原子替换的文件系统明确失败。
 孤立 .pending 文件不作为已提交记录读取；坏记录/未知 schema 明确报错，不静默丢任务。
 同一 root 通过 FileLock 排斥第二个活跃 owner，进程死亡后由系统释放锁。
@@ -89,8 +89,13 @@ reclaim 与取消 cleanup 分离；成功后的回收不能撤销发布结果。
 已取得的 Snapshot/返回结果可继续读取；记录回收后通过 ID 再查询会报告未知任务。
 独立非 Plan Task 仍保留结果供调用者消费，本次自动回收边界仅为根 TaskPlan。
 
-revertTo 只接受静止的 PAUSED/WAITING/FAILED，持久化 REVERTING 与目标；Task 校验可回退
-节点并幂等撤销副作用，完成后 PAUSED。普通 checkpoint 不自动成为可回退节点。
+revert(id) 接受静止的 PAUSED/WAITING/FAILED/SUCCEEDED，或续做中断的 REVERTING，
+且所有后代均无活动执行。
+先持久化 REVERTING，再调用 Task.revert(context) 幂等撤销该对象的业务效果；中断后恢复
+重新进入同一钩子，完成后 PAUSED 并清空旧 output/reason。不支持撤销默认报错。
+没有 revertTo、目标节点或 checkpoint 回退功能。TaskPlan 覆写同一钩子，显式通过
+Context.revert(child) 选择子任务及撤销顺序，不自动倒序所有子任务。
+成功根 Plan 已自动回收，长期撤销依据须在成功前移交到工作目录外，由新任务消费。
 
 ## Plan 与子任务
 
@@ -108,6 +113,21 @@ Plan 恢复中的业务分支、失败决策和结果聚合由 Plan 的持久化
 本版本不引入后台 Android 宿主服务、自动调度线程或生产下载/Delta 接入。
 
 ## 验证
+
+### 2026-11-14 对象级 revert 与依赖纠正
+
+删除节点式 revertTo/revertTarget，块使用 revert(index)，Task/Plan 使用无目标节点的
+revert(context)。两个 Core 以 api 依赖 Manager，Manager 不再依赖 Core。
+文件记录升级 schema 2，schema 1 明确拒绝，无自动迁移。
+
+执行 `./gradlew --offline :io-task-manager:test :delta-core:build :download-core:build
+:app:compileDebugAndroidTestKotlin --console=plain` 成功。JVM 共 34 项通过（原29项，新增
+ObjectRevertTest 5项），覆盖成功 Task 撤销/清空 output、Plan 选择性撤销及子与父两级
+中断恢复、活动/排队任务拒绝撤销、不支持撤销报错、旧 schema 拒绝；块测试增加重复
+revert 后字节不变、其他块保留及重开持久性断言。
+Android 测试代码编译通过，本轮未安装或执行真机测试，不宣称 schema 2 已真机验证。
+证据：`agent-tmp/object-revert-verification-final.log` 与模块 test-results/test XML。
+未对旧实现执行新增用例的失败对照；本轮属于 API 契约变更，旧 API 与新用例不兼容。
 
 - JVM：`:io-task-manager:test`，新模型用例位于 DurableTaskTest。
 - Android：DurableRecoveryInstrumentedTest 使用真实 FileTaskStore，而非 AtomicFile 模拟存储。

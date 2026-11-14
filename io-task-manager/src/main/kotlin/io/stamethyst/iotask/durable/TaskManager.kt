@@ -115,14 +115,14 @@ class TaskManager(
         return run(id)
     }
 
-    suspend fun revertTo(id: String, node: String): Snapshot {
+    /** Undo one object's business effects, never seek to a checkpoint. The hook must be idempotent. */
+    suspend fun revert(id: String): Snapshot {
         synchronized(lock) {
-            require(node.isNotBlank())
             check(id !in active)
             val record = records.getValue(id)
-            require(record.state in setOf(State.PAUSED, State.WAITING, State.FAILED))
+            require(record.state in setOf(State.PAUSED, State.WAITING, State.FAILED, State.SUCCEEDED, State.REVERTING))
             check(descendants(id).none { it in active })
-            save(record.copy(state = State.REVERTING, revertTarget = node, control = Control.NONE))
+            save(record.copy(state = State.REVERTING, control = Control.NONE))
         }
         return run(id)
     }
@@ -170,8 +170,8 @@ class TaskManager(
         val context = Context(this, id)
         if (initial.state == State.CLEANING || initial.control == Control.CANCEL) return cleanup(id, task, context)
         if (initial.state == State.REVERTING) {
-            task.revert(context, requireNotNull(initial.revertTarget))
-            return update(id) { it.copy(state = State.PAUSED, revertTarget = null) }
+            task.revert(context)
+            return update(id) { it.copy(state = State.PAUSED, output = emptyMap(), reason = null) }
         }
         if (initial.control == Control.PAUSE && initial.state == State.QUEUED) {
             settleChildren(id, Control.PAUSE)

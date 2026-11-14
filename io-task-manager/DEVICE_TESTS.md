@@ -2,9 +2,17 @@
 
 测试源码：`app/src/androidTest/java/io/stamethyst/iotask/`；进程与存储夹具位于
 `app/src/debug/java/io/stamethyst/iotask/`，release 构建不包含。
-入口：`io.stamethyst.iotask.TaskProcessRecoveryInstrumentedTest`。
+当前持久化入口：`io.stamethyst.iotask.DurableRecoveryInstrumentedTest`，使用实际
+FileTaskStore、TaskManager 和 TaskFactory。覆盖 checkpoint 后 kill、已提交结果避免重放、
+清理/Plan 回收中途 kill 后恢复、暂停重开、块失败失效与半块写入 kill 后重放。
+2026-11-14 本轮接口修改前，新旧测试合计 `OK (11 tests)`，4.33 秒；证据为
+`agent-tmp/replayable-block-device.log`。这不是当前 schema 2 / 对象级 revert 的真机结果。
 
-## 测试范围
+以下“原模型”部分描述旧入口 `io.stamethyst.iotask.TaskProcessRecoveryInstrumentedTest`，
+它使用 AtomicFile 夹具，不是新持久化后端。详细新模型契约见
+[DURABLE_TASKS.md](DURABLE_TASKS.md)。
+
+## 原模型测试范围
 
 四个用例分别在检查点已保存、产物已保存但终态未写入两个窗口，触发正常进程退出或
 进程级 kill 和正常退出。使用 debug 主 APK 声明的独立 `:io_task_recovery_test` Service
@@ -22,7 +30,7 @@ Service 不导出；instrumentation 与该 Service 使用相同宿主 UID，访�
 测试夹具 `ProcessTestStore` 使用 Android AtomicFile 保存单任务快照，只有前后两个
 进程顺序访问。它不是生产后端，也不是通用快照序列化实现，不支持任意任务失败数据。
 测试仅在写入完成后终止进程，不覆盖写入途中断电、系统重启、多写者竞争或真实业务
-文件事务。生产代码仍只有内存后端。
+文件事务。该夹具不代表当前已实现的 FileTaskStore；真实后端测试见下方新模型说明。
 
 每个用例只访问 debug 宿主私有 files 目录下独立 UUID 子目录，结束时清理该子目录。
 意外退出使用 `Process.killProcess`，避免未捕获异常触发系统崩溃对话框和 Service 自动重启；
@@ -51,9 +59,3 @@ Service 不导出；instrumentation 与该 Service 使用相同宿主 UID，访�
 测试 APK 已安装且匹配宿主后，通过指定设备的 instrumentation 入口只运行上述测试类，
 不运行整个真机测试套件。实际 instrumentation component 和包名以该构建产物为准。
 进程退出后重新构建 WorkerGroup 属于被测流程；测试不声称验证了系统自动重启任务。
-# 持久化新模型测试
-
-新增入口 `io.stamethyst.iotask.DurableRecoveryInstrumentedTest` 使用实际 FileTaskStore、
-TaskManager 和 TaskFactory；覆盖检查点后进程 kill、业务提交后避免重放、清理中途 kill
-后恢复，以及暂停元数据重开与取消清理。详见 [DURABLE_TASKS.md](DURABLE_TASKS.md)。
-以下为原内存模型及 AtomicFile 夹具的测试说明，两者不是同一套持久化后端。

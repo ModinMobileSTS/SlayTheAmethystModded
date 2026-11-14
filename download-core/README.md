@@ -3,8 +3,9 @@
 ## 状态与依赖
 
 独立 Kotlin/JVM 模块，当前只定义未来 Download Task 的职责，**没有下载实现或测试**。
-由 `:io-task-manager` 以 `implementation` 依赖；不依赖 Manager、Delta Core 或 Android，
-`:app` 尚未接入。完整架构见 [IO Task Manager](../io-task-manager/README.md)。
+以 `api` 依赖 `:io-task-manager`，用于实现具体 Task/TaskPlan；Manager 不反向依赖本模块。
+不依赖 Delta Core 或 Android，`:app` 尚未接入。
+完整架构见 [IO Task Manager](../io-task-manager/README.md)。
 
 ## 目标职责
 
@@ -23,10 +24,9 @@
 可以有执行期状态，但必须服从 Manager 的作用域、资源预算和停止控制。
 
 Download Core 未来以 `Task` 的具体类型接入 Manager；宿主不会直接创建或执行这些类型。
-任务通过 TaskContext 保存检查点，返回标准完成/失败/等待/取消结果；恢复必须先核对
-远端身份和本地分块，再明确允许继续。Worker 执行任务，WorkerGroup 统一限制并行度。
-Core 子类真正落地前需要抽取共享 Task API 或在 Manager 内适配，避免反向依赖形成循环；
-当前未添加该依赖或虚假的 Download Task 空实现。
+任务通过 durable.Context 保存检查点，返回 Result，由 TaskFactory 重建；恢复必须先核对
+远端身份和本地分块，再明确允许继续。Manager 统一限制叶子任务并行度。
+当前已建立编译依赖，但没有虚假的 Download Task 空实现。
 具体协议、配置和检查点类型尚未实现；现有 `workshop-core` 及 app 下载器没有搬迁。
 构建入口：`./gradlew --offline :download-core:build`，目前只能验证模块配置。
 # TaskPlan 编排约定
