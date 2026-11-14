@@ -157,7 +157,9 @@ internal class RefreshRateDiagnosticsRunner(private val activity: Activity, priv
                                 window.attributes = attrs
                                 request = "preferredDisplayModeId=0; preferredRefreshRate=120; setter returned, NOT system acceptance"
                                 if (phase.requestKind == RefreshRateRequestKind.SURFACE_SEAMLESS) {
-                                    check(Build.VERSION.SDK_INT >= 30) { "Surface.setFrameRate requires API 30" }
+                                    if (Build.VERSION.SDK_INT < 30) {
+                                        throw IllegalStateException("Surface.setFrameRate requires API 30")
+                                    }
                                     val surface = checkNotNull(probe.surface()) { "Display Surface unavailable" }
                                     if (Build.VERSION.SDK_INT >= 31) surface.setFrameRate(120f,
                                         Surface.FRAME_RATE_COMPATIBILITY_DEFAULT, Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS)

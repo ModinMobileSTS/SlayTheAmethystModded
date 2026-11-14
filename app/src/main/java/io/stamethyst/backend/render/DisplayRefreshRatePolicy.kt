@@ -32,7 +32,9 @@ internal object DisplayRefreshRatePolicy {
 
     /** Shared by production and diagnostics; callers decide whether to persist request metadata. */
     internal fun applySurfaceFrameRate(surface: Surface, rateHz: Float) {
-        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { "Surface.setFrameRate requires API 30" }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            throw IllegalStateException("Surface.setFrameRate requires API 30")
+        }
         check(surface.isValid) { "Display Surface unavailable" }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             surface.setFrameRate(rateHz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT, Surface.CHANGE_FRAME_RATE_ALWAYS)
