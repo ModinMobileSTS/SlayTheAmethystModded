@@ -39,6 +39,7 @@ fun FrostedGlassChrome(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     shadowElevation: Dp = 0.dp,
     showBorder: Boolean = true,
+    blurRadius: Dp = 12.dp,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val opaqueBackgroundAlpha = LocalChromeBackgroundOpacity.current.coerceIn(0f, 1f)
@@ -67,7 +68,7 @@ fun FrostedGlassChrome(
                 style = materialStyle,
             ) {
                 blurEnabled = launcherBlurEnabled && hazeState.blurEnabled
-                blurRadius = 12.dp
+                this.blurRadius = blurRadius
                 inputScale = HazeInputScale.Auto
                 // Keep the grain texture from being enlarged by input downsampling.
                 noiseFactor = 0f

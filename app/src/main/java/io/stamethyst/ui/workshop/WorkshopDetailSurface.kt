@@ -69,7 +69,7 @@ internal fun WorkshopDetailBackdrop(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
-                    Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.25f)))
+                    Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.4f)))
                 }
             }
             content()
@@ -88,6 +88,7 @@ internal fun WorkshopDetailCard(
         hazeState = LocalWorkshopDetailHazeState.current,
         shape = CardDefaults.shape,
         shadowElevation = 2.dp,
+        blurRadius = 20.dp,
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().then(
