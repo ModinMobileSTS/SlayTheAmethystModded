@@ -128,6 +128,8 @@ sys.exit(72 if os.environ.get('FAIL_INSTALL') else 0)
         result = self.run_script(self.endpoint, FAIL_CONNECT='1')
         self.assertEqual(result.returncode, 70)
         self.assertEqual([call['action'] for call in self.recorded()], ['run'])
+        self.assertIn('Checking project-local ADB connection', result.stdout)
+        self.assertNotIn('Building debug APK...', result.stdout)
 
     def test_build_failure_never_installs(self):
         result = self.run_script(self.endpoint, FAIL_BUILD='1')

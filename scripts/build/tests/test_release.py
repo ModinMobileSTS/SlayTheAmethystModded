@@ -1,6 +1,6 @@
 import subprocess
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from scripts.build.lib import cli, commands
 
@@ -21,19 +21,28 @@ class ReleaseBuildTest(unittest.TestCase):
         self.assertEqual(2, build.call_count)
         self.assertTrue(all(call.kwargs["skip_native_cache_cleanup"] for call in build.call_args_list))
 
-    def test_gradle_reports_waiting_and_enables_profile(self):
-        process = MagicMock()
-        process.wait.side_effect = [subprocess.TimeoutExpired("gradle", 60), 0]
-        with patch.object(commands.subprocess, "Popen") as popen, patch("builtins.print") as output:
-            popen.return_value.__enter__.return_value = process
-            commands.run_gradle([":app:assembleRelease"])
-        self.assertIn("--profile", popen.call_args.args[0])
-        self.assertTrue(any("Still running" in call.args[0] for call in output.call_args_list))
+    def test_gradle_uses_auto_console_without_extra_diagnostic_output(self):
+        env = {"GRADLE_USER_HOME": "/test/gradle"}
+        with patch.object(commands.subprocess, "run") as run, patch("builtins.print") as output:
+            run.return_value = subprocess.CompletedProcess([], 0)
+            commands.run_gradle([":app:assembleRelease"], env=env)
+        run.assert_called_once()
+        self.assertEqual(
+            commands.gradle_command(
+                commands.resolve_gradle_wrapper(),
+                [":app:assembleRelease", "--stacktrace", "--console=auto"],
+            ),
+            run.call_args.args[0],
+        )
+        self.assertEqual(str(commands.repo_root()), run.call_args.kwargs["cwd"])
+        self.assertIs(env, run.call_args.kwargs["env"])
+        self.assertNotIn("timeout", run.call_args.kwargs)
+        self.assertNotIn("stdout", run.call_args.kwargs)
+        self.assertNotIn("stderr", run.call_args.kwargs)
+        output.assert_not_called()
 
     def test_gradle_failure_is_not_swallowed(self):
-        process = MagicMock()
-        process.wait.return_value = 1
-        with patch.object(commands.subprocess, "Popen") as popen:
-            popen.return_value.__enter__.return_value = process
+        with patch.object(commands.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess([], 1)
             with self.assertRaisesRegex(RuntimeError, "release failed"):
                 commands.run_gradle([":app:assembleRelease"], failure_message="release failed")

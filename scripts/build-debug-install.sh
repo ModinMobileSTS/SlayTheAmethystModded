@@ -52,7 +52,7 @@ PY
 # Pin the approved endpoint across build/install, even if .env.local changes.
 export STS_ADB_DEVICE_ENDPOINT="$DEVICE_SERIAL"
 
-printf 'Building debug APK...\n'
+printf 'Checking project-local ADB connection, then building debug APK...\n'
 python3 -m scripts.tools.local_adb run -- "$GRADLE_BIN" :app:assembleDebug
 
 shopt -s nullglob
