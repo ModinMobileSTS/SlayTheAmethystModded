@@ -165,8 +165,8 @@ class DurableContractInstrumentedTest {
         }
     } }
 
-    private fun root() = File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir,
-        "durable-recovery/${UUID.randomUUID()}").also { check(it.mkdirs()) }
+    private fun root() = File(io.stamethyst.config.RuntimePaths.taskStorageRoot(InstrumentationRegistry.getInstrumentation().targetContext),
+        "verification/${UUID.randomUUID()}").canonicalFile.also { check(it.mkdirs()) }
 
     private inline fun fixture(block: (File) -> Unit) {
         val root = root()
@@ -391,7 +391,13 @@ class DurableContractInstrumentedTest {
         }
     } }
 
-    @Test fun successfulPlanReclaimsWorkButPreservesPublishedArtifactAndSymlinkTarget() = fixture { root -> runBlocking {
+    @Test fun successfulPlanReclaimsWorkButPreservesPublishedArtifact() = verifyCollection(root(), false)
+
+    @Test fun internalCollectionDoesNotFollowSymlinks() = verifyCollection(
+        File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir,
+            "file-io-link/${UUID.randomUUID()}").canonicalFile.also { check(it.mkdirs()) }, true)
+
+    private fun verifyCollection(root: File, symlink: Boolean) = runBlocking { try {
         val published = File(root, "published").also { check(it.mkdir()) }
         File(published, "result").writeText("keep")
         FileTaskStore(File(root, "store")).use { store ->
@@ -404,7 +410,8 @@ class DurableContractInstrumentedTest {
                     override suspend fun cleanup(context: Context) = Unit
                 } else object : Task() {
                     override suspend fun execute(context: Context): Result {
-                        java.nio.file.Files.createSymbolicLink(File(context.workspace, "link").toPath(), published.toPath())
+                        if (symlink) java.nio.file.Files.createSymbolicLink(File(context.workspace, "link").toPath(), published.toPath())
+                        else File(context.workspace, "temporary").writeText("temporary")
                         return Result.Success()
                     }
                     override suspend fun cleanup(context: Context) = Unit
@@ -418,5 +425,5 @@ class DurableContractInstrumentedTest {
             assertTrue(File(store.root, "work").listFiles().orEmpty().isEmpty())
             assertTrue(manager.recover().isEmpty())
         }
-    } }
+    } finally { root.deleteRecursively() } }
 }

@@ -97,6 +97,13 @@ object RuntimePaths {
     @JvmStatic
     fun appExternalFilesRoot(context: Context): File? = context.getExternalFilesDir(null)
 
+    /** Durable tasks never fall back to internal storage and create a second journal. */
+    @JvmStatic
+    fun taskStorageRoot(context: Context): File = File(
+        checkNotNull(appExternalFilesRoot(context)) { "External task storage unavailable" },
+        "io-tasks"
+    )
+
     @JvmStatic
     fun transientFilesRoot(context: Context): File = File(storageRoot(context), "transient")
 

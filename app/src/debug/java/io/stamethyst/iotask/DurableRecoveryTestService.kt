@@ -20,7 +20,20 @@ class DurableRecoveryTestService : Service() {
         require(!exitNormally || mode in setOf("checkpoint", "committed"))
         kotlin.concurrent.thread(name = "durable-recovery-probe") {
             runBlocking {
-                FileTaskStore(File(filesDir, "durable-recovery/$case")).use { store ->
+                if (mode == "file-commit" || mode == "file-undo") {
+                    val runtime = io.stamethyst.backend.tasks.TaskRuntime.verification(this@DurableRecoveryTestService, case) { boundary ->
+                        if ((mode == "file-commit" && boundary == "executed") || boundary == "reverted")
+                            Process.killProcess(Process.myPid())
+                    }
+                    runtime.awaitReady()
+                    val root = File(io.stamethyst.config.RuntimePaths.taskStorageRoot(this@DurableRecoveryTestService), "verification/$case").canonicalFile
+                    val source = File(root, "source").apply { durableWrite(this, "new") }
+                    val target = File(root, "target").apply { durableWrite(this, "old") }
+                    runtime.execute(FileIoTasks.write(source, target, true), "probe").await()
+                    runtime.revert("probe").await()
+                    return@runBlocking
+                }
+                FileTaskStore(File(io.stamethyst.config.RuntimePaths.taskStorageRoot(this@DurableRecoveryTestService), "verification/$case").canonicalFile).use { store ->
                     if (mode in setOf("task-revert", "plan-revert", "child-revert")) {
                         val manager = TaskManager(store, revertProbeFactory(store.root, mode), 1)
                         manager.publish(Definition("probe", kind = if (mode == "task-revert") Kind.TASK else Kind.PLAN), "probe")

@@ -32,7 +32,7 @@ class DurableRecoveryInstrumentedTest {
 
     @Test fun blockFailureInvalidationAndReopen() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val root = File(context.filesDir, "durable-recovery/${UUID.randomUUID()}")
+        val root = File(io.stamethyst.config.RuntimePaths.taskStorageRoot(context), "verification/${UUID.randomUUID()}").canonicalFile
         val data = "verified-block".toByteArray()
         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(data)
             .joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -58,7 +58,7 @@ class DurableRecoveryInstrumentedTest {
 
     @Test fun pausedMetadataSurvivesReopenAndCancelCleansFiles() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val root = File(context.filesDir, "durable-recovery/${UUID.randomUUID()}")
+        val root = File(io.stamethyst.config.RuntimePaths.taskStorageRoot(context), "verification/${UUID.randomUUID()}").canonicalFile
         try {
             FileTaskStore(root).use {
                 val manager = TaskManager(it, durableProbeFactory("pause", false), 1)
@@ -79,7 +79,7 @@ class DurableRecoveryInstrumentedTest {
     private fun verify(mode: String, exitNormally: Boolean = false) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val case = UUID.randomUUID().toString()
-        val root = File(context.filesDir, "durable-recovery/$case")
+        val root = File(io.stamethyst.config.RuntimePaths.taskStorageRoot(context), "verification/$case").canonicalFile
         val connected = CountDownLatch(1)
         val died = CountDownLatch(1)
         val remote = AtomicReference<IBinder>()

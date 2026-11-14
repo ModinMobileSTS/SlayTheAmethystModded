@@ -10,9 +10,9 @@
 - Plan 稳定子键发布、子任务复用、叶子并发上限及根 Plan 终态统一回收。
 - ReplayableBlockWrite 候选块校验、块 revert（失效）与整块重放。
 
-**尚未实现真实下载、Delta 内容管理和发布事务、Android 后台运行宿主或生产入口接入。**
-app 仅通过 debugImplementation / androidTestImplementation 引入本模块用于测试，release
-业务没有迁移。详细契约见 [DURABLE_TASKS.md](DURABLE_TASKS.md)。
+已提供基础文件 I/O Task 和默认进程生产宿主；真实下载、Delta、既有业务迁移及 Android
+后台保活/自动唤醒尚未实现。app 通过 implementation 引入本模块，详细契约见
+[DURABLE_TASKS.md](DURABLE_TASKS.md) 和 [PRODUCTION_RUNTIME.md](PRODUCTION_RUNTIME.md)。
 
 唯一受支持的任务 API 为 `io.stamethyst.iotask.durable`。早期内存模型及其专属测试、
 AtomicFile 恢复夹具已移除，不提供兼容别名或转发层。

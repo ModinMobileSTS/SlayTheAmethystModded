@@ -33,6 +33,7 @@ public class StsApplication extends Application {
         AcceleratedRouteLogStore.install(getApplicationContext());
         MainActivity.init(getApplicationContext());
         if (AppProcess.isDefaultProcess(getApplicationContext())) {
+            io.stamethyst.backend.tasks.TaskRuntime.start(getApplicationContext());
             try {
                 SteamCloudSyncRepository.recoverOnStartup(getApplicationContext());
             } catch (Exception error) {
