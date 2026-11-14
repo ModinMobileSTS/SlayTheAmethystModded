@@ -20,7 +20,7 @@ class ModToolsMenuInstrumentedTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @Test fun toolsHideChecksMoveAndDeleteButKeepManagementActions() {
+    @Test fun toolsHideChecksAndMoveButKeepDeleteAndManagementActions() {
         compose.setContent {
             MaterialTheme {
                 ModActionsList(
@@ -33,14 +33,15 @@ class ModToolsMenuInstrumentedTest {
             }
         }
         listOf(R.string.mod_check_updates_single, R.string.mod_check_community_single,
-            R.string.mod_details_move, R.string.main_mod_delete, R.string.main_mod_favorite_add,
+            R.string.mod_details_move, R.string.main_mod_favorite_add,
             R.string.main_mod_favorite_remove, R.string.mod_remove_association).forEach {
             compose.onNodeWithText(context.getString(it)).assertDoesNotExist()
         }
-        listOf(R.string.main_mod_priority_adjust,
+        listOf(R.string.main_mod_priority_adjust, R.string.main_mod_delete,
             R.string.main_mod_associate, R.string.main_mod_export, R.string.main_mod_share).forEach {
             compose.onNodeWithText(context.getString(it)).assertExists()
         }
+        compose.onNodeWithText(context.getString(R.string.main_mod_delete)).assertIsEnabled()
     }
 
     @Test fun deleteRequiresOpeningOverflowBeforeDispatch() {

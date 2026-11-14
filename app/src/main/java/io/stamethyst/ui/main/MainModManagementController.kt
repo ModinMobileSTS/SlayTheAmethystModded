@@ -1230,7 +1230,7 @@ internal class MainModManagementController(
         if (!hostCallbacks.canEditMainScreenState()) return
         runCatching {
             AgentPatchModManager.setEnabled(host, mod.modId, patch.patchId, enabled)
-            updateAgentPatchEnabled(mod.storagePath, patch.patchId, enabled)
+            updateAgentPatchEnabled(patch.patchModId, enabled)
         }.onFailure { error ->
             emitSnackbar(error.message ?: "无法切换 AI 补丁模组")
         }
@@ -1238,14 +1238,11 @@ internal class MainModManagementController(
     }
 
     @Synchronized
-    private fun updateAgentPatchEnabled(storagePath: String, patchId: String, enabled: Boolean) {
+    private fun updateAgentPatchEnabled(patchModId: String, enabled: Boolean) {
         fun update(mods: MutableList<ModItemUi>) {
-            val index = mods.indexOfFirst { it.storagePath == storagePath }
-            if (index < 0) return
-            val mod = mods[index]
-            mods[index] = mod.copy(agentPatchMods = mod.agentPatchMods.map { patch ->
-                if (patch.patchId == patchId) patch.copy(enabled = enabled) else patch
-            })
+            for (index in mods.indices) {
+                mods[index] = mods[index].withAgentPatchEnabled(patchModId, enabled)
+            }
         }
         update(requiredModsSnapshot)
         update(optionalModsSnapshot)
