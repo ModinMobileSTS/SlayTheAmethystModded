@@ -5,8 +5,12 @@ import io.stamethyst.config.RuntimePaths
 import org.eclipse.jdt.core.compiler.CompilationProgress
 import org.eclipse.jdt.core.compiler.batch.BatchCompiler
 import java.io.File
+import java.io.InterruptedIOException
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipFile
 
 data class AgentPatchCompileResult(
@@ -31,6 +35,7 @@ internal data class CompileClasspathResolution(
  * ART's `java.*` surface differs from the JRE the resulting mod actually runs on.
  */
 object AgentPatchSourceCompiler {
+    private val classpathCache = AgentCompileClasspathCache()
     /** Java sources live here inside a patch workspace; compiled classes land at its root. */
     const val PATCH_SOURCE_DIR = "src"
 
@@ -314,51 +319,68 @@ object AgentPatchSourceCompiler {
 
     // Parallel API tools share the duplicate-free JAR cache and its write probe. Publish a cache
     // entry completely before another query can inspect it; bytecode reads afterwards run in parallel.
-    @Synchronized
     internal fun resolveCompileClasspathEntries(
         context: Context,
         parentJar: File?,
-    ): CompileClasspathResolution {
-        val candidates = LinkedHashSet<File>()
-        RuntimePaths.importedStsJar(context).takeIf { it.isFile }?.let(candidates::add)
-        RuntimePaths.importedMtsJar(context).takeIf { it.isFile }?.let(candidates::add)
-        RuntimePaths.requiredModsDir(context).listFiles().orEmpty()
-            .asSequence()
-            .filter { it.isFile && it.extension.equals("jar", ignoreCase = true) }
-            .sortedBy { it.name.lowercase() }
-            .forEach(candidates::add)
-        parentJar?.takeIf { it.isFile }?.let(candidates::add)
-        val entries = ArrayList<File>()
-        val unindexable = ArrayList<File>()
-        candidates.forEach { jar ->
-            val resolved = resolveCompileClasspathEntry(context, jar)
-            if (resolved != null) entries.add(resolved) else unindexable.add(jar)
-        }
-        return CompileClasspathResolution(entries, unindexable)
-    }
+    ): CompileClasspathResolution = classpathCache.resolve(
+        namespace = "${context.filesDir.canonicalPath}|${context.cacheDir?.canonicalPath.orEmpty()}",
+        gameJars = listOf(RuntimePaths.importedStsJar(context), RuntimePaths.importedMtsJar(context)),
+        requiredMods = RuntimePaths.requiredModsDir(context),
+        parentJar = parentJar,
+    ) { jar -> resolveCompileClasspathEntry(context, jar) }
 
     /**
      * Returns a zip ECJ can index: the jar itself when Android's [ZipFile] accepts it, otherwise a
      * cached duplicate-free class-only overlay. A patched `desktop-1.0.jar` is normally already
      * duplicate-free, so the common path copies nothing and preserves the original JAR untouched.
      */
-    private fun resolveCompileClasspathEntry(context: Context, jar: File): File? {
-        if (isReadableZip(jar)) {
-            return jar
+    internal fun resolveCompileClasspathEntry(
+        context: Context,
+        jar: File,
+        contentHash: (File) -> String = overlayHashes::sha256,
+        createTemporary: (File) -> File = { File.createTempFile("classes-", ".tmp", it) },
+        readableZip: (File) -> Boolean = ::isReadableZip,
+    ): File? {
+        var temporary: File? = null
+        return try {
+            checkCancelled()
+            val readable = readableZip(jar)
+            checkCancelled()
+            if (readable) return jar
+            val cacheDir = resolveAgentPatchCacheDir(context, COMPILE_CLASSPATH_CACHE_DIR) ?: return null
+            // Only duplicate-entry fallback pays for a content hash, with path isolation.
+            val sourceIdentity = AgentSourceFileIdentity.read(jar)
+            val sourceHash = contentHash(jar)
+            checkCancelled()
+            val token = agentSourceToken("${jar.canonicalPath}|$sourceHash|classes-v2")
+            val cached = File(cacheDir, "$token-classes.jar")
+            val cachedReadable = readableZip(cached)
+            checkCancelled()
+            if (cachedReadable) return cached
+            val staged = createTemporary(cacheDir).also { temporary = it }
+            DuplicateZipEntryNormalizer.copyClassEntries(jar, staged)
+            check(readableZip(staged)) { "Unreadable classpath overlay." }
+            check(
+                if (sourceIdentity == null) sourceHash == AgentModJarReader.sha256(jar)
+                else sourceIdentity == AgentSourceFileIdentity.read(jar),
+            ) { "Compile classpath archive changed while building its overlay." }
+            checkCancelled()
+            Files.move(staged.toPath(), cached.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            cached
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw CancellationException("Compile classpath preparation interrupted.").apply { initCause(error) }
+        } catch (error: InterruptedIOException) {
+            Thread.currentThread().interrupt()
+            throw CancellationException("Compile classpath preparation interrupted.").apply { initCause(error) }
+        } catch (_: Exception) {
+            checkCancelled()
+            null
+        } finally {
+            runCatching { temporary?.delete() }
         }
-        val cacheDir = resolveAgentPatchCacheDir(context, COMPILE_CLASSPATH_CACHE_DIR) ?: return null
-        val cached = File(cacheDir, "${jar.name}-${jar.length()}-${jar.lastModified()}-classes.jar")
-        if (isReadableZip(cached)) {
-            return cached
-        }
-        val copied = runCatching {
-            DuplicateZipEntryNormalizer.copyClassEntries(jar, cached)
-        }.isSuccess
-        if (!copied) {
-            cached.delete()
-            return null
-        }
-        return cached.takeIf(::isReadableZip)
     }
 
     internal fun isReadableZip(file: File): Boolean =
@@ -391,4 +413,5 @@ object AgentPatchSourceCompiler {
 
     internal const val COMPILE_CLASSPATH_CACHE_DIR = "agent-patch-compile-classpath"
     internal const val COMPILE_STAGING_CACHE_DIR = "agent-patch-compile-staging"
+    private val overlayHashes = AgentVerifiedJarHashes()
 }

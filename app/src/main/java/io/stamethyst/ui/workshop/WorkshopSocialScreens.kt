@@ -103,7 +103,7 @@ private fun WorkshopAuthorAvatar(author: WorkshopAuthor, modifier: Modifier = Mo
 
 @Composable
 internal fun WorkshopDiscussionsEntry(onClick: () -> Unit) {
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), colors = socialCardColors()) {
+    WorkshopDetailCard(onClick = onClick) {
         Row(Modifier.padding(18.dp).heightIn(min = 28.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.workshop_discussions_title), modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

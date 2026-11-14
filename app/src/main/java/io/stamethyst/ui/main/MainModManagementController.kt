@@ -1230,7 +1230,7 @@ internal class MainModManagementController(
         if (!hostCallbacks.canEditMainScreenState()) return
         runCatching {
             AgentPatchModManager.setEnabled(host, mod.modId, patch.patchId, enabled)
-            updateAgentPatchEnabled(mod.storagePath, patch.patchId, enabled)
+            updateAgentPatchEnabled(patch.patchModId, enabled)
         }.onFailure { error ->
             emitSnackbar(error.message ?: "无法切换 AI 补丁模组")
         }
@@ -1238,14 +1238,11 @@ internal class MainModManagementController(
     }
 
     @Synchronized
-    private fun updateAgentPatchEnabled(storagePath: String, patchId: String, enabled: Boolean) {
+    private fun updateAgentPatchEnabled(patchModId: String, enabled: Boolean) {
         fun update(mods: MutableList<ModItemUi>) {
-            val index = mods.indexOfFirst { it.storagePath == storagePath }
-            if (index < 0) return
-            val mod = mods[index]
-            mods[index] = mod.copy(agentPatchMods = mod.agentPatchMods.map { patch ->
-                if (patch.patchId == patchId) patch.copy(enabled = enabled) else patch
-            })
+            for (index in mods.indices) {
+                mods[index] = mods[index].withAgentPatchEnabled(patchModId, enabled)
+            }
         }
         update(requiredModsSnapshot)
         update(optionalModsSnapshot)
@@ -2156,9 +2153,10 @@ internal class MainModManagementController(
             .filter { record ->
                 val absoluteJarPaths = workshopPaths.getOrPut(record) { resolveWorkshopJarPaths(host, record) }
                 val activeTask = downloadTasksByPublishedFileId[record.publishedFileId]
-                activeTask != null ||
+                val pendingAlreadyRepresented = record.pendingInstall != null && absoluteJarPaths.any(installedPaths::contains)
+                !pendingAlreadyRepresented && (activeTask != null ||
                     absoluteJarPaths.isEmpty() ||
-                    absoluteJarPaths.none(installedPaths::contains)
+                    absoluteJarPaths.none(installedPaths::contains))
             }
             .map { record ->
                 record.toWorkshopModItem(
@@ -2300,7 +2298,7 @@ internal class MainModManagementController(
     ): WorkshopModUi {
         val absoluteJarPath = absoluteJarPaths.firstOrNull().orEmpty()
         val taskIsActive = task?.status?.isActiveDownload() == true
-        val resolved = if (!representedByInstalledMod && !taskIsActive && shouldShowWorkshopFileMissing(this, absoluteJarPaths)) {
+        val resolved = if (pendingInstall == null && !representedByInstalledMod && !taskIsActive && shouldShowWorkshopFileMissing(this, absoluteJarPaths)) {
             WorkshopResolvedModState(
                 kind = WorkshopResolvedModStateKind.FileMissing,
                 statusText = "已下载文件缺失，请重新下载",
@@ -2321,6 +2319,7 @@ internal class MainModManagementController(
             localPreviewImagePath = resolveWorkshopPreviewImagePath(host, this),
             downloadProgressPercent = task?.progressPercent,
             downloadBlocked = WorkshopDownloadBlocklist.isBlocked(publishedFileId),
+            hasPendingInstall = pendingInstall != null,
         )
     }
 
@@ -2339,6 +2338,7 @@ internal class MainModManagementController(
     private fun WorkshopResolvedModStateKind.toWorkshopModState(): WorkshopModState = when (this) {
         WorkshopResolvedModStateKind.NotDownloaded -> WorkshopModState.NotDownloaded
         WorkshopResolvedModStateKind.ImportedUnpatched -> WorkshopModState.ImportedUnpatched
+        WorkshopResolvedModStateKind.UpdatePendingInstall -> WorkshopModState.UpdatePendingInstall
         WorkshopResolvedModStateKind.ImportedPatched -> WorkshopModState.ImportedPatched
         WorkshopResolvedModStateKind.Queued -> WorkshopModState.Queued
         WorkshopResolvedModStateKind.Downloading -> WorkshopModState.Downloading

@@ -1,0 +1,4 @@
+<resources>
+    <string name="mod_binding_options_title">Manage mod bindings</string>
+    <string name="mod_bind_more">Bind more mods</string>
+</resources>

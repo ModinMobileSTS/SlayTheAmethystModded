@@ -246,6 +246,8 @@ class WorkshopMetadataStoreTest {
         assertEquals(WorkshopModCardState.UpdateAvailable, record?.cardState)
         assertEquals(installedJar.absolutePath, record?.localJarPath)
         assertEquals(WorkshopDownloadTaskStatus.Completed, taskStore.find(125uL)?.status)
+        assertEquals("UpdatePendingInstall", WorkshopModStateResolver.resolve(record).kind.name)
+        assertTrue(File(outputDir, "Updated Mod.jar").isFile)
     }
 
     @Test

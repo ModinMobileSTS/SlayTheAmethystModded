@@ -1,0 +1,4 @@
+<resources>
+    <string name="mod_binding_options_title">管理模组绑定</string>
+    <string name="mod_bind_more">绑定更多模组</string>
+</resources>

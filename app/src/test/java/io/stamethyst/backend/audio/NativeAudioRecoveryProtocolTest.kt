@@ -33,6 +33,11 @@ class NativeAudioRecoveryProtocolTest {
             .substringBefore("fun onSurfaceReady()")
         assertTrue(focusEntry.contains("foregroundAudioHealthMonitor.checkNow(\"window_focus_gained\")"))
         assertTrue(coordinator.contains("CallbackBridge.nativeRequestAudioHealthCheck(reason != null)"))
+        assertFalse(coordinator.contains("pendingAudioDeviceRecovery"))
+        assertFalse(coordinator.contains("CallbackBridge.nativeRecoverAudioOutput()"))
+        assertFalse(coordinator.contains("CallbackBridge.nativeRequestAudioRecovery()"))
+        assertTrue(coordinator.contains("CallbackBridge.nativeRequestAudioRouteRecovery()"))
+        assertTrue(coordinator.contains("CallbackBridge.nativeGetAudioRuntimeState() != 1"))
     }
 
     @Test
@@ -45,6 +50,6 @@ class NativeAudioRecoveryProtocolTest {
             .substringBefore("static void registerFunctions")
         assertTrue(nativeProcessor.contains("pojav_audio_health_check_pending"))
         assertTrue(nativeProcessor.contains("audioHealthChecksAllowed()"))
-        assertTrue(nativeProcessor.contains("processAudioHealthCheckOnCurrentThread();"))
+        assertTrue(nativeProcessor.contains("processAudioHealthCheckOnCurrentThread(flags);"))
     }
 }

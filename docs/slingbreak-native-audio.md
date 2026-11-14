@@ -1,4 +1,10 @@
-# SlingBreak optional native audio
+# SlingBreak legacy WebView native audio
+
+This document records the retired web minigame's audio protocol, not the current
+Godot integration. Current game entry points do not create a WebView audio host.
+The Gecko engine, loopback audio/launcher bridge and their dedicated tests have
+been removed; no Gecko transport is supported. The retained mixer/protocol code
+and host-side tests below do not establish current Godot audio behavior.
 
 ## Why
 
@@ -9,9 +15,9 @@ about that WebView path, not a hardware latency floor or a speaker measurement.
 
 ## Integration
 
-`SlingNativeAudioBridge` exposes a v2 capability to the bundled game in
-both the standalone activity and boot overlay, with system WebView or Gecko. The web code checks the capability,
-not the UA, model, or manufacturer. Without it, the existing Web Audio graph is used.
+The former WebView host used `SlingNativeAudioBridge` to expose a v2 capability.
+The web code checked the capability, not the UA, model, or manufacturer. Without
+it, the existing Web Audio graph was used.
 
 `sling_audio.cpp` opens a float-stereo AAudio callback stream with low-latency
 preference, first requesting exclusive sharing and then shared if opening fails.
@@ -36,7 +42,7 @@ Sound triggers transfer only small commands. The callback performs no file I/O,
 JNI, allocations or locking. A bounded queue, voice limits, and priority stealing
 prevent unbounded backlog. Request throttling still uses `performance.now()`.
 
-Both host entry points pause/flush on backgrounding and close on destruction.
+The former host entry points paused/flushed on backgrounding and closed on destruction.
 Audio focus loss mutes and clears pending sounds. Page reloads reset the sample
 bank. Disconnections are closed on the control thread; the next web request falls
 back to Web Audio. Underruns increase the application buffer by one burst, capped
@@ -57,15 +63,9 @@ session is not retried until the page is reloaded.
   playing; final PCM reclamation stays on the control thread. Bus limits are
   64 effects, 16 UI and 48 music voices.
 - `playBatch` accepts up to 96 independent requests and returns one result each.
-- Gecko receives the same API through a per-view random-token loopback channel,
-  also for standalone play. Only named audio methods are allowed; POST sizes,
-  origin/Host and bridge headers are checked. The synchronous facade matches the
-  game's host ABI. PCM uploads occur during preparation/warmup, not impacts;
-  actual Gecko transport latency still needs device measurement.
-- Host pause/resume, reset and destruction also govern Gecko native audio.
-  Channel closure revokes the capability and releases the stream.
-- The former build-time web audio adapter has been removed along with web-runtime
-  packaging. The host-side code described here remains for the legacy WebView path.
+- The former build-time web audio adapter and web minigame packaging have been
+  removed. The retained host-side code is legacy protocol support, not a playable
+  compatibility engine.
 
 ## Packaging status
 
@@ -76,7 +76,7 @@ The Godot engine/PCK download path is independent and unchanged.
 
 ## Diagnostics and verification status
 
-With the existing audio-debug option enabled, `webview_diagnostics.log` contains
+When the legacy host was active with audio-debug enabled, `webview_diagnostics.log` contained
 `native_audio_opened`, `native_audio_ready`, lifecycle/failure events, and a final
 snapshot at close. Web JSON contains `native-ready`, `native-sound-enqueued`,
 `native-fallback`, and `backend: native-aaudio` snapshots including xruns and drops.
@@ -86,14 +86,14 @@ Host-side regression commands:
 
 ```sh
 python3 -m unittest scripts.tools.tests.test_sling_audio
-# Run prepareCommonRuntimeAssets first; tests use the actual packaged scripts.
+# Historical protocol fixtures required; current builds do not generate web game scripts.
 node --test scripts/tools/tests/sling_audio_protocol.test.cjs
 ```
 
 The C++ tests exercise the production mixer with AddressSanitizer/UBSan: gain,
 pause/UI isolation, mute/flush, music/stop and voice bounds. JS tests cover v2
-preparation, Boss cues, partial gain, UI, music, fallback and Gecko forwarding.
-Kotlin/Java and Android native compilation have been checked.
-Device verification still needs audible latency, focus/pause/resume, fidelity,
-Gecko IPC latency and route-change fallback checks. The connected device's ADB
-shell timed out during investigation; host tests do not prove speaker output.
+preparation, Boss cues, partial gain, UI, music and fallback when the historical
+web script fixtures are available. They do not require or test a Gecko bridge.
+Past Kotlin/Java and Android native compilation checks do not replace device
+verification of audible latency, focus/pause/resume, fidelity or route changes;
+host tests do not prove speaker output.

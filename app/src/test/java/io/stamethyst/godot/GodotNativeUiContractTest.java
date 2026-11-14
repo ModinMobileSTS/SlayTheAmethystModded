@@ -41,7 +41,10 @@ public class GodotNativeUiContractTest {
         assertTrue(returning.contains("requestBackExitToLauncher()"));
         assertTrue(returning.contains("activity.markGodotBootCancelled()"));
         assertTrue(returning.indexOf("activity.markGodotBootCancelled()") < returning.indexOf("requestBackExitToLauncher()"));
-        assertTrue(returning.contains("android.os.Process.killProcess(android.os.Process.myPid())"));
+        assertFalse(returning.contains("android.os.Process.killProcess"));
+        String exit = coordinator.substring(coordinator.indexOf("private fun requestBackExitToLauncher()"),
+            coordinator.indexOf("private fun requestJvmCloseSignal()"));
+        assertTrue(exit.contains("userExitProcessFallback.request()"));
         assertFalse(returning.contains("bootOverlayController.dismiss()"));
     }
 

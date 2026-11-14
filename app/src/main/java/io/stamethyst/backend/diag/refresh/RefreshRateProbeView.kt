@@ -9,6 +9,21 @@ import android.view.SurfaceView
 import android.view.TextureView
 import android.view.View
 import android.widget.FrameLayout
+import android.os.Build
+import androidx.compose.foundation.Canvas as ComposeCanvas
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import io.stamethyst.backend.render.ViewFrameRateVote
+import io.stamethyst.ui.rememberHighRefreshRateModifier
 
 /** A deliberately small drawing workload. Counts submissions/draws, not displayed frames. */
 internal class RefreshRateProbeView(context: Context) : FrameLayout(context) {
@@ -19,6 +34,13 @@ internal class RefreshRateProbeView(context: Context) : FrameLayout(context) {
     private var content: View = AnimationView(context)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val surfaceEvents = mutableListOf<String>()
+    private var kind = RefreshRateProbeKind.VIEW
+    private var viewVote: ViewFrameRateVote? = null
+    private var textureProducerSurface: Surface? = null
+    private var composeTick by mutableLongStateOf(0L)
+    private var composeHigh by mutableStateOf(false)
+    private var composeDrawn = false
+    private var composeVoteInstalled = false
 
     fun lifecycleEvents(): List<String> = surfaceEvents.toList()
     private fun record(message: String) {
@@ -28,10 +50,14 @@ internal class RefreshRateProbeView(context: Context) : FrameLayout(context) {
     init { addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)) }
 
     fun select(phase: RefreshRatePhase) {
-        removeAllViews()
+        release()
         surfaceEvents.clear()
-        content = when (phase) {
-            RefreshRatePhase.SURFACE -> SurfaceView(context).apply {
+        kind = phase.probeKind
+        composeHigh = false
+        composeDrawn = false
+        composeVoteInstalled = false
+        content = when (kind) {
+            RefreshRateProbeKind.SURFACE -> SurfaceView(context).apply {
                 holder.addCallback(object : android.view.SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: android.view.SurfaceHolder) { record("surface_created") }
                     override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -40,7 +66,7 @@ internal class RefreshRateProbeView(context: Context) : FrameLayout(context) {
                     override fun surfaceDestroyed(holder: android.view.SurfaceHolder) { record("surface_destroyed") }
                 })
             }
-            RefreshRatePhase.TEXTURE -> TextureView(context).apply {
+            RefreshRateProbeKind.TEXTURE -> TextureView(context).apply {
                 surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                     override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
                         record("texture_available ${width}x$height")
@@ -55,7 +81,21 @@ internal class RefreshRateProbeView(context: Context) : FrameLayout(context) {
                     override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) = Unit
                 }
             }
-            else -> AnimationView(context)
+            RefreshRateProbeKind.COMPOSE -> ComposeView(context).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                setContent {
+                    val highModifier = rememberHighRefreshRateModifier(enabled = composeHigh)
+                    SideEffect { composeVoteInstalled = highModifier != Modifier }
+                    ComposeCanvas(Modifier.fillMaxSize().then(highModifier)) {
+                        // Snapshot reads invalidate the real animated Canvas, not an empty keepalive.
+                        tick = composeTick
+                        drawIntoCanvas { drawPattern(it.nativeCanvas) }
+                        draws++
+                        composeDrawn = true
+                    }
+                }
+            }
+            RefreshRateProbeKind.VIEW -> AnimationView(context)
         }
         addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         resetCounts()
@@ -64,10 +104,39 @@ internal class RefreshRateProbeView(context: Context) : FrameLayout(context) {
     fun ready(): Boolean = width > 0 && height > 0 && when (val view = content) {
         is SurfaceView -> view.holder.surface?.isValid == true
         is TextureView -> view.isAvailable
+        is ComposeView -> isAttachedToWindow && composeDrawn
         else -> isAttachedToWindow
     }
 
     fun surface(): Surface? = (content as? SurfaceView)?.holder?.surface
+
+    /** Mirrors the production TextureView wrapper, not a separately composed display layer. */
+    fun producerSurface(): Surface? = when (val view = content) {
+        is SurfaceView -> view.holder.surface
+        is TextureView -> textureProducerSurface ?: view.surfaceTexture?.let { texture ->
+            Surface(texture).also { textureProducerSurface = it }
+        }
+        else -> null
+    }
+
+    fun requestHighViewVote() {
+        check(Build.VERSION.SDK_INT >= 35) { "View high frame-rate vote requires API 35" }
+        val vote = viewVote ?: ViewFrameRateVote(content).also { viewVote = it }
+        vote.setActive(true)?.let { throw IllegalStateException("View frame-rate request failed", it) }
+    }
+
+    fun requestHighComposeVote() {
+        check(Build.VERSION.SDK_INT >= 35) { "Compose high frame-rate vote requires API 35" }
+        check(kind == RefreshRateProbeKind.COMPOSE)
+        composeHigh = true
+    }
+
+    fun requestedViewRate(): String? = if (Build.VERSION.SDK_INT >= 35) {
+        runCatching { content.requestedFrameRate.toString() }
+            .getOrElse { "unavailable: ${it.javaClass.simpleName}" }
+    } else null
+
+    fun composeHighVoteInstalled(): Boolean? = if (kind == RefreshRateProbeKind.COMPOSE) composeVoteInstalled else null
 
     fun resetCounts() { draws = 0; drawErrors = 0; lastDrawError = null }
 
@@ -85,6 +154,7 @@ internal class RefreshRateProbeView(context: Context) : FrameLayout(context) {
                     val canvas = view.lockCanvas() ?: return
                     try { drawPattern(canvas); draws++ } finally { view.unlockCanvasAndPost(canvas) }
                 }
+                is ComposeView -> composeTick = nowNs
                 else -> view.invalidate()
             }
         } catch (error: Exception) {
@@ -112,6 +182,20 @@ internal class RefreshRateProbeView(context: Context) : FrameLayout(context) {
     fun release() {
         // SurfaceView/TextureView own their surfaces; detaching releases them. Never release a
         // borrowed holder Surface or the TextureView's SurfaceTexture ourselves.
-        removeAllViews()
+        val restoreFailure = viewVote?.setActive(false)
+        viewVote = null
+        composeHigh = false
+        composeVoteInstalled = false
+        composeDrawn = false
+        var failure = restoreFailure
+        fun cleanup(block: () -> Unit) {
+            runCatching(block).exceptionOrNull()?.let { if (failure == null) failure = it }
+        }
+        val producer = textureProducerSurface
+        textureProducerSurface = null
+        cleanup { producer?.release() }
+        cleanup { (content as? ComposeView)?.disposeComposition() }
+        cleanup { removeAllViews() }
+        failure?.let { throw IllegalStateException("Probe cleanup failed", it) }
     }
 }

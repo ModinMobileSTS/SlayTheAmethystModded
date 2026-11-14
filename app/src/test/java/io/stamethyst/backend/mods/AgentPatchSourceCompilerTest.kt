@@ -10,11 +10,122 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.io.IOException
+import java.io.InterruptedIOException
 import java.nio.file.Files
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 class AgentPatchSourceCompilerTest {
+    @Test
+    fun unreadableCandidateDuringHashDoesNotAbortOtherClasspathEntriesAndIsRetried() = withAgentSourceCacheRoot { root ->
+        val context = cacheContext(root)
+        val bad = File(root, "unreadable.jar").apply { writeText("stat succeeds, read fails") }
+        val good = zipFile(File(root, "good.jar"))
+        val cache = AgentCompileClasspathCache()
+        var attempts = 0
+        fun resolve() = cache.resolve("test", listOf(bad, good), File(root, "missing-mods"), null) { candidate ->
+            AgentPatchSourceCompiler.resolveCompileClasspathEntry(
+                context, candidate,
+                contentHash = { attempts++; throw IOException("simulated read failure after stat") },
+                readableZip = { it != bad && AgentPatchSourceCompiler.isReadableZip(it) },
+            )
+        }
+        repeat(2) {
+            val resolution = resolve()
+            assertEquals(listOf(good), resolution.entries)
+            assertEquals(listOf(bad), resolution.unindexable)
+        }
+        assertEquals(2, attempts)
+    }
+
+    @Test
+    fun temporaryCreationFailureIsRecoverableAndCancellationRemainsCancellation() = withAgentSourceCacheRoot { root ->
+        val context = cacheContext(root)
+        val jar = zipFile(File(root, "source.jar"))
+        val result = AgentPatchSourceCompiler.resolveCompileClasspathEntry(
+            context, jar,
+            createTemporary = { throw IOException("simulated temporary-file failure") },
+            readableZip = { false },
+        )
+        assertEquals(null, result)
+        val cancelled = CancellationException("cancelled")
+        val cancellation = runCatching {
+            AgentPatchSourceCompiler.resolveCompileClasspathEntry(
+                context, jar, contentHash = { throw cancelled }, readableZip = { false },
+            )
+        }.exceptionOrNull()
+        assertTrue(cancelled === cancellation)
+        try {
+            val interruption = runCatching {
+                AgentPatchSourceCompiler.resolveCompileClasspathEntry(
+                    context, jar,
+                    contentHash = { throw InterruptedIOException("interrupted") },
+                    readableZip = { false },
+                )
+            }.exceptionOrNull()
+            assertTrue(interruption is CancellationException)
+            assertTrue(Thread.currentThread().isInterrupted)
+        } finally {
+            Thread.interrupted()
+        }
+        assertTrue(context.cacheDir.walkTopDown().none { it.isFile && it.extension == "tmp" })
+    }
+
+    @Test
+    fun cancellationAfterTemporaryCreationCleansStagingFile() = withAgentSourceCacheRoot { root ->
+        val context = cacheContext(root)
+        val jar = zipFile(File(root, "source.jar"))
+        val cancellation = runCatching {
+            AgentPatchSourceCompiler.resolveCompileClasspathEntry(context, jar) { candidate ->
+                if (candidate.extension == "tmp") throw CancellationException("cancel during overlay validation")
+                false
+            }
+        }.exceptionOrNull()
+        assertTrue(cancellation is CancellationException)
+        assertTrue(context.cacheDir.walkTopDown().none { it.isFile && it.extension == "tmp" })
+    }
+
+    @Test
+    fun classpathOverlay_isContentAddressedPublishedCompleteAndIsolatedByPath() = withAgentSourceCacheRoot { root ->
+        val context = object : ContextWrapper(Application()) {
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+        }
+        fun duplicateJar(file: File): File {
+            file.parentFile.mkdirs()
+            ZipArchiveOutputStream(file).use { zip ->
+                listOf("guide/Guide.class", "META-INF/LICENSE", "META-INF/LICENSE").forEach { name ->
+                    zip.putArchiveEntry(ZipArchiveEntry(name))
+                    zip.write(byteArrayOf(1, 2, 3))
+                    zip.closeArchiveEntry()
+                }
+            }
+            return file
+        }
+        val first = duplicateJar(File(root, "a/parent.jar"))
+        val second = File(root, "b/parent.jar").apply { parentFile.mkdirs(); writeBytes(first.readBytes()) }
+        Files.setLastModifiedTime(second.toPath(), Files.getLastModifiedTime(first.toPath()))
+        fun resolve(jar: File): File? = AgentPatchSourceCompiler.resolveCompileClasspathEntry(context, jar) { candidate ->
+            candidate != jar && AgentPatchSourceCompiler.isReadableZip(candidate)
+        }
+        val output = resolve(first)!!
+        assertEquals(listOf("guide/Guide.class"), ZipFile(output).use { zip -> zip.entries().asSequence().map { it.name }.toList() })
+        assertEquals(output, resolve(first))
+        assertFalse(output == resolve(second))
+        assertTrue(output.parentFile.listFiles().orEmpty().none { it.extension == "tmp" })
+
+        val unstable = duplicateJar(File(root, "unstable.jar"))
+        val failed = AgentPatchSourceCompiler.resolveCompileClasspathEntry(context, unstable) { candidate ->
+            if (candidate.extension == "tmp") unstable.appendText("concurrent change")
+            candidate != unstable && AgentPatchSourceCompiler.isReadableZip(candidate)
+        }
+        assertEquals(null, failed)
+        assertTrue(output.parentFile.listFiles().orEmpty().none { it.extension == "tmp" })
+        assertEquals(2, output.parentFile.listFiles().orEmpty().count { it.extension == "jar" })
+    }
+
     @Test
     fun buildCommandLine_pinsJava8AndPassesBootAndClassPath() {
         val root = Files.createTempDirectory("agent-patch-compile").toFile()
@@ -220,5 +331,10 @@ class AgentPatchSourceCompilerTest {
             override fun getFilesDir(): File = filesDir
             override fun getExternalFilesDir(type: String?): File = externalFilesDir
         }
+    }
+
+    private fun cacheContext(root: File): Context = object : ContextWrapper(Application()) {
+        override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+        override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
     }
 }

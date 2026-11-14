@@ -46,8 +46,15 @@ internal class AgentContextCompaction(
     private val checkCancelled: () -> Unit,
     private val progress: (AgentCompactionProgress) -> Unit,
     private val onExecutionStep: (AgentExecutionStep) -> Unit = {},
+    requestControl: AgentRequestControl? = null,
+    private val requestClock: AgentRequestClock = AgentRequestClock.SYSTEM,
+    private val sleep: (Long) -> Unit = { Thread.sleep(it) },
 ) {
+    private val ownsRequestControl = requestControl == null
+    private val control = requestControl ?: AgentRequestControl(clock = requestClock)
+
     fun run(state: AgentContextState, reason: String, commit: (String, String) -> Unit) {
+        val roundBudget = AgentRoundBudget(timeoutMillis, requestClock)
         val timer = AgentStepTimer(AgentStepKind.COMPACTION)
         var event = AgentCompactionProgress(reason = reason, startedAtMs = timer.step.startedAtMs)
         var committing = false
@@ -89,8 +96,10 @@ internal class AgentContextCompaction(
                 if (state.summary.isNotBlank()) add(UserMessage.from(memory(state.summary, state.recent)))
             }
             val raw = lead + protocol(older)
-            val overhead = AgentTokenEstimate.text(prompt) + AgentTokenEstimate.text(NUDGE)
-            var target = budget.inputLimit - overhead
+            // Reserve both user-message envelopes and the possible template reminder up front.
+            val overhead = AgentTokenEstimate.text(prompt) + AgentTokenEstimate.text(NUDGE) + 32
+            val inputTarget = budget.summaryInputLimit - overhead
+            var target = inputTarget
             if (reason == "overflow") target = minOf(target, (estimate(raw) * 0.7).toInt())
             var rejectedSize: Int? = null
             var rejections = 0
@@ -98,25 +107,32 @@ internal class AgentContextCompaction(
             var forceText = false
             while (true) {
                 checkCancelled()
+                control.checkActive()
+                roundBudget.requestTimeoutMillis(timeoutMillis)
                 val requestMessages = if (!forceText && estimate(raw) <= target) raw else
                     flatten(state, older, target) ?: if (rejections == 0) {
-                        if (forceText) flatten(state, older, Int.MAX_VALUE) else raw
+                        if (forceText) flatten(state, older, inputTarget) else raw.takeIf { estimate(it) <= inputTarget }
                     } else null
                 if (requestMessages == null) throw AgentCompactionException(
-                        "The compaction request cannot be reduced further without losing the latest exchange or checkpoint.",
+                        "The compaction request cannot fit the summary model input budget (${budget.summaryInputLimit} tokens) " +
+                            "without losing the latest exchange or checkpoint.",
                     )
                 try {
                     var prompted = requestMessages + UserMessage.from(prompt)
                     fun send(): ChatResponse {
+                        if (estimate(prompted) > budget.summaryInputLimit) throw AgentContextCapacityException(
+                            "The compaction prompt exceeds the summary model input budget (${budget.summaryInputLimit} tokens).",
+                        )
                         event = event.copy(summary = "")
                         publish()
                         val request = ChatRequest.builder().messages(prompted).toolSpecifications(tools)
                             .maxOutputTokens(budget.summaryOutputLimit).build()
-                        val response = chat(request) { delta ->
+                        val response = chat(request, roundBudget) { delta ->
                             event = event.copy(summary = event.summary + delta)
                             publish()
                         }
                         checkCancelled()
+                        control.executionBudget.observe(response)
                         val usage = AgentCacheUsage.from(response, state.cacheStats.inputExcludesCached)
                         event = event.copy(
                             inputTokens = addUsage(event.inputTokens, usage.input),
@@ -168,7 +184,12 @@ internal class AgentContextCompaction(
                     }
                     if (error !is AgentCompactionException && isRetryableAgentRequestFailure(error) && networkRetries < 2) {
                         val wait = 10 shl networkRetries++
-                        repeat(wait) { checkCancelled(); Thread.sleep(100) }
+                        if (!roundBudget.canWait(wait * 100L)) throw AgentRequestTimeoutException(AgentRequestTimeoutKind.ROUND_BUDGET)
+                        repeat(wait) {
+                            checkCancelled(); control.checkActive()
+                            roundBudget.requestTimeoutMillis(timeoutMillis)
+                            sleep(100)
+                        }
                         continue
                     }
                     throw error
@@ -187,6 +208,8 @@ internal class AgentContextCompaction(
             }
             if (committing || progressFailed || cancelled || error is AgentCompactionException || error is AgentContextCapacityException) throw error
             throw AgentCompactionException("Context summarization failed; original messages were retained.", error)
+        } finally {
+            if (ownsRequestControl) control.close()
         }
     }
 
@@ -243,34 +266,52 @@ internal class AgentContextCompaction(
             total -= AgentTokenEstimate.text(exchanges[start++].toString()) + 1
         }
         if (start == exchanges.size) return null
-        val note = if (start > 0) "[$start older exchanges omitted]\n\n" else ""
-        return lead + UserMessage.from(note + exchanges.drop(start).joinToString("\n\n"))
+        while (start < exchanges.size) {
+            val note = if (start > 0) "[$start older exchanges omitted]\n\n" else ""
+            val candidate = lead + UserMessage.from(note + exchanges.drop(start).joinToString("\n\n"))
+            if (estimate(candidate) <= target) return candidate
+            start++
+        }
+        return null
     }
 
-    private fun chat(request: ChatRequest, delta: (String) -> Unit): ChatResponse {
-        val streaming = streamingModel ?: return model.chat(request)
+    private fun chat(request: ChatRequest, budget: AgentRoundBudget, delta: (String) -> Unit): ChatResponse {
+        val streaming = streamingModel
+        val scope = control.newRequest(agentAttemptPolicy(budget.requestTimeoutMillis(timeoutMillis), streaming != null))
         val result = CompletableFuture<ChatResponse>()
         val lock = Any()
         var accepting = true
         try {
-            streaming.chat(request, object : StreamingChatResponseHandler {
+            if (streaming == null) return scope.bind { model.chat(request) }.also { scope.throwIfStopped() }
+            scope.bind { streaming.chat(request, object : StreamingChatResponseHandler {
                 override fun onPartialResponse(partialResponse: String) = synchronized(lock) {
-                    if (accepting && !result.isDone) try { delta(partialResponse) } catch (error: Exception) { result.completeExceptionally(error) }
+                    if (accepting && !result.isDone) try {
+                        if (partialResponse.isNotEmpty()) scope.onMeaningfulEvent()
+                        delta(partialResponse)
+                    } catch (error: Exception) { result.completeExceptionally(error) }
                     Unit
+                }
+                override fun onPartialThinking(partialThinking: dev.langchain4j.model.chat.response.PartialThinking) = synchronized(lock) {
+                    if (accepting && !result.isDone && !partialThinking.text().isNullOrEmpty()) scope.onMeaningfulEvent()
+                }
+                override fun onPartialToolCall(partialToolCall: dev.langchain4j.model.chat.response.PartialToolCall) = synchronized(lock) {
+                    if (accepting && !result.isDone && !partialToolCall.partialArguments().isNullOrEmpty()) scope.onMeaningfulEvent()
                 }
                 override fun onCompleteResponse(response: ChatResponse) { result.complete(response) }
                 override fun onError(error: Throwable) { result.completeExceptionally(error) }
-            })
-            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+            }) }
             while (true) {
                 checkCancelled()
-                if (System.nanoTime() >= deadline) throw TimeoutException("Compaction request timed out.")
-                try { return result.get(100, TimeUnit.MILLISECONDS) }
+                scope.throwIfStopped()
+                try { return result.get(100, TimeUnit.MILLISECONDS).also { scope.throwIfStopped() } }
                 catch (_: TimeoutException) { /* Cancellation remains responsive while awaiting the provider. */ }
                 catch (error: ExecutionException) { throw (error.cause ?: error) }
             }
+        } catch (error: Throwable) {
+            throw (scope.stopReason ?: error)
         } finally {
             synchronized(lock) { accepting = false }
+            scope.close()
         }
     }
 
@@ -283,7 +324,16 @@ internal class AgentContextCompaction(
 
         private fun addUsage(previous: Long?, next: Long?): Long? = if (previous == null && next == null) null else (previous ?: 0) + (next ?: 0)
 
-        private fun filled(text: String): Boolean = text.lineSequence().any { it.trim() in HEADINGS }
+        private fun filled(text: String): Boolean {
+            var section = false
+            return text.lineSequence().any { line ->
+                val value = line.trim()
+                if (value.startsWith('#')) {
+                    section = value in HEADINGS
+                    false
+                } else section && value.isNotBlank() && value !in setOf("-", "*", "<template>", "</template>")
+            }
+        }
         private val HEADINGS = setOf("## Objective", "## Requirements", "## Decisions", "## Work State", "### Completed", "### Active", "### Blocked", "## Next Move", "## Relevant Files", "## Important Context")
 
         internal fun split(records: List<AgentContextMessage>, keep: Int = 15_000, previousRecent: Boolean = false): Int {

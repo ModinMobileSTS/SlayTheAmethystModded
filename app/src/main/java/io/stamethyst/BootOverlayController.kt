@@ -71,7 +71,6 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.ui.loading.BootLoadingAnimation
 import io.stamethyst.ui.resources.FileImage
 import io.stamethyst.ui.resources.RuntimeResourceImage
-import io.stamethyst.ui.resources.RuntimeUiResourcePaths
 import io.stamethyst.ui.theme.LauncherTheme
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
@@ -956,7 +955,7 @@ internal fun BootOverlayArtBackground(
         )
     } else {
         RuntimeResourceImage(
-            path = RuntimeUiResourcePaths.BOOT_OVERLAY_BACKGROUND_DARK,
+            path = imageConfig.startResourcePath(),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             alignment = Alignment.TopStart,
@@ -979,7 +978,7 @@ internal fun BootOverlayArtBackground(
         )
     } else {
         RuntimeResourceImage(
-            path = RuntimeUiResourcePaths.BOOT_OVERLAY_BACKGROUND_BRIGHT,
+            path = imageConfig.endResourcePath(),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             alignment = Alignment.TopStart,

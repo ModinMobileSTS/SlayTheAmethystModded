@@ -72,11 +72,13 @@ data class WorkshopModUi(
      * The launcher manages these itself, so the mod page must not offer download actions.
      */
     val downloadBlocked: Boolean = false,
+    val hasPendingInstall: Boolean = false,
 )
 
 enum class WorkshopModState {
     NotDownloaded,
     ImportedUnpatched,
+    UpdatePendingInstall,
     ImportedPatched,
     Queued,
     Downloading,

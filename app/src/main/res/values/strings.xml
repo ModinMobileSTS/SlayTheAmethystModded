@@ -13,13 +13,6 @@
     <string name="save_import_ascension">Ascension %1$s → %2$s</string>
     <string name="save_import_apply">Import · %1$d</string>
     <string name="save_import_run_count">+%1$d / replace %2$d</string>
-    <string name="settings_sling_break_web_preparing_title">Preparing web dependency</string>
-    <string name="settings_sling_break_web_preparing">Preparing GeckoView dependency…</string>
-    <string name="settings_sling_break_web_downloading">Downloading web dependency… %1$d%%</string>
-    <string name="settings_sling_break_web_unpacking">Download complete. Verifying and extracting GeckoView…</string>
-    <string name="settings_sling_break_mode_title">Minigame mode</string>
-    <string name="settings_sling_break_mode_webview">WebView mode</string>
-    <string name="settings_sling_break_mode_compatibility">Compatibility mode</string>
     <string name="settings_sling_break_download_confirmation">Compatibility mode requires downloading dependencies. Download now? (50MB)</string>
     <string name="settings_sling_break_download_yes">Yes</string>
     <string name="settings_sling_break_download_no">No</string>
@@ -656,6 +649,7 @@ Do you still want to continue?</string>
     <string name="main_mod_move_folder_current_format">%1$s (current)</string>
     <string name="main_batch_move_dialog_title_format">Move %1$d selected mods to folder</string>
     <string name="main_batch_edit_selected_format">%1$d selected</string>
+    <string name="main_batch_edit_selection_count_format" translatable="false">%1$d/%2$d</string>
     <string name="main_batch_action_move">Move</string>
     <string name="main_batch_action_enable">Enable</string>
     <string name="main_batch_action_disable">Disable</string>
@@ -747,9 +741,9 @@ Do you still want to continue?</string>
     <string name="main_mod_favorite_remove">Remove from special favorites</string>
     <string name="main_mod_action_desc_favorite_add">Keep this mod at the top of your favorites.</string>
     <string name="main_mod_action_desc_favorite_remove">Remove this mod from your favorites list.</string>
-    <string name="main_mod_associate">Associate</string>
+    <string name="main_mod_associate">Bind other mods</string>
     <string name="main_mod_action_desc_priority">Lower numbers load earlier; dependency order is still enforced.</string>
-    <string name="main_mod_action_desc_associate">Group related mods so they can be managed together.</string>
+    <string name="main_mod_action_desc_associate">Bind with other mods to toggle them together</string>
     <string name="main_mod_action_desc_market">View this mod page in the workshop.</string>
     <string name="main_mod_action_desc_ai_edit">Inspect and edit this mod in the AI editor.</string>
     <string name="main_mod_action_desc_export">Save a copy of the mod file to device storage.</string>
@@ -1200,6 +1194,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_theme_color_guanjie">Watcher</string>
     <string name="settings_theme_color_colorless">Colorless</string>
     <string name="settings_chrome_background_opacity_title">Top bar and bottom bar background opacity</string>
+    <string name="settings_launcher_blur_disabled_title">Disable launcher blur</string>
+    <string name="settings_launcher_blur_disabled_desc">Disable background blur on launcher bars and panels while keeping translucent backgrounds. Takes effect immediately.</string>
     <string name="settings_chrome_background_opacity_desc">Adds an opaque surface behind the glass top bar and bottom bar on every launcher page.</string>
     <string name="settings_boot_overlay_style_title">Loading screen style</string>
     <string name="settings_boot_overlay_style_desc">Choose the loading screen shown while the game starts.</string>
@@ -1414,11 +1410,12 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="ai_mod_editor_tools_empty">No tools are currently available.</string>
     <string name="ai_mod_editor_tool_desc_unknown">No description.</string>
     <string name="ai_mod_editor_tool_desc_list_agent_workspace">List the files in the patch workspace.</string>
-    <string name="ai_mod_editor_tool_desc_read_agent_workspace_file">Read a workspace file as text or base64.</string>
+    <string name="ai_mod_editor_tool_desc_read_agent_workspace_file">Read workspace text with a version hash, images, or base64.</string>
     <string name="ai_mod_editor_tool_desc_glob_agent_workspace">Find workspace files by glob pattern.</string>
     <string name="ai_mod_editor_tool_desc_grep_agent_workspace">Search workspace file contents by regular expression.</string>
     <string name="ai_mod_editor_tool_desc_create_agent_patch_workspace">Create a new patch workspace; this does not package, install, or enable a mod.</string>
-    <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">Create or replace any file in this mod workspace.</string>
+    <string name="ai_mod_editor_tool_desc_write_agent_workspace_file">Create or fully replace a file under patch_source; prefer local edits for text changes.</string>
+    <string name="ai_mod_editor_tool_desc_edit_agent_workspace_file">Edit one exact text match under patch_source, with optional version conflict protection.</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_workspace_file">Delete any file or directory in this mod workspace.</string>
     <string name="ai_mod_editor_tool_desc_decompile_agent_mod_source">Prepare an on-demand parent JAR source snapshot.</string>
     <string name="ai_mod_editor_tool_desc_inspect_agent_class">Inspect one parent mod class without extracting the JAR.</string>
@@ -1427,8 +1424,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="ai_mod_editor_tool_desc_read_agent_mod_resource">Read a resource from a mod or the game JAR.</string>
     <string name="ai_mod_editor_tool_desc_list_agent_mod_entries">List mod or game JAR entries without extraction.</string>
     <string name="ai_mod_editor_tool_desc_compile_agent_patch_source">Compile patch/src Java sources into patch classes.</string>
-    <string name="ai_mod_editor_tool_desc_package_agent_patch_mod">Package patch/ into a versioned patch mod jar.</string>
-    <string name="ai_mod_editor_tool_desc_update_agent_patch_mod">Update a packaged patch mod\'s version in place.</string>
+    <string name="ai_mod_editor_tool_desc_package_agent_patch_mod">Validate and package patch_source into a versioned patch mod jar.</string>
+    <string name="ai_mod_editor_tool_desc_update_agent_patch_mod">Validate and update a packaged patch mod\'s version in place.</string>
     <string name="ai_mod_editor_tool_desc_set_agent_patch_mod_enabled">Enable or disable a packaged patch revision.</string>
     <string name="ai_mod_editor_tool_desc_list_agent_patch_mods">List packaged patch revisions and their enabled state.</string>
     <string name="ai_mod_editor_tool_desc_delete_agent_patch_mod">Delete a packaged patch revision.</string>

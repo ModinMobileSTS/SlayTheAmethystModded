@@ -23,6 +23,7 @@ import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.ui.LocalLauncherBlurDisabled
 
 @OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
@@ -35,6 +36,7 @@ internal fun ModDetailsSurface(
     val hazeState = remember { HazeState() }
     val shape = RoundedCornerShape(28.dp)
     val backdropColor = MaterialTheme.colorScheme.surfaceContainerLow
+    val launcherBlurEnabled = !LocalLauncherBlurDisabled.current
     Surface(modifier = modifier, shape = shape, color = backdropColor) {
         Box {
             bitmap?.let { preview ->
@@ -48,6 +50,7 @@ internal fun ModDetailsSurface(
                 Box(
                     Modifier.matchParentSize()
                         .hazeEffect(state = hazeState, style = HazeMaterials.thin()) {
+                            blurEnabled = launcherBlurEnabled && hazeState.blurEnabled
                             blurRadius = 24.dp
                             blurredEdgeTreatment = BlurredEdgeTreatment(shape)
                         }

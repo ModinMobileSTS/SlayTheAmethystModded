@@ -19,7 +19,6 @@ import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayStyle
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.backend.network.AccelerationStrategy
@@ -117,7 +116,6 @@ private fun appearanceSection(
     val themeColor = LauncherConfig.readThemeColor(context)
     val iconMode = LauncherConfig.readLauncherIconMode(context)
     val overlayStyle = LauncherConfig.readBootOverlayStyle(context)
-    val slingBreakMode = LauncherConfig.readSlingBreakEngineMode(context)
     val animation = LauncherConfig.readBootOverlayAnimation(context)
     val imageConfig = LauncherConfig.readBootOverlayImageConfig(context)
     val opacity = LauncherConfig.readChromeBackgroundOpacity(context)
@@ -152,21 +150,16 @@ private fun appearanceSection(
                 opacityPercent,
                 zh,
             ),
+            boolField(
+                "launcher.blurDisabled",
+                "关闭启动器模糊",
+                LauncherConfig.readLauncherBlurDisabled(context),
+            ),
             field(
                 "bootOverlayStyle",
                 zh.getString(R.string.settings_boot_overlay_style_title),
                 overlayStyle.persistedValue,
                 bootOverlayStyleZh(zh, overlayStyle),
-            ),
-            field(
-                "slingBreakEngineMode",
-                zh.getString(R.string.settings_sling_break_mode_title),
-                slingBreakMode.persistedValue,
-                zh.getString(
-                    if (slingBreakMode == SlingBreakEngineMode.COMPATIBILITY)
-                        R.string.settings_sling_break_mode_compatibility
-                    else R.string.settings_sling_break_mode_webview
-                ),
             ),
             field(
                 "bootOverlayAnimation",
@@ -180,6 +173,18 @@ private fun appearanceSection(
                 bootOverlayImageModeEn(imageConfig),
                 bootOverlayImageModeZh(imageConfig),
                 zh,
+            ),
+            field(
+                "bootOverlayArtwork",
+                zh.getString(R.string.settings_boot_overlay_artwork_title),
+                imageConfig.artwork.persistedValue,
+                zh.getString(
+                    if (imageConfig.artwork == io.stamethyst.config.BootOverlayArtwork.POSTER) {
+                        R.string.settings_boot_overlay_artwork_poster
+                    } else {
+                        R.string.settings_boot_overlay_artwork_original
+                    }
+                ),
             ),
             boolField("showModFileName", "显示 Mod 文件名", LauncherConfig.readShowModFileName(context)),
             boolField("firstRunSetupCompleted", "已完成首次引导", LauncherConfig.isFirstRunSetupCompleted(context)),
@@ -361,6 +366,12 @@ private fun renderingSection(
                 "mtsPatchCacheEnabled",
                 R.string.settings_mts_patch_cache_title,
                 LauncherConfig.isMtsPatchCacheEnabled(context),
+                zh,
+            ),
+            boolField(
+                "forceHighRefreshRateEnabled",
+                R.string.settings_force_high_refresh_rate_title,
+                LauncherConfig.isForceHighRefreshRateEnabled(context),
                 zh,
             ),
             boolField(

@@ -885,7 +885,7 @@ object StsLaunchSpec {
             classpathEntries.add(RuntimePaths.mtsStsResourcesJar(context).absolutePath)
             classpathEntries.add(RuntimePaths.mtsBaseModResourcesJar(context).absolutePath)
             classpathEntries.add(RuntimePaths.importedMtsJar(context).absolutePath)
-            args.add(classpathEntries.joinToString(":"))
+            args.add(withApkCallbackBridge(RuntimePaths.callbackBridgeJar(context), classpathEntries))
             args.add("io.stamethyst.bridge.BootBridgeLauncher")
             // Prevent ModTheSpire from attempting desktop-style self-restart via jre1.8.0_51
             // and exiting the Android process immediately.
@@ -903,14 +903,28 @@ object StsLaunchSpec {
             args.add(joinModIds(launchMods))
         } else {
             args.add(
-                RuntimePaths.bootBridgeJar(context).absolutePath +
-                    ":" + RuntimePaths.gdxPatchJar(context).absolutePath +
-                    ":" + RuntimePaths.lwjglJar(context).absolutePath +
-                    ":" + RuntimePaths.importedStsJar(context).absolutePath
+                withApkCallbackBridge(
+                    RuntimePaths.callbackBridgeJar(context),
+                    listOf(
+                        RuntimePaths.bootBridgeJar(context).absolutePath,
+                        RuntimePaths.gdxPatchJar(context).absolutePath,
+                        RuntimePaths.lwjglJar(context).absolutePath,
+                        RuntimePaths.importedStsJar(context).absolutePath
+                    )
+                )
             )
             args.add("io.stamethyst.bridge.BootBridgeLauncher")
         }
         return args
+    }
+
+    internal fun withApkCallbackBridge(callbackBridgeJar: File, classpathEntries: List<String>): String {
+        check(callbackBridgeJar.isFile && callbackBridgeJar.length() > 0L) {
+            "Missing APK callback bridge: ${callbackBridgeJar.absolutePath}"
+        }
+        // MTS (including its cached loader) delegates org.lwjgl classes to this parent
+        // classpath. Old resource packs may still contain CallbackBridge; APK wins.
+        return (listOf(callbackBridgeJar.absolutePath) + classpathEntries).joinToString(":")
     }
 
     private fun resolveRendererDecision(context: Context): RendererDecision {

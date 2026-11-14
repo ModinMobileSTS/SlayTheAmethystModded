@@ -8,6 +8,8 @@ import org.junit.Before
 import org.junit.Test
 import java.io.IOException
 import java.util.concurrent.CancellationException
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class AgentExecutionHistoryTest {
     private lateinit var server: MockWebServer
@@ -153,7 +155,10 @@ class AgentExecutionHistoryTest {
         registry.execute(dev.langchain4j.agent.tool.ToolExecutionRequest.builder().name("read").arguments("{}").build())
         assertTrue(events.last().failed)
         assertTrue(events.last().errorDetail.contains("IOException: disk read failed"))
-        assertEquals("{\"error\":\"tool_execution_failed\"}", events.last().result)
+        val result = kotlinx.serialization.json.Json.parseToJsonElement(events.last().result!!).jsonObject
+        assertEquals("tool_execution_failed", result["error"]!!.jsonPrimitive.content)
+        assertTrue(result["reason"]!!.jsonPrimitive.content.contains("IOException: disk read failed"))
+        assertTrue(result["hint"]!!.jsonPrimitive.content.contains("before retrying"))
     }
 
     @Test fun successfulBillableRequestIsNeverRetriedBecauseHistoryWriteFailed() {

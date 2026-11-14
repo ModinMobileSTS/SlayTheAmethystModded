@@ -100,7 +100,7 @@ internal fun ModCardBodyContent(
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         headerLeading()
-        ModCardLeadingImage(mod, size = if (compact) 36.dp else 48.dp)
+        ModCardLeadingImage(mod, size = 48.dp)
         Spacer(modifier = Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -112,13 +112,24 @@ internal fun ModCardBodyContent(
                 overflow = TextOverflow.Ellipsis
             )
             if (compact) {
-                Text(
-                    text = listOfNotNull(resolvedVersion, resolvedFileSize).joinToString(" · "),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = resolvedVersion,
+                        modifier = Modifier.weight(1f, fill = false),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (resolvedFileSize != null) {
+                        Text(
+                            text = resolvedFileSize,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
             ModCardBadges(
                 mod = mod,
@@ -340,6 +351,7 @@ private fun ModCardBadges(
     // Cancelling render no action control, so they keep their badge.
     val workshopBadgeState = mod.workshop?.state?.takeIf {
         it != WorkshopModState.ImportedUnpatched &&
+            it != WorkshopModState.UpdatePendingInstall &&
             it != WorkshopModState.DownloadFailed &&
             it != WorkshopModState.Downloading &&
             it != WorkshopModState.DownloadPaused &&
@@ -619,6 +631,7 @@ internal fun workshopStateBadgeText(state: WorkshopModState): String =
     when (state) {
         WorkshopModState.NotDownloaded -> stringResource(R.string.workshop_download_state_not_downloaded)
         WorkshopModState.ImportedUnpatched -> stringResource(R.string.main_mod_workshop_state_needs_patch)
+        WorkshopModState.UpdatePendingInstall -> stringResource(R.string.workshop_download_state_pending_install)
         WorkshopModState.ImportedPatched -> stringResource(R.string.main_mod_workshop_state_workshop)
         WorkshopModState.Queued -> stringResource(R.string.workshop_download_state_queued)
         WorkshopModState.Downloading -> stringResource(R.string.main_mod_workshop_state_downloading)

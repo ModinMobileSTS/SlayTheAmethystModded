@@ -196,6 +196,7 @@ import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.LauncherNavigationRequestBus
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
+import io.stamethyst.ui.workshop.WORKSHOP_DOWNLOAD_PROGRESS_REFRESH_INTERVAL_MS
 import io.stamethyst.ui.workshop.WorkshopDownloadActionButton
 import io.stamethyst.ui.workshop.WorkshopDetailScreen
 import io.stamethyst.ui.workshop.WorkshopItemCard
@@ -451,20 +452,10 @@ private fun LauncherGamePage(
     }
 
     if (showRefreshRateSettingsDialog) {
-        AlertDialog(
+        RefreshRateSettingsDialog(
             onDismissRequest = { showRefreshRateSettingsDialog = false },
-            title = { Text(stringResource(R.string.main_refresh_rate_mismatch_title)) },
-            text = { Text(stringResource(R.string.main_refresh_rate_settings_message)) },
-            dismissButton = {
-                TextButton(onClick = { openDisplayRefreshRateSettings(context) }) {
-                    Text(stringResource(R.string.main_refresh_rate_open_settings))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showRefreshRateSettingsDialog = false }) {
-                    Text(stringResource(R.string.common_action_confirm))
-                }
-            },
+            enabled = !uiState.busy,
+            onOpenDisplaySettings = { openDisplayRefreshRateSettings(context) },
         )
     }
 }
@@ -655,7 +646,6 @@ private fun GameLaunchActionBar(
 
 @Composable
 private fun ModsHeaderPinnedContent(
-    selectedMods: List<ModItemUi> = emptyList(),
     batchActions: BatchEditBarState? = null,
     localMods: List<ModItemUi>,
     folderControlsEnabled: Boolean,
@@ -672,6 +662,7 @@ private fun ModsHeaderPinnedContent(
     onCheckWorkshopUpdates: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
     onOpenCommunityPatches: () -> Unit,
+    onSortModsClick: () -> Unit,
 ) {
     HeaderPinnedRow(
         iconResId = R.drawable.ic_dock_mods,
@@ -682,30 +673,30 @@ private fun ModsHeaderPinnedContent(
         subtitle = "",
         iconSize = 28.dp,
     ) {
-        batchActions?.let { BatchSelectAllAction(it) }
         AgentWorkingIndicator()
         WorkshopUpdatesAction(
             localMods = localMods,
             lastCheckedAtMs = workshopUpdateCheckState.lastCompletedAtMs,
             enabled = folderControlsEnabled && hostAvailable,
         )
-        ModsActionsMenu(
-            batchActions = batchActions,
-            selectedMods = selectedMods,
-            canEditFolders = folderControlsEnabled && hostAvailable,
-            dragLocked = dragLocked,
-            showEnabledModsOnly = showEnabledModsOnly,
-            showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
-            feedbackUnreadCount = feedbackUnreadCount,
-            checkingUpdates = workshopUpdateCheckState.checking,
-            onToggleDragLocked = onToggleDragLocked,
-            onShowEnabledModsOnlyChange = onShowEnabledModsOnlyChange,
-            onShowUpdateAvailableModsOnlyChange = onShowUpdateAvailableModsOnlyChange,
-            onAddFolderClick = onAddFolderClick,
-            onCheckWorkshopUpdates = onCheckWorkshopUpdates,
-            onOpenFeedbackUpdates = onOpenFeedbackUpdates,
-            onOpenCommunityPatches = onOpenCommunityPatches,
-        )
+        if (batchActions == null) {
+            ModsActionsMenu(
+                canEditFolders = folderControlsEnabled && hostAvailable,
+                dragLocked = dragLocked,
+                showEnabledModsOnly = showEnabledModsOnly,
+                showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
+                feedbackUnreadCount = feedbackUnreadCount,
+                checkingUpdates = workshopUpdateCheckState.checking,
+                onToggleDragLocked = onToggleDragLocked,
+                onShowEnabledModsOnlyChange = onShowEnabledModsOnlyChange,
+                onShowUpdateAvailableModsOnlyChange = onShowUpdateAvailableModsOnlyChange,
+                onAddFolderClick = onAddFolderClick,
+                onCheckWorkshopUpdates = onCheckWorkshopUpdates,
+                onOpenFeedbackUpdates = onOpenFeedbackUpdates,
+                onOpenCommunityPatches = onOpenCommunityPatches,
+                onSortModsClick = onSortModsClick,
+            )
+        }
     }
 }
 
@@ -4345,15 +4336,19 @@ internal fun LauncherMainRoute(
         onOpenAiEditor = onOpenAiEditor,
     )
 
-    LaunchedEffect(hostActivity) {
+    LaunchedEffect(hostActivity, pollWorkshopDownloads) {
         if (hostActivity != null) {
             // Load persisted task state before enumerating local mods. Otherwise an import that
             // finishes between these two operations can remove its temporary card without a
             // subsequent full refresh to add the newly imported jar.
             if (pollWorkshopDownloads && !viewModel.uiState.launchInFlight) {
                 viewModel.refreshWorkshopDownloadCards(hostActivity)
+                // Dock pages stay composed. Returning from the market must rescan even inside
+                // the usual refresh cooldown: a completed task is no longer an active poll trigger.
+                viewModel.refresh(hostActivity)
+            } else {
+                viewModel.refreshIfStale(hostActivity)
             }
-            viewModel.refreshIfStale(hostActivity)
             viewModel.syncModSuggestionsIfNeeded(hostActivity)
             // Automatic entry refreshes should respect the normal Steam Cloud cooldown so a
             // freshly completed sync does not immediately restart on recomposition.
@@ -4365,7 +4360,7 @@ internal fun LauncherMainRoute(
         val activity = hostActivity ?: return@LaunchedEffect
         if (!pollWorkshopDownloads || !hasActiveWorkshopDownloads || viewModel.uiState.launchInFlight) return@LaunchedEffect
         while (true) {
-            delay(1000L)
+            delay(WORKSHOP_DOWNLOAD_PROGRESS_REFRESH_INTERVAL_MS)
             if (viewModel.uiState.launchInFlight) return@LaunchedEffect
             val stillActive = viewModel.refreshWorkshopDownloadCards(activity)
             if (!stillActive) {
@@ -5235,6 +5230,14 @@ private fun LauncherMainScreenContent(
                         var modsRefreshing by remember { mutableStateOf(false) }
                         var showEnabledModsOnly by rememberSaveable { mutableStateOf(false) }
                         var showUpdateAvailableModsOnly by rememberSaveable { mutableStateOf(false) }
+                        var showModSortDialog by rememberSaveable { mutableStateOf(false) }
+                        if (showModSortDialog) {
+                            ModSortDialogHost(
+                                mods = uiState.optionalMods + uiState.dependencyMods,
+                                enabled = uiState.controlsEnabled && actions.isHostAvailable,
+                                onDismiss = { showModSortDialog = false },
+                            )
+                        }
                         val modsPullToRefreshState = rememberPullToRefreshState()
                         val measuredModsHeaderHeight = launcherBannerExpandedHeight(232.dp)
                         val modsHeaderContentTopInset =
@@ -5317,7 +5320,6 @@ private fun LauncherMainScreenContent(
                                 pinnedContent = {
                                     ModsHeaderPinnedContent(
                                         batchActions = batchEditBarState,
-                                        selectedMods = batchEditBarState?.selectedMods.orEmpty(),
                                         localMods = uiState.optionalMods,
                                         folderControlsEnabled = uiState.controlsEnabled,
                                         dragLocked = uiState.dragLocked,
@@ -5332,11 +5334,8 @@ private fun LauncherMainScreenContent(
                                             showUpdateAvailableModsOnly = it
                                         },
                                         onAddFolderClick = { showCreateFolderDialog = true },
-                                        onCheckWorkshopUpdates = {
-                                            if (!batchSelectionMode) {
-                                                onCheckWorkshopUpdates()
-                                            }
-                                        },
+                                        onSortModsClick = { showModSortDialog = true },
+                                        onCheckWorkshopUpdates = onCheckWorkshopUpdates,
                                         onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                                         onOpenCommunityPatches = onOpenCommunityPatches,
                                     )
@@ -5374,7 +5373,28 @@ private fun LauncherMainScreenContent(
                         ModBatchEditBottomBar(
                             modifier = Modifier.align(Alignment.BottomCenter),
                             batchEditBarState = batchEditBarState,
+                            hazeState = hazeState,
                             onHeightChanged = { batchEditBarHeightPx = it },
+                            actionsMenu = { state ->
+                                ModsActionsMenu(
+                                    batchActions = state,
+                                    selectedMods = state.selectedMods,
+                                    canEditFolders = uiState.controlsEnabled && actions.isHostAvailable,
+                                    dragLocked = uiState.dragLocked,
+                                    showEnabledModsOnly = showEnabledModsOnly,
+                                    showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
+                                    feedbackUnreadCount = feedbackUnreadCount,
+                                    checkingUpdates = workshopUpdateCheckState.checking,
+                                    onToggleDragLocked = actions.onToggleDragLocked,
+                                    onShowEnabledModsOnlyChange = { showEnabledModsOnly = it },
+                                    onShowUpdateAvailableModsOnlyChange = { showUpdateAvailableModsOnly = it },
+                                    onAddFolderClick = { showCreateFolderDialog = true },
+                                    onSortModsClick = { showModSortDialog = true },
+                                    onCheckWorkshopUpdates = onCheckWorkshopUpdates,
+                                    onOpenFeedbackUpdates = onOpenFeedbackUpdates,
+                                    onOpenCommunityPatches = onOpenCommunityPatches,
+                                )
+                            },
                         )
                     }
             }
@@ -6458,43 +6478,41 @@ internal fun NotificationBadge(
 }
 
 @Composable
-private fun ModBatchEditBottomBar(
+internal fun ModBatchEditBottomBar(
     modifier: Modifier = Modifier,
     batchEditBarState: BatchEditBarState?,
+    hazeState: HazeState,
     onHeightChanged: (Int) -> Unit,
+    actionsMenu: @Composable (BatchEditBarState) -> Unit = {},
 ) {
     AnimatedContent(
-        targetState = batchEditBarState != null,
+        targetState = batchEditBarState,
+        contentKey = { it != null },
+        contentAlignment = Alignment.BottomCenter,
         modifier = modifier
             .fillMaxWidth()
             .onSizeChanged { onHeightChanged(it.height) },
         transitionSpec = {
             val slideIn = slideInVertically(
-                initialOffsetY = { fullHeight -> fullHeight / 2 },
+                initialOffsetY = { fullHeight -> fullHeight },
                 animationSpec = tween(durationMillis = BOTTOM_BAR_SWITCH_ANIMATION_MS)
-            ) + fadeIn(animationSpec = tween(durationMillis = BOTTOM_BAR_SWITCH_ANIMATION_MS))
+            )
             val slideOut = slideOutVertically(
-                targetOffsetY = { fullHeight -> fullHeight / 2 },
+                targetOffsetY = { fullHeight -> fullHeight },
                 animationSpec = tween(durationMillis = BOTTOM_BAR_SWITCH_ANIMATION_MS)
-            ) + fadeOut(animationSpec = tween(durationMillis = BOTTOM_BAR_SWITCH_ANIMATION_MS))
+            )
             slideIn togetherWith slideOut using SizeTransform(clip = false)
         },
         label = "modBatchEditBottomBar"
-    ) { showingBatchBar ->
-        if (showingBatchBar) {
-            val state = batchEditBarState
-            if (state != null) {
-                BatchEditToolbar(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    selectedCount = state.selectedCount,
-                    controlsEnabled = state.controlsEnabled,
-                    onMove = state.onMove,
-                    onDelete = state.onDelete,
-                    onEnable = state.onEnable,
-                    onDisable = state.onDisable,
-                    onCancel = state.onCancel
-                )
-            }
+    ) { state ->
+        // Use this transition's snapshot, not the nullable live state: the outgoing
+        // toolbar must stay composed until its slide/fade-out has finished.
+        if (state != null) {
+            BatchEditToolbar(
+                state = state,
+                hazeState = hazeState,
+                actionsMenu = { actionsMenu(state) },
+            )
         }
     }
 }

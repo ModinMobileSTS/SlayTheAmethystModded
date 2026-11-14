@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 
-/** The title, icon and subtitle all follow the very same scroll fraction as the banner body. */
+/** The title, icon and subtitle all follow the same animated fraction as the banner body. */
 @Composable
 internal fun LauncherBannerTitleRow(
     @DrawableRes iconResId: Int,

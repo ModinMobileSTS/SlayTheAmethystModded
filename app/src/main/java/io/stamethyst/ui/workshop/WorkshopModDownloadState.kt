@@ -14,6 +14,7 @@ internal enum class WorkshopModDownloadState(
     val canStartDownload: Boolean,
 ) {
     Downloaded(R.string.workshop_download_state_downloaded, R.string.workshop_download_state_downloaded, false),
+    UpdatePendingInstall(R.string.workshop_download_state_pending_install, R.string.workshop_download_state_pending_install, false),
     NotDownloaded(R.string.workshop_download_state_not_downloaded, R.string.workshop_action_download, true),
     UpdateAvailable(R.string.workshop_download_state_update_available, R.string.workshop_action_update, true),
     Queued(R.string.workshop_download_state_queued, R.string.workshop_download_state_queued, false),
@@ -81,6 +82,7 @@ private fun WorkshopResolvedModStateKind.toWorkshopModDownloadState(): WorkshopM
     WorkshopResolvedModStateKind.ImportedPatched,
     WorkshopResolvedModStateKind.NonStandardDownloaded,
     WorkshopResolvedModStateKind.TexturePackInstalled -> WorkshopModDownloadState.Downloaded
+    WorkshopResolvedModStateKind.UpdatePendingInstall -> WorkshopModDownloadState.UpdatePendingInstall
     WorkshopResolvedModStateKind.Queued -> WorkshopModDownloadState.Queued
     WorkshopResolvedModStateKind.Downloading -> WorkshopModDownloadState.Downloading
     WorkshopResolvedModStateKind.DownloadPaused -> WorkshopModDownloadState.Paused

@@ -107,7 +107,7 @@ class WorkshopSubscriptionSyncCoordinatorTest {
     }
 
     @Test
-    fun confirmedSubscriptionDuringScanIsNotLostAndBypassesIntervalWithLiveEligibility() = scenario {
+    fun confirmedSubscriptionDuringScanOrWhileInactiveBypassesIntervalWithLiveEligibility() = scenario {
         val gate = CompletableDeferred<Unit>()
         load = { gate.await(); page() }
         update()
@@ -122,8 +122,8 @@ class WorkshopSubscriptionSyncCoordinatorTest {
         assertEquals(WorkshopSubscriptionEnqueueResult.Queued, controller.enqueueSubscribed(a, item(5uL)))
         assertEquals(1, loads.size)
         update(foreground = false)
-        assertEquals(WorkshopSubscriptionEnqueueResult.Skipped, controller.enqueueSubscribed(a, item(4uL)))
-        assertEquals(listOf(1uL, 2uL, 5uL), queued.sorted())
+        assertEquals(WorkshopSubscriptionEnqueueResult.Queued, controller.enqueueSubscribed(a, item(4uL)))
+        assertEquals(listOf(1uL, 2uL, 4uL, 5uL), queued.sorted())
     }
 
     @Test

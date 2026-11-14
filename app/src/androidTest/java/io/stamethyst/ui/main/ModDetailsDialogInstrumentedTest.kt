@@ -17,6 +17,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -70,15 +71,37 @@ class ModDetailsDialogInstrumentedTest {
         }
     }
 
-    @Test fun singleTapOpensDetailsWithMetadataAndNamedBadges() {
+    @Test fun singleTapOpensDetailsWithMetadataAndCollapsedTechnicalInformation() {
         setCard()
         compose.onNodeWithText(mod.name).performClick()
         compose.onNodeWithTag("mod_details_dialog").assertIsDisplayed()
-        compose.onNodeWithText(context.getString(R.string.mod_details_author,
-            context.getString(R.string.mod_details_unknown_author))).assertIsDisplayed()
+        val author = context.getString(R.string.mod_details_author, context.getString(R.string.mod_details_unknown_author))
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodes(hasText(author)).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(author).assertIsDisplayed()
         compose.onNode(hasText(mod.description) and hasAnyAncestor(hasTestTag("mod_details_dialog"))).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.mod_details_badge_suggestion)).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(context.getString(R.string.mod_details_badge_priority, 10)).assertIsDisplayed()
+        compose.onNodeWithTag("mod_details_technical_content").assertDoesNotExist()
+        compose.onNodeWithTag("mod_details_technical_toggle").performScrollTo().performClick()
+        compose.onNodeWithText("#10").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun toolsUseFullWidthSingleColumnRows() {
+        setCard()
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_manager_tab_0").performClick()
+        val priority = compose.onNodeWithText(context.getString(R.string.main_mod_priority_adjust))
+        val binding = compose.onNodeWithText(context.getString(R.string.main_mod_associate))
+        binding.performScrollTo().assertIsDisplayed()
+
+        val priorityBounds = priority.getUnclippedBoundsInRoot()
+        val bindingBounds = binding.getUnclippedBoundsInRoot()
+        assertEquals(priorityBounds.left, bindingBounds.left)
+        assertEquals(priorityBounds.right, bindingBounds.right)
+        assertTrue(bindingBounds.top >= priorityBounds.bottom)
+        compose.onNodeWithText(context.getString(R.string.main_mod_favorite_add)).assertDoesNotExist()
+        compose.onNodeWithTag("mod_details_favorite").assertIsDisplayed()
     }
 
     @Test fun detailsWithoutArtworkKeepsPlainBackground() {
@@ -86,6 +109,38 @@ class ModDetailsDialogInstrumentedTest {
         compose.onNodeWithText(mod.name).performClick()
         compose.onNodeWithTag("mod_details_dialog").assertIsDisplayed()
         compose.onNodeWithTag("mod_details_frosted_background").assertDoesNotExist()
+    }
+
+    @Test fun deleteIsLastToolAndHeaderHasNoCloseOrDeleteMenu() {
+        var deletedMod: ModItemUi? = null
+        setCard(callbacks = ModCardCallbacks(onDeleteMod = { deletedMod = it }))
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.mod_details_close)).assertDoesNotExist()
+        compose.onNodeWithContentDescription(context.getString(R.string.main_mod_actions_menu)).assertDoesNotExist()
+        compose.onNodeWithTag("mod_details_favorite").assertIsDisplayed()
+
+        compose.onNodeWithTag("mod_manager_tab_0").performClick()
+        val delete = compose.onNode(
+            hasText(context.getString(R.string.main_mod_delete)) and
+                hasAnyAncestor(hasTestTag("mod_details_scroll_0")),
+        )
+        delete.performScrollTo().assertIsDisplayed().assertIsEnabled()
+        val rename = compose.onNodeWithText(context.getString(R.string.main_mod_rename))
+        assertTrue(delete.getUnclippedBoundsInRoot().top >= rename.getUnclippedBoundsInRoot().bottom)
+        delete.performClick()
+        compose.runOnIdle { assertEquals(mod, deletedMod) }
+        compose.onNodeWithTag("mod_details_dialog").assertDoesNotExist()
+    }
+
+    @Test fun disabledToolsCannotDelete() {
+        var deleted = false
+        setCard(controlsEnabled = false, callbacks = ModCardCallbacks(onDeleteMod = { deleted = true }))
+        compose.onNodeWithText(mod.name).performClick()
+        compose.onNodeWithTag("mod_manager_tab_0").performClick()
+        compose.onNodeWithText(context.getString(R.string.main_mod_delete))
+            .performScrollTo().assertIsNotEnabled().performClick()
+        compose.runOnIdle { assertTrue(!deleted) }
+        compose.onNodeWithTag("mod_details_dialog").assertIsDisplayed()
     }
 
     @Test fun detailsUsesCardArtworkAsFrostedBackground() {
@@ -237,7 +292,7 @@ class ModDetailsDialogInstrumentedTest {
         compose.runOnIdle { assertTrue(selected) }
     }
 
-    @Test fun backDismissesDetailsWithoutACloseButton() {
+    @Test fun backDismissesDetails() {
         setCard()
         compose.onNodeWithText(mod.name).performClick()
         compose.onNodeWithTag("mod_details_dialog").assertIsDisplayed()

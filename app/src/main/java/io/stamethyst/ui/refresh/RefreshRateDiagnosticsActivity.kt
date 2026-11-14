@@ -133,7 +133,8 @@ internal class RefreshRateDiagnosticsState : ViewModel() {
     fun clear() { reportText = null; reportJson = null; message = null }
 
     suspend fun complete(context: Context, report: RefreshRateReport) {
-        val phases = RefreshRatePhase.entries.associate { it.key to context.getString(phaseTitle(it)) }
+        val phases = RefreshRatePhase.entries.associate { it.key to context.getString(
+            R.string.refresh_diagnostics_phase_label, it.ordinal + 1, RefreshRatePhase.entries.size, context.getString(phaseTitle(it))) }
         val outcomes = RefreshRateOutcome.entries.associateWith { context.getString(outcomeTitle(it)) }
         val (text, json) = withContext(Dispatchers.Default) {
             RefreshRateReportFormat.text(report, phases, outcomes,
@@ -224,8 +225,10 @@ internal fun RefreshRateDiagnosticsContent(
                             Text(stringResource(R.string.refresh_diagnostics_title), style = MaterialTheme.typography.titleLarge)
                             Text(stringResource(R.string.refresh_diagnostics_running_scope), style = MaterialTheme.typography.bodySmall,
                                 maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(stringResource(phaseTitle(state.phase)), style = MaterialTheme.typography.labelLarge)
-                            LinearProgressIndicator(progress = { state.phaseIndex / 5f }, modifier = Modifier.fillMaxWidth())
+                            Text(stringResource(R.string.refresh_diagnostics_phase_label,
+                                state.phase.ordinal + 1, RefreshRatePhase.entries.size, stringResource(phaseTitle(state.phase))),
+                                style = MaterialTheme.typography.labelLarge)
+                            LinearProgressIndicator(progress = { state.phaseIndex.toFloat() / RefreshRatePhase.entries.size }, modifier = Modifier.fillMaxWidth())
                         }
                     }
                     Spacer(Modifier.weight(1f))
@@ -261,6 +264,11 @@ internal fun phaseTitle(phase: RefreshRatePhase): Int = when (phase) {
     RefreshRatePhase.WINDOW -> R.string.refresh_diagnostics_phase_window
     RefreshRatePhase.SURFACE -> R.string.refresh_diagnostics_phase_surface
     RefreshRatePhase.TEXTURE -> R.string.refresh_diagnostics_phase_texture
+    RefreshRatePhase.VIEW_HIGH -> R.string.refresh_diagnostics_phase_view_high
+    RefreshRatePhase.COMPOSE_BASELINE -> R.string.refresh_diagnostics_phase_compose_baseline
+    RefreshRatePhase.COMPOSE_HIGH -> R.string.refresh_diagnostics_phase_compose_high
+    RefreshRatePhase.SURFACE_PRODUCTION -> R.string.refresh_diagnostics_phase_surface_production
+    RefreshRatePhase.TEXTURE_PRODUCTION -> R.string.refresh_diagnostics_phase_texture_production
 }
 
 private fun outcomeTitle(outcome: RefreshRateOutcome): Int = when (outcome) {

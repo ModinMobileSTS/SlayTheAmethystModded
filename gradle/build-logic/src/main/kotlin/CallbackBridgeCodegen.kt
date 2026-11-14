@@ -230,6 +230,36 @@ object CallbackBridgeCodegen {
             androidVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeRequestAudioRouteRecovery",
+            returnType = "void",
+            parameters = emptyList(),
+            androidVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeSetAudioRecoveryAllowed",
+            returnType = "void",
+            parameters = listOf(CallbackBridgeParameter("boolean", "allowed")),
+            androidVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeGetAudioRuntimeState",
+            returnType = "int",
+            parameters = emptyList(),
+            androidVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeSetAudioRuntimeState",
+            returnType = "void",
+            parameters = listOf(CallbackBridgeParameter("int", "state")),
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeGetAudioOperationSnapshot",
+            returnType = "long",
+            parameters = emptyList(),
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeHasQueuedAudioCommands",
             returnType = "boolean",
             parameters = emptyList(),

@@ -8,28 +8,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
-import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Button
+import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import io.stamethyst.ui.LauncherAlertDialog as AlertDialog
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,10 +50,9 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -69,7 +63,6 @@ import io.stamethyst.R
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
-import io.stamethyst.ui.SimpleMarkdownCard
 import io.stamethyst.ui.haptics.LauncherHaptics
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -85,16 +78,8 @@ internal data class ModCardDragStartInfo(
 private val MOD_DRAG_HANDLE_SLOT_WIDTH = 28.dp
 private val MOD_BATCH_CHECKBOX_SLOT_WIDTH = 48.dp
 private val MOD_ENABLE_CHECKBOX_SLOT_WIDTH = 56.dp
-private val MOD_ACTIONS_BUTTON_SLOT_WIDTH = 44.dp
 private val FavoriteCardBorderColor = Color(0xFFF2A8CB)
 private const val WORKSHOP_UPDATE_CHANGE_NOTES_TIMEOUT_MS = 8_000L
-
-private sealed interface WorkshopUpdateChangeNotesState {
-    data object Idle : WorkshopUpdateChangeNotesState
-    data object Loading : WorkshopUpdateChangeNotesState
-    data class Loaded(val latestMarkdown: String) : WorkshopUpdateChangeNotesState
-    data class Failed(val errorDetail: String) : WorkshopUpdateChangeNotesState
-}
 
 @Stable
 internal data class ModCardCallbacks(
@@ -153,7 +138,6 @@ internal fun ModCard(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val actionsContentDescription = stringResource(R.string.main_mod_actions)
     val showAiEditorNewBadge = AiEditorNewBadgeStore.shouldShow(context)
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
@@ -416,43 +400,21 @@ internal fun ModCard(
             headerTrailing = {
                 Box(
                     modifier = Modifier
-                        .width(MOD_ACTIONS_BUTTON_SLOT_WIDTH)
-                        .clipToBounds()
-                        .graphicsLayer {
-                            alpha = 1f
-                            scaleX = 0.86f + alpha * 0.14f
-                            scaleY = 0.86f + alpha * 0.14f
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    IconButton(
-                        onClick = {
-                            detailsStartAtActions = false
-                            showDetailsDialog = true
-                        },
-                        enabled = true,
-                        modifier = Modifier.semantics {
-                            contentDescription = actionsContentDescription
-                        }
-                    ) {
-                        Text(
-                            text = "⋮",
-                            color = if (actionsEnabled) {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
-                            },
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                    }
-                }
-                Box(
-                    modifier = Modifier
-                        .width(MOD_ENABLE_CHECKBOX_SLOT_WIDTH)
+                        .widthIn(min = MOD_ENABLE_CHECKBOX_SLOT_WIDTH)
+                        .testTag("mod_card_primary_control")
                         .clipToBounds(),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (mod.showsEnableControl()) {
+                    if (mod.showsInstallControl()) {
+                        Button(
+                            onClick = { callbacks.onPatchWorkshopMod(mod) },
+                            enabled = !batchSelectionMode,
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            modifier = Modifier.testTag("mod_card_install"),
+                        ) {
+                            Text(stringResource(R.string.main_mod_workshop_action_install), maxLines = 1)
+                        }
+                    } else if (mod.showsEnableControl()) {
                         Switch(
                             checked = mod.enabled,
                             onCheckedChange = { checked ->
@@ -464,7 +426,7 @@ internal fun ModCard(
                                 }
                             },
                             enabled = selectionEnabled,
-                            modifier = Modifier.graphicsLayer {
+                            modifier = Modifier.testTag("mod_card_enable").graphicsLayer {
                                 alpha = 1f
                                 scaleX = 0.86f + alpha * 0.14f
                                 scaleY = 0.86f + alpha * 0.14f
@@ -499,82 +461,20 @@ internal fun ModCard(
             }
         )
 
-        val workshopActionModifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp)
-            .graphicsLayer { alpha = normalControlProgress }
-        // Items the launcher manages itself can never be downloaded from here. Mirror the
-        // market's Unavailable treatment: a visibly disabled control instead of a dead button.
-        val workshopDownloadBlocked = mod.workshop?.downloadBlocked == true
-        when (mod.workshop?.state) {
-            WorkshopModState.ImportedUnpatched -> Button(
-                onClick = { callbacks.onPatchWorkshopMod(mod) },
+        // Installation lives in the header's enable-control slot, never a second full-width row.
+        if (!mod.showsInstallControl()) {
+            ModWorkshopActions(
+                mod = mod,
                 enabled = !batchSelectionMode,
-                modifier = workshopActionModifier
-            ) {
-                Text(stringResource(R.string.main_mod_workshop_action_install))
-            }
-            WorkshopModState.DownloadFailed,
-            WorkshopModState.DownloadPaused,
-            WorkshopModState.FileMissing -> {
-                val actionLabelResId = when (mod.workshop.state) {
-                    WorkshopModState.DownloadPaused -> R.string.main_mod_workshop_action_continue_download
-                    WorkshopModState.FileMissing -> R.string.main_mod_workshop_action_redownload
-                    else -> R.string.workshop_action_retry
-                }
-                if (workshopDownloadBlocked) {
-                    OutlinedButton(
-                        onClick = {},
-                        enabled = false,
-                        modifier = workshopActionModifier
-                    ) {
-                        Text(stringResource(R.string.workshop_download_state_unavailable))
-                    }
-                } else {
-                    Button(
-                        onClick = { callbacks.onRetryWorkshopDownload(mod) },
-                        enabled = !batchSelectionMode,
-                        modifier = workshopActionModifier
-                    ) {
-                        Text(stringResource(actionLabelResId))
-                    }
-                }
-            }
-            WorkshopModState.NonStandardDownloaded -> OutlinedButton(
-                onClick = {
+                onInstall = { callbacks.onPatchWorkshopMod(mod) },
+                onRetryDownload = { callbacks.onRetryWorkshopDownload(mod) },
+                onManualHandle = {
                     detailsStartAtActions = true
                     showDetailsDialog = true
                 },
-                enabled = !batchSelectionMode,
-                modifier = workshopActionModifier
-            ) {
-                Text(stringResource(R.string.main_mod_workshop_action_manual_handle))
-            }
-            WorkshopModState.TexturePackInstalled -> Unit
-            WorkshopModState.Downloading -> {
-                val progress = mod.workshop.downloadProgressPercent
-                    ?.coerceIn(0, 100)
-                    ?.let { it / 100f }
-                if (progress != null) {
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = workshopActionModifier
-                    )
-                } else {
-                    LinearProgressIndicator(
-                        modifier = workshopActionModifier
-                    )
-                }
-            }
-            // Queued and Cancelling deliberately render no progress bar. Nothing is being
-            // transferred yet (or any more), so an animating bar would misreport the state.
-            // The status text and state badge carry the information instead.
-            WorkshopModState.Queued,
-            WorkshopModState.Cancelling,
-            WorkshopModState.NotDownloaded,
-            WorkshopModState.ImportedPatched,
-            WorkshopModState.UpdateAvailable,
-            null -> Unit
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                    .graphicsLayer { alpha = normalControlProgress },
+            )
         }
     }
 
@@ -612,83 +512,15 @@ internal fun ModCard(
     }
 
     if (showWorkshopUpdateConfirmDialog && mod.workshop?.state == WorkshopModState.UpdateAvailable) {
-        AlertDialog(
-            scrollableText = false,
-            onDismissRequest = { showWorkshopUpdateConfirmDialog = false },
-            title = { Text(stringResource(R.string.main_mod_workshop_update_dialog_title)) },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        text = stringResource(
-                            R.string.main_mod_workshop_update_dialog_message,
-                            resolveModDisplayName(mod, showModFileName = false)
-                        )
-                    )
-                    when (val changeNotesState = updateChangeNotesState) {
-                        WorkshopUpdateChangeNotesState.Idle,
-                        WorkshopUpdateChangeNotesState.Loading -> {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                            Text(
-                                text = stringResource(R.string.workshop_change_notes_loading),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        is WorkshopUpdateChangeNotesState.Loaded -> {
-                            if (changeNotesState.latestMarkdown.isNotBlank()) {
-                                SimpleMarkdownCard(
-                                    title = stringResource(R.string.workshop_change_notes_latest_title),
-                                    markdown = changeNotesState.latestMarkdown,
-                                )
-                            } else {
-                                Text(
-                                    text = stringResource(R.string.workshop_change_notes_empty),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        is WorkshopUpdateChangeNotesState.Failed -> {
-                            Text(
-                                text = stringResource(
-                                    R.string.workshop_change_notes_load_failed,
-                                    changeNotesState.errorDetail,
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                            OutlinedButton(
-                                onClick = { updateChangeNotesReloadToken++ },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text(stringResource(R.string.workshop_action_retry))
-                            }
-                        }
-                    }
-                }
+        WorkshopModUpdateDialog(
+            modName = resolveModDisplayName(mod, showModFileName = false),
+            changeNotesState = updateChangeNotesState,
+            onRetryChangeNotes = { updateChangeNotesReloadToken++ },
+            onUpdate = {
+                showWorkshopUpdateConfirmDialog = false
+                callbacks.onUpdateWorkshopMod(mod)
             },
-            confirmButton = {
-                TextButton(
-                    enabled = updateChangeNotesState !is WorkshopUpdateChangeNotesState.Idle &&
-                        updateChangeNotesState !is WorkshopUpdateChangeNotesState.Loading,
-                    onClick = {
-                        showWorkshopUpdateConfirmDialog = false
-                        callbacks.onUpdateWorkshopMod(mod)
-                    }
-                ) {
-                    Text(stringResource(R.string.workshop_action_update))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showWorkshopUpdateConfirmDialog = false }) {
-                    Text(stringResource(R.string.main_folder_dialog_cancel))
-                }
-            }
+            onDismiss = { showWorkshopUpdateConfirmDialog = false },
         )
     }
 
@@ -714,34 +546,21 @@ internal fun ModCard(
         ModDetailsDialog(
             mod = mod,
             showModFileName = showModFileName,
-            selectionEnabled = selectionEnabled,
             fileActionsEnabled = fileActionsEnabled,
             startAtActions = detailsStartAtActions,
             onDismiss = { showDetailsDialog = false },
-            onToggleMod = {
-                if (it != mod.enabled) LauncherHaptics.vibrateToggle(context)
-                callbacks.onToggleMod(mod, it)
-            },
             onFavoriteChange = { callbacks.onSetFavorite(mod, it) },
-            onOpenAiEditor = openAiEditor,
-            onOpenWorkshopDetails = openWorkshop,
-            deleteEnabled = actionsEnabled,
-            onDelete = {
-                showDetailsDialog = false
-                callbacks.onDeleteMod(mod)
+            suggestionContent = {
+                ModDetailsSuggestion(suggestionText, suggestionRead) {
+                    onSuggestionRead()
+                    showSuggestionDialog = true
+                }
             },
             badgesContent = { onScrollToAi ->
                 ModDetailsBadges(
                     mod = mod,
-                    suggestionText = suggestionText,
-                    suggestionRead = suggestionRead,
                     associationBadge = associationBadge,
                     associationEnabled = associationBadgeEnabled,
-                    priorityEnabled = fileActionsEnabled,
-                    onSuggestion = {
-                        onSuggestionRead()
-                        showSuggestionDialog = true
-                    },
                     onImportPatch = { showImportPatchDialog = true },
                     onAssociation = {
                         showDetailsDialog = false
@@ -753,7 +572,6 @@ internal fun ModCard(
                         showWorkshopUpdateConfirmDialog = true
                     },
                     onWorkshop = openWorkshop,
-                    onPriority = { if (fileActionsEnabled) showPriorityDialog = true },
                     onCatalogue = openCatalogue,
                     onContributions = {
                         openCatalogue()
@@ -785,6 +603,22 @@ internal fun ModCard(
                 )
             },
             actionsContent = {
+                mod.detailsStatusText()?.let { status ->
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                ModWorkshopActions(
+                    mod = mod,
+                    enabled = !batchSelectionMode,
+                    onInstall = {
+                        showDetailsDialog = false
+                        callbacks.onPatchWorkshopMod(mod)
+                    },
+                    onRetryDownload = { callbacks.onRetryWorkshopDownload(mod) },
+                )
                 ModActionsList(
                     controlsEnabled = fileActionsEnabled,
                     favorite = mod.favorite,

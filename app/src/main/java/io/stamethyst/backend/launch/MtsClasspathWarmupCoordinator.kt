@@ -14,12 +14,8 @@ import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
-import java.util.zip.ZipFile
 
 object MtsClasspathWarmupCoordinator {
-    private val SEPARATOR_BYTE = byteArrayOf('|'.code.toByte())
-
     @JvmStatic
     @Throws(IOException::class)
     fun prewarmIfReady(context: Context, progressCallback: StartupProgressCallback? = null): Boolean {
@@ -39,13 +35,26 @@ object MtsClasspathWarmupCoordinator {
         progressCallback: StartupProgressCallback? = null,
         launchSnapshot: ModManager.LaunchModSnapshot? = null,
         assumeCommonPreparationDone: Boolean = false
+    ): Boolean = prepareForLaunch(
+        context, progressCallback, launchSnapshot, assumeCommonPreparationDone,
+        verifiedGameBodyPatch = null
+    )
+
+    @Throws(IOException::class)
+    internal fun prepareForLaunch(
+        context: Context,
+        progressCallback: StartupProgressCallback?,
+        launchSnapshot: ModManager.LaunchModSnapshot?,
+        assumeCommonPreparationDone: Boolean,
+        verifiedGameBodyPatch: GameBodyPatchVerification?
     ): Boolean {
         return prepareIfReady(
             context = context,
             progressCallback = progressCallback,
             skipWhenCacheCurrent = true,
             launchSnapshot = launchSnapshot,
-            assumeCommonPreparationDone = assumeCommonPreparationDone
+            assumeCommonPreparationDone = assumeCommonPreparationDone,
+            verifiedGameBodyPatch = verifiedGameBodyPatch
         )
     }
 
@@ -55,7 +64,8 @@ object MtsClasspathWarmupCoordinator {
         progressCallback: StartupProgressCallback?,
         skipWhenCacheCurrent: Boolean,
         launchSnapshot: ModManager.LaunchModSnapshot?,
-        assumeCommonPreparationDone: Boolean
+        assumeCommonPreparationDone: Boolean,
+        verifiedGameBodyPatch: GameBodyPatchVerification? = null
     ): Boolean {
         if (!RuntimePaths.importedStsJar(context).isFile) {
             return false
@@ -89,17 +99,20 @@ object MtsClasspathWarmupCoordinator {
             45,
             context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
         )
-        // Both cache-current evaluations below read the same five core files, none of
-        // which prepareMtsModFileList touches, so they must reach the same verdict.
-        // Computing the marker once turns the second evaluation into a marker-file
-        // comparison instead of a second full central-directory digest pass over the
-        // desktop jar and every imported component jar.
-        var markerValue: String? = null
-        fun isCacheCurrentWithMemoizedMarker(): Boolean {
-            val computed = markerValue ?: buildCacheMarkerValue(context).also { markerValue = it }
-            return isCacheCurrent(context, computed)
+        // Mod-list preparation does not change the five core jars or the generated
+        // classpath jars. Reuse the whole verdict until the rebuild boundary, including
+        // a failed deep check, instead of checking the same inputs twice.
+        var cacheCurrent: Boolean? = null
+        fun isCacheCurrentForPreparation(): Boolean {
+            return cacheCurrent ?: run {
+                val fingerprints = captureFingerprints(context)
+                isCacheCurrent(
+                    context, buildCacheMarkerValue(context, fingerprints),
+                    verifiedGameBodyPatch, fingerprints
+                ).also { cacheCurrent = it }
+            }
         }
-        if (skipWhenCacheCurrent && launchSnapshot != null && isCacheCurrentWithMemoizedMarker()) {
+        if (skipWhenCacheCurrent && launchSnapshot != null && isCacheCurrentForPreparation()) {
             reportProgress(
                 progressCallback,
                 100,
@@ -108,7 +121,7 @@ object MtsClasspathWarmupCoordinator {
             return true
         }
         val snapshot = OptionalModStorageCoordinator.prepareMtsModFileList(context, launchSnapshot)
-        if (skipWhenCacheCurrent && isCacheCurrentWithMemoizedMarker()) {
+        if (skipWhenCacheCurrent && isCacheCurrentForPreparation()) {
             reportProgress(
                 progressCallback,
                 100,
@@ -121,17 +134,18 @@ object MtsClasspathWarmupCoordinator {
             50,
             context.progressText(R.string.startup_progress_preparing_mts_classpath_cache)
         )
-        ModJarSupport.prepareMtsClasspath(
-            context,
-            mapProgressRange(progressCallback, 50, 96),
-            snapshot
-        )
+        rebuildCache(context) {
+            ModJarSupport.prepareMtsClasspath(
+                context,
+                mapProgressRange(progressCallback, 50, 96),
+                snapshot
+            )
+        }
         reportProgress(
             progressCallback,
             98,
             context.progressText(R.string.startup_progress_mts_classpath_cache_ready)
         )
-        writeCacheMarker(context)
         reportProgress(
             progressCallback,
             100,
@@ -141,7 +155,16 @@ object MtsClasspathWarmupCoordinator {
     }
 
     @JvmStatic
-    fun isCacheCurrent(context: Context, markerValue: String = buildCacheMarkerValue(context)): Boolean {
+    fun isCacheCurrent(context: Context, markerValue: String = buildCacheMarkerValue(context)): Boolean =
+        isCacheCurrent(context, markerValue, verifiedGameBodyPatch = null, fingerprints = null)
+
+    internal fun isCacheCurrent(
+        context: Context,
+        markerValue: String,
+        verifiedGameBodyPatch: GameBodyPatchVerification?,
+        fingerprints: LaunchJarFingerprints?,
+        isPatched: (File, File) -> Boolean = StsDesktopJarPatcher::isPatchedWithCurrentPatch
+    ): Boolean {
         val markerFile = RuntimePaths.mtsClasspathCacheMarker(context)
         val actualMarker = try {
             markerFile.takeIf(File::isFile)
@@ -151,14 +174,14 @@ object MtsClasspathWarmupCoordinator {
         } catch (_: Throwable) {
             ""
         }
-        if (markerValue.isEmpty() || markerValue != actualMarker) {
+        if (markerValue.isBlank() || markerValue.trim() != actualMarker) {
             return false
         }
-        if (!StsDesktopJarPatcher.isPatchedWithCurrentPatch(
-                RuntimePaths.importedStsJar(context),
-                RuntimePaths.gdxPatchJar(context)
-            )
-        ) {
+        val stsJar = RuntimePaths.importedStsJar(context)
+        val patchJar = RuntimePaths.gdxPatchJar(context)
+        val alreadyVerified = fingerprints != null &&
+            verifiedGameBodyPatch?.matches(stsJar, patchJar, fingerprints) == true
+        if (!alreadyVerified && !isPatched(stsJar, patchJar)) {
             return false
         }
         return ModClasspathJarBuilder.hasRequiredGdxApi(RuntimePaths.mtsGdxApiJar(context)) &&
@@ -204,8 +227,10 @@ object MtsClasspathWarmupCoordinator {
         callback?.onProgress(percent.coerceIn(0, 100), message)
     }
 
+    /** The builder can patch core jars; never write its pre-build fingerprint snapshot. */
     @Throws(IOException::class)
-    private fun writeCacheMarker(context: Context) {
+    internal fun rebuildCache(context: Context, rebuild: () -> Unit) {
+        rebuild()
         val markerFile = RuntimePaths.mtsClasspathCacheMarker(context)
         val parent = markerFile.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
@@ -219,44 +244,24 @@ object MtsClasspathWarmupCoordinator {
      * changes the marker format, and without it an older marker written by a previous
      * build could still compare equal to a newer one field-for-field.
      */
-    private fun buildCacheMarkerValue(context: Context): String = buildString {
+    internal fun buildCacheMarkerValue(
+        context: Context,
+        fingerprints: LaunchJarFingerprints = captureFingerprints(context)
+    ): String = buildString {
         append("schema|4").append('\n')
-        append(jarFingerprint("desktop", RuntimePaths.importedStsJar(context))).append('\n')
-        append(jarFingerprint("modthespire", RuntimePaths.importedMtsJar(context))).append('\n')
-        append(jarFingerprint("basemod", RuntimePaths.importedBaseModJar(context))).append('\n')
-        append(jarFingerprint("stslib", RuntimePaths.importedStsLibJar(context))).append('\n')
-        append(jarFingerprint("gdxpatch", RuntimePaths.gdxPatchJar(context))).append('\n')
+        append(fingerprints.line("desktop", RuntimePaths.importedStsJar(context))).append('\n')
+        append(fingerprints.line("modthespire", RuntimePaths.importedMtsJar(context))).append('\n')
+        append(fingerprints.line("basemod", RuntimePaths.importedBaseModJar(context))).append('\n')
+        append(fingerprints.line("stslib", RuntimePaths.importedStsLibJar(context))).append('\n')
+        append(fingerprints.line("gdxpatch", RuntimePaths.gdxPatchJar(context))).append('\n')
     }
 
-    /**
-     * Mirrors the patch cache's jar fingerprint: size plus a digest over the central
-     * directory (entry names, sizes, CRC32s) instead of mtime, so a jar rebuilt in place
-     * with an unchanged size cannot pass as current, and a copy that only moves mtime
-     * does not force a needless rebuild. Degrades to size and mtime for unreadable zips.
-     */
-    private fun jarFingerprint(label: String, file: File): String {
-        if (!file.isFile) {
-            return "$label|${file.absolutePath}|-1|-1"
-        }
-        val entryDigest = try {
-            ZipFile(file).use { zip ->
-                val digest = MessageDigest.getInstance("SHA-256")
-                for (entry in zip.entries()) {
-                    digest.update(entry.name.toByteArray(StandardCharsets.UTF_8))
-                    digest.update(SEPARATOR_BYTE)
-                    digest.update(entry.size.toString().toByteArray(StandardCharsets.UTF_8))
-                    digest.update(SEPARATOR_BYTE)
-                    digest.update(entry.crc.toString().toByteArray(StandardCharsets.UTF_8))
-                    digest.update(SEPARATOR_BYTE)
-                }
-                digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
-            }
-        } catch (_: Throwable) {
-            null
-        }
-        if (entryDigest == null) {
-            return "$label|${file.absolutePath}|${file.length()}|${file.lastModified()}|nozip"
-        }
-        return "$label|${file.absolutePath}|${file.length()}|$entryDigest"
-    }
+    internal fun captureFingerprints(context: Context): LaunchJarFingerprints =
+        LaunchJarFingerprints.capture(listOf(
+            RuntimePaths.importedStsJar(context),
+            RuntimePaths.importedMtsJar(context),
+            RuntimePaths.importedBaseModJar(context),
+            RuntimePaths.importedStsLibJar(context),
+            RuntimePaths.gdxPatchJar(context)
+        ))
 }

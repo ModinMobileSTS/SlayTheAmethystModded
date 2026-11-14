@@ -138,7 +138,7 @@ internal fun AiReasoningEffortPicker(
                         position = tier.toFloat()
                         onEffortChange(options[tier])
                     },
-                    valueRange = 0f..2f,
+                    valueRange = 0f..options.lastIndex.toFloat(),
                     // Continuous during touch; snap only after release, not on every move.
                     steps = 0,
                     enabled = enabled && expanded,
@@ -167,6 +167,11 @@ internal fun AiReasoningEffortPicker(
                         }
                     }
                 }
+                if (preview == LlmReasoningEffort.OFF) Text(
+                    stringResource(R.string.ai_agent_budget_reasoning_off_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             }
         }
@@ -191,6 +196,7 @@ private class EffortPopupPositionProvider : PopupPositionProvider {
 }
 
 private fun effortColor(effort: LlmReasoningEffort): Color = when (effort) {
+    LlmReasoningEffort.OFF -> Color(0xFF92929C)
     LlmReasoningEffort.LOW -> Color(0xFFBD8867)
     LlmReasoningEffort.MAX -> Color(0xFFB58AD5)
     else -> Color(0xFFD89556)
@@ -209,7 +215,7 @@ private fun ReasoningEnergyIcon(effort: LlmReasoningEffort, enabled: Boolean) {
     val color = effortColor(effort).copy(alpha = if (enabled) 1f else 0.38f)
     Canvas(Modifier.size(32.dp)) {
         val unit = size.minDimension / 32f
-        val p = if (enabled) phase else 0f
+        val p = if (enabled && effort != LlmReasoningEffort.OFF) phase else 0f
         val breath = (sin(p * 2 * PI).toFloat() + 1f) / 2f
         val radius = 6.6f * unit * (1f + breath * 0.08f)
         fun point(angle: Double, distance: Float) = Offset(

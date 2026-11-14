@@ -1,6 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="mod_details_title">Mod details</string>
+    <string name="mod_details_close">Close mod details</string>
+    <string name="mod_details_done">Done</string>
+    <string name="mod_details_relations">Status and links</string>
+    <string name="mod_details_technical_info">Technical information</string>
+    <string name="mod_details_mod_id">Mod ID</string>
+    <string name="mod_details_load_priority">Load priority</string>
+    <string name="mod_details_priority_default">Default</string>
+    <string name="mod_details_dependencies">Dependencies</string>
+    <string name="mod_details_dependencies_none">None</string>
+    <string name="mod_details_file_location">File location</string>
+    <string name="mod_details_copy">Copy</string>
+    <string name="mod_details_patch_description">View compatibility fixes</string>
+    <string name="mod_details_patch_applied">Applied</string>
+    <string name="mod_details_patch_update">Update available</string>
+    <string name="mod_details_ai_relation_description">Manage local and community patches</string>
+    <string name="mod_details_market">Mod market</string>
+    <string name="mod_details_market_description">View the original mod details</string>
     <string name="mod_details_actions">Actions</string>
     <string name="mod_details_tab_info">Info</string>
     <string name="mod_details_tab_description">About</string>

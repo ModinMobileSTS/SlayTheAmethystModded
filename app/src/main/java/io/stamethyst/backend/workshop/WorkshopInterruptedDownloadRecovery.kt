@@ -19,8 +19,36 @@ internal object WorkshopInterruptedDownloadRecovery {
             appId = summary.appId,
             publishedFileId = summary.publishedFileId,
         )
+        if (existingRecord?.pendingInstall != null) {
+            val files = existingRecord.pendingInstallFiles(context)
+            if (files.isNotEmpty() && files.all { it.isFile }) {
+                val artifacts = files.mapIndexed { index, file -> WorkshopDownloadedArtifact(
+                    relativePath = existingRecord.pendingInstall.localJarPaths[index],
+                    sizeBytes = file.length(), modifiedAtMillis = file.lastModified(),
+                ) }
+                metadataStore.upsert(existingRecord.withPendingInstall(
+                    existingRecord.installationDetails(), artifacts, RECOVERED_UPDATE_PENDING_MESSAGE))
+                taskStore.markCompleted(task.publishedFileId, RECOVERED_UPDATE_PENDING_MESSAGE)
+                return true
+            }
+            metadataStore.upsert(existingRecord.copy(pendingInstall = null,
+                cardState = WorkshopModCardState.UpdateAvailable, statusText = WORKSHOP_UPDATE_PENDING_FILES_MISSING_MESSAGE))
+            taskStore.update(task.publishedFileId) { it.copy(status = WorkshopDownloadTaskStatus.Failed,
+                message = WORKSHOP_UPDATE_PENDING_FILES_MISSING_MESSAGE, updatedAtMillis = System.currentTimeMillis()) }
+            return true
+        }
         if (existingRecord?.hasRestorableInstalledJar(context) == true) {
-            return restoreExistingRecordIfPossible(context, metadataStore, taskStore, task, existingRecord)
+            val pendingArtifacts = if (existingRecord.pendingInstall == null && task.hasFinishedFileTransfer() &&
+                task.details.summary.updatedAtMillis > existingRecord.updatedAtMillis) {
+                findDownloadedJars(outputDir)
+            } else emptyList()
+            if (pendingArtifacts.isNotEmpty()) {
+                metadataStore.upsert(existingRecord.withPendingInstall(task.details, pendingArtifacts, RECOVERED_UPDATE_PENDING_MESSAGE))
+                taskStore.markCompleted(task.publishedFileId, RECOVERED_UPDATE_PENDING_MESSAGE)
+                return true
+            }
+            return restoreExistingRecordIfPossible(context, metadataStore, taskStore, task,
+                existingRecord.copy(pendingInstall = null))
         }
         if (task.status == WorkshopDownloadTaskStatus.Completed && existingRecord != null) return false
         val completedArtifacts = if (task.hasFinishedFileTransfer()) findDownloadedJars(outputDir) else emptyList()
@@ -179,5 +207,6 @@ internal object WorkshopInterruptedDownloadRecovery {
             .firstOrNull { it.isDirectory } ?: RuntimePaths.workshopItemDir(context, appId, publishedFileId)
 
     private const val RECOVERED_PATCH_INTERRUPTED_MESSAGE = "下载已完成，上次修补中断，可手动安装"
+    private const val RECOVERED_UPDATE_PENDING_MESSAGE = "更新已下载，上次修补中断，可继续安装（原版本已保留）"
     private const val RECOVERED_INSTALLED_VERSION_MESSAGE = "已恢复上次安装，更新中断后可重新更新"
 }

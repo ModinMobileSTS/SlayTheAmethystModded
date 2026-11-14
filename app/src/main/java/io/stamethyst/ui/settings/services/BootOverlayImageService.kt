@@ -121,7 +121,9 @@ internal object BootOverlayImageService {
     }
 
     fun reset(context: Context): BootOverlayImageConfig {
+        val artwork = LauncherPreferences.readBootOverlayImageConfig(context).artwork
         LauncherPreferences.clearBootOverlayImageConfig(context)
+        LauncherPreferences.saveBootOverlayImageConfig(context, BootOverlayImageConfig(artwork = artwork))
         RuntimePaths.bootOverlayImagesDir(context)
             .listFiles()
             ?.forEach { file ->
@@ -158,5 +160,4 @@ internal object BootOverlayImageService {
         }.getOrDefault(false)
     }
 }
-
 

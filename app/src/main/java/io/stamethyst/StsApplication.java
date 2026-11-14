@@ -9,6 +9,7 @@ import io.stamethyst.backend.network.AcceleratedRouteLogStore;
 import io.stamethyst.backend.presence.GamePresenceReporter;
 import io.stamethyst.backend.process.AppProcess;
 import io.stamethyst.backend.process.WebViewDataDirectory;
+import io.stamethyst.backend.render.ForceHighRefreshRateController;
 import io.stamethyst.backend.steamcloud.SteamCloudLegacySensitiveDataCleanup;
 import io.stamethyst.backend.steamcloud.SteamCloudSyncRepository;
 import io.stamethyst.config.CloudControlConfig;
@@ -25,6 +26,7 @@ public class StsApplication extends Application {
             LauncherCrashReporter.install(getApplicationContext());
             return;
         }
+        ForceHighRefreshRateController.install(this);
         WebViewDataDirectory.configure(getApplicationContext());
         LauncherCrashReporter.install(getApplicationContext());
         LauncherCrashReporter.recordLatestLauncherProcessExitIfNeeded(getApplicationContext());

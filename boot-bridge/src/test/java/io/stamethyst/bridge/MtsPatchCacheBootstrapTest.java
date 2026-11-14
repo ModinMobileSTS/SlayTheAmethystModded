@@ -6,21 +6,27 @@ import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.ObjectOutputStream;
+import java.lang.reflect.Array;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class MtsPatchCacheBootstrapTest {
@@ -346,6 +352,185 @@ public class MtsPatchCacheBootstrapTest {
             System.clearProperty(PROP_PACKAGE_DIR);
             deleteRecursively(root);
         }
+    }
+
+    @Test
+    public void annotationDbCache_roundTripsLargeIndexAcrossClassLoadersWithIndependentCopies() throws Exception {
+        File root = Files.createTempDirectory("mts-annotation-cache-round-trip-").toFile();
+        try {
+            File jar = buildFakeAnnotationRuntimeJar(root);
+            File packageDir = new File(root, "package");
+            Map<String, Set<String>> expectedIndex = new LinkedHashMap<String, Set<String>>();
+            Set<String> patches = new LinkedHashSet<String>();
+            for (int i = 0; i < 6000; i++) {
+                patches.add("example.generated.mod.PatchClass" + i);
+            }
+            expectedIndex.put("example.PatchAnnotation", patches);
+            expectedIndex.put("example.EnumAnnotation", Collections.singleton("example.EnumHolder"));
+
+            try (URLClassLoader writer = new URLClassLoader(new URL[]{jar.toURI().toURL()}, null)) {
+                Class<?> annotationDb = writer.loadClass("org.scannotation.AnnotationDB");
+                Object db = annotationDb.getDeclaredConstructor().newInstance();
+                annotationIndex(db).putAll(expectedIndex);
+                Map<URL, Object> map = annotationDbMap(writer);
+                // Shared serialized DB references must still produce independent restored DBs.
+                map.put(new File(root, "mods/Example's Mod.jar").toURI().toURL(), db);
+                map.put(new File(root, "mods/Second Mod.jar").toURI().toURL(), db);
+                MtsPatchAnnotationDbCache.writeFromPatcher(writer, root, packageDir);
+            }
+            assertTrue("Fixture must span multiple read buffers", MtsPatchAnnotationDbCache.resolve(root).length() > 128 * 1024);
+
+            try (URLClassLoader reader = new URLClassLoader(new URL[]{jar.toURI().toURL()}, null)) {
+                URL firstUrl = new File(packageDir, "Exampleu0027s Mod-modded.jar").toURI().toURL();
+                URL secondUrl = new File(packageDir, "Second Mod-modded.jar").toURI().toURL();
+                Object modInfos = annotationModInfos(reader, firstUrl, secondUrl);
+                MtsPatchAnnotationDbCache.restoreIntoPatcher(reader, root, packageDir, modInfos);
+
+                Map<URL, Object> restored = annotationDbMap(reader);
+                assertEquals(2, restored.size());
+                Object firstDb = restored.get(firstUrl);
+                Object secondDb = restored.get(secondUrl);
+                assertSame(reader, firstDb.getClass().getClassLoader());
+                assertSame(reader, secondDb.getClass().getClassLoader());
+                assertNotSame(firstDb, secondDb);
+                Map<String, Set<String>> firstIndex = annotationIndex(firstDb);
+                Map<String, Set<String>> secondIndex = annotationIndex(secondDb);
+                assertEquals(expectedIndex, firstIndex);
+                assertEquals(expectedIndex, secondIndex);
+                assertNotSame(firstIndex, secondIndex);
+                for (String key : expectedIndex.keySet()) {
+                    assertNotSame(firstIndex.get(key), secondIndex.get(key));
+                    firstIndex.get(key).clear();
+                }
+                assertEquals(expectedIndex, secondIndex);
+
+                // Mutating restored state must not affect a subsequent read of the cache.
+                MtsPatchAnnotationDbCache.restoreIntoPatcher(reader, root, packageDir, modInfos);
+                assertEquals(expectedIndex, annotationIndex(annotationDbMap(reader).get(firstUrl)));
+            }
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void annotationDbCache_restoresLegacySchemaOneObjectStream() throws Exception {
+        File root = Files.createTempDirectory("mts-annotation-cache-legacy-").toFile();
+        try {
+            File jar = buildFakeAnnotationRuntimeJar(root);
+            File packageDir = new File(root, "package");
+            Set<String> patches = Collections.singleton("example.LegacyPatch");
+            try (URLClassLoader writer = new URLClassLoader(new URL[]{jar.toURI().toURL()}, null)) {
+                Object db = writer.loadClass("org.scannotation.AnnotationDB").getDeclaredConstructor().newInstance();
+                annotationIndex(db).put("example.PatchAnnotation", patches);
+                Map<String, Object> entries = new LinkedHashMap<String, Object>();
+                entries.put("file:ExampleMod.jar", db);
+                // Independently emit the existing wire format, without the production writer.
+                try (ObjectOutputStream output = new ObjectOutputStream(
+                        new FileOutputStream(MtsPatchAnnotationDbCache.resolve(root)))) {
+                    output.writeInt(1);
+                    output.writeObject(entries);
+                }
+            }
+            try (URLClassLoader reader = new URLClassLoader(new URL[]{jar.toURI().toURL()}, null)) {
+                URL url = new File(packageDir, "ExampleMod-modded.jar").toURI().toURL();
+                MtsPatchAnnotationDbCache.restoreIntoPatcher(reader, root, packageDir, annotationModInfos(reader, url));
+                assertEquals(Collections.singletonMap("example.PatchAnnotation", patches),
+                        annotationIndex(annotationDbMap(reader).get(url)));
+            }
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void preparePrepackagedLaunch_scansModsWhenAnnotationCacheIsMissing() throws Throwable {
+        assertAnnotationCacheFallsBack(null);
+    }
+
+    @Test
+    public void preparePrepackagedLaunch_scansModsWhenAnnotationCacheSchemaIsUnsupported() throws Throwable {
+        assertAnnotationCacheFallsBack(annotationCacheBytes(2, Collections.emptyMap()));
+    }
+
+    @Test
+    public void preparePrepackagedLaunch_scansModsWhenAnnotationCachePayloadIsNotMap() throws Throwable {
+        assertAnnotationCacheFallsBack(annotationCacheBytes(1, "invalid payload"));
+    }
+
+    @Test
+    public void preparePrepackagedLaunch_scansModsWhenAnnotationCacheHeaderIsTruncated() throws Throwable {
+        assertAnnotationCacheFallsBack(new byte[]{(byte) 0xac, (byte) 0xed});
+    }
+
+    @Test
+    public void preparePrepackagedLaunch_scansModsWhenAnnotationCachePayloadIsTruncated() throws Throwable {
+        byte[] bytes = annotationCacheBytes(1, Collections.singletonMap("file:ExampleMod.jar", "incomplete"));
+        assertAnnotationCacheFallsBack(java.util.Arrays.copyOf(bytes, bytes.length - 3));
+    }
+
+    private static byte[] annotationCacheBytes(int schema, Object payload) throws Exception {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+            output.writeInt(schema);
+            output.writeObject(payload);
+        }
+        return bytes.toByteArray();
+    }
+
+    private static void assertAnnotationCacheFallsBack(byte[] cacheBytes) throws Throwable {
+        File root = Files.createTempDirectory("mts-annotation-cache-fallback-").toFile();
+        ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
+        String previousUserDir = System.getProperty("user.dir");
+        try {
+            File jar = buildFakeAnnotationRuntimeJar(root);
+            if (cacheBytes != null) {
+                Files.write(MtsPatchAnnotationDbCache.resolve(root).toPath(), cacheBytes);
+            }
+            System.setProperty(PROP_JAR, new File(root, "desktop-1.0-modded.jar").getAbsolutePath());
+            System.setProperty(PROP_PACKAGE_DIR, new File(root, "package").getAbsolutePath());
+            System.clearProperty(PROP_PREPARED);
+            try (URLClassLoader loader = new URLClassLoader(new URL[]{jar.toURI().toURL()}, null)) {
+                Thread.currentThread().setContextClassLoader(loader);
+                Map<URL, Object> previousMap = annotationDbMap(loader);
+                MtsPatchCacheBootstrap.preparePrepackagedLaunch();
+                assertEquals("scanned", System.getProperty(PROP_PREPARED));
+                assertSame("Failed restores must not publish partial state", previousMap, annotationDbMap(loader));
+            }
+        } finally {
+            Thread.currentThread().setContextClassLoader(previousLoader);
+            if (previousUserDir == null) {
+                System.clearProperty("user.dir");
+            } else {
+                System.setProperty("user.dir", previousUserDir);
+            }
+            System.clearProperty(PROP_JAR);
+            System.clearProperty(PROP_PACKAGE_DIR);
+            System.clearProperty(PROP_PREPARED);
+            deleteRecursively(root);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Set<String>> annotationIndex(Object db) throws Exception {
+        return (Map<String, Set<String>>) db.getClass().getMethod("getAnnotationIndex").invoke(db);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<URL, Object> annotationDbMap(ClassLoader loader) throws Exception {
+        return (Map<URL, Object>) loader.loadClass("com.evacipated.cardcrawl.modthespire.Patcher")
+                .getField("annotationDBMap").get(null);
+    }
+
+    private static Object annotationModInfos(ClassLoader loader, URL... urls) throws Exception {
+        Class<?> modInfoClass = loader.loadClass("com.evacipated.cardcrawl.modthespire.ModInfo");
+        Object modInfos = Array.newInstance(modInfoClass, urls.length);
+        for (int i = 0; i < urls.length; i++) {
+            Object modInfo = modInfoClass.getDeclaredConstructor().newInstance();
+            modInfoClass.getField("jarURL").set(modInfo, urls[i]);
+            Array.set(modInfos, i, modInfo);
+        }
+        return modInfos;
     }
 
     @Test

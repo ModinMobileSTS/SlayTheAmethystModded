@@ -227,6 +227,11 @@ internal fun WorkshopScreen(
         viewModel.load(context.applicationContext, initialListMode)
     }
 
+    LaunchedEffect(active) {
+        // The main/mod pages can finish an installation while this retained dock page is hidden.
+        if (active) viewModel.loadInstalledState(context.applicationContext)
+    }
+
     LaunchedEffect(state.listMode) {
         launch { bannerPage?.expand() }
         listState.animateScrollToItem(0)
@@ -1473,7 +1478,8 @@ internal fun WorkshopDownloadActionButton(
         return
     }
     when (state) {
-        WorkshopModDownloadState.Downloaded -> OutlinedButton(
+        WorkshopModDownloadState.Downloaded,
+        WorkshopModDownloadState.UpdatePendingInstall -> OutlinedButton(
             modifier = modifier,
             enabled = false,
             onClick = onClick,
@@ -1563,6 +1569,7 @@ internal fun MissingWorkshopDependenciesDialog(
 private val WorkshopModDownloadState.actionIconRes: Int
     get() = when (this) {
         WorkshopModDownloadState.Downloaded -> R.drawable.ic_workshop_installed
+        WorkshopModDownloadState.UpdatePendingInstall -> R.drawable.ic_workshop_installed
         WorkshopModDownloadState.NotDownloaded -> R.drawable.ic_workshop_download
         WorkshopModDownloadState.UpdateAvailable -> R.drawable.ic_workshop_update
         WorkshopModDownloadState.Queued -> R.drawable.ic_workshop_queue

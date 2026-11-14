@@ -445,7 +445,8 @@ class WorkshopDownloadProcessService : Service() {
                 appId = details.summary.appId,
                 publishedFileId = details.summary.publishedFileId,
             )
-            existingRecord = previousRecord?.restoreCandidateForInterruptedUpdate()
+            // A new transfer reuses its output directory; do not offer a stale candidate while it writes.
+            existingRecord = previousRecord?.restoreCandidateForInterruptedUpdate()?.copy(pendingInstall = null)
             val queuedMessage = if (existingRecord != null) "等待更新" else "等待下载"
             metadataStore.upsert(
                 (previousRecord ?: WorkshopInstalledModRecord(
@@ -466,6 +467,7 @@ class WorkshopDownloadProcessService : Service() {
                     cardState = WorkshopModCardState.Downloading,
                     statusText = queuedMessage,
                     dependencies = details.dependencies,
+                    pendingInstall = null,
                 )
             )
             taskStore.update(details.summary.publishedFileId) {
@@ -656,8 +658,7 @@ class WorkshopDownloadProcessService : Service() {
                                     LauncherPreferences.isWorkshopAutoImportEnabled(applicationContext)
                                 val hasMultipleJarCandidates = jarArtifacts.size > 1
                                 val canAutoImportDownloadedJars = autoImportEnabled && !hasMultipleJarCandidates
-                                val preserveExistingUntilAutoImportFinishes =
-                                    canAutoImportDownloadedJars && existingRecord.hasInstalledJar()
+                                val preserveExistingUntilAutoImportFinishes = existingRecord.hasInstalledJar()
                                 val downloadedJarPaths = jarArtifacts.map { it.relativePath }
                                 var downloadedRecord = service.createInstalledRecord(details, jarArtifacts.first())
                                     .copy(localJarPaths = downloadedJarPaths)
@@ -666,7 +667,9 @@ class WorkshopDownloadProcessService : Service() {
                                         statusText = "检测到 ${jarArtifacts.size} 个 jar，请选择要导入的文件",
                                     )
                                 }
-                                if (!preserveExistingUntilAutoImportFinishes) {
+                                if (preserveExistingUntilAutoImportFinishes) {
+                                    metadataStore.upsert(existingRecord!!.withPendingInstall(details, jarArtifacts))
+                                } else {
                                     metadataStore.upsert(downloadedRecord)
                                 }
                                 val importStageMessage = when {
@@ -740,7 +743,7 @@ class WorkshopDownloadProcessService : Service() {
                                         is WorkshopAutoImportResult.Failed -> {
                                             message = "$downloadedMessage，自动导入失败：${importResult.message}"
                                             if (preserveExistingUntilAutoImportFinishes) {
-                                                existingRecord!!.copy(statusText = message)
+                                                existingRecord!!.withPendingInstall(details, jarArtifacts, message)
                                             } else {
                                                 downloadedRecord.copy(statusText = "自动导入失败，请手动导入")
                                             }
@@ -752,7 +755,9 @@ class WorkshopDownloadProcessService : Service() {
                                     } else {
                                         downloadedMessage
                                     }
-                                    downloadedRecord
+                                    if (preserveExistingUntilAutoImportFinishes) {
+                                        existingRecord!!.withPendingInstall(details, jarArtifacts, message)
+                                    } else downloadedRecord
                                 }
                             } else {
                                 val previewImagePath = downloadPreviewImageIfNeeded(service, metadataStore, details)
@@ -765,7 +770,7 @@ class WorkshopDownloadProcessService : Service() {
                                 NewlyImportedModHighlightStore.mark(applicationContext, record.newlyImportedHighlightKeys())
                             }
                             metadataStore.upsert(record)
-                            if (jarArtifacts.isNotEmpty() && record.cardState == WorkshopModCardState.ImportedPatched) {
+                            if (jarArtifacts.isNotEmpty() && record.canCleanDownloadedJars()) {
                                 cleanDownloadedContent(outputDir)
                             }
                             taskStore.update(details.summary.publishedFileId) {
@@ -1146,7 +1151,11 @@ class WorkshopDownloadProcessService : Service() {
         fallbackStatusText: String,
     ) {
         if (existingRecord != null) {
-            metadataStore.upsert(existingRecord)
+            val current = metadataStore.findByPublishedFileId(details.summary.appId, details.summary.publishedFileId)
+            metadataStore.upsert(existingRecord.copy(
+                pendingInstall = current?.pendingInstall,
+                statusText = if (current?.pendingInstall != null) fallbackStatusText else existingRecord.statusText,
+            ))
             return
         }
         metadataStore.updateState(
@@ -1176,16 +1185,16 @@ class WorkshopDownloadProcessService : Service() {
             appId = details.summary.appId,
             publishedFileId = details.summary.publishedFileId,
         )
-        if (existingRecord?.allLocalJarPaths()?.any { path -> File(path).isAbsolute && File(path).isFile } == true) {
-            return
-        }
+        val hasInstalledVersion = existingRecord?.allLocalJarPaths()
+            ?.any { path -> File(path).isAbsolute && File(path).isFile } == true
         val statusText = if (jarArtifacts.size > 1) {
             "检测到 ${jarArtifacts.size} 个 jar，请选择要导入的文件"
         } else {
             "等待修补"
         }
         metadataStore.upsert(
-            service.createInstalledRecord(details, jarArtifacts.first())
+            if (hasInstalledVersion) existingRecord.withPendingInstall(details, jarArtifacts)
+            else service.createInstalledRecord(details, jarArtifacts.first())
                 .copy(
                     localJarPaths = jarArtifacts.map { it.relativePath },
                     statusText = statusText,

@@ -68,6 +68,7 @@ internal data class BatchEditBarState(
     val onExport: () -> Unit = {},
     val onShare: () -> Unit = {},
     val selectedCount: Int,
+    val totalCount: Int = 0,
     val controlsEnabled: Boolean,
     val onMove: () -> Unit,
     val onDelete: () -> Unit,

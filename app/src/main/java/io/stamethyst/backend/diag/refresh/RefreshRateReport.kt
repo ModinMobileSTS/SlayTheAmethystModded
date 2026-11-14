@@ -20,6 +20,8 @@ internal data class RefreshRateObservation(
     val focused: Boolean,
     val powerSave: Boolean?,
     val thermalStatus: Int?,
+    val viewRequestedFrameRate: String? = null,
+    val composeHighVoteInstalled: Boolean? = null,
 )
 
 @Serializable
@@ -52,9 +54,29 @@ internal data class RefreshRateFrameStats(
     }
 }
 
-internal enum class RefreshRatePhase(val key: String) {
-    BASELINE("baseline"), MODE("highest_mode"), WINDOW("window_120"),
-    SURFACE("surface_view_120"), TEXTURE("texture_view_window_120"),
+internal enum class RefreshRateProbeKind { VIEW, SURFACE, TEXTURE, COMPOSE }
+
+internal enum class RefreshRateRequestKind { DEFAULT, MODE, WINDOW, SURFACE_SEAMLESS, VIEW_HIGH, COMPOSE_HIGH, PRODUCTION }
+
+internal enum class RefreshRatePhase(
+    val key: String,
+    val probeKind: RefreshRateProbeKind = RefreshRateProbeKind.VIEW,
+    val requestKind: RefreshRateRequestKind = RefreshRateRequestKind.DEFAULT,
+) {
+    BASELINE("baseline"),
+    MODE("highest_mode", requestKind = RefreshRateRequestKind.MODE),
+    WINDOW("window_120", requestKind = RefreshRateRequestKind.WINDOW),
+    SURFACE("surface_view_120", RefreshRateProbeKind.SURFACE, RefreshRateRequestKind.SURFACE_SEAMLESS),
+    TEXTURE("texture_view_window_120", RefreshRateProbeKind.TEXTURE, RefreshRateRequestKind.WINDOW),
+    VIEW_HIGH("view_high", requestKind = RefreshRateRequestKind.VIEW_HIGH),
+    COMPOSE_BASELINE("compose_baseline", RefreshRateProbeKind.COMPOSE),
+    COMPOSE_HIGH("compose_high", RefreshRateProbeKind.COMPOSE, RefreshRateRequestKind.COMPOSE_HIGH),
+    SURFACE_PRODUCTION("surface_view_production", RefreshRateProbeKind.SURFACE, RefreshRateRequestKind.PRODUCTION),
+    TEXTURE_PRODUCTION("texture_view_production", RefreshRateProbeKind.TEXTURE, RefreshRateRequestKind.PRODUCTION);
+
+    val usesHighestRateReference: Boolean
+        get() = requestKind in setOf(RefreshRateRequestKind.MODE, RefreshRateRequestKind.VIEW_HIGH,
+            RefreshRateRequestKind.COMPOSE_HIGH, RefreshRateRequestKind.PRODUCTION) || this == COMPOSE_BASELINE
 }
 
 @Serializable
@@ -98,7 +120,7 @@ internal enum class RefreshRateOutcome { OBSERVED, CALLBACKS_SLOW, BELOW_TARGET,
 
 @Serializable
 internal data class RefreshRateReport(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val startedAt: String,
     val finishedAt: String,
     val interruption: String?,
@@ -143,7 +165,8 @@ internal object RefreshRateReportFormat {
                 appendLine("${sample.elapsedMs} ${sample.reason}: display=${sample.displayId}; appHz=${sample.appRateHz}; " +
                     "mode=${sample.modeId}@${sample.modeRateHz}; size=${sample.resolution}; " +
                     "windowMode=${sample.preferredModeId}; windowHz=${sample.preferredRateHz}; " +
-                    "focus=${sample.focused}; powerSave=${sample.powerSave}; thermal=${sample.thermalStatus}")
+                    "focus=${sample.focused}; powerSave=${sample.powerSave}; thermal=${sample.thermalStatus}; " +
+                    "viewRequestedFrameRate=${sample.viewRequestedFrameRate}; composeHighVoteInstalled=${sample.composeHighVoteInstalled}")
             }
             stage.events.forEach { appendLine("event=$it") }
         }

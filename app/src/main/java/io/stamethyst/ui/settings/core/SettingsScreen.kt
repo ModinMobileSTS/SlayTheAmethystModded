@@ -57,7 +57,7 @@ fun LauncherSettingsScreen(
         message = uiState.slingBreakDownloadMessage,
         failure = uiState.slingBreakDependencyFailure,
         slowDownloadSwitch = uiState.slingBreakSlowDownloadSwitch,
-        onRetry = { viewModel.onSlingBreakEngineModeChanged(activity, uiState.slingBreakEngineMode) },
+        onRetry = { viewModel.onPrepareSlingBreak(activity) },
         onSwitchMirror = viewModel::switchSlingBreakDownloadMirror,
         onDismissFailure = viewModel::dismissSlingBreakDependencyFailure,
     )
@@ -95,11 +95,14 @@ fun LauncherSettingsLauncherScreen(
         onChromeBackgroundOpacityChanged = { opacity ->
             viewModel.onChromeBackgroundOpacityChanged(activity, opacity)
         },
+        onLauncherBlurDisabledChanged = { disabled ->
+            viewModel.onLauncherBlurDisabledChanged(activity, disabled)
+        },
         onBootOverlayStyleChanged = { style ->
             viewModel.onBootOverlayStyleChanged(activity, style)
         },
-        onSlingBreakEngineModeChanged = { mode ->
-            viewModel.onSlingBreakEngineModeChanged(activity, mode)
+        onPrepareSlingBreak = {
+            viewModel.onPrepareSlingBreak(activity)
         },
         onDismissSlingBreakDependencyFailure = viewModel::dismissSlingBreakDependencyFailure,
         onSwitchSlingBreakDownloadMirror = viewModel::switchSlingBreakDownloadMirror,
@@ -108,6 +111,9 @@ fun LauncherSettingsLauncherScreen(
         },
         onBootOverlayImageModeChanged = { mode ->
             viewModel.onBootOverlayImageModeChanged(activity, mode)
+        },
+        onBootOverlayArtworkChanged = { artwork ->
+            viewModel.onBootOverlayArtworkChanged(activity, artwork)
         },
         onPickBootOverlayImage = viewModel::onPickBootOverlayImage,
         onResetBootOverlayImages = { viewModel.onResetBootOverlayImages(activity) },

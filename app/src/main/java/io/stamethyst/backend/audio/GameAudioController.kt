@@ -27,9 +27,10 @@ internal class GameAudioController(
     private var lastAudioActive = false
     private var audioDeviceCallbackRegistered = false
     private var noisyReceiverRegistered = false
+    private val routeBaseline = AudioOutputRouteBaseline()
 
     private val routeChangeRunnable = Runnable {
-        if (activityResumed) {
+        if (activityResumed && routeBaseline.consumePendingChange()) {
             onAudioOutputRouteChanged()
         }
     }
@@ -44,15 +45,11 @@ internal class GameAudioController(
 
     private val audioDeviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
-            if (containsSink(addedDevices)) {
-                scheduleAudioOutputRouteChanged()
-            }
+            refreshOutputRoute()
         }
 
         override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
-            if (containsSink(removedDevices)) {
-                scheduleAudioOutputRouteChanged()
-            }
+            refreshOutputRoute()
         }
     }
 
@@ -60,6 +57,8 @@ internal class GameAudioController(
         activityResumed = true
         registerRouteCallbacks()
         dispatchAudioActive(true)
+        // onPause cancels the debounce task, not the route change it was going to deliver.
+        if (routeBaseline.hasPendingChange) scheduleAudioOutputRouteChanged()
     }
 
     fun onPause() {
@@ -76,6 +75,8 @@ internal class GameAudioController(
     private fun registerRouteCallbacks() {
         val manager = audioManager
         if (manager != null && !audioDeviceCallbackRegistered) {
+            // Capture before registration: Android immediately reports all existing devices.
+            refreshOutputRoute()
             manager.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
             audioDeviceCallbackRegistered = true
         }
@@ -113,6 +114,7 @@ internal class GameAudioController(
     }
 
     private fun scheduleAudioOutputRouteChanged() {
+        routeBaseline.markChanged()
         if (!activityResumed) {
             return
         }
@@ -132,7 +134,12 @@ internal class GameAudioController(
         onAudioFocusGrantedChanged(effectiveActive)
     }
 
-    private fun containsSink(devices: Array<out AudioDeviceInfo>): Boolean {
-        return devices.any { it.isSink }
+    private fun refreshOutputRoute() {
+        val devices = runCatching {
+            audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        }.getOrNull() ?: return
+        if (routeBaseline.update(devices.filter { it.isSink }.map { it.id }.toSet())) {
+            scheduleAudioOutputRouteChanged()
+        }
     }
 }

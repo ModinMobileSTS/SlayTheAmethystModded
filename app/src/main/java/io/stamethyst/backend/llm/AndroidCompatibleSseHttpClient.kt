@@ -18,6 +18,9 @@ import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.atomic.AtomicBoolean
+import okhttp3.Call
+import okhttp3.EventListener
 
 /**
  * LangChain4j's default parser calls StringBuilder.isEmpty(), which is not an Android API.
@@ -45,7 +48,27 @@ internal class AndroidCompatibleSseHttpClientBuilder(
         delegate.readTimeout(timeout)
     }
 
-    override fun build(): HttpClient = AndroidCompatibleSseHttpClient(delegate.build(), connectionPool)
+    override fun build(): HttpClient {
+        // Public SDK accessors only. Copy the builder so rebuilding never stacks capture listeners.
+        val base = (delegate.okHttpClientBuilder() ?: okhttp3.OkHttpClient.Builder()).build()
+        val originalFactory = base.eventListenerFactory
+        val capturingBuilder = base.newBuilder().eventListenerFactory { call ->
+            val original = originalFactory.create(call)
+            val scope = AgentRequestScope.current()
+            if (scope == null) original else original + object : EventListener() {
+                // The factory runs in newCall on the caller thread, before async dispatch. Register
+                // at callStart, once RealCall is fully initialized, and before DNS/connect/headers.
+                override fun callStart(call: Call) = scope.register(call)
+                override fun callEnd(call: Call) = scope.unregister(call)
+                override fun callFailed(call: Call, ioe: IOException) = scope.unregister(call)
+            }
+        }
+        val capturingDelegate = OkHttpClientBuilder().okHttpClientBuilder(capturingBuilder)
+        delegate.connectTimeout()?.let { capturingDelegate.connectTimeout(it) }
+        delegate.readTimeout()?.let { capturingDelegate.readTimeout(it) }
+        delegate.streamingBufferSize()?.let { capturingDelegate.streamingBufferSize(it) }
+        return AndroidCompatibleSseHttpClient(capturingDelegate.build(), connectionPool)
+    }
 }
 
 private class AndroidCompatibleSseHttpClient(
@@ -53,17 +76,56 @@ private class AndroidCompatibleSseHttpClient(
     /** Shared pool so a dead connection can be discarded before a retry reuses it. */
     private val connectionPool: okhttp3.ConnectionPool? = null,
 ) : HttpClient {
-    override fun execute(request: HttpRequest): SuccessfulHttpResponse = delegate.execute(request)
+    override fun execute(request: HttpRequest): SuccessfulHttpResponse {
+        val scope = AgentRequestScope.current()
+        scope?.throwIfStopped()
+        try {
+            return delegate.execute(request).also { scope?.throwIfStopped() }
+        } catch (error: Exception) {
+            throw scope?.stopReason ?: error
+        }
+    }
 
-    override fun executeAsync(request: HttpRequest): CompletableFuture<SuccessfulHttpResponse> =
-        delegate.executeAsync(request)
+    override fun executeAsync(request: HttpRequest): CompletableFuture<SuccessfulHttpResponse> {
+        val scope = AgentRequestScope.current() ?: return delegate.executeAsync(request)
+        scope.throwIfStopped()
+        val upstream = delegate.executeAsync(request)
+        val result = CompletableFuture<SuccessfulHttpResponse>()
+        upstream.whenComplete { response, error ->
+            val failure = scope.stopReason ?: error
+            if (failure != null) result.completeExceptionally(failure) else result.complete(response)
+        }
+        result.whenComplete { _, _ -> if (result.isCancelled) upstream.cancel(true) }
+        return result
+    }
 
     override fun execute(
         request: HttpRequest,
         parser: ServerSentEventParser,
         listener: ServerSentEventListener,
     ) {
-        delegate.execute(request, AndroidCompatibleSseParser(), listener)
+        val scope = AgentRequestScope.current()
+        scope?.throwIfStopped()
+        val terminal = AtomicBoolean()
+        delegate.execute(request, AndroidCompatibleSseParser(), object : ServerSentEventListener {
+            override fun onOpen(response: SuccessfulHttpResponse) {
+                if (scope?.stopReason == null) listener.onOpen(response)
+            }
+
+            override fun onEvent(event: ServerSentEvent, context: ServerSentEventContext) {
+                if (!terminal.get() && scope?.stopReason == null) listener.onEvent(event, context)
+            }
+
+            override fun onError(error: Throwable) {
+                if (terminal.compareAndSet(false, true)) listener.onError(scope?.stopReason ?: error)
+            }
+
+            override fun onClose() {
+                if (!terminal.compareAndSet(false, true)) return
+                val failure = scope?.stopReason
+                if (failure != null) listener.onError(failure) else listener.onClose()
+            }
+        })
     }
 
     /**

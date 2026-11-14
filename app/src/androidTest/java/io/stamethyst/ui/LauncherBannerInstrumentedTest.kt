@@ -84,23 +84,28 @@ class LauncherBannerInstrumentedTest {
     }
 
     @Test
-    fun verticalScrollCollapsesContinuouslyWithoutChangingListInset() {
+    fun verticalScrollAnimatesWithoutChangingListInset() {
         setFixture()
         compose.runOnIdle { scope.launch { pager.scrollToPage(1) } }
         compose.waitForIdle()
         val expandedHeight = height()
         val insetHeight = compose.onNodeWithTag("inset-1").fetchSemanticsNode().size.height
         val page = compose.runOnIdle { requireNotNull(banner.pages[1]) }
-        compose.runOnIdle { page.collapseOffsetPx = page.collapseRangePx / 2f }
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { scope.launch { page.animateCollapsed(collapsed = true) } }
+        compose.mainClock.advanceTimeByFrame()
+        compose.mainClock.advanceTimeBy(120)
         val halfwayHeight = height()
-        compose.runOnIdle { page.collapseOffsetPx = page.collapseRangePx }
+        compose.mainClock.advanceTimeBy(300)
         val collapsedHeight = height()
-        assertTrue("Height must interpolate while dragging",
+        assertTrue("Height must interpolate over animation frames",
             halfwayHeight > collapsedHeight && halfwayHeight < expandedHeight)
         assertEquals("Scroll inset must not feed back from an animated measurement", insetHeight,
             compose.onNodeWithTag("inset-1").fetchSemanticsNode().size.height)
 
-        compose.runOnIdle { page.collapseOffsetPx = 0f }
+        compose.mainClock.autoAdvance = true
+        compose.runOnIdle { scope.launch { page.expand() } }
+        compose.waitForIdle()
         compose.onNodeWithTag("scroll-1").performTouchInput { swipeUp() }
         compose.waitForIdle()
         assertTrue("A real nested scroll must collapse the banner", height() < expandedHeight)
@@ -113,7 +118,7 @@ class LauncherBannerInstrumentedTest {
         compose.runOnIdle { scope.launch { pager.scrollToPage(1) } }
         compose.waitForIdle()
         val page = compose.runOnIdle { requireNotNull(banner.pages[1]) }
-        compose.runOnIdle { page.collapseOffsetPx = page.collapseRangePx }
+        compose.runOnIdle { scope.launch { page.animateCollapsed(collapsed = true) } }
         val collapsedHeight = height()
         compose.runOnIdle { activeKey.value = "detail" }
         compose.onNodeWithText("Details").assertIsDisplayed()

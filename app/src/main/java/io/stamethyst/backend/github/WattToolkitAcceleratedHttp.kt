@@ -930,9 +930,11 @@ internal class WattToolkitGithubRouteResolver(
      * Bundled hop while it is healthy, official origin once it has failed real traffic.
      *
      * The official origin is tried by the request pipeline after a failed hop, so a failed
-     * bundled hop is only remembered until [FAILED_FORWARD_TARGET_TTL_MS] passes.
+     * bundled hop is only remembered until [FAILED_FORWARD_TARGET_TTL_MS] passes. If the
+     * official origin also failed, use discovery rather than pinning requests to that origin.
      */
     private fun resolveBundledHopRoute(normalizedHost: String): WattToolkitGithubRoute? {
+        if (!shouldPreferBundledHop()) return null
         val bundledRoute = bundledHopRouteForHost(normalizedHost) ?: return null
         val preferred = bundledRoute.forwardTargets.firstOrNull().orEmpty()
         val preferredFailed = synchronized(lock) {
@@ -943,6 +945,13 @@ internal class WattToolkitGithubRouteResolver(
         }
         return if (preferredFailed) officialRouteForHost(normalizedHost) else bundledRoute
     }
+
+    /** A failed official fallback temporarily enables best-path recovery for this profile. */
+    private fun shouldPreferBundledHop(): Boolean =
+        accelerationStrategyProvider() == AccelerationStrategy.RMBGAME_FIRST && synchronized(lock) {
+            pruneFailedTargetsLocked(nowProvider())
+            !recentlyFailedForwardTargets.containsKey(OFFICIAL_ROUTE_TARGET)
+        }
 
     fun resolveRouteForHost(host: String): WattToolkitGithubRoute? {
         val normalizedHost = host.lowercase(Locale.ROOT)
@@ -1008,7 +1017,7 @@ internal class WattToolkitGithubRouteResolver(
         if (!isProfileHost(normalizedHost)) {
             return null
         }
-        if (accelerationStrategyProvider() == AccelerationStrategy.RMBGAME_FIRST) {
+        if (shouldPreferBundledHop()) {
             synchronized(lock) { markFailedTargetsLocked(excludedForwardTargets) }
             val bundledRoute = bundledHopRouteForHost(normalizedHost) ?: return null
             val preferred = bundledRoute.forwardTargets.firstOrNull().orEmpty()
@@ -1049,7 +1058,7 @@ internal class WattToolkitGithubRouteResolver(
         if (!isProfileHost(normalizedHost) || normalizedTarget.isEmpty()) {
             return
         }
-        if (accelerationStrategyProvider() == AccelerationStrategy.RMBGAME_FIRST) {
+        if (shouldPreferBundledHop()) {
             synchronized(lock) {
                 recentlyFailedForwardTargets.keys
                     .filter { failed -> forwardTargetsEquivalent(failed, normalizedTarget) }
@@ -1144,8 +1153,9 @@ internal class WattToolkitGithubRouteResolver(
         if (!isProfileHost(normalizedHost)) {
             return
         }
-        if (accelerationStrategyProvider() == AccelerationStrategy.RMBGAME_FIRST) {
-            // Rule discovery and probe ranking are exactly what this strategy opts out of.
+        if (shouldPreferBundledHop()) {
+            // Avoid discovery on the normal bundled-hop path, but keep recovering after
+            // the official fallback has also failed real traffic.
             return
         }
         val now = nowProvider()

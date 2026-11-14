@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_boot_overlay_artwork_title">Built-in loading artwork</string>
+    <string name="settings_boot_overlay_artwork_poster">New artwork</string>
+    <string name="settings_boot_overlay_artwork_original">Original artwork</string>
+    <string name="settings_boot_overlay_artwork_custom_hint">Custom images take priority. Reset custom images to show the selected built-in artwork.</string>
+</resources>

@@ -256,6 +256,30 @@ class SettingsSearchInstrumentedTest {
     }
 
     @Test
+    fun launcherBlurCanBeDisabledAndReenabledFromSearchWithoutNavigating() {
+        var state by mutableStateOf(SettingsScreenViewModel.UiState())
+        showSettings(stateProvider = { state }) { actions ->
+            actions.copy(appearance = actions.appearance.copy(onLauncherBlurDisabledChanged = {
+                state = state.copy(launcherBlurDisabled = it)
+            }))
+        }
+        search(R.string.settings_launcher_blur_disabled_title)
+        compose.onNode(isToggleable()).performScrollTo().assertIsOff().performClick().assertIsOn()
+        compose.onNode(isToggleable()).performClick().assertIsOff()
+        compose.runOnIdle { assertTrue(navigations.isEmpty()) }
+    }
+
+    @Test
+    fun launcherBlurToggleRemainsVisibleAndDisabledDuringConfigurationLoading() {
+        showSettings(SettingsScreenViewModel.UiState(loadStates = mapOf(
+            SettingsLoadDomain.CONFIGURATION to SettingsLoadState.LOADING,
+        )))
+        search(R.string.settings_launcher_blur_disabled_title)
+        compose.onNode(isToggleable()).performScrollTo().assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText(context.getString(R.string.settings_value_loading)).assertDoesNotExist()
+    }
+
+    @Test
     fun downloadStepperSavesAndRefreshesInPlace() {
         var state by mutableStateOf(SettingsScreenViewModel.UiState(workshopMaxConcurrentDownloads = 2))
         showSettings(stateProvider = { state }) { actions ->

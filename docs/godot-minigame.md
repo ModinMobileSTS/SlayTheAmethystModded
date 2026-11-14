@@ -2,6 +2,10 @@
 
 小游戏的生产入口已从 Web 切换为下载式 Godot，启动器本体不包含 Godot DEX、SO 或 PCK。旧 `docs/godot-minigame-prototypes.md` 中的 debug 开关、固定 PCK hash 和本地 HTTP 地址只描述历史原型，不是当前配置方式。
 
+GeckoView 兼容引擎已废弃：不再注册 `org.mozilla.gecko` 服务或专用组件工厂，不再构建 `:web-runtime`，也不再提供 Gecko 下载、动态加载、回环 HTTP/JS 桥及 WebView/兼容模式选择。旧 `sling_break_engine_mode` 偏好不再读取；退出或故障不会回退到 Gecko/WebView。应用中的历史浏览器数据和旧引擎下载文件不因代码清理而自动删除，旧存档只读迁移继续保留，见 [`slingbreak-save-migration.md`](slingbreak-save-migration.md)。
+
+所有 APK 变体的 `verify…EngineBoundaries` 检查禁止重新打包 Gecko/X5 引擎类或文件，也拒绝合并 Manifest 中的 Mozilla 组件；Godot 仍保持外置下载边界。无需为迁移存档恢复 Mozilla Maven 仓库或 Gecko SDK。
+
 ## 用户流程
 
 - 设置 → 启动器 → 启动遮罩选择「小游戏」：没有完整依赖时先询问是否下载，取消不改变原选项；下载和安装成功后才保存小游戏选项。
@@ -43,7 +47,7 @@ game.pck  79820504 bytes
 - `SlingBreakInstallation`：所有准备完成后，用同文件系统的原子 rename 更新 `no_backup/godot-prototype/installed-release.json`。记录 GitHub tag、release/asset ID、发布时间、下载 URL、hash 和大小。下载、解压、资源挂载准备或激活失败时不清理旧组件；版本记录不会出现半条记录。
 - 激活成功后由 `SlingBreakStorage` 定向清理旧 `game-<sha>.pck`、`assets-<sha>.zip`、`engine-<sha>/` 和修复过程中退役的 `engine-retired-<uuid>/`，**只保留当前游戏的一份 PCK、一份 ZIP 挂载包和当前固定引擎的一套 APK/SO**。重复安装当前版本也执行清理，回收旧启动器累积的历史版本。当前 PCK 和 ZIP 仍是加载流程必需的两种形式，本次不修改该格式。清理不跟随符号链接、不处理未知名称或存档目录。清理失败记录警告，不把已经激活成功的版本报成安装失败；下次成功安装重试。
 - Godot Activity 在读取 release 快照前取得 `components.lock`，持有至 `:minigame` 进程退出，由系统释放锁；Home、暂停、停止不释放。安装从下载前到激活/清理结束持同一独占锁，避免旧进程延迟读取已删除的组件。进程异常终止不会留下永久占用的文件锁。
-- 保留原型的 `files/godot-prototype-user` 存档位置，不改动 WebView/Gecko 的历史存档，不清理应用数据。**Web 存档未自动转换成 Godot 存档**。
+- 保留原型的 `files/godot-prototype-user` 存档位置，不改动 WebView/Gecko 的历史存档，不清理应用数据。Web 存档仅在用户确认后迁移为 Godot 存档，不自动覆盖；详见 [`slingbreak-save-migration.md`](slingbreak-save-migration.md)。
 
 ## 运行边界
 
@@ -67,6 +71,23 @@ game.pck  79820504 bytes
 - 保存失败/10 秒未确认时仍要求用户等待、在 Godot 重试或单独确认放弃；不会因为双击 BACK 自动放弃。正常「启动」仍要求真实 ready + UI 握手，并在保存确认后进入主游戏，不采用取消路径。
 
 ## 验证与限制
+
+Gecko 退役的无设备回归：
+
+```sh
+python3 -m unittest scripts.tools.tests.test_retired_web_engine -v
+./gradlew --offline :app:testDebugUnitTest \
+  --tests 'io.stamethyst.godot.*' \
+  --tests 'io.stamethyst.backend.minigame.*' \
+  --tests 'io.stamethyst.backend.resources.ExternalResourcePackServiceTest' \
+  --tests 'io.stamethyst.config.BootOverlayStyleTest' \
+  --tests 'io.stamethyst.config.LegacyStsStorageMigrationTest' \
+  :app:assembleDebug :app:compileDebugAndroidTestKotlin
+```
+
+源码边界检查覆盖服务/工厂、构建模块/仓库/下载配置、旧模式引用和存档迁移保留；APK 构建另查实际合并 Manifest、DEX 与引擎文件。迁移回归包含 Gecko UTF-16 数据解码后导入 Godot、保留原始数据。以上均不安装应用、不执行设备测试，不能替代设备启动和迁移 UI 验证。
+
+2026-11-12 清理验证：Godot/小游戏/下载器及旧设置迁移的 79 项定向 JVM 测试通过（0 失败、0 跳过），`:app:assembleDebug`、`:app:verifyDebugEngineBoundaries` 和 `:app:compileDebugAndroidTestKotlin` 成功。实际 Debug APK 无 Mozilla、旧加载/桥接或引擎模式类，保留 Godot 入口及 `LegacyGeckoSlingBreakSave`；合并 Manifest 使用 AndroidX `CoreComponentFactory`。6 项 Python 退役边界检查和 1 项 ASan/UBSan 原生混音器测试通过。旧 Web 音频 JS 的另外 2 项测试因已不存在的 `audio-recipes.js` 夹具失败，清理前同样如此，不计入通过。未进行设备操作。构建与测试日志：`agent-tmp/gecko-retirement-gradle-retry.log`、`agent-tmp/gecko-retirement-regression.log`、`agent-tmp/gecko-retirement-js-protocol.log`。
 
 本地验证命令：
 

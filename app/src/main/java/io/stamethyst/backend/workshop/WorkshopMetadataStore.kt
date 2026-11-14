@@ -49,6 +49,7 @@ internal class WorkshopMetadataStore(context: Context) {
                 ?.takeIf { it.appId == record.appId }
                 ?: return@map record
             when {
+                record.pendingInstall != null -> record
                 result.hasUpdate -> record.copy(
                     cardState = WorkshopModCardState.UpdateAvailable,
                     statusText = "发现创意工坊更新",
@@ -140,10 +141,11 @@ internal class WorkshopMetadataStore(context: Context) {
             val rewrittenLocalJarPaths = record.localJarPaths.map(::rewrite)
             val rewrittenTexturePackPath = rewrite(record.texturePackPath)
             val rewrittenPreviewPath = rewrite(record.localPreviewImagePath)
+            val rewrittenPending = record.pendingInstall?.let { it.copy(localJarPaths = it.localJarPaths.map(::rewrite)) }
             val changed = rewrittenLocalJarPath != record.localJarPath ||
                 rewrittenLocalJarPaths != record.localJarPaths ||
                 rewrittenTexturePackPath != record.texturePackPath ||
-                rewrittenPreviewPath != record.localPreviewImagePath
+                rewrittenPreviewPath != record.localPreviewImagePath || rewrittenPending != record.pendingInstall
             if (!changed) {
                 record
             } else {
@@ -153,6 +155,7 @@ internal class WorkshopMetadataStore(context: Context) {
                     localJarPaths = rewrittenLocalJarPaths,
                     texturePackPath = rewrittenTexturePackPath,
                     localPreviewImagePath = rewrittenPreviewPath,
+                    pendingInstall = rewrittenPending,
                 )
             }
         }
@@ -174,6 +177,10 @@ internal class WorkshopMetadataStore(context: Context) {
                     cardState = WorkshopModCardState.ImportedPatched,
                     statusText = statusText,
                     localPreviewImagePath = record.localPreviewImagePath,
+                    updatedAtMillis = record.pendingInstall?.updatedAtMillis ?: record.updatedAtMillis,
+                    versionText = record.pendingInstall?.updatedAtMillis?.toString() ?: record.versionText,
+                    dependencies = record.pendingInstall?.dependencies ?: record.dependencies,
+                    pendingInstall = null,
                 )
             } else {
                 record
@@ -196,10 +203,25 @@ internal class WorkshopMetadataStore(context: Context) {
         }
     }
 
+    fun markImportFailed(appId: UInt, publishedFileId: ULong, statusText: String) = withStoreLock {
+        val records = loadUnlocked().map { record ->
+            if (record.appId != appId || record.publishedFileId != publishedFileId) record else record.copy(
+                cardState = if (record.pendingInstall != null) WorkshopModCardState.ImportedPatched
+                    else WorkshopModCardState.ImportedUnpatched,
+                statusText = statusText,
+            )
+        }
+        saveUnlocked(records)
+    }
+
     fun markMissingFiles() = withStoreLock {
         var changed = false
         val records = loadUnlocked().map { record ->
-            if (record.shouldMarkFileMissing(context)) {
+            if (record.pendingInstall != null && record.pendingInstallFiles(context).any { !it.isFile }) {
+                changed = true
+                record.copy(pendingInstall = null, cardState = WorkshopModCardState.UpdateAvailable,
+                    statusText = WORKSHOP_UPDATE_PENDING_FILES_MISSING_MESSAGE)
+            } else if (record.shouldMarkFileMissing(context)) {
                 changed = true
                 record.copy(
                     cardState = WorkshopModCardState.FileMissing,

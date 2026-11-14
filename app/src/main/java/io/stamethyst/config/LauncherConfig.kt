@@ -57,6 +57,7 @@ object LauncherConfig {
     private const val PREF_KEY_FLOATING_TOOL_BUTTONS = "floating_tool_buttons"
     private const val PREF_KEY_HIDDEN_MAIN_CARDS = "hidden_main_cards"
     private const val PREF_KEY_SHOW_REFRESH_RATE_DETECTOR = "show_refresh_rate_detector"
+    private const val PREF_KEY_FORCE_HIGH_REFRESH_RATE = "force_high_refresh_rate"
     private const val PREF_KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
@@ -92,11 +93,12 @@ object LauncherConfig {
     private const val PREF_KEY_THEME_COLOR = "theme_color"
     private const val PREF_KEY_LAUNCHER_ICON_MODE = "launcher_icon_mode"
     private const val PREF_KEY_CHROME_BACKGROUND_OPACITY = "chrome_background_opacity"
+    private const val PREF_KEY_LAUNCHER_BLUR_DISABLED = "launcher_blur_disabled"
     private const val LEGACY_PREF_KEY_HOME_CHROME_TRANSPARENCY = "home_chrome_transparency"
     private const val PREF_KEY_BOOT_OVERLAY_STYLE = "boot_overlay_style"
-    private const val PREF_KEY_SLING_BREAK_ENGINE_MODE = "sling_break_engine_mode"
     private const val PREF_KEY_BOOT_OVERLAY_ANIMATION = "boot_overlay_animation"
     private const val PREF_KEY_BOOT_OVERLAY_IMAGE_MODE = "boot_overlay_image_mode"
+    private const val PREF_KEY_BOOT_OVERLAY_ARTWORK = "boot_overlay_artwork"
     private const val PREF_KEY_BOOT_OVERLAY_START_IMAGE_PATH = "boot_overlay_start_image_path"
     private const val PREF_KEY_BOOT_OVERLAY_END_IMAGE_PATH = "boot_overlay_end_image_path"
     private const val PREF_KEY_BOOT_OVERLAY_START_IMAGE_VERSION =
@@ -318,6 +320,7 @@ object LauncherConfig {
     val DEFAULT_THEME_COLOR: LauncherThemeColor = LauncherThemeColor.COLORLESS
     val DEFAULT_LAUNCHER_ICON_MODE: LauncherIconMode = LauncherIconMode.AMETHYST
     const val DEFAULT_CHROME_BACKGROUND_OPACITY = 0.0f
+    const val DEFAULT_LAUNCHER_BLUR_DISABLED = false
     const val MIN_CHROME_BACKGROUND_OPACITY = 0.0f
     const val MAX_CHROME_BACKGROUND_OPACITY = 1.0f
     val DEFAULT_BOOT_OVERLAY_STYLE: BootOverlayStyle = BootOverlayStyle.MODERN
@@ -341,6 +344,7 @@ object LauncherConfig {
     )
     val DEFAULT_HIDDEN_MAIN_CARDS: Set<String> = emptySet()
     const val DEFAULT_SHOW_REFRESH_RATE_DETECTOR = true
+    const val DEFAULT_FORCE_HIGH_REFRESH_RATE = false
     val MAIN_CARD_IDS: List<String> = listOf(
         "overview",
         "feedback",
@@ -569,17 +573,6 @@ object LauncherConfig {
         }
     }
 
-    fun readSlingBreakEngineMode(context: Context): SlingBreakEngineMode =
-        SlingBreakEngineMode.fromPersistedValue(
-            prefs(context).getString(PREF_KEY_SLING_BREAK_ENGINE_MODE, null)
-        )
-
-    fun saveSlingBreakEngineMode(context: Context, mode: SlingBreakEngineMode) {
-        prefs(context).edit {
-            putString(PREF_KEY_SLING_BREAK_ENGINE_MODE, mode.persistedValue)
-        }
-    }
-
     fun readBootOverlayAnimation(context: Context): BootOverlayAnimation {
         val stored = prefs(context).getString(
             PREF_KEY_BOOT_OVERLAY_ANIMATION,
@@ -621,7 +614,10 @@ object LauncherConfig {
             startImagePath = startImagePath,
             endImagePath = endImagePath,
             startImageVersion = startImageVersion,
-            endImageVersion = endImageVersion
+            endImageVersion = endImageVersion,
+            artwork = BootOverlayArtwork.fromPersistedValue(
+                preferences.getString(PREF_KEY_BOOT_OVERLAY_ARTWORK, null)
+            ),
         )
     }
 
@@ -631,6 +627,7 @@ object LauncherConfig {
     ) {
         prefs(context).edit {
             putString(PREF_KEY_BOOT_OVERLAY_IMAGE_MODE, config.mode.persistedValue)
+            putString(PREF_KEY_BOOT_OVERLAY_ARTWORK, config.artwork.persistedValue)
             putStringOrRemove(PREF_KEY_BOOT_OVERLAY_START_IMAGE_PATH, config.startImagePath)
             putStringOrRemove(PREF_KEY_BOOT_OVERLAY_END_IMAGE_PATH, config.endImagePath)
             putLong(PREF_KEY_BOOT_OVERLAY_START_IMAGE_VERSION, config.startImageVersion)
@@ -640,6 +637,7 @@ object LauncherConfig {
 
     fun clearBootOverlayImageConfig(context: Context) {
         prefs(context).edit {
+            remove(PREF_KEY_BOOT_OVERLAY_ARTWORK)
             remove(PREF_KEY_BOOT_OVERLAY_IMAGE_MODE)
             remove(PREF_KEY_BOOT_OVERLAY_START_IMAGE_PATH)
             remove(PREF_KEY_BOOT_OVERLAY_END_IMAGE_PATH)
@@ -894,6 +892,17 @@ object LauncherConfig {
         }
     }
 
+    fun isForceHighRefreshRateEnabled(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_FORCE_HIGH_REFRESH_RATE,
+            DEFAULT_FORCE_HIGH_REFRESH_RATE,
+        )
+    }
+
+    fun setForceHighRefreshRateEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit { putBoolean(PREF_KEY_FORCE_HIGH_REFRESH_RATE, enabled) }
+    }
+
     fun isHapticFeedbackEnabled(context: Context): Boolean {
         return prefs(context).getBoolean(
             PREF_KEY_HAPTIC_FEEDBACK_ENABLED,
@@ -1134,6 +1143,19 @@ object LauncherConfig {
     fun saveLauncherIconMode(context: Context, iconMode: LauncherIconMode) {
         prefs(context).edit {
             putString(PREF_KEY_LAUNCHER_ICON_MODE, iconMode.persistedValue)
+        }
+    }
+
+    fun readLauncherBlurDisabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_LAUNCHER_BLUR_DISABLED,
+            DEFAULT_LAUNCHER_BLUR_DISABLED
+        )
+    }
+
+    fun saveLauncherBlurDisabled(context: Context, disabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_LAUNCHER_BLUR_DISABLED, disabled)
         }
     }
 

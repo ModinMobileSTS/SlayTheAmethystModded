@@ -15,15 +15,30 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Explicit subscriptions need a live account fence, not the automatic scanner's lifecycle gate. */
+internal class WorkshopSubscriptionSyncEligibility(private val readIdentity: () -> WorkshopSubscriptionAccountIdentity?) {
+    @Volatile var foreground = false
+    @Volatile var ready = false
+    @Volatile var identity: WorkshopSubscriptionAccountIdentity? = null
+
+    fun canScan(account: WorkshopSubscriptionAccountIdentity): Boolean =
+        foreground && ready && canEnqueue(account)
+
+    fun canEnqueue(account: WorkshopSubscriptionAccountIdentity): Boolean =
+        identity == account && readIdentity() == account
+
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun shouldEnqueue(account: WorkshopSubscriptionAccountIdentity, item: WorkshopItemSummary): Boolean =
+        withContext(Dispatchers.IO) { canEnqueue(account) }
+}
+
 /** Process-local launcher adapter; it owns no timer, Activity, or background scan. */
 internal class WorkshopSubscriptionSyncController private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val service by lazy { WorkshopService(context) }
     private val tasks by lazy { WorkshopDownloadTaskStore(context) }
     private val metadata by lazy { WorkshopMetadataStore(context) }
-    @Volatile private var foreground = false
-    @Volatile private var ready = false
-    @Volatile private var identity: WorkshopSubscriptionAccountIdentity? = null
+    private val eligibility = WorkshopSubscriptionSyncEligibility(::readIdentity)
     private var authRequest = 0L
     private val coordinator = WorkshopSubscriptionSyncCoordinator(
         scope = scope,
@@ -35,7 +50,7 @@ internal class WorkshopSubscriptionSyncController private constructor(private va
                 service.browseSubscriptions(appId = APP_ID, page = page).also { requireCurrent(account) }
             }
         },
-        shouldEnqueue = { account, _ -> withContext(Dispatchers.IO) { isCurrent(account) } },
+        shouldEnqueue = eligibility::shouldEnqueue,
         enqueue = { account, item ->
             withContext(Dispatchers.IO) {
                 WorkshopSubscriptionQueue(
@@ -47,7 +62,7 @@ internal class WorkshopSubscriptionSyncController private constructor(private va
                         service.getDetails(APP_ID, id, includeCommunityData = false, includeDependencyData = false)
                     },
                     isBlocked = WorkshopDownloadBlocklist::isBlocked,
-                    isCurrent = { isCurrentAccount(account) },
+                    isCurrent = { eligibility.canEnqueue(account) },
                     queuedMessage = { context.getString(R.string.workshop_download_task_message_waiting) },
                     onQueued = {
                         withContext(Dispatchers.Main.immediate) { WorkshopDownloadCenterStore.initialize(context) }
@@ -62,12 +77,12 @@ internal class WorkshopSubscriptionSyncController private constructor(private va
     )
 
     fun setForeground(value: Boolean) {
-        foreground = value
+        eligibility.foreground = value
         if (value) refreshAuth()
     }
 
     fun onStartupResourcesReady() {
-        ready = true
+        eligibility.ready = true
         refreshAuth(updateCoordinator = false)
     }
 
@@ -76,10 +91,14 @@ internal class WorkshopSubscriptionSyncController private constructor(private va
         scope.launch {
             val current = withContext(Dispatchers.IO) { readIdentity() }
             if (request != authRequest) return@launch
-            identity = current
+            eligibility.identity = current
             // Keep the identity fence current for explicit subscribe-and-download actions, while
             // automatic subscription-library scans remain disabled until re-enabled here.
-            coordinator.update(if (updateCoordinator) foreground else false, if (updateCoordinator) ready else false, current)
+            coordinator.update(
+                if (updateCoordinator) eligibility.foreground else false,
+                if (updateCoordinator) eligibility.ready else false,
+                current,
+            )
         }
     }
 
@@ -97,18 +116,12 @@ internal class WorkshopSubscriptionSyncController private constructor(private va
         return WorkshopSubscriptionAccountIdentity("${material.steamId64}:$epoch", material.credentialRevision)
     }
 
-    private fun isCurrent(account: WorkshopSubscriptionAccountIdentity): Boolean =
-        foreground && ready && identity == account && readIdentity() == account
-
-    private fun isCurrentAccount(account: WorkshopSubscriptionAccountIdentity): Boolean =
-        identity == account && readIdentity() == account
-
     private fun requireCurrent(account: WorkshopSubscriptionAccountIdentity) {
-        if (!isCurrent(account)) throw CancellationException("Subscription account is no longer current")
+        if (!eligibility.canScan(account)) throw CancellationException("Subscription account is no longer current")
     }
 
     private fun requireAccountCurrent(account: WorkshopSubscriptionAccountIdentity) {
-        if (!isCurrentAccount(account)) throw CancellationException("Subscription account is no longer current")
+        if (!eligibility.canEnqueue(account)) throw CancellationException("Subscription account is no longer current")
     }
 
     companion object {

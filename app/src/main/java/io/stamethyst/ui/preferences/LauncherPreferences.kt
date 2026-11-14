@@ -20,7 +20,6 @@ import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayStyle
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
@@ -111,6 +110,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_LAUNCHER_ICON_MODE
     val DEFAULT_CHROME_BACKGROUND_OPACITY: Float
         get() = LauncherConfig.DEFAULT_CHROME_BACKGROUND_OPACITY
+    val DEFAULT_LAUNCHER_BLUR_DISABLED: Boolean
+        get() = LauncherConfig.DEFAULT_LAUNCHER_BLUR_DISABLED
     val MIN_CHROME_BACKGROUND_OPACITY: Float
         get() = LauncherConfig.MIN_CHROME_BACKGROUND_OPACITY
     val MAX_CHROME_BACKGROUND_OPACITY: Float
@@ -338,13 +339,6 @@ object LauncherPreferences {
         return LauncherConfig.isSlingBreakAudioDebugModeEnabled(context)
     }
 
-    fun readSlingBreakEngineMode(context: Context): SlingBreakEngineMode =
-        LauncherConfig.readSlingBreakEngineMode(context)
-
-    fun saveSlingBreakEngineMode(context: Context, mode: SlingBreakEngineMode) {
-        LauncherConfig.saveSlingBreakEngineMode(context, mode)
-    }
-
     fun setSlingBreakAudioDebugModeEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setSlingBreakAudioDebugModeEnabled(context, enabled)
     }
@@ -560,6 +554,14 @@ object LauncherPreferences {
 
     fun saveLauncherIconMode(context: Context, iconMode: LauncherIconMode) {
         LauncherConfig.saveLauncherIconMode(context, iconMode)
+    }
+
+    fun readLauncherBlurDisabled(context: Context): Boolean {
+        return LauncherConfig.readLauncherBlurDisabled(context)
+    }
+
+    fun saveLauncherBlurDisabled(context: Context, disabled: Boolean) {
+        LauncherConfig.saveLauncherBlurDisabled(context, disabled)
     }
 
     fun readChromeBackgroundOpacity(context: Context): Float {

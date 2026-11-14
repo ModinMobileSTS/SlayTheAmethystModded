@@ -188,7 +188,7 @@ class AdbTest(unittest.TestCase):
         from scripts.tools.harness._runner import adb
         connector = MagicMock()
         connector.adb.return_value = {"exit": 0, "stdout": "installed", "stderr": ""}
-        ctx = self._make_ctx(connector=connector)
+        ctx = self._make_ctx(connector=connector, device_serial="approved-fake-device")
         args = ["install", "--fastdeploy", "-r", "/fake/app.apk"]
         result = adb(ctx, args, timeout_seconds=180)
         self.assertEqual(result.exit_code, 0)

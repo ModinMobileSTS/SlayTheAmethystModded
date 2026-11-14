@@ -46,6 +46,12 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsLauncher,
     ),
     entry(
+        titleResId = R.string.settings_launcher_blur_disabled_title,
+        subtitleResId = R.string.settings_launcher_blur_disabled_desc,
+        categoryTitleResId = R.string.settings_category_launcher_title,
+        route = Route.SettingsLauncher,
+    ),
+    entry(
         titleResId = R.string.settings_boot_overlay_style_title,
         categoryTitleResId = R.string.settings_category_launcher_title,
         route = Route.SettingsLauncher,
@@ -196,6 +202,12 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
     entry(
         titleResId = R.string.settings_mts_patch_cache_title,
         subtitleResId = R.string.settings_mts_patch_cache_desc,
+        categoryTitleResId = R.string.settings_category_performance_title,
+        route = Route.SettingsPerformance,
+    ),
+    entry(
+        titleResId = R.string.settings_force_high_refresh_rate_title,
+        subtitleResId = R.string.settings_force_high_refresh_rate_desc,
         categoryTitleResId = R.string.settings_category_performance_title,
         route = Route.SettingsPerformance,
     ),

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_force_high_refresh_rate_title">強制高更新率</string>
+    <string name="settings_force_high_refresh_rate_desc">在啟動器或遊戲前景顯示幾乎不可見的 1 像素動態細線，嘗試減少 LTPO 自動降低更新率。會增加耗電，部分機型可能無效，無法突破系統限制或保證 120 Hz。</string>
+</resources>

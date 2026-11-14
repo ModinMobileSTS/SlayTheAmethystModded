@@ -1,5 +1,6 @@
 package io.stamethyst.bridge;
 
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -26,6 +27,7 @@ import java.util.Set;
 final class MtsPatchAnnotationDbCache {
     private static final String CACHE_FILE_NAME = "annotation-db-cache.bin";
     private static final int CACHE_SCHEMA = 1;
+    private static final int CACHE_READ_BUFFER_BYTES = 64 * 1024;
     private static final String ANNOTATION_DB = "org.scannotation.AnnotationDB";
     private static final String MTS_PATCHER = "com.evacipated.cardcrawl.modthespire.Patcher";
     private static final String MTS_MOD_INFO = "com.evacipated.cardcrawl.modthespire.ModInfo";
@@ -133,8 +135,9 @@ final class MtsPatchAnnotationDbCache {
     }
 
     private static Map<?, ?> readCachedEntries(File cacheFile, ClassLoader loader) throws Exception {
-        ClassLoaderObjectInputStream input = new ClassLoaderObjectInputStream(new FileInputStream(cacheFile), loader);
-        try {
+        // ObjectInputStream makes many small reads while decoding annotation maps.
+        try (InputStream buffered = new BufferedInputStream(new FileInputStream(cacheFile), CACHE_READ_BUFFER_BYTES);
+             ClassLoaderObjectInputStream input = new ClassLoaderObjectInputStream(buffered, loader)) {
             int schema = input.readInt();
             if (schema != CACHE_SCHEMA) {
                 throw new IOException("unsupported annotation DB cache schema: " + schema);
@@ -144,8 +147,6 @@ final class MtsPatchAnnotationDbCache {
                 throw new IOException("annotation DB cache payload was not a Map");
             }
             return (Map<?, ?>) raw;
-        } finally {
-            input.close();
         }
     }
 

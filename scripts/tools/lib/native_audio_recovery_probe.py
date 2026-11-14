@@ -34,6 +34,8 @@ HOST_HEADERS = """
 typedef void JNIEnv;
 typedef void* jclass;
 typedef unsigned char jboolean;
+typedef int jint;
+typedef long long jlong;
 typedef struct { atomic_bool runtimeForeground; } HostPojavEnvironment;
 static HostPojavEnvironment host_environ = {true};
 static HostPojavEnvironment* pojav_environ = &host_environ;
@@ -65,7 +67,7 @@ def _extract_function(source: str, signature: str) -> str:
 def build_probe(out_dir: Path) -> Path:
     source = NATIVE_SOURCE.read_text(encoding="utf-8")
     defines = "\n".join(re.findall(
-        r"^#define (?:AL_GAIN|ALC_\w+|AUDIO_ROUTE_LOG_PREFIX|AUDIO_COMMAND_\w+|AUDIO_HEALTH_\w+)\b[^\n]*",
+        r"^#define (?:AL_GAIN|ALC_\w+|AUDIO_ROUTE_LOG_PREFIX|AUDIO_COMMAND_\w+|AUDIO_HEALTH_\w+|AUDIO_MUTE_\w+)\b[^\n]*",
         source,
         re.MULTILINE,
     ))
@@ -82,9 +84,15 @@ def build_probe(out_dir: Path) -> Path:
         "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioRecovery(",
     )
     health_bridge = "\n".join(_extract_function(source, signature) for signature in (
+        "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioMuted(",
         "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioHealthCheck(",
+        "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRequestAudioRouteRecovery(",
         "JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAudioCommands(",
         "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeProcessQueuedAudioCommands(",
+        "JNIEXPORT jlong JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetAudioOperationSnapshot(",
+        "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRecoveryAllowed(",
+        "JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioRuntimeState(",
+        "JNIEXPORT jint JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetAudioRuntimeState(",
     ))
     out_dir.mkdir(parents=True, exist_ok=True)
     generated = out_dir / "native_audio_recovery_probe.c"

@@ -49,10 +49,10 @@ import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.navigation.Route
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayArtwork
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
@@ -333,12 +333,14 @@ internal fun LauncherSettingsLauncherScreenContent(
     onThemeColorChanged: (LauncherThemeColor) -> Unit = {},
     onLauncherIconModeChanged: (LauncherIconMode) -> Unit = {},
     onChromeBackgroundOpacityChanged: (Float) -> Unit = {},
+    onLauncherBlurDisabledChanged: (Boolean) -> Unit = {},
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit = {},
-    onSlingBreakEngineModeChanged: (SlingBreakEngineMode) -> Unit = {},
+    onPrepareSlingBreak: () -> Unit = {},
     onDismissSlingBreakDependencyFailure: () -> Unit = {},
     onSwitchSlingBreakDownloadMirror: () -> Unit = {},
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit = {},
     onBootOverlayImageModeChanged: (BootOverlayImageMode) -> Unit = {},
+    onBootOverlayArtworkChanged: (BootOverlayArtwork) -> Unit = {},
     onPickBootOverlayImage: (BootOverlayImageSlot) -> Unit = {},
     onResetBootOverlayImages: () -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
@@ -377,12 +379,14 @@ internal fun LauncherSettingsLauncherScreenContent(
                         onThemeColorChanged = onThemeColorChanged,
                         onLauncherIconModeChanged = onLauncherIconModeChanged,
                         onChromeBackgroundOpacityChanged = onChromeBackgroundOpacityChanged,
+                        onLauncherBlurDisabledChanged = onLauncherBlurDisabledChanged,
                         onBootOverlayStyleChanged = onBootOverlayStyleChanged,
-                        onSlingBreakEngineModeChanged = onSlingBreakEngineModeChanged,
+                        onPrepareSlingBreak = onPrepareSlingBreak,
                         onDismissSlingBreakDependencyFailure = onDismissSlingBreakDependencyFailure,
                         onSwitchSlingBreakDownloadMirror = onSwitchSlingBreakDownloadMirror,
                         onBootOverlayAnimationChanged = onBootOverlayAnimationChanged,
                         onBootOverlayImageModeChanged = onBootOverlayImageModeChanged,
+                        onBootOverlayArtworkChanged = onBootOverlayArtworkChanged,
                         onPickBootOverlayImage = onPickBootOverlayImage,
                         onResetBootOverlayImages = onResetBootOverlayImages,
                         onShowModFileNameChanged = onShowModFileNameChanged,
@@ -423,7 +427,7 @@ internal fun LauncherSettingsLauncherScreenContent(
         message = uiState.slingBreakDownloadMessage,
         failure = uiState.slingBreakDependencyFailure,
         slowDownloadSwitch = uiState.slingBreakSlowDownloadSwitch,
-        onRetry = { onSlingBreakEngineModeChanged(uiState.slingBreakEngineMode) },
+        onRetry = onPrepareSlingBreak,
         onSwitchMirror = onSwitchSlingBreakDownloadMirror,
         onDismissFailure = onDismissSlingBreakDependencyFailure,
     )

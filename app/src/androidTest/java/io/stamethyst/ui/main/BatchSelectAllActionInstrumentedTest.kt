@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -32,6 +33,8 @@ class BatchSelectAllActionInstrumentedTest {
             val scope = setOf("a", "b")
             MaterialTheme {
                 BatchSelectAllAction(state(batchSelectionState(selected, scope), enabled = true).copy(
+                    selectedCount = selected.size,
+                    totalCount = 3,
                     onToggleSelectAll = {
                         selected = toggleFolderBatchSelection(selected, scope)
                         observed = selected
@@ -39,10 +42,13 @@ class BatchSelectAllActionInstrumentedTest {
                 ))
             }
         }
-        val action = compose.onNodeWithText(context.getString(R.string.mod_select_all_results))
+        compose.onNodeWithText("2/3").assertExists()
+        val action = compose.onNodeWithContentDescription(context.getString(R.string.mod_select_all_results))
         action.performClick().assertIsOn()
+        compose.onNodeWithText("3/3").assertExists()
         compose.runOnIdle { assertEquals(setOf("outside", "a", "b"), observed) }
         action.performClick().assertIsOff()
+        compose.onNodeWithText("1/3").assertExists()
         compose.runOnIdle { assertEquals(setOf("outside"), observed) }
     }
 
@@ -50,7 +56,7 @@ class BatchSelectAllActionInstrumentedTest {
         compose.setContent {
             MaterialTheme { BatchSelectAllAction(state(ToggleableState.Off, enabled = false)) }
         }
-        compose.onNodeWithText(context.getString(R.string.mod_select_all_results))
+        compose.onNodeWithText("0/0")
             .assertIsOff().assertIsNotEnabled()
     }
 

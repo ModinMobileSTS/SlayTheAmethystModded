@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_force_high_refresh_rate_title">强制高刷</string>
+    <string name="settings_force_high_refresh_rate_desc">在启动器或游戏前台显示几乎不可见的 1 像素动态细线，尝试减少 LTPO 自动降刷。会增加耗电，部分机型可能无效，无法突破系统限制或保证 120 Hz。</string>
+</resources>

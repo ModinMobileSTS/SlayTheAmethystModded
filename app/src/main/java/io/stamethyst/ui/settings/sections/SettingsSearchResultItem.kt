@@ -202,6 +202,7 @@ private val appearanceTitles = setOf(
     R.string.settings_boot_overlay_custom_image_title,
     R.string.settings_loading_animation_title,
     R.string.settings_chrome_background_opacity_title,
+    R.string.settings_launcher_blur_disabled_title,
 )
 
 private val displayTitles = setOf(

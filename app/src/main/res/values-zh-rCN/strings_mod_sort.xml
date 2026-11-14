@@ -1,0 +1,9 @@
+<resources>
+    <string name="main_mod_sort">模组排序</string>
+    <string name="main_mod_sort_method">排序方式</string>
+    <string name="main_mod_sort_name_ascending">名称正序</string>
+    <string name="main_mod_sort_name_descending">名称倒序</string>
+    <string name="main_mod_sort_modified_newest">文件修改时间：新到旧</string>
+    <string name="main_mod_sort_modified_oldest">文件修改时间：旧到新</string>
+    <string name="main_mod_sort_overwrite_confirmation">排序后现有的自定义排序将被覆盖，确定吗？</string>
+</resources>

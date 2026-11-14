@@ -16,11 +16,12 @@ dependencies {
     compileOnly(files(rootProject.file("build-deps/desktop.jar")))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/BaseMod.jar")))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/ModTheSpire.jar")))
-    compileOnly(files(appProjectRef.layout.buildDirectory.file("generated/callbackBridgeRuntimeJar/lwjgl-glfw-classes.jar")))
+    compileOnly(files(appProjectRef.layout.buildDirectory.file("generated/apkCallbackBridgeJar/callback-bridge.jar")))
+    compileOnly(files(appProjectRef.layout.buildDirectory.file("generated/lwjglRuntimeJar/lwjgl-glfw-classes.jar")))
 }
 
 tasks.compileJava {
-    dependsOn(":app:packageLwjglCallbackBridgeJar")
+    dependsOn(":app:packageJvmCallbackBridgeJar", ":app:packageLwjglRuntimeJar")
 }
 
 tasks.jar {

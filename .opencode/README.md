@@ -10,21 +10,24 @@
 - Specify the exact user-approved `deviceSerial` for installation and commands using raw adb/shell. Automatic discovery, historical examples, or a sole online device do not authorize package operations.
 - Test tools only use the already installed app: smoke, single-room, performance, startup-cache and Steam Cloud tests never install/uninstall APKs. `skipInstall` is compatibility-only and cannot enable installation. Only the explicit lifecycle `install` action installs, with separate user authorization and a concrete `deviceSerial` (missing/`auto` values are rejected before spawning Python). Gradle automatic deployment tasks are blocked; see `AGENTS.md`.
 - Copy `.env.local.example` to `.env.local` and configure the absolute SDK adb binary, independent local server port and wireless device endpoint. See `scripts/tools/connector/README.md` for isolation and lifecycle details. The local file is ignored by Git; never put a real device endpoint in tracked configuration.
-- Tools automatically ensure the workspace-owned ADB and connector, and select only the configured wireless device. Old inherited `STS_CONNECTOR_PORT` values are ignored in managed mode; omit `connectorPort` and `deviceSerial`. Explicit values must match the managed instance.
+- Tools automatically ensure the workspace-owned ADB and connector, and select only the configured wireless device. Old inherited `STS_CONNECTOR_PORT` values are ignored in managed mode; omit `connectorPort`. Explicit device/port values must match the managed instance. Status and other raw adb/shell queries require an explicit `deviceSerial`; configuration or automatic selection alone does not grant that permission.
 - Without local configuration, legacy externally managed connectors require an explicit port; the previous fixed-port auto-start fallback has been removed.
 
 ## Direct slash command
 
-Use **`/install-apk`** in this project to build the current working tree's Debug APK
-(including uncommitted source changes) and install it on the device configured in
-the ignored `.env.local`. This is a plugin command executor, not a Markdown prompt
+Use **`/install-apk <deviceSerial>`** in this project to build the current working tree's Debug APK
+(including uncommitted source changes) and install it on that explicitly specified device.
+In managed mode the serial must match the ignored `.env.local` endpoint exactly.
+This is a plugin command executor, not a Markdown prompt
 template: it submits the existing Python harness `install` to the native session
 shell endpoint (`POST /api/session/:sessionID/shell`), just like composer **`!`**,
 never calls
 an agent/model, never switches agents, and does not start the game.
 
-The command accepts no arguments or attachments. Invoking it explicitly authorizes
-the fixed build/install operation: unlike agent tool calls, plugin command executors
+The command requires exactly one device serial and rejects missing/automatic targets,
+multiple arguments and attachments. Invoking it with the target explicitly authorizes
+the fixed build/install operation for that device; configuration alone is not consent.
+Unlike agent tool calls, plugin command executors
 do **not** pass through `sts_control_game_lifecycle` tool permission checks.
 OpenChamber renders native shell start/output/end through its existing `!` UI,
 instead of synthetic user messages or heartbeat spam. The native shell owns job
@@ -60,7 +63,7 @@ Tools in the `sts` namespace (effective OpenCode ID: `sts_<name>`):
 | Tool name | Purpose |
 | --- | --- |
 | `local_adb` | Ensure, inspect or stop this workspace's local wireless ADB and connector. |
-| `get_game_status` | Inspect process, runtime, installed package, and device. |
+| `get_game_status` | Inspect process, runtime, installed package, and device; requires explicit `deviceSerial`. |
 | `control_game_lifecycle` | Install, start, stop, or gracefully exit the game. |
 | `collect_game_diagnostics` | Run doctor, collect logs, or take a screenshot. |
 | `run_gameplay_scenario` | Run smoke, single-room, or probe-driven play scenarios. |
@@ -76,7 +79,64 @@ Multi-action tools accept an `action` enum, never an arbitrary harness command. 
 
 For example, request `sts.get_game_status({deviceSerial: "USER_APPROVED_SERIAL"})` to inspect the device, or `sts.run_gameplay_scenario({action: "single-room", deviceSerial: "USER_APPROVED_SERIAL", singleRoomMonster: "..."})` to start a test room. Replace the placeholder with the device approved for the current operation. Tool results include `resultJson` for full details; the model-facing result omits potentially large operation logs. Output/input paths must stay inside the repository.
 
+Status queries without an explicit target, or with failed/invalid process, storage,
+log, path-metadata or package responses,
+report `success: false`, `STATUS_QUERY_FAILED` and an `UNKNOWN` snapshot instead of
+claiming the game is running or stopped. Optional files may be absent only when a
+successful remote probe confirms absence; permission/transport errors are failures.
+Automatic selection retains its restricted permissions.
+
 All harness calls are serialized in the plugin runtime because device selection and Gradle operations share connector/ADB state. Cancellation stops the Python process group (not the separate connector daemon); a cancelled or timed-out run is never reported as successful, even if a partial `result.json` exists. The lock is local to this OpenCode process, not a cross-process lock for standalone harness runs.
+
+## Workshop mod tools
+
+`.opencode/plugins/sts-workshop.ts` registers **`sts_workshop`** tools for the local
+agent. They use a desktop JVM CLI backed by the same `workshop-core` download engine
+as the launcher, with anonymous Steam sessions and both direct URL and SteamPipe/UGC
+downloads. No Steam account, API key, ADB or Android device is required.
+
+- `search_mods`: keyword search or empty-query browsing, pagination, language,
+  category tags, popularity/recent/update/subscriber sorting.
+- `get_mod_details`: title, description, creator Steam ID, size, update time,
+  tags, API-reported children and available download source.
+- `download_mod`: download one exact `publishedFileId` into a fresh local directory;
+  return paths, byte sizes, SHA-256, metadata, log and `result.json`.
+
+Build the CLI once after cloning, and rebuild after changing the CLI or its shared
+libraries (JDK 21 and the repository's existing Gradle dependencies are required):
+
+```sh
+mkdir -p agent-tmp
+flock agent-tmp/ai-agent-gradle.lock ./gradlew --offline :tools:workshop-agent:installDist --console=plain --max-workers=2
+```
+
+OpenCode loads the plugin automatically. Missing CLI binaries produce the build
+command above. Builds are explicit, so searches do not launch Gradle or download
+build dependencies. The optional plugin `executable` setting selects a prebuilt CLI.
+
+Example Code Mode calls (item IDs must remain strings):
+
+```js
+await tools.sts_workshop.search_mods({ query: "BaseMod", pageSize: 10 })
+await tools.sts_workshop.get_mod_details({ publishedFileId: "1605833019" })
+await tools.sts_workshop.download_mod({ publishedFileId: "1605833019" })
+```
+
+Downloads default to `agent-tmp/workshop-mods/<id>-<unique>/`. `outDir` changes the
+base directory inside this checkout; existing downloads are never overwritten.
+The CLI downloads original Workshop files, without launcher-specific import,
+patching, dependency installation, subscription changes or Android deployment.
+API children are not guaranteed to contain every dependency. Collections are
+rejected. Search uses the launcher's public HTML/SSR formats, without its
+account-authenticated fallback. Steam restrictions and rate limits are surfaced
+as errors. Timeouts default to 90 seconds for reads and 900 seconds for downloads;
+session cancellation and plugin unload terminate the child process group.
+
+Full results remain in `result.json`; only the first 100 downloaded files are
+shown to the model. Failed/cancelled downloads retain partial artifacts and logs
+with their directory in the error, but do not produce a success result.
+See [`tools/workshop-agent/README.md`](../tools/workshop-agent/README.md) for the
+CLI protocol, desktop Zstd adapter and offline verification.
 
 ## Verification
 

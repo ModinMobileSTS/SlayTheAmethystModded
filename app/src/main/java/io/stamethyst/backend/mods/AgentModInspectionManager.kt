@@ -28,35 +28,45 @@ object AgentModInspectionManager {
         val inspectionId = "inspection-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(8)}"
         val root = RuntimePaths.agentModWorkspaceRoot(context, parentSegment)
         val sourceRoot = RuntimePaths.agentModSourceRoot(context, parentSegment)
-        val sourceHash = AgentModSourceSnapshot.prepare(root, sourceRoot, sourceJar)
-        val metadataFile = root.resolve("source-metadata.json")
-        val metadata = JSONObject(metadataFile.readText(StandardCharsets.UTF_8))
-        metadataFile.writeText(
-            metadata.put("parent_mod_id", resolvedParent)
-                .put("inspection_id", inspectionId)
-                .put("source_sha256", sourceHash)
-                .toString(2),
-            StandardCharsets.UTF_8,
-        )
-        return AgentModInspectionWorkspace(resolvedParent, inspectionId, root, sourceRoot, sourceHash)
+        return AgentSourceSnapshotLocks.withLock(root) {
+            val sourceHash = AgentModSourceSnapshot.prepare(root, sourceRoot, sourceJar)
+            val metadataFile = root.resolve("source-metadata.json")
+            val metadata = JSONObject(metadataFile.readText(StandardCharsets.UTF_8))
+            metadataFile.writeText(
+                metadata.put("parent_mod_id", resolvedParent)
+                    .put("inspection_id", inspectionId)
+                    .put("source_sha256", sourceHash)
+                    .toString(2),
+                StandardCharsets.UTF_8,
+            )
+            AgentModInspectionWorkspace(resolvedParent, inspectionId, root, sourceRoot, sourceHash)
+        }
     }
 
     fun recordOnDemandClass(
         workspace: AgentModInspectionWorkspace,
         className: String,
-    ) {
+    ): Unit = AgentSourceSnapshotLocks.withLock(workspace.root) {
         val metadataFile = workspace.root.resolve("source-metadata.json")
         val metadata = runCatching {
             if (metadataFile.isFile) JSONObject(metadataFile.readText(StandardCharsets.UTF_8)) else JSONObject()
         }.getOrElse { JSONObject() }
-        val materializedCount = workspace.sourceRoot.walkTopDown()
-            .count { it.isFile && it.extension.equals("java", ignoreCase = true) }
+        // A late result from an older inspection must not overwrite the new snapshot's metadata.
+        if (metadata.optString("source_sha256") != workspace.sourceSha256) return@withLock
+        var sourceFile = AgentModSourceSnapshot.sourceFile(workspace.sourceRoot, className)
+        if (!sourceFile.isFile) {
+            // Source-like nested names (Outer.Inner) resolve to Outer$Inner.class in the JAR.
+            val entry = AgentModJarReader.classEntryName(File(metadata.optString("source_path")), className)
+            if (entry != null) sourceFile = AgentModSourceSnapshot.sourceFileForEntry(workspace.sourceRoot, entry)
+        }
+        val materializedCount = AgentMaterializedSourceIndex.shared.count(workspace.sourceRoot, workspace.sourceSha256, sourceFile)
         metadata.put("source_mode", "on_demand")
             .put("source_extracted", false)
             .put("source_decompiled", true)
             .put("source_materialized_classes", materializedCount)
             .put("last_materialized_class", className)
         runCatching { metadataFile.writeText(metadata.toString(2), StandardCharsets.UTF_8) }
+        Unit
     }
 
     private fun resolveParentModId(sourceJar: File, fallback: String): String {

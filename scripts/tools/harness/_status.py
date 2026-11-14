@@ -16,6 +16,33 @@ from scripts.tools.harness._device import (
     resolve_device_sts_root,
 )
 from scripts.tools.harness._runner import adb_shell_script
+from scripts.tools.harness._status_query import StatusQueryError, run_status_query
+from scripts.tools.lib.device_safety import require_explicit_device
+
+
+def require_status_device(device_serial: str, resolved_device_serial: str) -> None:
+    try:
+        serial = require_explicit_device(device_serial)
+    except RuntimeError:
+        raise StatusQueryError(
+            "Status query requires an explicit device serial (--device-serial); "
+            "automatic selection cannot authorize raw queries."
+        ) from None
+    if serial != resolved_device_serial:
+        raise StatusQueryError("Status query target differs from the explicitly selected device.")
+
+
+def checked_pid_text(result: Any) -> str:
+    text = result.output.strip()
+    # Android pidof returns 1 with no output when no process matches. Transport,
+    # permission and shell errors must remain query failures, even with no PID.
+    if result.exit_code == 1 and not text:
+        return ""
+    if result.exit_code != 0:
+        raise StatusQueryError(f"Process status query failed (exit {result.exit_code}): {limit_text(text, 1000)}")
+    if text and not re.fullmatch(r"[1-9][0-9]*(?:\s+[1-9][0-9]*)*", text):
+        raise StatusQueryError("Process status query returned invalid PID output.")
+    return " ".join(text.split())
 
 
 def parse_boot_bridge_events(text: str | None) -> dict[str, Any]:
@@ -243,28 +270,35 @@ def extract_startup_cache_log_evidence(text: str | None, max_lines: int = 80) ->
 
 
 def process_pid_text(ctx: HarnessContext, process_name: str) -> str:
-    result = adb_shell_script(ctx, f"pidof {quote_android_shell(process_name)} 2>/dev/null || true", allow_failure=True)
-    return result.output.strip()
+    result = adb_shell_script(ctx, f"pidof {quote_android_shell(process_name)}", allow_failure=True)
+    return checked_pid_text(result)
 
 
-def package_version_info(ctx: HarnessContext) -> dict[str, Any]:
+def package_version_info(ctx: HarnessContext, *, strict: bool = False) -> dict[str, Any]:
     quoted = quote_android_shell(ctx.application_id or "")
-    result = adb_shell_script(ctx, f"dumpsys package {quoted} 2>/dev/null | grep -E 'version(Name|Code)=' || true", timeout_seconds=5, allow_failure=True)
+    if strict:
+        # Do not pipe through grep: that masks dumpsys failures. Some Android
+        # services print permission errors with exit=0, so validate fields too.
+        output = run_status_query(ctx, f"dumpsys package {quoted}", label="package")
+    else:
+        output = adb_shell_script(ctx, f"dumpsys package {quoted} 2>/dev/null | grep -E 'version(Name|Code)=' || true", timeout_seconds=5, allow_failure=True).output
     version_name = None
     version_code = None
-    for line in result.output.splitlines():
+    for line in output.splitlines():
         trimmed = line.strip()
         if trimmed.startswith("versionName="):
             version_name = trimmed[len("versionName="):]
         elif trimmed.startswith("versionCode="):
             version_code = trimmed[len("versionCode="):].split(" ")[0]
+    if strict and (version_name is None or version_code is None or not version_code.isdecimal()):
+        raise StatusQueryError("package query did not return valid installed-package version information.")
     return {"versionName": version_name, "versionCode": version_code}
 
 
-def desktop_jar_patch_snapshot(ctx: HarnessContext, sts_root: dict[str, Any]) -> dict[str, Any]:
-    desktop_jar = remote_sts_path_state(ctx, sts_root, "desktop-1.0.jar")
-    temp_jar = remote_sts_path_state(ctx, sts_root, "desktop-1.0.jar.patching.tmp")
-    backup_jar = remote_sts_path_state(ctx, sts_root, "desktop-1.0.jar.patching.backup")
+def desktop_jar_patch_snapshot(ctx: HarnessContext, sts_root: dict[str, Any], *, strict: bool = False) -> dict[str, Any]:
+    desktop_jar = remote_sts_path_state(ctx, sts_root, "desktop-1.0.jar", strict=strict)
+    temp_jar = remote_sts_path_state(ctx, sts_root, "desktop-1.0.jar.patching.tmp", strict=strict)
+    backup_jar = remote_sts_path_state(ctx, sts_root, "desktop-1.0.jar.patching.backup", strict=strict)
     return {
         "desktopJar": desktop_jar,
         "tempJar": temp_jar,
@@ -278,19 +312,21 @@ def harness_status(
     harness_logcat_text: str | None = None,
     harness_logcat_path: str = "",
 ) -> dict[str, Any]:
-    sts_root = resolve_device_sts_root(ctx)
-    boot_text = read_remote_sts_text(ctx, sts_root, "boot_bridge_events.log")
-    latest_log_tail = read_remote_sts_text(ctx, sts_root, "latest.log", tail_lines=120)
-    desktop_jar_patch = desktop_jar_patch_snapshot(ctx, sts_root)
-    boot = parse_boot_bridge_events(boot_text)
-    crash_marker = find_crash_marker(latest_log_tail)
-    single_room_result = find_single_room_result(latest_log_tail)
-
+    require_status_device(ctx.options.device_serial, ctx.resolved_device_serial)
+    # Query PIDs first so connector/transport failures stop collection before
+    # optional remote log/path probes can turn error output into state evidence.
     package_name = ctx.application_id or ""
     launcher_pid = process_pid_text(ctx, package_name)
     game_pid = process_pid_text(ctx, f"{package_name}:game")
     diag_pid = process_pid_text(ctx, f"{package_name}:diag")
     logcat_pid = process_pid_text(ctx, f"{package_name}:logcat")
+    sts_root = resolve_device_sts_root(ctx, strict=True)
+    boot_text = read_remote_sts_text(ctx, sts_root, "boot_bridge_events.log", strict=True)
+    latest_log_tail = read_remote_sts_text(ctx, sts_root, "latest.log", tail_lines=120, strict=True)
+    desktop_jar_patch = desktop_jar_patch_snapshot(ctx, sts_root, strict=True)
+    boot = parse_boot_bridge_events(boot_text)
+    crash_marker = find_crash_marker(latest_log_tail)
+    single_room_result = find_single_room_result(latest_log_tail)
 
     runtime_signal_state = None
     terminal = boot["terminalEvent"]
@@ -332,7 +368,7 @@ def harness_status(
         "runtimeSignalState": runtime_signal_state,
         "applicationId": package_name,
         "deviceSerial": ctx.resolved_device_serial,
-        "package": package_version_info(ctx),
+        "package": package_version_info(ctx, strict=True),
         "processes": {
             "launcher": launcher_pid,
             "game": game_pid,

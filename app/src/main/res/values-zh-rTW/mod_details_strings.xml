@@ -1,6 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="mod_details_title">模組詳情</string>
+    <string name="mod_details_close">關閉模組詳情</string>
+    <string name="mod_details_done">完成</string>
+    <string name="mod_details_relations">狀態與關聯</string>
+    <string name="mod_details_technical_info">技術資訊</string>
+    <string name="mod_details_mod_id">模組 ID</string>
+    <string name="mod_details_load_priority">載入優先順序</string>
+    <string name="mod_details_priority_default">預設</string>
+    <string name="mod_details_dependencies">前置依賴</string>
+    <string name="mod_details_dependencies_none">無</string>
+    <string name="mod_details_file_location">檔案位置</string>
+    <string name="mod_details_copy">複製</string>
+    <string name="mod_details_patch_description">檢視已套用的修復內容</string>
+    <string name="mod_details_patch_applied">已套用</string>
+    <string name="mod_details_patch_update">可更新</string>
+    <string name="mod_details_ai_relation_description">管理本機修補程式與社群修補程式</string>
+    <string name="mod_details_market">模組市場</string>
+    <string name="mod_details_market_description">檢視原模組的市場詳情</string>
     <string name="mod_details_actions">操作</string>
     <string name="mod_details_tab_info">資訊</string>
     <string name="mod_details_tab_description">簡介</string>

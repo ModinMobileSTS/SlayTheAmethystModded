@@ -17,7 +17,7 @@ internal fun agentToolIcon(name: String): ImageVector = when (name) {
             "list_agent_workspace" -> R.drawable.ic_settings_resources
             "list_agent_patch_mods" -> R.drawable.ic_dock_mods
             "create_agent_patch_workspace" -> R.drawable.ic_folder_add
-            "write_agent_workspace_file" -> R.drawable.ic_edit
+            "write_agent_workspace_file", "edit_agent_workspace_file" -> R.drawable.ic_edit
             "delete_agent_workspace_file", "delete_agent_patch_mod" -> R.drawable.ic_delete
             "decompile_agent_mod_source", "decompile_agent_class", "decompile_agent_api_class",
             "describe_agent_api_class",

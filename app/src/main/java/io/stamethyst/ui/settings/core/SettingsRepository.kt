@@ -36,9 +36,9 @@ import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
-import io.stamethyst.config.SlingBreakEngineMode
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -57,10 +57,10 @@ internal object SettingsRepository {
         val themeColor: LauncherThemeColor,
         val launcherIconMode: LauncherIconMode,
         val chromeBackgroundOpacity: Float,
+        val launcherBlurDisabled: Boolean,
         val bootOverlayStyle: BootOverlayStyle,
         val bootOverlayAnimation: BootOverlayAnimation,
         val bootOverlayImageConfig: BootOverlayImageConfig,
-        val slingBreakEngineMode: SlingBreakEngineMode,
         val accelerationStrategy: io.stamethyst.backend.network.AccelerationStrategy,
         val localTestCloudControlEnabled: Boolean,
         val steamAchievementDebugModeEnabled: Boolean,
@@ -201,6 +201,10 @@ internal object SettingsRepository {
         return LauncherPreferences.readLauncherIconMode(context)
     }
 
+    fun loadLauncherBlurDisabled(context: Context): Boolean {
+        return LauncherPreferences.readLauncherBlurDisabled(context)
+    }
+
     fun loadChromeBackgroundOpacity(context: Context): Float {
         return LauncherPreferences.readChromeBackgroundOpacity(context)
     }
@@ -228,10 +232,10 @@ internal object SettingsRepository {
             themeColor = LauncherPreferences.readThemeColor(context),
             launcherIconMode = LauncherPreferences.readLauncherIconMode(context),
             chromeBackgroundOpacity = LauncherPreferences.readChromeBackgroundOpacity(context),
+            launcherBlurDisabled = LauncherPreferences.readLauncherBlurDisabled(context),
             bootOverlayStyle = LauncherPreferences.readBootOverlayStyle(context),
             bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
             bootOverlayImageConfig = LauncherPreferences.readBootOverlayImageConfig(context),
-            slingBreakEngineMode = LauncherPreferences.readSlingBreakEngineMode(context),
             accelerationStrategy = LauncherPreferences.readAccelerationStrategy(context),
             localTestCloudControlEnabled = LauncherPreferences.isLocalTestCloudControlEnabled(context),
             steamAchievementDebugModeEnabled = LauncherPreferences.isSteamAchievementDebugModeEnabled(context),
@@ -370,6 +374,10 @@ internal object SettingsRepository {
     }
 
     fun resetLauncherSettingsToDefaults(context: Context) {
+        LauncherPreferences.saveLauncherBlurDisabled(
+            context,
+            LauncherPreferences.DEFAULT_LAUNCHER_BLUR_DISABLED
+        )
         LauncherPreferences.saveThemeMode(context, LauncherPreferences.DEFAULT_THEME_MODE)
         LauncherPreferences.saveThemeColor(context, LauncherPreferences.DEFAULT_THEME_COLOR)
         LauncherPreferences.saveLauncherIconMode(
@@ -389,9 +397,14 @@ internal object SettingsRepository {
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION
         )
         BootOverlayImageService.reset(context)
+        LauncherPreferences.saveBootOverlayImageConfig(context, BootOverlayImageConfig())
         LauncherPreferences.savePlayerName(context, LauncherPreferences.DEFAULT_PLAYER_NAME)
         RenderScaleService.reset(context)
         LauncherPreferences.saveTargetFps(context, LauncherPreferences.DEFAULT_TARGET_FPS)
+        LauncherConfig.setForceHighRefreshRateEnabled(
+            context,
+            LauncherConfig.DEFAULT_FORCE_HIGH_REFRESH_RATE
+        )
         LauncherPreferences.saveVirtualResolutionMode(
             context,
             LauncherPreferences.DEFAULT_VIRTUAL_RESOLUTION_MODE
@@ -533,7 +546,6 @@ internal object SettingsRepository {
             LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG
         )
         LauncherPreferences.setSlingBreakAudioDebugModeEnabled(context, false)
-        LauncherPreferences.saveSlingBreakEngineMode(context, SlingBreakEngineMode.WEBVIEW)
         LauncherPreferences.setGlBridgeSwapHeartbeatDebugEnabled(
             context,
             LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG

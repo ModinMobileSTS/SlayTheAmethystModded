@@ -430,24 +430,13 @@ internal fun AgentPatchCatalogueDialog(
                         } else if (visibleRemote.isEmpty()) {
                             Text(stringResource(R.string.main_mod_agent_patch_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         } else {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(7.dp),
-                            ) {
-                                items(visibleRemote, key = { it.first.patchModId }) { (patch, installed) ->
-                                    val hasUpdate = installed != null && compareVersions(patch.version, installed.version) > 0
-                                    RemoteAgentPatchRow(
-                                        modifier = Modifier.animateItem(),
-                                        patch = patch,
-                                        parentVersion = parentVersion,
-                                        installed = installed != null,
-                                        hasUpdate = hasUpdate,
-                                        working = workingPatchModId == patch.patchModId,
-                                        onDetails = { details = patch },
-                                        onInstall = { startInstall(patch) },
-                                    )
-                                }
-                            }
+                            RemoteAgentPatchList(
+                                patches = visibleRemote,
+                                parentVersion = parentVersion,
+                                workingPatchModId = workingPatchModId,
+                                onDetails = { details = it },
+                                onInstall = startInstall,
+                            )
                         }
                     }
                     if (error != null && snapshot != null) {
@@ -844,6 +833,36 @@ private fun LocalAgentPatchChooserDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Pure list content so catalogue identity and row actions can be tested without network requests. */
+@Composable
+internal fun RemoteAgentPatchList(
+    patches: List<Pair<RemoteAgentPatch, AgentPatchModUi?>>,
+    parentVersion: String,
+    workingPatchModId: String?,
+    onDetails: (RemoteAgentPatch) -> Unit,
+    onInstall: (RemoteAgentPatch) -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        // Renamed/reuploaded patches can share a mod ID but contain different JARs.
+        items(patches, key = { it.first.communityItemKey() }) { (patch, installed) ->
+            val hasUpdate = installed != null && compareVersions(patch.version, installed.version) > 0
+            RemoteAgentPatchRow(
+                modifier = Modifier.animateItem(),
+                patch = patch,
+                parentVersion = parentVersion,
+                installed = installed != null,
+                hasUpdate = hasUpdate,
+                working = workingPatchModId == patch.patchModId,
+                onDetails = { onDetails(patch) },
+                onInstall = { onInstall(patch) },
+            )
         }
     }
 }

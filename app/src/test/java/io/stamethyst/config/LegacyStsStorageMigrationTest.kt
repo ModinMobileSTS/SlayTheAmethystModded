@@ -47,6 +47,25 @@ class LegacyStsStorageMigrationTest {
     }
 
     @Test
+    fun retiredEnginePreferenceCannotReenableWebMinigameOrOptIntoGodot() {
+        for (mode in listOf("webview", "compatibility")) {
+            val preferences = InMemorySharedPreferences()
+            val context = object : ContextWrapper(Application()) {
+                override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = preferences
+            }
+            preferences.edit()
+                .putString("sling_break_engine_mode", mode)
+                .putString("boot_overlay_style", "sling_break")
+                .apply()
+
+            assertEquals(LauncherConfig.DEFAULT_BOOT_OVERLAY_STYLE, LauncherConfig.readBootOverlayStyle(context))
+            LauncherConfig.saveBootOverlayStyle(context, BootOverlayStyle.GODOT_SLING_BREAK)
+            assertEquals(BootOverlayStyle.GODOT_SLING_BREAK, LauncherConfig.readBootOverlayStyle(context))
+            assertEquals(mode, preferences.getString("sling_break_engine_mode", null))
+        }
+    }
+
+    @Test
     fun migrationRewritesWorkshopAbsoluteJarPaths() {
         val root = Files.createTempDirectory("legacy-sts-storage-migration").toFile()
         val filesDir = File(root, "internal-files").apply { mkdirs() }

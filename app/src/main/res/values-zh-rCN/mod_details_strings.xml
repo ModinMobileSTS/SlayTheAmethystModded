@@ -1,6 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="mod_details_title">模组详情</string>
+    <string name="mod_details_close">关闭模组详情</string>
+    <string name="mod_details_done">完成</string>
+    <string name="mod_details_relations">状态与关联</string>
+    <string name="mod_details_technical_info">技术信息</string>
+    <string name="mod_details_mod_id">模组 ID</string>
+    <string name="mod_details_load_priority">加载优先级</string>
+    <string name="mod_details_priority_default">默认</string>
+    <string name="mod_details_dependencies">前置依赖</string>
+    <string name="mod_details_dependencies_none">无</string>
+    <string name="mod_details_file_location">文件位置</string>
+    <string name="mod_details_copy">复制</string>
+    <string name="mod_details_patch_description">查看已应用的修复内容</string>
+    <string name="mod_details_patch_applied">已应用</string>
+    <string name="mod_details_patch_update">可更新</string>
+    <string name="mod_details_ai_relation_description">管理本地补丁与社区补丁</string>
+    <string name="mod_details_market">模组市场</string>
+    <string name="mod_details_market_description">查看原模组的市场详情</string>
     <string name="mod_details_actions">操作</string>
     <string name="mod_details_tab_info">信息</string>
     <string name="mod_details_tab_description">简介</string>

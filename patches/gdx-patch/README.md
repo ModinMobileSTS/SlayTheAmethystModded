@@ -2,6 +2,23 @@
 
 启动器使用的 libGDX 兼容层补丁。
 
+## Windows 风格模组资源路径兼容
+
+- **症状：** 模组使用反斜杠拼接资源路径时，Linux/Android 上 atlas 本身可以从 classpath 读取，
+  但 `FileHandle.parent()` 丢失目录；页图落到根目录，出现找不到图片，或误读同名资源导致白块。
+  铃兰的 `wild.png` 报错和默认皮肤误读游戏字体 `default.png` 是同一类问题。
+- **修复：** `ResourceFileHandleCompat` 在 `FileHandle(String, FileType)` 和
+  `FileHandle(File, FileType)` 构造入口统一 Internal/Classpath 路径的 `\` 为 `/`，
+  使读取、名称、父目录、子路径和 sibling 使用一致的底层 `File`。规则不依赖模组名或资源扩展名。
+  Local/External/Absolute 保持原有文件系统语义；不按文件名搜索、不吞掉真正的缺失资源错误。
+- **接线：** `StsResourceFileHandlePatcher` 对游戏原类的两个构造方法做幂等字节码注入，
+  保留其余方法；`StsDesktopJarPatcher` 注入 helper、检查构造方法补丁状态，启动时更新旧缓存。
+  `REQUIRED_STS_PATCH_CLASSES` 登记 helper，避免只有构造调用而缺少运行时依赖。
+- **验证：** `ResourceFileHandleCompatTest` 验证类型范围、混合分隔符、Unicode/空格、空值和幂等；
+  `StsResourceFileHandlePatcherTest` 加载真实游戏 FileHandle/LwjglFileHandle/atlas 解析器，
+  对照原版的根目录误匹配，覆盖两种构造、嵌套页图、读/exists、parent/child/sibling 和缺失资源。
+  JVM 验证不等同于 Android GPU 画面实测；直接绕过 libGDX 的自定义文件加载器不在此入口范围内。
+
 ## 资源创建/销毁可视事件
 
 - **症状：** 原释放提示和时序图缺少图像创建事件，颜色不能区分创建与销毁，提示超时消失且无法滚动。
@@ -53,8 +70,52 @@
   合并后的健康检查标记，空队列不再阻止前台每秒检查及获焦后的即时检查。
   `GameSessionCoordinator` / `ForegroundAudioHealthMonitor` 负责触发和生命周期约束，
   `input_bridge_v3.c` 检查 `ALC_CONNECTED`，断流时建立新批次并有界退避重试。
+  路由变化通过单次原子标记同时合并预算续开与必要恢复，避免 health/explicit 两次 JNI
+  调用之间游戏线程先完成一次恢复、随后又收到第二次重建。
 - **边界：** 正常获焦不重建设备，不强抢系统音频焦点；后台、启动遮罩暂停及退出时
-  不进行自动恢复。健康检查最多自动尝试 4 次，后续前台/路由/音频模式事件可续开预算。
+  不进行自动恢复。显式/健康恢复共享每次中断最多 4 次及 250/1000/2000/4000ms
+  单调时钟退避；真实输出路由变化、观察到通信结束，或调度器实际停止后的稳定前台恢复
+  可续开一次预算，重复获焦/start 回调及周期检查不续开，也不强制重建健康设备。
 - **测试：** `scripts.tools.tests.test_native_audio_recovery` 验证空队列、迟发/重复断流、
   健康输出不重建、重试耗尽及后台取消；`ForegroundAudioHealthMonitorTest` 验证调度。
   宿主机 stub 通过不等于真实 Android 通话后的可听输出已验证。
+
+## 通话恢复停滞与 96% 启动阶段诊断（#674）
+
+- **症状：** 通话后无必要的设备 pause/reset 可能停住游戏线程；后续启动的
+  `GL context detected` 与首次音频之间缺少日志，96% 不能判定为同一旧进程/旧音频锁。
+- **恢复约束：** `GameAudioController` / `AudioOutputRouteBaseline` 将初始设备清单
+  作为基线。`ForegroundAudioHealthMonitor` 在非正常音频模式及回到正常模式后的
+  1 秒稳定期禁止恢复，代际隔离过期回调。`GameSessionCoordinator` 普通前台/获焦
+  只恢复静音状态并探测，不轮询补发显式重建；仅 audio-ready 后的真实路由变化显式恢复。
+  `LwjglApplication` 发布 initializing/ready/no-device/disabled-failed 状态，不能把
+  Android bridge-ready 当成 OpenAL 已创建。真实断流与 connected-but-paused 的失败设备
+  仍由 `input_bridge_v3.c` 共用预算恢复。
+- **静音请求可靠性：** 游戏线程长时间停顿时，每秒解除静音曾会塞满 64 格命令队列，
+  导致随后后台静音被丢弃。`input_bridge_v3.c` 将静音改为独立原子“最新目标状态”，
+  保留未 ready/无 context 时的请求；恢复完成后遵守最新静音目标和后台约束，暂停在
+  OpenAL 操作中途到达时，所有者返回后仍会应用它。恢复命令继续使用原有有界队列。
+- **路由事件保留：** `AudioOutputRouteBaseline` / `GameAudioController` 保留被暂停取消的
+  防抖事件；`ForegroundAudioHealthMonitor` 在遮罩、后台和 bridge 未 ready 时保留待办，
+  由 `GameSessionCoordinator` 确认已交给 native 后才清除。`input_bridge_v3.c` 接收事件与
+  执行门控分离，在连接查询前转交为游戏线程的恢复责任；暂停、查询错误或退避不会丢失
+  路由，也不会因重试同一事件反复续开预算。
+- **后台通话观察空窗：** 通话可能在调度器停止期间完整发生，返回时已是正常模式。
+  `ForegroundAudioHealthMonitor` 对实际 stop/start 的观察空窗同样等待正常模式稳定 1 秒，
+  然后仅续开一次预算；未读到模式或再次进入通信会重新计时。路由/已观察的通信结束与
+  此次恢复合并处理，重复窗口获焦不绕过稳定期或制造新预算。
+- **诊断：** `LwjglGraphics` 记录 GL version/extensions/instances，`LwjglApplication`
+  记录 display/VSync/frame override/audio constructor/initial commands begin/end。
+  `RuntimeStageDiagnostics` 独立守护线程在同一阶段持续 5 秒时仅报告一次，含 JVM PID
+  和会话 UUID、执行线程及 Java 栈；native 的独立原子序号/阶段快照细分 gain、context、
+  device、error、pause、reset、resume、process、connected 和健康查询。观察线程只读
+  快照，不查询 `ALC_CONNECTED`、不进恢复锁、不取消/销毁/并发重置设备。Java JNI 栈
+  不冒充 native 完整栈；整个首次 audio constructor 打点不冒充已细分原生 open/create。
+- **注入：** `StsDesktopJarPatcher` 与必需类清单包含 `RuntimeStageDiagnostics` 及嵌套类，
+  保证实际游戏 jar 路径携带诊断，而不只在源码/测试中存在。
+- **退出：** `UserExitProcessFallback` 在用户明确返回启动器时承诺原有 1.5 秒终止兜底，
+  包括未 ready 与启动遮罩分支；Handler 不依赖已分离的渲染 View，Activity 销毁不撤销。
+  正常游戏仍先发关闭请求，保留原保存机会；不是音频停滞自动杀进程。
+  `LauncherActivity` debug 直启在旧进程清理失败后停止，不继续覆盖启动。
+- **验证边界：** Kotlin/JVM、实际 C helpers 宿主 stub 与本地 Android 编译不证明原华为
+  电话/驱动故障已解决。本轮不换 `.so`、不删档/设置、不切换音频后端、不自动重启或安装。

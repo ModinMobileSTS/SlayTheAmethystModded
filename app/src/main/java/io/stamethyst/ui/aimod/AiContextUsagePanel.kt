@@ -122,7 +122,7 @@ internal fun AiContextUsagePanel(
                     style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 if (cache.inputExcludesCached) Text(stringResource(R.string.ai_mod_editor_cache_normalized),
                     style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                Text(stringResource(R.string.ai_mod_editor_context_limit_hint),
+                Text(stringResource(R.string.ai_agent_budget_input_hint),
                     style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             }
         }

@@ -150,6 +150,7 @@ Verified against implementation on 2026-03-08:
 - `boot_bridge_events.log`
 - `files/runtimes/Internal/...`
 - `files/lwjgl3/lwjgl-glfw-classes.jar`
+- `files/callback_bridge/callback-bridge.jar` (APK-owned JNI contract, first on both launch classpaths)
 
 ## 6. Current Maintainability Risks
 

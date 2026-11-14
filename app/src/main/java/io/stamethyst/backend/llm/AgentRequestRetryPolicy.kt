@@ -14,7 +14,8 @@ internal fun isRetryableAgentRequestFailure(error: Throwable): Boolean {
         causes += current
         current = current.cause
     }
-    if (causes.any { it is CancellationException || it is InterruptedException || it is NonRetriableException }) {
+    if (causes.any { it is CancellationException || it is InterruptedException || it is NonRetriableException ||
+            it is AgentRequestTimeoutException && it.kind == AgentRequestTimeoutKind.ROUND_BUDGET }) {
         return false
     }
     causes.filterIsInstance<HttpException>().firstOrNull()?.let {
@@ -45,6 +46,8 @@ private val ABORT_RETRY_DELAY_SECONDS = longArrayOf(5L, 15L, 30L)
  *
  * Locking the screen drops established connections while the network still reports as connected
  * and validated, so this case needs a fresh connection and a longer wait than a normal retry.
+ * A read/first-event/idle/total timeout alone is not evidence of a broken connection: it keeps
+ * the ordinary short retry policy, subject to the caller's cumulative round budget.
  */
 internal fun isConnectionAbort(error: Throwable): Boolean {
     val causes = ArrayList<Throwable>()
@@ -61,7 +64,6 @@ internal fun isConnectionAbort(error: Throwable): Boolean {
                 message.contains("broken pipe") ||
                 message.contains("software caused connection abort")
             ) ||
-            cause is java.net.SocketTimeoutException ||
             cause is java.io.EOFException ||
             cause is java.nio.channels.ClosedChannelException
     }

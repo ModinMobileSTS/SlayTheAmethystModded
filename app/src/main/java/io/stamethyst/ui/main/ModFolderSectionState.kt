@@ -1,6 +1,7 @@
 package io.stamethyst.ui.main
 
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,8 +52,39 @@ internal data class ModDragInteractionState(
 internal data class DragScrollAnchor(
     val firstVisibleItemKey: String?,
     val firstVisibleItemIndex: Int,
-    val firstVisibleItemScrollOffset: Int
+    val firstVisibleItemScrollOffset: Int,
+    val visibleRows: List<DragScrollRowAnchor> = emptyList()
 )
+
+internal data class DragScrollRowAnchor(val key: String, val scrollOffset: Int)
+
+internal fun captureDragScrollAnchor(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffset: Int,
+    visibleItems: List<LazyListItemInfo>
+): DragScrollAnchor = DragScrollAnchor(
+    // Items inside content padding can precede the state's first visible item.
+    // Never combine their key with another item's scroll offset.
+    firstVisibleItemKey = visibleItems.firstOrNull { it.index == firstVisibleItemIndex }?.key as? String,
+    firstVisibleItemIndex = firstVisibleItemIndex,
+    firstVisibleItemScrollOffset = firstVisibleItemScrollOffset,
+    visibleRows = visibleItems.filter { it.index >= firstVisibleItemIndex }.mapNotNull { item ->
+        val key = item.key as? String ?: return@mapNotNull null
+        if (key == MOD_DRAG_PLACEHOLDER_KEY) null else DragScrollRowAnchor(key, -item.offset)
+    }
+)
+
+internal fun DragScrollAnchor.resolvePosition(itemKeys: List<String>): Pair<Int, Int> {
+    // A placeholder (or a temporarily expanded folder) can disappear on release.
+    // Use the next surviving row at its own pixel offset, not the old row index.
+    for (row in visibleRows) {
+        val index = itemKeys.indexOf(row.key)
+        if (index >= 0) return index to row.scrollOffset
+    }
+    val index = firstVisibleItemKey?.let { itemKeys.indexOf(it).takeIf { index -> index >= 0 } }
+        ?: firstVisibleItemIndex.coerceIn(0, (itemKeys.size - 1).coerceAtLeast(0))
+    return index to firstVisibleItemScrollOffset
+}
 
 internal class ModFolderSectionInteractionState(
     val listState: LazyListState,
@@ -76,10 +108,10 @@ internal class ModFolderSectionInteractionState(
         get() = modDragState.isActive
 
     fun rememberDragScrollAnchor() {
-        activeDragScrollAnchor = DragScrollAnchor(
-            firstVisibleItemKey = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key as? String,
+        activeDragScrollAnchor = captureDragScrollAnchor(
             firstVisibleItemIndex = listState.firstVisibleItemIndex,
-            firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset.coerceAtLeast(0)
+            firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+            visibleItems = listState.layoutInfo.visibleItemsInfo
         )
         pendingDragScrollRestore = null
     }

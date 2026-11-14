@@ -6,16 +6,24 @@ import java.nio.charset.StandardCharsets
 
 /** Maintains the identity and small on-demand source cache for one parent JAR snapshot. */
 object AgentModSourceSnapshot {
-    fun prepare(root: File, sourceRoot: File, sourceJar: File): String {
+    private val hashes = AgentVerifiedJarHashes()
+
+    fun prepare(root: File, sourceRoot: File, sourceJar: File): String =
+        AgentSourceSnapshotLocks.withLock(root) { prepareLocked(root, sourceRoot, sourceJar) }
+
+    private fun prepareLocked(root: File, sourceRoot: File, sourceJar: File): String {
         require(sourceJar.isFile) { "The selected mod JAR is missing." }
-        val hash = AgentModJarReader.sha256(sourceJar)
+        val hash = hashes.sha256(sourceJar)
         val metadataFile = root.resolve("source-metadata.json")
         val previousHash = runCatching {
             if (!metadataFile.isFile) "" else JSONObject(metadataFile.readText(StandardCharsets.UTF_8))
                 .optString("source_sha256")
         }.getOrDefault("")
-        if (previousHash != hash && sourceRoot.exists()) {
-            check(sourceRoot.deleteRecursively()) { "Unable to clear stale parent source cache." }
+        if (previousHash != hash) {
+            AgentMaterializedSourceIndex.shared.invalidate(sourceRoot)
+            if (sourceRoot.exists()) {
+                check(sourceRoot.deleteRecursively()) { "Unable to clear stale parent source cache." }
+            }
         }
         check(sourceRoot.isDirectory || sourceRoot.mkdirs()) { "Unable to create parent source cache." }
         val metadata = if (previousHash == hash && metadataFile.isFile) {

@@ -3,6 +3,7 @@ package io.stamethyst.backend.workshop
 enum class WorkshopResolvedModStateKind {
     NotDownloaded,
     ImportedUnpatched,
+    UpdatePendingInstall,
     ImportedPatched,
     Queued,
     Downloading,
@@ -28,6 +29,12 @@ object WorkshopModStateResolver {
         remoteUpdatedAtMillis: Long = 0L,
     ): WorkshopResolvedModState {
         val taskState = resolveTaskState(taskStatus, taskMessage)
+        if (record?.pendingInstall != null && taskStatus?.isActiveDownload() != true) {
+            return WorkshopResolvedModState(
+                WorkshopResolvedModStateKind.UpdatePendingInstall,
+                record.statusText.ifBlank { WORKSHOP_UPDATE_PENDING_INSTALL_MESSAGE },
+            )
+        }
         if (taskState != null && (record?.cardState != WorkshopModCardState.UpdateAvailable || taskStatus.shouldOverrideUpdateAvailableRecord())) {
             return taskState
         }

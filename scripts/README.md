@@ -62,6 +62,28 @@ Implementation files:
 - `scripts/build/lib/commands.py`: implements Gradle builds, release preparation, and cloud function packaging.
 - `scripts/build/lib/doctor.py`: implements the `doctor` environment checks and report rendering.
 
+### Build daemon memory
+
+Gradle and the Kotlin compiler run in separate reusable JVMs; concurrent builds
+can also start additional Gradle daemons. The root `gradle.properties` keeps the
+4 GiB maximum heap per JVM for compilation, but starts at 128 MiB and configures
+both JVMs to use G1 with a 60-second periodic concurrent collection interval.
+This lets unused heap return to the OS after compilation instead of remaining
+committed until another build. The free-heap target is 20–40%; live compiler and
+build caches, metaspace and other native allocations still take memory, so
+128 MiB is not a total process-memory limit.
+
+Both daemons are configured to exit after 10 minutes idle (instead of Gradle's
+3 hours and Kotlin's 2 hours). The next build after exit pays a cold-start cost;
+incremental compilation remains enabled. Kotlin's idle timeout is passed as
+`-Dkotlin.daemon.options=autoshutdownIdleSeconds=600` in Gradle's JVM arguments;
+its GC settings must be supplied separately through `kotlin.daemon.jvmargs`.
+
+These settings apply to newly started daemons, not JVMs already running. Do not
+stop daemons while another build is using them. When overriding
+`org.gradle.jvmargs` or `kotlin.daemon.jvmargs` locally, retain these GC/lifetime
+options if you want the same idle-memory behavior.
+
 Sling Break source-layout regression tests (current `game/`, direct runtime, legacy flat refs, and cache/override resolution):
 
 ```bash
@@ -105,7 +127,8 @@ Use `scripts/tools/main.py` for debugging and device automation tools. The `harn
 
 **Recommended:** configure the root ignored `.env.local` using `.env.local.example`.
 The harness and OpenCode tools automatically start a workspace-local wireless ADB
-server and connector; no connector port or device serial argument is needed.
+server and connector; no connector port argument is needed. Status/raw queries and
+installation require an explicit device serial matching the configured endpoint.
 See [local ADB setup](tools/connector/README.md#workspace-local-wireless-adb-linux).
 Real device endpoints must remain only in local configuration. The fixed-port
 auto-start fallback is removed; managed mode replaces inherited old connector ports.
@@ -123,12 +146,12 @@ Alternatively pass `-ConnectorPort 39999` / `--connector-port 39999` on each har
 Harness commands:
 
 - `doctor`: validate connector, Gradle wrapper, package id, device selection, storage access, and runtime status signals.
-- `install`: explicitly build and install the debug APK using `install --fastdeploy -r`; requires `-DeviceSerial` for the user-approved target and is never invoked by test flows. Use the project-local platform-tools 35.0.2 configured in `.env.local`; ADB 37.0.0/37.0.1 incorrectly skip fast deploy on the tested API 29 device. Unsupported fast deploy may fall back to a full install in ADB; passing the flag alone does not guarantee differential transfer. The shell shortcut still uses `ADB_BIN`/PATH; invoke it through `local_adb run` with `ADB_BIN` set to the project-local binary to use the workspace-owned server.
+- `install`: explicitly build and install the debug APK using `install --fastdeploy -r`; requires `-DeviceSerial` for the user-approved target and is never invoked by test flows. Use the project-local platform-tools 35.0.2 configured in `.env.local`; ADB 37.0.0/37.0.1 incorrectly skip fast deploy on the tested API 29 device. Unsupported fast deploy may fall back to a full install in ADB; passing the flag alone does not guarantee differential transfer. The shell shortcut `./scripts/build-debug-install.sh <device-host|host:port>` now uses `local_adb run` for the build and `local_adb adb` for installation. It reads `STS_ADB_BINARY`/`STS_ADB_SERVER_PORT` from local configuration, ensures the managed connection, and never uses `ADB_BIN` or global ADB. The explicit target must match the configured endpoint (or its host, in which case the configured wireless port is used); a mismatch fails before connecting or building. The approved endpoint stays pinned throughout the command.
 - `start`: start the app through `:app:stsStart`.
 - `stop`: force-stop the app through `:app:stsStop`.
 - `logs`: export runtime logs and a harness logcat dump.
 - `screenshot`: capture a device screenshot.
-- `status`: capture current process, boot bridge, crash marker, package, and storage state.
+- `status`: capture current process, boot bridge, crash marker, package, and storage state. Requires an explicit `-DeviceSerial`; missing targets or failed/invalid process, storage, log, path-metadata or package responses return `STATUS_QUERY_FAILED` with an `UNKNOWN` snapshot and a nonzero exit code. Optional files may be absent when a completed remote probe confirms absence; transport/permission failures are not absence.
 - `mods`: list device required mods, optional mods in `sts/mods_library`, legacy runtime mods in `sts/mods`, the current `enabled_mods.txt`, and the current `.mts_mod_file_list`.
 - `set-mods`: replace the enabled optional mod selection by writing `enabled_mods.txt`.
 - `smoke`: use the already installed app, clear runtime signals, start, wait for an expected state, capture screenshot/logs, and stop unless requested otherwise. Never installs/uninstalls APKs.
@@ -150,6 +173,12 @@ The Gradle connected/managed-device, AGP install/uninstall and macrobenchmark
 deployment tasks are blocked because they may automatically uninstall the main
 app. Prefer JVM/mock tests and Android test compilation; see `AGENTS.md` and
 [`docs/debug-automation/README.md`](../docs/debug-automation/README.md).
+
+`./scripts/perf-loop.sh [--skip-build] <deviceSerial>` uses the already installed app.
+In managed mode it obtains the connector's dynamic port through the harness; omit
+`--connector-port` (stale inherited `STS_CONNECTOR_PORT` is ignored). Without managed
+configuration, provide `--connector-port <port>` or `STS_CONNECTOR_PORT`; startup
+failures stop the script. No default fixed port or implicit installation is used.
 
 Common harness options:
 

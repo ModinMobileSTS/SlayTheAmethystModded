@@ -538,6 +538,7 @@ fun LauncherContent(
     CompositionLocalProvider(
         LocalNavigator provides navigator,
         LocalChromeBackgroundOpacity provides chromeBackgroundOpacity,
+        LocalLauncherBlurDisabled provides settingsUiState.launcherBlurDisabled,
         LocalLauncherBannerState provides launcherBannerState,
         io.stamethyst.ui.settings.common.LocalSettingsLoadRetry provides { domain ->
             settingsViewModel.retrySettingsLoad(activity, domain)
@@ -581,6 +582,7 @@ fun LauncherContent(
         Surface(
             modifier = Modifier
                 .fillMaxSize()
+                .then(rememberHighRefreshRateModifier())
                 .semantics { testTagsAsResourceId = true },
             color = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground

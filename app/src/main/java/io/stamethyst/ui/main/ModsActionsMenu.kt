@@ -24,8 +24,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
-import androidx.compose.ui.platform.LocalContext
-import io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator
 
 @Composable
 internal fun ModsActionsMenu(
@@ -42,6 +40,7 @@ internal fun ModsActionsMenu(
     onCheckWorkshopUpdates: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
     onOpenCommunityPatches: () -> Unit = {},
+    onSortModsClick: () -> Unit = {},
     selectedMods: List<ModItemUi> = emptyList(),
     batchActions: BatchEditBarState? = null,
 ) {
@@ -104,10 +103,35 @@ internal fun ModsActionsMenu(
                     leadingIcon = { Icon(painterResource(R.drawable.ic_folder_add), contentDescription = null) },
                 )
                 DropdownMenuItem(
+                    text = { Text(stringResource(R.string.community_patches_view_all)) },
+                    onClick = { dismiss(); onOpenCommunityPatches() },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_build), contentDescription = null) },
+                )
+                DropdownMenuItem(
+                    text = {
+                        Text(stringResource(if (checkingUpdates) R.string.main_workshop_checking else R.string.main_mod_check_updates))
+                    },
+                    enabled = canEditFolders && !checkingUpdates,
+                    onClick = { dismiss(); onCheckWorkshopUpdates() },
+                    leadingIcon = {
+                        if (checkingUpdates) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(painterResource(R.drawable.ic_check_circle), contentDescription = null)
+                        }
+                    },
+                )
+                DropdownMenuItem(
                     text = { Text(stringResource(R.string.main_mod_filter_menu)) },
                     onClick = { filtersExpanded = true },
                     leadingIcon = { Icon(painterResource(R.drawable.ic_filter_list), contentDescription = null) },
                     trailingIcon = { Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null) },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.main_mod_sort)) },
+                    enabled = canEditFolders,
+                    onClick = { dismiss(); onSortModsClick() },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_sort), contentDescription = null) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(if (dragLocked) R.string.main_action_unlock_drag else R.string.main_action_lock_drag)) },

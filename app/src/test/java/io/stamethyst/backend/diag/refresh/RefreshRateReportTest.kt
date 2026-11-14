@@ -3,6 +3,7 @@ package io.stamethyst.backend.diag.refresh
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -86,6 +87,32 @@ class RefreshRateReportTest {
         assertEquals(setOf("report.txt", "report.json"), entries.keys)
         assertEquals(text, entries["report.txt"])
         assertEquals(json, entries["report.json"])
+        assertFalse(json.contains("physicalPanelRate"))
+    }
+
+    @Test fun schemaOneReportsAndObservationsRemainReadableWithoutVoteMetadata() {
+        val legacyReport = """{"schemaVersion":1,"startedAt":"start","finishedAt":"end","interruption":null,"environment":{},"stages":[],"cleanup":"restored"}"""
+        assertEquals(1, RefreshRateReportFormat.json.decodeFromString<RefreshRateReport>(legacyReport).schemaVersion)
+        val legacyObservation = """{"elapsedMs":1,"reason":"sample","displayId":0,"appRateHz":60.0,"modeId":6,"modeRateHz":60.0,"resolution":"1080x2344","preferredModeId":4,"preferredRateHz":0.0,"focused":true,"powerSave":false,"thermalStatus":1}"""
+        val decoded = RefreshRateReportFormat.json.decodeFromString<RefreshRateObservation>(legacyObservation)
+        assertNull(decoded.viewRequestedFrameRate)
+        assertNull(decoded.composeHighVoteInstalled)
+    }
+
+    @Test fun schemaTwoExportsRawViewCategoryAndInstalledComposeHintWithoutInventingAcceptance() {
+        val original = stage(60f)
+        val report = RefreshRateReport(startedAt = "start", finishedAt = "end", interruption = null,
+            environment = emptyMap(), cleanup = "restored", stages = listOf(original.copy(
+                phase = "compose_high", observations = original.observations.map {
+                    it.copy(viewRequestedFrameRate = "NaN", composeHighVoteInstalled = true)
+                })))
+        assertEquals(2, report.schemaVersion)
+        val json = RefreshRateReportFormat.json(report)
+        assertEquals(report, RefreshRateReportFormat.json.decodeFromString<RefreshRateReport>(json))
+        val text = RefreshRateReportFormat.text(report, emptyMap(),
+            RefreshRateOutcome.entries.associateWith { it.name }, "scope", "next")
+        assertTrue(text.contains("viewRequestedFrameRate=NaN; composeHighVoteInstalled=true"))
+        assertTrue(text.contains("BELOW_TARGET"))
         assertFalse(json.contains("physicalPanelRate"))
     }
 

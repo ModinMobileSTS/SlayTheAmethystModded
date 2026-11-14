@@ -250,6 +250,8 @@ data class WorkshopInstalledModRecord(
     val statusText: String = "",
     val localPreviewImagePath: String = "",
     val dependencies: List<WorkshopItemSummary> = emptyList(),
+    /** A complete new download awaiting installation; the primary paths still own the old version. */
+    val pendingInstall: WorkshopPendingInstall? = null,
 )
 
 enum class WorkshopInstalledContentKind {
@@ -257,6 +259,12 @@ enum class WorkshopInstalledContentKind {
     TexturePack,
     NonStandard,
 }
+
+data class WorkshopPendingInstall(
+    val localJarPaths: List<String>,
+    val updatedAtMillis: Long,
+    val dependencies: List<WorkshopItemSummary> = emptyList(),
+)
 
 enum class WorkshopModCardState {
     ImportedUnpatched,

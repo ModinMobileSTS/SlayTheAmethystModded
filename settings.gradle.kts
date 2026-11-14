@@ -18,14 +18,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://maven.mozilla.org/maven2")
     }
 }
 
 rootProject.name = "SlayTheAmethyst"
 include(":app")
-// Built independently for CDN; never an app dependency (including full variants).
-include(":web-runtime")
 // Download-only Godot engine container; never a launcher dependency.
 include(":godot-runtime")
 include(":macrobenchmark")
@@ -38,6 +35,7 @@ include(":mods:ram-saver")
 include(":mods:amethyst-frame-probe")
 include(":patches:gdx-patch")
 include(":tools:steam-cloud-spike")
+include(":tools:workshop-agent")
 include(":workshop-core")
 include(":steam-protocol")
 include(":lan-core")

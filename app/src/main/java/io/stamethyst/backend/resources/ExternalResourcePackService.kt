@@ -280,6 +280,30 @@ object ExternalResourcePackService {
         mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?,
         forceReinstall: Boolean = false
     ) {
+        prepareAvailable(context, progressCallback, mirrorSwitchController, forceReinstall)
+    }
+
+    /** Component replacement can remove the native target; install it once, afterward. */
+    internal fun ensureAvailableForLaunch(
+        context: Context,
+        progressCallback: StartupProgressCallback?,
+        installComponents: () -> Unit
+    ) {
+        prepareAvailable(context, progressCallback, null, false, installComponents)
+    }
+
+    private data class PreparedResourcePack(
+        val manifest: ResourcePackManifest,
+        val completionMessage: Int
+    )
+
+    private fun prepareAvailable(
+        context: Context,
+        progressCallback: StartupProgressCallback?,
+        mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?,
+        forceReinstall: Boolean,
+        beforeNativeInstall: (() -> Unit)? = null
+    ) {
         ResourcePackStore.withExclusiveLock(context) {
             MemoryDiagnosticsLogger.logEvent(
                 context = context,
@@ -293,12 +317,22 @@ object ExternalResourcePackService {
                 extras = mapOf("expectedVersion" to BuildConfig.RESOURCE_PACK_VERSION)
             )
             try {
-                ensureAvailableLocked(
+                val prepared = ensureAvailableLocked(
                     context,
                     progressCallback,
                     mirrorSwitchController,
                     forceReinstall
                 )
+                // Launch advances to the component progress range here. Standalone resource
+                // preparation reports completion only after the derived natives are ready.
+                if (beforeNativeInstall != null) {
+                    reportResourcePackComplete(context, progressCallback, prepared)
+                    beforeNativeInstall()
+                }
+                installNativeLibraries(context, prepared.manifest)
+                if (beforeNativeInstall == null) {
+                    reportResourcePackComplete(context, progressCallback, prepared)
+                }
                 MemoryDiagnosticsLogger.logEvent(
                     context = context,
                     event = "resource_pack_prepare_completed",
@@ -337,52 +371,51 @@ object ExternalResourcePackService {
         }
     }
 
+    private fun reportResourcePackComplete(
+        context: Context,
+        progressCallback: StartupProgressCallback?,
+        prepared: PreparedResourcePack
+    ) {
+        if (progressCallback != null) {
+            reportProgress(progressCallback, 100, context.progressText(prepared.completionMessage))
+        }
+    }
+
     private fun ensureAvailableLocked(
         context: Context,
         progressCallback: StartupProgressCallback?,
         mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?,
         forceReinstall: Boolean
-    ) {
+    ): PreparedResourcePack {
         throwIfInterrupted()
-        ResourcePackStore.recover(context)
         RuntimePaths.ensureBaseDirs(context)
-        reportProgress(
-            progressCallback,
-            4,
-            context.progressText(R.string.startup_progress_checking_external_resources)
-        )
+        if (progressCallback != null) {
+            reportProgress(
+                progressCallback,
+                4,
+                context.progressText(R.string.startup_progress_checking_external_resources)
+            )
+        }
 
-        val inspection = ResourcePackStore.inspect(context)
+        val inspection = ResourcePackStore.recoverAndInspect(context)
         // Reuse the installed generation whenever the hosted pack version still
         // matches. App updates must not bump resourcePack.version unless the
         // zip at RESOURCE_PACK_DOWNLOAD_URL actually changed.
         if (inspection.ready && !forceReinstall) {
-            // The resource generation and the native target are separate stores. A previous
-            // interrupted install can leave the generation healthy while the derived EasyTier
-            // libraries are absent, so repair the target before declaring preparation complete.
-            installNativeLibraries(context)
-            reportProgress(
-                progressCallback,
-                100,
-                context.progressText(R.string.startup_progress_external_resources_available)
+            return PreparedResourcePack(
+                checkNotNull(inspection.manifest),
+                R.string.startup_progress_external_resources_available
             )
-            return
         }
 
         var embeddedFailure: Throwable? = null
         if (embeddedResourcePackExists(context)) {
             try {
-                installEmbeddedResourcePack(
+                val manifest = installEmbeddedResourcePack(
                     context = context,
                     progressCallback = progressCallback
                 )
-                installNativeLibraries(context)
-                reportProgress(
-                    progressCallback,
-                    100,
-                    context.progressText(R.string.startup_progress_external_resources_ready)
-                )
-                return
+                return PreparedResourcePack(manifest, R.string.startup_progress_external_resources_ready)
             } catch (error: Throwable) {
                 embeddedFailure = error
                 MemoryDiagnosticsLogger.logEvent(
@@ -418,7 +451,7 @@ object ExternalResourcePackService {
         )
         val downloadFile = File(stagingRoot, "resources.zip")
         prepareCleanDirectory(stagingRoot)
-        try {
+        val manifest = try {
             // The candidate is not considered successful until its archive is installed and
             // validated. A reachable mirror can still serve a stale or corrupt archive.
             downloadResourcePack(
@@ -432,11 +465,7 @@ object ExternalResourcePackService {
             deleteTreeForCleanup(stagingRoot)
         }
 
-        reportProgress(
-            progressCallback,
-            100,
-            context.progressText(R.string.startup_progress_external_resources_ready)
-        )
+        return PreparedResourcePack(manifest, R.string.startup_progress_external_resources_ready)
     }
 
     fun isExternalizedNativeLibrary(libraryName: String): Boolean =
@@ -445,13 +474,35 @@ object ExternalResourcePackService {
     @JvmStatic
     @Throws(IOException::class)
     fun installNativeLibraries(context: Context) {
+        installNativeLibraries(context, verifiedManifest = null)
+    }
+
+    // A supplied manifest was fully verified in this same locked preparation operation.
+    private fun installNativeLibraries(context: Context, verifiedManifest: ResourcePackManifest?) {
         ResourcePackStore.withExclusiveLock(context) {
             val generation = ResourcePackStore.activeGenerationDir(context)
                 ?: throw IOException("No active external resource generation is installed")
             val packId = generation.name
+            if (verifiedManifest != null && verifiedManifest.packId != packId) {
+                throw IOException("Active resource generation changed during preparation")
+            }
             val sourceDir = File(File(generation, "lib"), ResourcePackContract.ABI)
             val targetDir = RuntimePaths.externalNativeLibDir(context)
-            if (nativeLibrariesAreCurrent(targetDir, packId, sourceDir)) {
+            val verifiedFiles = verifiedManifest?.files?.associateBy(ResourcePackFileRecord::path)
+            val sourceRecords = externalizedNativeLibraries.associateWith { libraryName ->
+                val source = File(sourceDir, libraryName)
+                if (!source.isFile || source.length() <= 0L) {
+                    throw IOException("Missing external resource native library: ${source.absolutePath}")
+                }
+                val path = "lib/${ResourcePackContract.ABI}/$libraryName"
+                if (verifiedFiles != null) {
+                    verifiedFiles[path]
+                        ?: throw IOException("Native library is missing from verified manifest: $path")
+                } else {
+                    ResourcePackFileRecord(path, source.length(), sha256(source))
+                }
+            }
+            if (nativeLibrariesAreCurrent(targetDir, packId, sourceRecords)) {
                 return@withExclusiveLock
             }
 
@@ -481,7 +532,7 @@ object ExternalResourcePackService {
                     "packId=$packId\n",
                     Charsets.UTF_8
                 )
-                if (!nativeLibrariesAreCurrent(stagingDir, packId, sourceDir)) {
+                if (!nativeLibrariesAreCurrent(stagingDir, packId, sourceRecords)) {
                     throw IOException("Staged external native libraries failed validation")
                 }
                 if (targetDir.exists() && !targetDir.renameTo(backupDir)) {
@@ -527,7 +578,7 @@ object ExternalResourcePackService {
     private fun installEmbeddedResourcePack(
         context: Context,
         progressCallback: StartupProgressCallback?
-    ) {
+    ): ResourcePackManifest {
         val stagingRoot = File(
             RuntimePaths.externalResourcesStagingRoot(context),
             "embedded-staging-${System.nanoTime()}"
@@ -540,7 +591,7 @@ object ExternalResourcePackService {
                 assetPath = ResourcePackContract.EMBEDDED_ARCHIVE_ASSET_PATH,
                 targetFile = archiveFile
             )
-            ResourcePackStore.installArchive(
+            return ResourcePackStore.installArchive(
                 context = context,
                 archiveFile = archiveFile,
                 progressCallback = progressCallback,
@@ -587,14 +638,15 @@ object ExternalResourcePackService {
         targetFile: File,
         progressCallback: StartupProgressCallback?,
         mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?
-    ) {
+    ): ResourcePackManifest {
+        var installedManifest: ResourcePackManifest? = null
         downloadValidatedArchive(
             context, resourcePackUrls, targetFile, progressCallback, mirrorSwitchController,
             ResourcePackContract.MAX_ARCHIVE_BYTES,
         ) { archive, source ->
-            ResourcePackStore.installArchive(context, archive, progressCallback, "download:$source")
-            installNativeLibraries(context)
+            installedManifest = ResourcePackStore.installArchive(context, archive, progressCallback, "download:$source")
         }
+        return checkNotNull(installedManifest)
     }
 
     /** Shared resource.zip transport: probes, acceleration, ranges, slow-link switching and fallback. */
@@ -1343,7 +1395,11 @@ object ExternalResourcePackService {
         }
     }
 
-    private fun nativeLibrariesAreCurrent(directory: File, packId: String, sourceDir: File): Boolean {
+    private fun nativeLibrariesAreCurrent(
+        directory: File,
+        packId: String,
+        sourceRecords: Map<String, ResourcePackFileRecord>
+    ): Boolean {
         if (!directory.isDirectory) {
             return false
         }
@@ -1353,13 +1409,11 @@ object ExternalResourcePackService {
         }
         return runCatching {
             externalizedNativeLibraries.all { libraryName ->
-                val source = File(sourceDir, libraryName)
+                val source = sourceRecords.getValue(libraryName)
                 val target = File(directory, libraryName)
-                source.isFile &&
-                    source.length() > 0L &&
-                    target.isFile &&
-                    target.length() == source.length() &&
-                    sha256(source) == sha256(target)
+                target.isFile &&
+                    target.length() == source.size &&
+                    source.sha256 == sha256(target)
             }
         }.getOrDefault(false)
     }

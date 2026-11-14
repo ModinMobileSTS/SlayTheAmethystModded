@@ -38,6 +38,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -100,6 +103,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -176,6 +180,29 @@ internal fun WorkshopDetailContent(
     }
 
     val selectedDetails = state.selected?.takeIf { it.summary.publishedFileId == publishedFileId }
+    val downloadSummary = selectedDetails?.summary ?: fallbackSummary ?: WorkshopItemSummary(
+        publishedFileId = publishedFileId,
+        appId = appId,
+        title = "Workshop $publishedFileId",
+        previewUrl = "",
+        description = "",
+    )
+    val downloadAction: @Composable () -> Unit = {
+        WorkshopDetailDownloadActionButton(
+            state = resolveWorkshopModDownloadState(
+                item = downloadSummary,
+                installedMods = state.installedMods,
+                downloadTasks = WorkshopDownloadCenterStore.tasks,
+                preparingDownloadIds = state.preparingDownloadIds,
+            ),
+            preparing = publishedFileId in state.preparingDownloadIds,
+            onClick = {
+                requestNotificationPermissionIfNeeded()
+                viewModel.download(context.applicationContext, downloadSummary)
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        )
+    }
     val detailUpdate = state.detailUpdate?.takeIf { it.details.summary.publishedFileId == publishedFileId }
     val isTranslatingDetails = state.detailTranslationLoadingId == publishedFileId
     val selectedDetailsKey = selectedDetails?.summary?.let { summary ->
@@ -240,9 +267,15 @@ internal fun WorkshopDetailContent(
     }
 
     LauncherBannerVisibility(visible = fullscreenGalleryStartIndex < 0)
-    Box(modifier = modifier.fillMaxSize()) {
+    WorkshopDetailBackdrop(
+        publishedFileId = publishedFileId,
+        previewUrl = selectedDetails?.summary?.previewUrl?.takeIf { it.isNotBlank() }
+            ?: fallbackSummary?.takeIf { it.publishedFileId == publishedFileId }?.previewUrl.orEmpty(),
+        modifier = modifier.fillMaxSize(),
+    ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
             topBar = {
                 LauncherTopAppBar(
                     title = {
@@ -329,12 +362,19 @@ internal fun WorkshopDetailContent(
                 )
             },
         ) { padding ->
+            val layoutDirection = LocalLayoutDirection.current
             LazyColumn(
                 modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize()
-                    .navigationBarsPadding(),
-                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 24.dp),
+                    .padding(top = padding.calculateTopPadding())
+                    .consumeWindowInsets(padding)
+                    .fillMaxSize(),
+                // Keep the bottom inset scrollable instead of clipping cards above the navigation bar.
+                contentPadding = PaddingValues(
+                    start = 16.dp + padding.calculateStartPadding(layoutDirection),
+                    top = 16.dp,
+                    end = 16.dp + padding.calculateEndPadding(layoutDirection),
+                    bottom = 24.dp + padding.calculateBottomPadding(),
+                ),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item(key = "workshop-detail-primary") {
@@ -346,10 +386,11 @@ internal fun WorkshopDetailContent(
                         label = "workshop-detail-primary-content",
                     ) { targetState ->
                         when (targetState) {
-                            DetailPrimaryContentState.Loading -> WorkshopDetailPrimaryLoadingSkeleton()
+                            DetailPrimaryContentState.Loading -> WorkshopDetailPrimaryLoadingSkeleton(downloadAction)
                             DetailPrimaryContentState.Error -> DetailErrorCard(
                                 message = state.errorMessage.orEmpty(),
                                 onRetry = { viewModel.loadDetails(context.applicationContext, appId, publishedFileId) },
+                                downloadAction = downloadAction,
                             )
                             DetailPrimaryContentState.Content -> selectedDetails?.let { details ->
                                 val subscriptionStatus = state.detailSubscriptionStatusFor(details.summary.publishedFileId)
@@ -364,20 +405,10 @@ internal fun WorkshopDetailContent(
                                     details = details,
                                     metadataLoading = detailUpdate?.metadataLoading == true,
                                     communityLoading = detailUpdate?.communityLoading == true,
-                                    downloadLoading = state.detailLoadingId == publishedFileId,
-                                    downloadState = resolveWorkshopModDownloadState(
-                                        item = details.summary,
-                                        installedMods = state.installedMods,
-                                        downloadTasks = WorkshopDownloadCenterStore.tasks,
-                                        preparingDownloadIds = state.preparingDownloadIds,
-                                    ),
+                                    downloadAction = downloadAction,
                                     subscriptionLoading = state.detailSubscriptionLoadingId == details.summary.publishedFileId ||
                                         subscriptionStatus == WorkshopDetailSubscriptionStatus.Checking,
                                     subscribed = detailSubscribed,
-                                    onDownload = {
-                                        requestNotificationPermissionIfNeeded()
-                                        viewModel.downloadSelected(context.applicationContext)
-                                    },
                                     onOpenAuthor = onOpenAuthor,
                                     onViewChangeNotes = {
                                         showChangeNotesDialog = true
@@ -396,14 +427,8 @@ internal fun WorkshopDetailContent(
                                         }
                                     },
                                 )
-                            } ?: WorkshopDetailPrimaryLoadingSkeleton()
+                            } ?: WorkshopDetailPrimaryLoadingSkeleton(downloadAction)
                         }
-                    }
-                }
-
-                if (selectedDetails != null) {
-                    item(key = "workshop-detail-discussions") {
-                        WorkshopDiscussionsEntry(onClick = { onOpenDiscussions(selectedDetails.summary.title) })
                     }
                 }
 
@@ -512,6 +537,9 @@ internal fun WorkshopDetailContent(
                                 onNextPage = { viewModel.loadNextWorkshopCommentsPage(context.applicationContext) },
                             )
                         }
+                    }
+                    item(key = "workshop-detail-discussions") {
+                        WorkshopDiscussionsEntry(onClick = { onOpenDiscussions(details.summary.title) })
                     }
                 }
             }
@@ -687,10 +715,8 @@ private fun DetailPreviewGalleryCard(
             }
         }
     }
-    Card(
+    WorkshopDetailCard(
         modifier = modifier.fillMaxWidth(),
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
@@ -1642,67 +1668,38 @@ private fun DetailModCard(
     details: WorkshopItemDetails,
     metadataLoading: Boolean,
     communityLoading: Boolean,
-    downloadLoading: Boolean,
-    downloadState: WorkshopModDownloadState,
+    downloadAction: @Composable () -> Unit,
     subscriptionLoading: Boolean,
     subscribed: Boolean,
-    onDownload: () -> Unit,
     onViewChangeNotes: () -> Unit,
     onSubscriptionClick: () -> Unit,
     onOpenAuthor: (WorkshopAuthor) -> Unit,
 ) {
     val skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_metadata_skeleton")
-    Card(
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
+    WorkshopDetailCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (details.summary.previewUrl.isBlank() && metadataLoading) {
-                    LoadingSkeletonBlock(Modifier.size(112.dp), style = skeletonStyle, shape = RoundedCornerShape(18.dp))
-                } else WorkshopPreviewImage(
-                    publishedFileId = details.summary.publishedFileId,
-                    url = details.summary.previewUrl,
-                    contentDescription = stringResource(R.string.workshop_preview_content_description, details.summary.title),
-                    modifier = Modifier.size(112.dp),
-                )
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SelectionContainer {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            if (metadataLoading && details.summary.title == "Workshop ${details.summary.publishedFileId}") {
-                                LoadingSkeletonBlock(Modifier.fillMaxWidth(0.85f).height(26.dp), style = skeletonStyle)
-                            } else Text(
-                                text = details.summary.title.ifBlank { stringResource(R.string.workshop_unnamed_mod) },
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                    if (details.summary.authorName.isBlank() && details.creators.isEmpty() && (metadataLoading || communityLoading)) {
-                        LoadingSkeletonBlock(Modifier.fillMaxWidth(0.5f).height(16.dp), style = skeletonStyle)
-                    } else {
-                        WorkshopAuthorLinks(
-                            authors = details.creators.ifEmpty { listOfNotNull(details.summary.author) },
-                            fallbackName = details.summary.authorName,
-                            onOpenAuthor = onOpenAuthor,
-                        )
-                    }
-                    if (downloadLoading) {
-                        LoadingSkeletonBlock(
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            style = skeletonStyle,
-                            shape = RoundedCornerShape(999.dp),
-                        )
-                    } else WorkshopDownloadActionButton(
-                        state = downloadState,
-                        onClick = onDownload,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp),
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SelectionContainer {
+                    if (metadataLoading && details.summary.title == "Workshop ${details.summary.publishedFileId}") {
+                        LoadingSkeletonBlock(Modifier.fillMaxWidth(0.85f).height(26.dp), style = skeletonStyle)
+                    } else Text(
+                        text = details.summary.title.ifBlank { stringResource(R.string.workshop_unnamed_mod) },
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
+                if (details.summary.authorName.isBlank() && details.creators.isEmpty() && (metadataLoading || communityLoading)) {
+                    LoadingSkeletonBlock(Modifier.fillMaxWidth(0.5f).height(16.dp), style = skeletonStyle)
+                } else {
+                    WorkshopAuthorLinks(
+                        authors = details.creators.ifEmpty { listOfNotNull(details.summary.author) },
+                        fallbackName = details.summary.authorName,
+                        onOpenAuthor = onOpenAuthor,
+                    )
+                }
+                downloadAction()
             }
             if (metadataLoading) {
                 repeat(2) {
@@ -1823,10 +1820,8 @@ private fun DependencyCard(
     onDownloadDependency: (WorkshopItemSummary) -> Unit,
     onOpenDependency: (WorkshopItemSummary) -> Unit,
 ) {
-    Card(
+    WorkshopDetailCard(
         modifier = modifier.fillMaxWidth(),
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1864,13 +1859,11 @@ private fun DependencyItemCard(
     onDownload: () -> Unit,
     onOpenDetails: () -> Unit,
 ) {
-    Card(
+    WorkshopDetailCard(
         onClick = onOpenDetails,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 96.dp),
-        colors = workshopDetailCardColors(),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
     ) {
         Row(
             Modifier.padding(12.dp),
@@ -1927,10 +1920,8 @@ private fun DetailDescriptionCard(
 ) {
     var expanded by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     val description = text.ifBlank { stringResource(R.string.workshop_description_empty) }
-    Card(
+    WorkshopDetailCard(
         modifier = modifier.fillMaxWidth(),
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(
             Modifier
@@ -2034,10 +2025,8 @@ private fun DetailCommentsCard(
         animationSpec = tween(durationMillis = 120),
         label = "workshop-detail-comments-page-loading-alpha",
     )
-    Card(
+    WorkshopDetailCard(
         modifier = modifier.fillMaxWidth(),
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Box(
             modifier = Modifier
@@ -2177,11 +2166,8 @@ private fun CommentItemCard(
     } else {
         comment.content
     }
-    Card(
+    WorkshopDetailCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
     ) {
         Column(
             modifier = Modifier
@@ -2220,7 +2206,7 @@ private fun CommentItemCard(
 }
 
 @Composable
-private fun DetailErrorCard(message: String, onRetry: () -> Unit) {
+private fun DetailErrorCard(message: String, onRetry: () -> Unit, downloadAction: @Composable () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -2233,6 +2219,7 @@ private fun DetailErrorCard(message: String, onRetry: () -> Unit) {
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
             WorkshopLoadFailureHint()
+            downloadAction()
             Button(
                 onClick = onRetry,
                 modifier = Modifier
@@ -2244,45 +2231,29 @@ private fun DetailErrorCard(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun WorkshopDetailPrimaryLoadingSkeleton() {
+private fun WorkshopDetailPrimaryLoadingSkeleton(downloadAction: @Composable () -> Unit) {
     val skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_primary_skeleton")
-    WorkshopDetailPrimarySkeletonCard(skeletonStyle = skeletonStyle)
+    WorkshopDetailPrimarySkeletonCard(skeletonStyle = skeletonStyle, downloadAction = downloadAction)
 }
 
 @Composable
-private fun WorkshopDetailPrimarySkeletonCard(skeletonStyle: LoadingSkeletonStyle) {
-    Card(
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
+private fun WorkshopDetailPrimarySkeletonCard(skeletonStyle: LoadingSkeletonStyle, downloadAction: @Composable () -> Unit) {
+    WorkshopDetailCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LoadingSkeletonBlock(
-                    modifier = Modifier.size(112.dp),
+                    modifier = Modifier
+                        .fillMaxWidth(0.88f)
+                        .height(24.dp),
                     style = skeletonStyle,
-                    shape = RoundedCornerShape(18.dp),
                 )
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    LoadingSkeletonBlock(
-                        modifier = Modifier
-                            .fillMaxWidth(0.88f)
-                            .height(24.dp),
-                        style = skeletonStyle,
-                    )
-                    LoadingSkeletonBlock(
-                        modifier = Modifier
-                            .fillMaxWidth(0.48f)
-                            .height(14.dp),
-                        style = skeletonStyle,
-                    )
-                    LoadingSkeletonBlock(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        style = skeletonStyle,
-                        shape = RoundedCornerShape(999.dp),
-                    )
-                }
+                LoadingSkeletonBlock(
+                    modifier = Modifier
+                        .fillMaxWidth(0.48f)
+                        .height(14.dp),
+                    style = skeletonStyle,
+                )
+                downloadAction()
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 repeat(2) {
@@ -2347,10 +2318,8 @@ private fun DetailMetricSkeleton(
 
 @Composable
 private fun WorkshopDetailGallerySkeletonCard(skeletonStyle: LoadingSkeletonStyle) {
-    Card(
+    WorkshopDetailCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2397,10 +2366,8 @@ private fun WorkshopDetailGallerySkeletonCard(skeletonStyle: LoadingSkeletonStyl
 @Composable
 private fun WorkshopDetailDependenciesSkeletonCard() {
     val skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_dependencies_skeleton")
-    Card(
+    WorkshopDetailCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             LoadingSkeletonBlock(Modifier.width(92.dp).height(20.dp), style = skeletonStyle)
@@ -2417,10 +2384,8 @@ private fun WorkshopDetailDependenciesSkeletonCard() {
 
 @Composable
 private fun WorkshopDetailDescriptionSkeletonCard(skeletonStyle: LoadingSkeletonStyle) {
-    Card(
+    WorkshopDetailCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2452,10 +2417,8 @@ private fun WorkshopDetailDescriptionSkeletonCard(skeletonStyle: LoadingSkeleton
 
 @Composable
 private fun WorkshopDetailCommentsSkeletonCard(skeletonStyle: LoadingSkeletonStyle) {
-    Card(
+    WorkshopDetailCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             LoadingSkeletonBlock(
@@ -2471,11 +2434,8 @@ private fun WorkshopDetailCommentsSkeletonCard(skeletonStyle: LoadingSkeletonSty
                 style = skeletonStyle,
             )
             repeat(2) {
-                Surface(
+                WorkshopDetailCard(
                     modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
                 ) {
                     Column(
                         modifier = Modifier
@@ -2519,11 +2479,6 @@ private fun WorkshopDetailCommentsSkeletonCard(skeletonStyle: LoadingSkeletonSty
         }
     }
 }
-
-@Composable
-private fun workshopDetailCardColors() = CardDefaults.cardColors(
-    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-)
 
 private enum class DetailPrimaryContentState {
     Loading,

@@ -21,10 +21,11 @@ import org.junit.Test
 class AgentConversationContextTest {
     @Test fun configuredInputLimitDoesNotDeductOutputBudget() {
         val budget = AgentContextBudget()
-        assertEquals(200_000, budget.limit)
-        assertEquals(20_000, budget.outputReserve)
-        assertEquals(200_000, budget.inputLimit)
-        assertEquals(20_000, budget.summaryOutputLimit)
+        assertEquals(32_000, budget.limit)
+        assertEquals(4_000, budget.outputReserve)
+        assertEquals(32_000, budget.inputLimit)
+        assertEquals(2_000, budget.summaryOutputLimit)
+        assertEquals(200_000, AgentContextBudget(200_000).inputLimit)
         assertEquals(8000, AgentContextBudget(8000).inputLimit)
         listOf(1, 128, 32_000, 100_000, Int.MAX_VALUE).forEach { limit ->
             assertEquals(limit, AgentContextBudget(limit).inputLimit)
@@ -318,9 +319,11 @@ class AgentConversationContextTest {
     @Test fun cancelledSummaryDoesNotCommit() {
         var cancelled = false
         val original = longHistory()
+        val model = fake { cancelled = true; response("memory") }
         val manager = AgentContextManager(original, "system", "tools", AgentContextBudget(8000), 3,
-            fake { cancelled = true; response("memory") }, { fail("must not commit") },
-            { if (cancelled) throw java.util.concurrent.CancellationException() })
+            model, { fail("must not commit") },
+            { if (cancelled) throw java.util.concurrent.CancellationException() },
+            currentCompactionTarget = { AgentCompactionTarget(model, budget = AgentContextBudget(32_000)) })
         assertThrows(java.util.concurrent.CancellationException::class.java) { manager.prepare() }
         assertEquals(original, manager.state)
     }
@@ -435,6 +438,56 @@ class AgentConversationContextTest {
         assertEquals(1, manager.state.compactionCount)
     }
 
+    @Test fun autoCompactionTriggersAtHeadroomBoundaryRatherThanAtFullInput() {
+        listOf(7_199 to 0, 7_200 to 1).forEach { (tokens, expected) ->
+            var calls = 0
+            val original = AgentContextState(messages = listOf(
+                AgentContextMessage(1, "user", "goal"), AgentContextMessage(2, "assistant", "old work")),
+                lastInputTokens = tokens, measuredMessageCount = 2)
+            val manager = manager(original, limit = 8_000, model = fake { calls++; response("## Objective\nMemory") })
+            manager.prepare()
+            assertEquals(expected, calls)
+        }
+    }
+
+    @Test fun checkpointNearThresholdDoesNotCompactAgainForEverySmallReply() {
+        var calls = 0
+        val original = longHistory().copy(lastInputTokens = 1_950, measuredMessageCount = 2)
+        val manager = manager(original, limit = 2_000, model = fake {
+            calls++
+            response("## Objective\n" + "s".repeat(5_200))
+        })
+        manager.prepare()
+        assertTrue(manager.state.estimatedTokens!! >= manager.budget.compactionThreshold())
+        manager.prepare()
+        manager.append(AiMessage.from("ok"))
+        manager.prepare()
+        assertEquals(1, calls)
+        assertTrue(manager.state.estimatedTokens!! < manager.budget.inputLimit)
+    }
+
+    @Test fun recentLargeToolBatchRaisesHeadroomOnlyToTheBoundedThreshold() {
+        listOf(6_399 to 0, 6_400 to 1).forEach { (tokens, expected) ->
+            var calls = 0
+            val state = AgentContextState(messages = listOf(
+                AgentContextMessage(1, "user", "inspect"),
+                AgentContextMessage(2, "assistant", calls = listOf(AgentContextToolCall("a", "read", "{}"))),
+                AgentContextMessage(2, "tool", "x".repeat(10_000), callId = "a", toolName = "read"),
+            ), lastInputTokens = tokens, measuredMessageCount = 3)
+            val manager = manager(state, limit = 8_000, model = fake { calls++; response("## Objective\nMemory") })
+            manager.prepare()
+            assertEquals(expected, calls)
+        }
+    }
+
+    @Test fun smallUserOnlyRequestInsideHeadroomDoesNotTriggerUselessCompaction() {
+        val manager = manager(AgentContextState(messages = listOf(AgentContextMessage(1, "user", "hello"))),
+            model = fake { error("must not summarize user-only input") })
+        manager.budget = AgentContextBudget(manager.requestEstimate() + 1)
+        manager.prepare()
+        assertEquals(0, manager.state.compactionCount)
+    }
+
     private fun longHistory() = AgentContextState(messages = listOf(
         AgentContextMessage(1, "user", "Original goal"),
         AgentContextMessage(2, "assistant", "x".repeat(40_000)),
@@ -445,7 +498,11 @@ class AgentConversationContextTest {
         model: ChatModel = fake { response("## Objective\nVerified memory: keep user constraints and patch-alpha.") },
         limit: Int = 200_000,
         checkpoint: (AgentContextState) -> Unit = {},
-    ) = AgentContextManager(state, "system", "tools", AgentContextBudget(limit), 10, model, checkpoint)
+    ) = AgentContextManager(state, "system", "tools", AgentContextBudget(limit), 10, model, checkpoint,
+        // These fixtures test main-context compaction/commit behavior using oversized historical
+        // replies. Give the summarizer a separate sufficient input budget; strict summary-budget
+        // rejection is covered in AgentContextCompactionTest.
+        currentCompactionTarget = { AgentCompactionTarget(model, budget = AgentContextBudget(maxOf(limit, 32_000))) })
 
     private fun fake(reply: (ChatRequest) -> ChatResponse) = object : ChatModel {
         override fun doChat(request: ChatRequest): ChatResponse = reply(request)

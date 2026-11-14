@@ -9,6 +9,8 @@ import io.stamethyst.backend.llm.AgentCacheStats
 import io.stamethyst.backend.llm.AgentContextBudget
 import io.stamethyst.backend.llm.AgentContextManager
 import io.stamethyst.backend.llm.AgentContextState
+import io.stamethyst.backend.llm.AgentCompactionTarget
+import io.stamethyst.backend.llm.AgentRequestControl
 import io.stamethyst.backend.llm.AgentListInstalledModsTool
 import io.stamethyst.backend.llm.AgentModClassDecompileTool
 import io.stamethyst.backend.llm.AgentModClassInspectTool
@@ -34,6 +36,7 @@ import io.stamethyst.backend.llm.AgentToolPolicyGate
 import io.stamethyst.backend.llm.AgentToolRegistry
 import io.stamethyst.backend.llm.AgentToolSafety
 import io.stamethyst.backend.llm.AgentWorkspaceDeleteTool
+import io.stamethyst.backend.llm.AgentWorkspaceEditTool
 import io.stamethyst.backend.llm.AgentWorkspaceFileTool
 import io.stamethyst.backend.llm.AgentWorkspaceGlobTool
 import io.stamethyst.backend.llm.AgentWorkspaceGrepTool
@@ -71,6 +74,9 @@ internal class AiModAgentExecutor(
     private val receiveInbox: (Boolean) -> AiDeliveredInput? = { null },
     private val onOutputSpeed: (Double) -> Unit = {},
     private val onExecutionStep: (io.stamethyst.backend.llm.AgentExecutionStep) -> Unit = {},
+    private val requestControl: AgentRequestControl? = null,
+    private val modelFactory: (OpenAiCompatibleModelConfig) -> dev.langchain4j.model.chat.ChatModel = AgentChatModelFactory::create,
+    private val streamingModelFactory: (OpenAiCompatibleModelConfig) -> dev.langchain4j.model.chat.StreamingChatModel? = AgentChatModelFactory::createStreaming,
 ) {
     private val settingsRepository = io.stamethyst.backend.llm.LlmSettingsRepository(context)
     private val workspaceAccessRoot = RuntimePaths.agentModWorkspaceRoot(
@@ -96,6 +102,11 @@ internal class AiModAgentExecutor(
     private var contextManager: AgentContextManager? = null
 
     fun execute(session: AiEditorSession, assistantMessageId: Long): AiAgentExecutionResult {
+        return (requestControl ?: AgentRequestControl()).use { control -> executeControlled(session, assistantMessageId, control) }
+    }
+
+    private fun executeControlled(session: AiEditorSession, assistantMessageId: Long, control: AgentRequestControl): AiAgentExecutionResult {
+        control.checkActive()
         val settings = settingsRepository.get()
         check(settings.isConfigured()) { "LLM is not configured" }
         val config = OpenAiCompatibleModelConfig(
@@ -107,30 +118,34 @@ internal class AiModAgentExecutor(
             reasoningEffort = reasoningEffort,
             cacheAffinity = java.util.UUID.nameUUIDFromBytes(session.id.toByteArray(Charsets.UTF_8)).toString(),
         )
-        val model = AgentChatModelFactory.create(config)
+        val model = modelFactory(config)
         var activeConfig = config
         var activeModel = model
-        var activeStreamingModel = AgentChatModelFactory.createStreaming(config)
+        var activeStreamingModel = streamingModelFactory(config)
+        var summaryConfig = config
+        fun summaryTarget(config: OpenAiCompatibleModelConfig, budget: AgentContextBudget): AgentCompactionTarget {
+            val off = config.copy(reasoningEffort = LlmReasoningEffort.OFF)
+            return AgentCompactionTarget(modelFactory(off), streamingModelFactory(off), budget)
+        }
         fun applyInputSettings(input: AiDeliveredInput) {
             val next = activeConfig.copy(
                 modelName = input.modelName ?: activeConfig.modelName,
                 reasoningEffort = input.reasoningEffort ?: activeConfig.reasoningEffort,
             )
             if (next != activeConfig) {
-                activeModel = AgentChatModelFactory.create(next)
-                activeStreamingModel = AgentChatModelFactory.createStreaming(next)
+                activeModel = modelFactory(next)
+                activeStreamingModel = streamingModelFactory(next)
                 activeConfig = next
-                val key = AiContextLimits.key(next.baseUrl, next.modelName)
-                contextManager?.switchModel(key, AiContextLimits.get(context, key))
+            }
+            val key = AiContextLimits.key(next.baseUrl, next.modelName)
+            val budget = AiContextLimits.budget(context, key)
+            if (contextManager?.budget != budget || contextManager?.state?.modelKey != key || next != summaryConfig) {
+                contextManager?.switchModel(key, budget, summaryTarget(next, budget))
+                summaryConfig = next
             }
         }
         // Compaction needs visible factual text. Reasoning tokens can consume the summary
         // output budget and leave the provider with an empty or truncated answer.
-        val compactionModel = if (reasoningEffort == LlmReasoningEffort.OFF) {
-            model
-        } else {
-            AgentChatModelFactory.create(config.copy(reasoningEffort = LlmReasoningEffort.OFF))
-        }
         val saved = session.modelContext(assistantMessageId)
         activePatchWorkspace = saved.activePatchId?.let(::resolveExistingPatchWorkspace)
         val registry = AgentToolRegistry(
@@ -140,6 +155,8 @@ internal class AiModAgentExecutor(
         )
         val systemPrompt = buildAiEditorSystemPrompt(modName, modId, workspaceAccessRoot)
         val modelKey = AiContextLimits.key(settings.baseUrl, settings.modelName)
+        val budget = AiContextLimits.budget(context, modelKey)
+        val compaction = summaryTarget(config, budget)
         val initial = (if (saved.modelKey == modelKey) saved else saved.copy(
             modelKey = modelKey, estimateScale = 1.0, lastInputTokens = null, lastOutputTokens = null,
             measuredMessageCount = null,
@@ -157,17 +174,18 @@ internal class AiModAgentExecutor(
             initial = initial,
             systemPrompt = systemPrompt,
             toolSchema = registry.toolSpecifications().joinToString("\n"),
-            budget = AgentContextBudget(AiContextLimits.get(context, modelKey)),
+            budget = budget,
             sourceMessageId = assistantMessageId,
-            model = compactionModel,
+            model = compaction.model,
             checkpoint = onContext,
             checkCancelled = checkCancelled,
             toolSpecifications = registry.toolSpecifications(),
-            streamingModel = AgentChatModelFactory.createStreaming(config.copy(reasoningEffort = LlmReasoningEffort.OFF)),
+            streamingModel = compaction.streamingModel,
             summaryTimeoutMillis = config.requestTimeoutSeconds.toLong() * 1_000,
             onCompaction = onCompaction,
             onExecutionStep = onExecutionStep,
             supportsImageInput = settings.supportsImageInput,
+            requestControl = control,
         )
         contextManager = manager
         manager.persist()
@@ -188,6 +206,8 @@ internal class AiModAgentExecutor(
             onExecutionStep = onExecutionStep,
             currentChatModel = { activeModel },
             currentStreamingModel = { activeStreamingModel },
+            currentModelConfiguration = { activeConfig to manager.budget },
+            requestControl = control,
             receiveInbox = { idle ->
                 val input = receiveInbox(idle)
                 if (input == null) false else {
@@ -214,7 +234,7 @@ internal class AiModAgentExecutor(
                 ) * 1_000L,
             supportsImageInput = settings.supportsImageInput,
             hasUsableNetwork = { NetworkAvailability.hasValidatedNetwork(context) },
-            evictConnectionPool = { AgentChatModelFactory.evictConnectionPool(config) },
+            evictConnectionPool = { AgentChatModelFactory.evictConnectionPool(activeConfig) },
         )
         // A resume-only request has no new user prompt; claim pending work before calling the model.
         if (session.messages.lastOrNull { it.id != assistantMessageId }?.fromUser == false) {
@@ -273,6 +293,7 @@ internal class AiModAgentExecutor(
             },
         ),
         AgentWorkspaceWriteTool(workspaceAccessRoot),
+        AgentWorkspaceEditTool(workspaceAccessRoot),
         AgentWorkspaceDeleteTool(workspaceAccessRoot),
         AgentModSourceDecompileTool(
             context = context,
@@ -366,23 +387,24 @@ internal fun buildAiEditorSystemPrompt(modName: String, modId: String, workspace
         A workspace file that is a PNG, JPEG, WebP or GIF is returned as an image you can see, not as text. Read it with read_agent_workspace_file (omit encoding) and describe what is actually shown before acting on it; never claim to have seen an image you did not read. The same applies to image resources opened with read_agent_mod_resource.
         The current active patch ID, when available, is supplied in launcher state update messages. The latest update takes precedence over older state. Inspect existing files and patch IDs in conversation memory before creating a workspace.
         Do not create a workspace unless the user asked for a new patch and no existing patch workspace should be reused. create_agent_patch_workspace prepares a dedicated patch_source/<patch_id>/ directory and returns the exact paths to use. It does not compile, package, install, or enable a mod.
-        If the user asks to inspect or explain the parent mod, call decompile_agent_mod_source to prepare its SHA-256 snapshot, then inspect_agent_class or decompile_agent_class for the needed classes. Do not expect source/ to contain every parent file.
+        If the user asks to inspect or explain the parent mod, use inspect_agent_class or decompile_agent_class directly for the needed classes. decompile_agent_class prepares its own SHA-256 source snapshot; decompile_agent_mod_source is only for explicit snapshot preparation or metadata inspection. Do not expect source/ to contain every parent file.
         To read another installed mod (including disabled mods), call list_installed_mods, then pass its mod_id to list_agent_mod_entries, inspect_agent_class, decompile_agent_class, or read_agent_mod_resource. Discover classes with list_agent_mod_entries(entry_type="classes", mod_id=...) rather than search_agent_api, whose classpath only covers the parent and built-in dependencies. Other mods' decompiled code is returned inline, not materialized in the current workspace. These tools are read-only with respect to installed JARs; inspecting another mod does not change the patch target or compile classpath.
 
         To inspect original game resources (including card art) in desktop-1.0.jar, use list_agent_mod_entries(source="game", prefix=...) to discover exact paths, then read_agent_mod_resource(source="game", entry=...). Omit mod_id for source="game"; the game is not an installed mod. Image resources are returned as viewable attachments when encoding is omitted and offset is 0. Both tools default to source="mod" for backward compatibility. Game resources are read directly from the imported game JAR, not the class-only compile cache, and cannot be modified by these tools.
-        Use write_agent_workspace_file to create or replace files under the current patch_workspace_path returned by create_agent_patch_workspace, and delete_agent_workspace_file to remove files or directories there with recursive=true when needed. Do not attempt to modify source/ or another patch mod's directory.
+        Prefer edit_agent_workspace_file for small changes to existing text files under the current patch_workspace_path. It replaces exactly one literal old_text with new_text; include enough context to make the match unique. Pass the sha256 from the latest read or edit as expected_sha256 to catch conflicts. Normal text reads include line-number prefixes that are not file content; use encoding=utf8_chars when you need exact text and line endings. On conflict, read the current file and rebuild the edit. Use write_agent_workspace_file for new files, binary files or intentional full replacements, and delete_agent_workspace_file to remove files or directories there with recursive=true when needed. Do not attempt to modify source/ or another patch mod's directory.
         The launcher creates ModTheSpire.json and agent-patch.json in the current patch_source/<patch_id>/ directory. Keep the patch mod's modid and parent dependency intact.
         ModTheSpire resolves dependencies case-sensitively: copy the exact 'modid' text from source/ModTheSpire.json when listing the parent or any dependency, and never change its casing.
         For a new patch with no suitable existing workspace, call create_agent_patch_workspace first. For any change to an existing patch, inspect or list the existing revisions and continue directly in that revision's patch_source/<patch_id>/ tree; do not create another workspace. After changing an already packaged revision, compile it with its patch_id and call update_agent_patch_mod so the same revision is replaced.
-        Before writing any Java against the game, BaseMod, or StSLib, read the bundled reference with read_agent_skill (skill name: basemod-and-stslib). It covers the registration lifecycle and ordering, where each content type is registered, hook names, StSLib keywords, and the mistakes that crash the game when it loads.
-        Never write an API call from memory, and never guess what a vanilla method does. Find the type with search_agent_api, confirm the exact overload with describe_agent_api_class, and when behavior matters call decompile_agent_api_class to read the installed game/BaseMod source before designing the patch. Batch independent classes into one call; when a class exceeds the inline cap, read the member index and request the one body you need instead of re-decompiling the class.
-        Before writing any patch that targets a method, call inspect_agent_patch_target for that class and member. It returns the exact overloads, descriptors, fields, and by default a javap-style bytecode listing plus a structured local_variables list with LocalVariableTable names; use those names for __instance, __result, __args and localvars instead of guessing. After inspecting a target, call generate_agent_patch_skeleton to write the @SpirePatch2 class with the exact paramtypez, then fill in the TODO.
+        Reuse reliable skill, API, source and target evidence already in context for the current installed versions. Tool guidance to read or inspect before writing requires evidence, not repeated calls: query only when evidence is missing, incomplete, stale, or the relevant target/dependency changed. A follow-up source edit alone does not invalidate installed API or target evidence.
+        When the bundled reference is not already available for the current version, read it with read_agent_skill (skill name: basemod-and-stslib) before writing Java against the game, BaseMod, or StSLib. It covers the registration lifecycle and ordering, where each content type is registered, hook names, StSLib keywords, and the mistakes that crash the game when it loads.
+        Do not guess an API signature or vanilla method behavior. If current-version evidence is missing, find an unknown type with search_agent_api, confirm the needed overload with describe_agent_api_class, and when behavior matters call decompile_agent_api_class to read the installed game/BaseMod source. Batch independent classes into one call; when a class exceeds the inline cap, read the member index and request the one body you need instead of re-decompiling the class.
+        For a method patch without reliable current-version target evidence, call inspect_agent_patch_target for that class and member. It returns the exact overloads, descriptors, fields, and by default a javap-style bytecode listing plus a structured local_variables list with LocalVariableTable names; use those names for __instance, __result, __args and localvars instead of guessing. For a new patch class, use generate_agent_patch_skeleton with the inspected overload to write the @SpirePatch2 class with exact paramtypez, then fill in the TODO. Reuse and locally edit an existing correct skeleton.
         Prefer the BaseMod API over ModTheSpire patches: content such as cards, relics, potions, events, keywords, characters, and colors is registered through BaseMod from one @SpireInitializer class. Use @SpirePatch2 only where no API exists, and never use a Replace patch.
         For code changes, write Java 8 sources under <patch_workspace_path>/src/<package>/... using ModTheSpire's @SpirePatch2 and the game/BaseMod APIs, then call compile_agent_patch_source to compile them into that patch workspace. A patch mod does not have to be a @SpirePatch2 hook set: a resource-only patch mod and a mod that registers content through a single @SpireInitializer class with a public static void initialize() are valid too.
         Compilation is fixed to Java 8 and the classpath already contains the game jar, ModTheSpire, the required mods and the parent mod; do not add a build file or a classpath argument.
         If compile_agent_patch_source reports errors, read the diagnostics and fix the sources before packaging.
-        Run validate_agent_patch_mod after compiling. If it warns that a target does not record an explicit parameter signature, do not package yet: regenerate the patch class with generate_agent_patch_skeleton using the inspected overload, then compile and validate again.
-        When the patch mod is complete, call package_agent_patch_mod with a useful name, semantic version, and description.
+        After a successful compile, call package_agent_patch_mod for a new patch or update_agent_patch_mod for an existing revision directly. Both run final bytecode preflight and return diagnostics, including warnings; an independent validate_agent_patch_mod call is optional for standalone diagnostics, not a routine prerequisite. Resolve preflight failures before retrying. If preflight warns that a target lacks an explicit parameter signature, regenerate the affected class with generate_agent_patch_skeleton using the inspected overload, recompile, and update the patch before runtime testing or enabling it.
+        When the patch mod is complete, package it with a useful name, semantic version, and description.
         Patch mod names and descriptions must be in Chinese, preserving proper mod names when needed. Keep names short and specific to the main feature or fix; avoid generic names such as 'AI补丁', '测试补丁', or '优化补丁' and do not include the version number. Keep descriptions brief, stating the problem or request addressed and concrete implemented changes without plans or unverified claims. Before packaging or updating, compare the description with the actual patch contents and correct it if they differ. Reuse the existing name unless the patch's purpose changed.
         To change a patch mod you already packaged, call list_agent_patch_mods to get its patch_id, edit the files under patch_source/<patch_id>/, call compile_agent_patch_source with that patch_id, then call update_agent_patch_mod with the patch_id and a new version. This replaces the same revision and keeps its enabled state; do not create a duplicate patch mod for an update.
         Packaged patch mods are stored under agent_mods and are loaded by the launcher directly; there is no separate install step.

@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,24 +37,22 @@ import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import io.stamethyst.ui.LauncherAlertDialog as AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TriStateCheckbox
-import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -82,10 +79,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -96,7 +90,9 @@ import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.ui.AppSearchBar
+import io.stamethyst.ui.FrostedGlassChrome
 import io.stamethyst.ui.SearchHistoryStore
+import dev.chrisbanes.haze.HazeState
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import sh.calvin.reorderable.ReorderableItem
@@ -118,12 +114,18 @@ internal fun ModFolderSection(
     onBatchEditBarStateChange: (BatchEditBarState?) -> Unit = {},
     callbacks: ModFolderSectionCallbacks
 ) {
-    val dependencyMods = uiState.dependencyMods
     val mods = uiState.optionalMods
     val orderContext = LocalContext.current.applicationContext
     val orderStore = remember(orderContext) { ModDisplayOrder(orderContext) }
     var displayOrder by remember(orderStore) { mutableStateOf(orderStore.read()) }
+    DisposableEffect(orderStore) {
+        val stopObserving = orderStore.observe { displayOrder = it }
+        onDispose { stopObserving() }
+    }
     val orderRanks = remember(displayOrder) { displayOrder.withIndex().associate { it.value to it.index } }
+    val dependencyMods = remember(uiState.dependencyMods, orderRanks) {
+        uiState.dependencyMods.sortedBy { orderRanks[it.storagePath] ?: Int.MAX_VALUE }
+    }
     LaunchedEffect(orderContext) {
         io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator.requestCheck(orderContext)
     }
@@ -164,7 +166,8 @@ internal fun ModFolderSection(
     ) {
         mods.filter { mod ->
             (!showEnabledModsOnly || mod.enabled) && (
-                !showUpdateAvailableModsOnly || mod.workshop?.state == WorkshopModState.UpdateAvailable
+                !showUpdateAvailableModsOnly || mod.workshop?.state in setOf(
+                    WorkshopModState.UpdateAvailable, WorkshopModState.UpdatePendingInstall)
             ) && (
                 filterKeyword.isEmpty() ||
                 mod.name.contains(filterKeyword, ignoreCase = true) ||
@@ -306,6 +309,7 @@ internal fun ModFolderSection(
         canAssociate = canAssociateSelection(selectedBatchMods.size,
             selectedBatchMods.count { modAssociationState.groupFor(it) != null }),
         selectedCount = selectedBatchMods.size,
+        totalCount = eligibleModStoragePaths.size,
         controlsEnabled = latestBatchSelectionControlsEnabled.value
     )
     LaunchedEffect(batchEditBarState) {
@@ -647,19 +651,15 @@ internal fun ModFolderSection(
         }
     }
 
-    LaunchedEffect(interactionState.pendingDragScrollRestore, topLevelItemKeys) {
-        val anchor = interactionState.pendingDragScrollRestore ?: return@LaunchedEffect
-        val fallbackIndex = anchor.firstVisibleItemIndex
-            .coerceIn(0, (topLevelItemKeys.size - 1).coerceAtLeast(0))
-        val targetIndex = anchor.firstVisibleItemKey
-            ?.let { key -> topLevelItemKeys.indexOf(key).takeIf { it >= 0 } }
-            ?: fallbackIndex
-        interactionState.listState.scrollToItem(
-            index = targetIndex,
-            scrollOffset = anchor.firstVisibleItemScrollOffset
-        )
-        if (interactionState.pendingDragScrollRestore == anchor) {
-            interactionState.pendingDragScrollRestore = null
+    interactionState.pendingDragScrollRestore?.let { anchor ->
+        val (targetIndex, targetOffset) = anchor.resolvePosition(topLevelItemKeys)
+        SideEffect {
+            // Apply to the same measure that replaces the preview rows. scrollToItem
+            // would force a separate remeasure and reset item placement animations.
+            interactionState.listState.requestScrollToItem(targetIndex, targetOffset)
+            if (interactionState.pendingDragScrollRestore == anchor) {
+                interactionState.pendingDragScrollRestore = null
+            }
         }
     }
 
@@ -1141,42 +1141,15 @@ internal fun ModFolderSection(
                                                 if (folderUiModel.isUnassigned) null else folderTokenId
                                             ].orEmpty().filter { it.canUseFolderSelection() }
                                             val enabledCount = allFolderMods.count { it.enabled }
-                                            val enableState = folderAggregateState(enabledCount, allFolderMods.size)
-                                            val enableDescription = stringResource(
-                                                when (enableState) {
-                                                    ToggleableState.On -> R.string.mod_folder_all_enabled
-                                                    ToggleableState.Indeterminate -> R.string.mod_folder_part_enabled
-                                                    ToggleableState.Off -> R.string.mod_folder_none_enabled
-                                                }, enabledCount, allFolderMods.size
-                                            )
+                                            val visiblePaths = folderUiModel.mods
+                                                .filter { it.canUseFolderSelection() }
+                                                .map { it.storagePath }.toSet()
                                             val setFolderEnabled: (Boolean) -> Unit = { enabled ->
                                                 if (folderUiModel.isUnassigned) {
                                                     callbacks.onSetUnassignedSelected(enabled)
                                                 } else {
                                                     callbacks.onSetFolderSelected(folderTokenId, enabled)
                                                 }
-                                            }
-                                            if (batchSelectionMode) {
-                                                val visiblePaths = folderUiModel.mods
-                                                    .filter { it.canUseFolderSelection() }
-                                                    .map { it.storagePath }.toSet()
-                                                val selectedCount = visiblePaths.count { it in selectedBatchStoragePaths }
-                                                val selectionState = folderAggregateState(selectedCount, visiblePaths.size)
-                                                val selectionDescription = stringResource(
-                                                    R.string.mod_folder_select_results, selectedCount, visiblePaths.size
-                                                )
-                                                TriStateCheckbox(
-                                                    state = selectionState,
-                                                    enabled = organizationControlsEnabled && visiblePaths.isNotEmpty(),
-                                                    modifier = Modifier.semantics {
-                                                        contentDescription = selectionDescription
-                                                    },
-                                                    onClick = {
-                                                        selectedBatchStoragePaths = toggleFolderBatchSelection(
-                                                            selectedBatchStoragePaths, visiblePaths
-                                                        )
-                                                    }
-                                                )
                                             }
                                             Icon(
                                                 painter = painterResource(R.drawable.ic_mod_folder),
@@ -1192,7 +1165,9 @@ internal fun ModFolderSection(
                                                     color = MaterialTheme.colorScheme.primary
                                                 )
                                                 Text(
-                                                    text = enableDescription,
+                                                    text = stringResource(
+                                                        R.string.mod_folder_enabled_count, enabledCount, allFolderMods.size
+                                                    ),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -1202,7 +1177,8 @@ internal fun ModFolderSection(
                                                         style = MaterialTheme.typography.labelSmall
                                                     )
                                                 }
-                                                val updateCount = allFolderMods.count { it.workshop?.state == WorkshopModState.UpdateAvailable }
+                                                val updateCount = allFolderMods.count { it.workshop?.state in setOf(
+                                                    WorkshopModState.UpdateAvailable, WorkshopModState.UpdatePendingInstall) }
                                                 if (updateCount > 0) {
                                                     Text(
                                                         text = stringResource(R.string.mod_folder_updates_available, updateCount),
@@ -1211,13 +1187,6 @@ internal fun ModFolderSection(
                                                     )
                                                 }
                                             }
-                                            Switch(
-                                                checked = enableState != ToggleableState.Off,
-                                                onCheckedChange = { setFolderEnabled(enableState != ToggleableState.On) },
-                                                enabled = organizationControlsEnabled && allFolderMods.isNotEmpty(),
-                                                modifier = Modifier.semantics { stateDescription = enableDescription },
-                                                indeterminate = enableState == ToggleableState.Indeterminate,
-                                            )
                                             IconButton(
                                                 enabled = uiState.controlsEnabled && !collapseToggleLocked,
                                                 modifier = Modifier.testTag(FOLDER_TOGGLE_BUTTON_TAG),
@@ -1256,6 +1225,31 @@ internal fun ModFolderSection(
                                                     expanded = manageMenuExpanded,
                                                     onDismissRequest = { manageMenuExpanded = false }
                                                 ) {
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(
+                                                            if (searchActive || showEnabledModsOnly || showUpdateAvailableModsOnly) {
+                                                                R.string.mod_select_all_results
+                                                            } else {
+                                                                R.string.mod_select_all
+                                                            }
+                                                        )) },
+                                                        enabled = organizationControlsEnabled && visiblePaths.isNotEmpty(),
+                                                        onClick = {
+                                                            manageMenuExpanded = false
+                                                            selectedBatchStoragePaths = selectFolderBatchSelection(
+                                                                selectedBatchStoragePaths, visiblePaths
+                                                            )
+                                                            batchSelectionMode = true
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text(stringResource(R.string.mod_folder_enable_all)) },
+                                                        enabled = organizationControlsEnabled && enabledCount < allFolderMods.size,
+                                                        onClick = {
+                                                            manageMenuExpanded = false
+                                                            setFolderEnabled(true)
+                                                        }
+                                                    )
                                                     DropdownMenuItem(
                                                         text = { Text(stringResource(R.string.mod_folder_disable_all)) },
                                                         enabled = organizationControlsEnabled && enabledCount > 0,
@@ -1768,155 +1762,114 @@ private fun AlertDeleteSelectedModsDialog(
 @Composable
 internal fun BatchEditToolbar(
     modifier: Modifier = Modifier,
-    selectedCount: Int,
-    controlsEnabled: Boolean,
-    onMove: () -> Unit,
-    onDelete: () -> Unit,
-    onEnable: () -> Unit,
-    onDisable: () -> Unit,
-    onCancel: () -> Unit
+    state: BatchEditBarState,
+    hazeState: HazeState,
+    actionsMenu: @Composable () -> Unit = {},
 ) {
-    Surface(
+    // Use the banner's glass directly: FloatingGlassHeader would register this
+    // bottom bar in the shared top-banner host instead of drawing it here.
+    FrostedGlassChrome(
         modifier = modifier
             .fillMaxWidth()
-            .navigationBarsPadding(),
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 10.dp,
-        shadowElevation = 14.dp,
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)
-        )
+            .testTag(MOD_BATCH_EDIT_TOOLBAR_TAG),
+        hazeState = hazeState,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        shadowElevation = 6.dp,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f))
-                ) {
-                    Text(
-                        text = stringResource(R.string.main_batch_edit_selected_format, selectedCount),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                BatchSelectAllAction(state)
                 Spacer(modifier = Modifier.weight(1f))
                 TextButton(
-                    onClick = onCancel,
+                    onClick = state.onCancel,
                     shape = RoundedCornerShape(999.dp)
                 ) {
                     Text(stringResource(R.string.main_batch_action_cancel))
                 }
             }
-            FlowRow(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalAlignment = Alignment.Bottom,
             ) {
-                BatchActionChip(
-                    modifier = Modifier.weight(1f).height(42.dp),
-                    iconResId = R.drawable.ic_move_folder,
-                    text = stringResource(R.string.main_batch_action_move),
-                    enabled = controlsEnabled,
-                    onClick = onMove
-                )
-                BatchActionChip(
-                    modifier = Modifier.weight(1f).height(42.dp),
-                    iconResId = R.drawable.ic_check_circle,
-                    text = stringResource(R.string.main_batch_action_enable),
-                    enabled = controlsEnabled,
-                    onClick = onEnable
-                )
-                BatchActionChip(
-                    modifier = Modifier.weight(1f).height(42.dp),
-                    iconResId = R.drawable.ic_remove_circle,
-                    text = stringResource(R.string.main_batch_action_disable),
-                    enabled = controlsEnabled,
-                    onClick = onDisable
-                )
+                FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    BatchActionButton(
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        iconResId = R.drawable.ic_move_folder,
+                        text = stringResource(R.string.main_batch_action_move),
+                        enabled = state.controlsEnabled,
+                        onClick = state.onMove
+                    )
+                    BatchActionButton(
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        iconResId = R.drawable.ic_check_circle,
+                        text = stringResource(R.string.main_batch_action_enable),
+                        enabled = state.controlsEnabled,
+                        onClick = state.onEnable
+                    )
+                    BatchActionButton(
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        iconResId = R.drawable.ic_remove_circle,
+                        text = stringResource(R.string.main_batch_action_disable),
+                        enabled = state.controlsEnabled,
+                        onClick = state.onDisable
+                    )
+                }
+                Box(contentAlignment = Alignment.Center) {
+                    actionsMenu()
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BatchActionChip(
+private fun BatchActionButton(
     modifier: Modifier = Modifier,
     iconResId: Int,
     text: String,
     enabled: Boolean,
-    destructive: Boolean = false,
     onClick: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
-    val containerColor = if (destructive) {
-        colorScheme.errorContainer.copy(alpha = 0.9f)
-    } else {
-        colorScheme.primaryContainer.copy(alpha = 0.88f)
-    }
-    val contentColor = if (destructive) {
-        colorScheme.onErrorContainer
-    } else {
-        colorScheme.onPrimaryContainer
-    }
-    val disabledContentColor = colorScheme.onSurface.copy(alpha = 0.38f)
-    AssistChip(
-        modifier = modifier.defaultMinSize(minHeight = 0.dp),
+    OutlinedButton(
+        modifier = modifier,
         onClick = onClick,
         enabled = enabled,
-        label = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val currentContentColor = LocalContentColor.current
-                Icon(
-                    painter = painterResource(iconResId),
-                    contentDescription = null,
-                    tint = if (enabled) contentColor else disabledContentColor,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.size(6.dp))
-                Text(
-                    text = text,
-                    color = if (enabled) contentColor else currentContentColor,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        },
-        shape = RoundedCornerShape(999.dp),
-        colors = AssistChipDefaults.assistChipColors(
-            containerColor = containerColor,
-            labelColor = contentColor,
-            leadingIconContentColor = contentColor,
-            disabledContainerColor = colorScheme.surfaceContainerHighest.copy(alpha = 0.58f),
-            disabledLabelColor = disabledContentColor,
-            disabledLeadingIconContentColor = disabledContentColor
+        shape = RoundedCornerShape(16.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = colorScheme.surface.copy(alpha = 0.36f),
         ),
-        border = AssistChipDefaults.assistChipBorder(
-            enabled = enabled,
-            borderColor = if (destructive) {
-                colorScheme.error.copy(alpha = 0.34f)
-            } else {
-                colorScheme.primary.copy(alpha = 0.34f)
-            },
-            disabledBorderColor = colorScheme.outlineVariant.copy(alpha = 0.26f)
+        border = BorderStroke(1.dp, colorScheme.outlineVariant.copy(alpha = if (enabled) 0.56f else 0.26f)),
+    ) {
+        Icon(
+            painter = painterResource(iconResId),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
         )
-    )
+        Spacer(modifier = Modifier.size(6.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
 }
+
+internal const val MOD_BATCH_EDIT_TOOLBAR_TAG = "mod_batch_edit_toolbar"
 
 private data class ModSuggestionInfo(
     val text: String,
