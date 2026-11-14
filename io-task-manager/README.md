@@ -77,7 +77,11 @@ JVM 测试覆盖旧模型、新持久化模型、Plan 回收、块重放和对�
 
 2026-11-14 本轮验证：JVM **34 项通过**，两个 Core build 及
 `:app:compileDebugAndroidTestKotlin` 成功。日志：
-`agent-tmp/object-revert-verification-final.log`。未安装或运行本轮真机测试。
+`agent-tmp/object-revert-verification-final.log`。
+
+后续补齐Android能力回归并完成真机验证：M2007J3SY覆盖安装主APK/测试APK后，
+定向三类 **28项全部通过**，6.093秒，包含schema2与Task/Plan/子Task撤销kill恢复。
+日志：`agent-tmp/android-durable-coverage-device.log`。覆盖与限制见 DEVICE_TESTS.md。
 
 2026-11-14 本轮修改前的已有证据：JVM 29 项通过，Android 定向恢复回归 `OK (11 tests)`，
 包含半块写入杀进程重放。详见 [DURABLE_TASKS.md](DURABLE_TASKS.md) 和

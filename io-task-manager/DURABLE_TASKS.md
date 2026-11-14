@@ -136,6 +136,14 @@ Android 测试代码编译通过，本轮未安装或执行真机测试，不宣
 - 测试仅操作 `files/durable-recovery/<UUID>`，不访问用户业务文件。
 - 通过编译不等于通过真机；实际执行结果另行报告。
 
+Android 覆盖扩展：DurableContractInstrumentedTest 新增14项实际文件系统/协程契约测试，
+DurableRecoveryInstrumentedTest 新增3项对象撤销kill恢复（Task、Plan、子Task），当前新模型
+共24项，含旧模型的定向总计28项。能力映射和未覆盖边界见 DEVICE_TESTS.md。
+本轮已授权在 M2007J3SY 非流式覆盖安装两个APK并执行三类定向回归，结果
+`OK (28 tests)`，6.093秒，包含新增的schema2/对象撤销及真实kill恢复。
+证据：`agent-tmp/android-durable-coverage-device.log`；离线构建日志为
+`agent-tmp/android-durable-coverage-build-final.log`。未覆盖断电或真实Delta业务。
+
 ### 2026-11-13 验证记录
 
 串行执行 `./gradlew --offline :io-task-manager:test :app:assembleDebug :app:assembleDebugAndroidTest --console=plain`

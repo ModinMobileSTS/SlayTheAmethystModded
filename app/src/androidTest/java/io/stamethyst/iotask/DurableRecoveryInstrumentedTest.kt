@@ -24,6 +24,9 @@ class DurableRecoveryInstrumentedTest {
     @Test fun interruptedCleanupResumes() = verify("cleanup")
     @Test fun planCollectionSurvivesProcessKillAndDeletesRecords() = verify("reclaim")
     @Test fun partialBlockAfterProcessKillReplaysFromStart() = verify("block-write")
+    @Test fun taskRevertSurvivesProcessKill() = verify("task-revert")
+    @Test fun planRevertSurvivesProcessKill() = verify("plan-revert")
+    @Test fun childRevertSurvivesProcessKillInsidePlan() = verify("child-revert")
 
     @Test fun blockFailureInvalidationAndReopen() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -99,6 +102,27 @@ class DurableRecoveryInstrumentedTest {
             context.unbindService(connection)
             bound = false
             FileTaskStore(root).use {
+                if (mode in setOf("task-revert", "plan-revert", "child-revert")) {
+                    assertEquals(State.REVERTING, it.read("probe")!!.state)
+                    val killed = if (mode == "child-revert") it.read(it.read("probe")!!.metadata.getValue("undo"))!!
+                        else it.read("probe")!!
+                    assertNotEquals(Process.myPid().toString(), killed.metadata["revertPid"])
+                    assertNotNull(killed.metadata["revertPid"])
+                    if (mode == "child-revert") assertEquals(State.REVERTING, killed.state)
+                    val manager = TaskManager(it, revertProbeFactory(root), 1)
+                    val restored = runBlocking { manager.recover().single() }
+                    assertEquals(State.PAUSED, restored.state)
+                    assertTrue(restored.output.isEmpty())
+                    assertFalse(File(root, if (mode == "task-revert") "probe.published" else "undo.published").exists())
+                    if (mode != "task-revert") {
+                        assertEquals("published", File(root, "keep.published").readText())
+                        assertEquals(State.PAUSED, manager.snapshot(restored.metadata.getValue("undo")).state)
+                    }
+                    assertTrue(runBlocking { manager.recover().isEmpty() })
+                    assertEquals(State.PAUSED, it.read("probe")!!.state)
+                    assertTrue(it.read("probe")!!.output.isEmpty())
+                    return
+                }
                 if (mode == "block-write") {
                     val data = ByteArray(128 * 1024) { (it % 251).toByte() }
                     val hash = java.security.MessageDigest.getInstance("SHA-256").digest(data)

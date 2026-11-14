@@ -19,6 +19,13 @@ class DurableRecoveryTestService : Service() {
         kotlin.concurrent.thread(name = "durable-recovery-probe") {
             runBlocking {
                 FileTaskStore(File(filesDir, "durable-recovery/$case")).use { store ->
+                    if (mode in setOf("task-revert", "plan-revert", "child-revert")) {
+                        val manager = TaskManager(store, revertProbeFactory(store.root, mode), 1)
+                        manager.publish(Definition("probe", kind = if (mode == "task-revert") Kind.TASK else Kind.PLAN), "probe")
+                        manager.run("probe")
+                        manager.revert("probe")
+                        return@use
+                    }
                     if (mode == "block-write") {
                         val data = ByteArray(128 * 1024) { (it % 251).toByte() }
                         val hash = java.security.MessageDigest.getInstance("SHA-256").digest(data)
@@ -53,6 +60,39 @@ class DurableRecoveryTestService : Service() {
     })
     override fun onBind(intent: Intent): IBinder = messenger.binder
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_NOT_STICKY
+}
+
+/** Side effects live outside workspaces so assertions distinguish business undo from collection. */
+fun revertProbeFactory(root: File, killAt: String? = null): TaskFactory = TaskFactory { definition ->
+    if (definition.kind == Kind.PLAN) object : TaskPlan() {
+        override suspend fun execute(context: Context): Result {
+            context.await(context.child("keep", Definition("keep")))
+            val undo = context.child("undo", Definition("undo"))
+            context.await(undo)
+            context.checkpoint(mapOf("undo" to undo.id))
+            return Result.Waiting("revert decision")
+        }
+        override suspend fun cleanup(context: Context) = Unit
+        override suspend fun revert(context: Context) {
+            context.revert(context.child("undo", Definition("undo")))
+            context.checkpoint(mapOf("revertPid" to Process.myPid().toString()))
+            if (killAt == "plan-revert") Process.killProcess(Process.myPid())
+        }
+    } else object : Task() {
+        override suspend fun execute(context: Context): Result {
+            val artifact = File(root, "${definition.type}.published")
+            check(!artifact.exists()) { "Business execution replayed" }
+            durableWrite(artifact, "published")
+            return Result.Success(mapOf("artifact" to artifact.path))
+        }
+        override suspend fun cleanup(context: Context) = Unit
+        override suspend fun revert(context: Context) {
+            val artifact = File(root, "${definition.type}.published")
+            check(!artifact.exists() || artifact.delete())
+            context.checkpoint(mapOf("revertPid" to Process.myPid().toString()))
+            if (killAt == "task-revert" || killAt == "child-revert") Process.killProcess(Process.myPid())
+        }
+    }
 }
 
 fun durableProbeFactory(mode: String, kill: Boolean): TaskFactory = TaskFactory {
