@@ -34,3 +34,8 @@ Core 子类真正落地前需要抽取共享 Task API 或在 Manager 内适配�
 现有 `archive-delta-core` 和 `archive-delta-generator` 仍是独立实验，
 本模块未直接依赖它们，也不将其单写者等限制视作已解决。
 构建入口：`./gradlew --offline :delta-core:build`，目前只能验证模块配置。
+# TaskPlan 编排约定
+
+Delta 业务由 TaskPlan 组织可复用 Task；历史准备、候选生成、校验和发布的阶段元数据通过
+checkpoint 保存。回退节点需由业务显式验证，不把所有检查点都当作可回退节点；取消只清理
+拥有的未提交工作，不能删除已发布或共享历史。持久化模型见 `io-task-manager/DURABLE_TASKS.md`。

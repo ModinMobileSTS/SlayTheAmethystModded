@@ -29,3 +29,8 @@ Core 子类真正落地前需要抽取共享 Task API 或在 Manager 内适配�
 当前未添加该依赖或虚假的 Download Task 空实现。
 具体协议、配置和检查点类型尚未实现；现有 `workshop-core` 及 app 下载器没有搬迁。
 构建入口：`./gradlew --offline :download-core:build`，目前只能验证模块配置。
+# TaskPlan 编排约定
+
+下载 Task 只下载和校验数据块，成功结果为块集合引用，不自动合并。组装、整体验证与发布
+由更大的 TaskPlan 组织后续 Task。下载期间 checkpoint 不关闭连接，只有响应安全暂停
+或取消请求才收束在途 I/O。持久化模型见 `io-task-manager/DURABLE_TASKS.md`。

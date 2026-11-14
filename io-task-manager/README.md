@@ -177,3 +177,8 @@ Core 只能报告进度、检查点或操作结果，不直接发布和执行另
 Android 真机进程退出/崩溃恢复测试位于 app 的 androidTest 中，具体范围、执行前提与
 验证限制见 [DEVICE_TESTS.md](DEVICE_TESTS.md)。测试使用独立测试进程和 AtomicFile
 夹具，不代表已实现生产持久化后端；真机结果须以实际授权执行记录为准。
+# 新持久化模型
+
+Task / TaskPlan 的确认设计与实现见 [DURABLE_TASKS.md](DURABLE_TASKS.md)。新模型使用
+`io.stamethyst.iotask.durable`，取消周期性 Continue，采用安全点控制请求、业务元数据
+checkpoint、文件持久化和工厂重建。下文保留早期模型说明，非新模型 API 规范。

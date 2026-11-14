@@ -51,3 +51,9 @@ Service 不导出；instrumentation 与该 Service 使用相同宿主 UID，访�
 测试 APK 已安装且匹配宿主后，通过指定设备的 instrumentation 入口只运行上述测试类，
 不运行整个真机测试套件。实际 instrumentation component 和包名以该构建产物为准。
 进程退出后重新构建 WorkerGroup 属于被测流程；测试不声称验证了系统自动重启任务。
+# 持久化新模型测试
+
+新增入口 `io.stamethyst.iotask.DurableRecoveryInstrumentedTest` 使用实际 FileTaskStore、
+TaskManager 和 TaskFactory；覆盖检查点后进程 kill、业务提交后避免重放、清理中途 kill
+后恢复，以及暂停元数据重开与取消清理。详见 [DURABLE_TASKS.md](DURABLE_TASKS.md)。
+以下为原内存模型及 AtomicFile 夹具的测试说明，两者不是同一套持久化后端。
