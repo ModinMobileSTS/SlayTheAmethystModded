@@ -10,6 +10,7 @@
 
 - Use `sts` tools for Android operations. They automatically use the workspace-owned wireless ADB configured in ignored `.env.local`.
 - For CLI operations use `python3 -m scripts.tools.local_adb adb -- <device-command>`; for Gradle device tasks use `python3 -m scripts.tools.local_adb run -- ./gradlew <task>`.
+- For APK installation, prefer the harness's explicit `install` command with an explicitly selected device; it enables `--fastdeploy` by default. When installing through the `local_adb` passthrough instead, include `install --fastdeploy -r` explicitly, unless intentionally verifying the ordinary full-install path. The passthrough does not add `--fastdeploy` automatically, and ADB may fall back to a full install when fast deploy is unsupported; check the actual output rather than assuming the flag guarantees differential transfer.
 - Do not run bare/global adb, change the machine-wide server, or hardcode/commit device endpoints. Local lifecycle: `python3 -m scripts.tools.local_adb ensure|status|stop`.
 
 ## Mod-side fixes
