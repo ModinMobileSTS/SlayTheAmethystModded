@@ -39,3 +39,8 @@ include(":tools:workshop-agent")
 include(":workshop-core")
 include(":steam-protocol")
 include(":lan-core")
+// Standalone delta experiment; deliberately not an app dependency.
+include(":jar-delta")
+// Offline archive delta tools; deliberately not app dependencies.
+include(":archive-delta-core")
+include(":archive-delta-generator")
