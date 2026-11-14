@@ -49,6 +49,28 @@ is no routing interceptor anymore.
 - A candidate client disables implicit connection retries and automatic
   redirects: the logical executor owns those decisions.
 
+### Recovery when the official fallback also fails
+
+`RMBGAME_FIRST` normally uses the bundled hop without rule discovery. A failed
+hop is skipped for 30 minutes while requests fall back to the official origin.
+If the official attempt also fails with a replayable IO/validation error, the
+resolver temporarily uses best-path discovery for that route profile instead of
+remaining on the failed official origin:
+
+- Refresh Watt rules immediately, excluding recently failed hops from request
+  candidates and excluding the failed official origin from probe selection.
+- Try newly discovered nodes within the original Call's remaining deadline and
+  cancellation scope. A failed official attempt is not repeated within the same
+  logical URL's recovery pass, nor are nodes already failed by that Call.
+- Reuse a successful replacement node on later requests. Resume bundled-hop
+  preference after the official failure mark expires (30 minutes) or an official
+  attempt succeeds; a bundled hop still in cooldown remains skipped.
+- If the refreshed candidates also fail, return the request error rather than
+  looping. Mutations and one-shot bodies retain their existing no-replay rules.
+
+This policy is shared by Steam and GitHub HTTP routing. It does not change CM
+WebSocket routing or ordinary application-level HTTP error handling.
+
 Cookies are loaded/saved against the original domain on both routes. Redirects
 use the existing secure-origin policy; crossing an origin removes sensitive
 headers and does not reattach session cookies on later redirect hops. HTTPS
@@ -94,6 +116,11 @@ derived transport cancellation, timeout inheritance, foreground discovery,
 remaining budgets across node fallback, logical cookies/preparation, mutation
 and one-shot replay restrictions, async callbacks and cloning, all GitHub host
 families, and `{origin}` SNI rules for wildcard user-content hosts.
+
+`SteamBundledHopRecoveryTest` covers immediate rediscovery after both paths fail,
+official failure during bundled-hop cooldown, reuse and expiry of the recovered
+route, rejected official responses, bounded total failure, mutation replay
+restrictions, and the original Call deadline during recovery discovery.
 
 The existing GitHub route/redirect tests, Steam route/cookie tests, workshop
 network matrix, catalogue fixtures and resource-probe tests now exercise the

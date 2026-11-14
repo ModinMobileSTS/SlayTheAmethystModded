@@ -10,10 +10,11 @@ enum class AccelerationStrategy(val persistedValue: String) {
     /**
      * Bundled rmbgame.net hop first, official origin as the fallback.
      *
-     * No Watt Toolkit rule discovery and no latency probing: the route configured in
-     * the route profile is used directly and a failure within the same request walks
-     * over to the official origin. Route profiles without a bundled hop keep using
-     * [BEST_PATH] so those links lose no acceleration.
+     * Normally avoids Watt Toolkit rule discovery and latency probing: the configured
+     * route is used directly, falling back to the official origin on failure. If the
+     * official fallback also fails, temporarily use [BEST_PATH] to find a working node.
+     * Route profiles without a bundled hop keep using [BEST_PATH] so those links lose
+     * no acceleration.
      */
     RMBGAME_FIRST("rmbgame_first"),
 
