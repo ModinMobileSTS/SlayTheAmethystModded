@@ -16,6 +16,8 @@ class DurableRecoveryTestService : Service() {
     private val messenger = Messenger(Handler(Looper.getMainLooper()) { message ->
         val case = UUID.fromString(message.data.getString("case")).toString()
         val mode = requireNotNull(message.data.getString("mode"))
+        val exitNormally = message.data.getBoolean("exitNormally")
+        require(!exitNormally || mode in setOf("checkpoint", "committed"))
         kotlin.concurrent.thread(name = "durable-recovery-probe") {
             runBlocking {
                 FileTaskStore(File(filesDir, "durable-recovery/$case")).use { store ->
@@ -46,7 +48,7 @@ class DurableRecoveryTestService : Service() {
                         }
                         return@use
                     }
-                    val manager = TaskManager(store, if (mode == "reclaim") reclaimProbeFactory(true) else durableProbeFactory(mode, true), 1)
+                    val manager = TaskManager(store, if (mode == "reclaim") reclaimProbeFactory(true) else durableProbeFactory(mode, true, exitNormally), 1)
                     manager.publish(Definition("probe", input = mapOf("mode" to mode),
                         kind = if (mode == "reclaim") Kind.PLAN else Kind.TASK), "probe")
                     if (mode == "cleanup") {
@@ -95,7 +97,7 @@ fun revertProbeFactory(root: File, killAt: String? = null): TaskFactory = TaskFa
     }
 }
 
-fun durableProbeFactory(mode: String, kill: Boolean): TaskFactory = TaskFactory {
+fun durableProbeFactory(mode: String, kill: Boolean, exitNormally: Boolean = false): TaskFactory = TaskFactory {
     object : Task() {
         override suspend fun execute(context: Context): Result {
             durableWrite(File(context.workspace, "part"), "verified-prefix")
@@ -105,7 +107,10 @@ fun durableProbeFactory(mode: String, kill: Boolean): TaskFactory = TaskFactory 
                 context.requestPause()
                 return Result.Paused
             }
-            if (kill) Process.killProcess(Process.myPid())
+            if (kill) {
+                if (exitNormally) kotlin.system.exitProcess(0)
+                Process.killProcess(Process.myPid())
+            }
             return Result.Success(mapOf("artifact" to "part"))
         }
         override suspend fun recover(context: Context): Recovery {

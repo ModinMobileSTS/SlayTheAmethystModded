@@ -14,7 +14,8 @@
 app 仅通过 debugImplementation / androidTestImplementation 引入本模块用于测试，release
 业务没有迁移。详细契约见 [DURABLE_TASKS.md](DURABLE_TASKS.md)。
 
-`TaskModel.kt` 与 TaskModelTest 是早期内存模型及回归基线，不是新功能使用的 API。
+唯一受支持的任务 API 为 `io.stamethyst.iotask.durable`。早期内存模型及其专属测试、
+AtomicFile 恢复夹具已移除，不提供兼容别名或转发层。
 
 ## 架构与依赖
 
@@ -72,17 +73,24 @@ checkpoint 是可信业务进度，不是任意可回退节点。框架不提供
 ./gradlew --offline :io-task-manager:test :delta-core:build :download-core:build
 ```
 
-JVM 测试覆盖旧模型、新持久化模型、Plan 回收、块重放和对象级撤销。两个 Core 仍是空壳，
+JVM 测试覆盖持久化模型、执行契约、Plan 回收、块重放和对象级撤销。两个 Core 仍是空壳，
 它们的 build 仅证明模块配置，不证明下载或增量功能。
 
-2026-11-14 本轮验证：JVM **34 项通过**，两个 Core build 及
+2026-11-14 清理后验证：JVM **20项全部通过**（保留16项、新增执行契约4项），两个
+Core build、debug 主APK与测试APK打包成功。Manager clean 后重建的 JAR 仅含 durable
+包的33个类，debug 合并清单无旧 Service 注册。日志：
+`agent-tmp/task-model-cleanup-build.log`。随后经授权在 M2007J3SY 非流式覆盖安装两APK，
+durable 两类 Android 测试 **26项全部通过**，5.385秒，包含新增正常退出恢复场景。
+证据：`agent-tmp/task-model-cleanup-device.log`；不清数据、不卸载。
+
+2026-11-14 清理前历史验证：JVM **34 项通过**（含旧模型18项），两个 Core build 及
 `:app:compileDebugAndroidTestKotlin` 成功。日志：
 `agent-tmp/object-revert-verification-final.log`。
 
 后续补齐Android能力回归并完成真机验证：M2007J3SY覆盖安装主APK/测试APK后，
-定向三类 **28项全部通过**，6.093秒，包含schema2与Task/Plan/子Task撤销kill恢复。
+定向三类 **28项全部通过**（含旧模型4项），6.093秒，包含schema2与Task/Plan/子Task撤销kill恢复。
 日志：`agent-tmp/android-durable-coverage-device.log`。覆盖与限制见 DEVICE_TESTS.md。
 
 2026-11-14 本轮修改前的已有证据：JVM 29 项通过，Android 定向恢复回归 `OK (11 tests)`，
 包含半块写入杀进程重放。详见 [DURABLE_TASKS.md](DURABLE_TASKS.md) 和
-[DEVICE_TESTS.md](DEVICE_TESTS.md)。该真机记录不代表本轮接口和 schema 修改已在设备验证。
+[DEVICE_TESTS.md](DEVICE_TESTS.md)。这些是历史记录，不代表清理后的套件已真机验证。

@@ -25,8 +25,8 @@ patch 解码器重启、输入身份和原文件保护由业务负责；本原�
 证据：`agent-tmp/replayable-block-build.log`、`agent-tmp/replayable-block-jvm-final.log`、
 `agent-tmp/replayable-block-device.log`。
 
-实现入口：`io.stamethyst.iotask.durable`。这是确认设计后的独立新模型；现有
-`TaskModel.kt` 是早期内存执行模型及其回归基线，启动器生产入口尚未切换。
+唯一实现入口：`io.stamethyst.iotask.durable`。早期内存模型及其专属夹具已删除，
+不提供兼容 API；启动器生产入口尚未切换。
 
 ## 责任
 
@@ -114,7 +114,44 @@ Plan 恢复中的业务分支、失败决策和结果聚合由 Plan 的持久化
 
 ## 验证
 
-### 2026-11-14 对象级 revert 与依赖纠正
+### 2026-11-14 旧模型清理
+
+删除早期内存模型及18项实现绑定测试、旧 AtomicFile 恢复 Service/Store、4项旧 Android
+测试及专属 manifest 注册。没有生产调用方需要迁移，不新增兼容层；保留 durable 包名。
+
+保留契约的覆盖去向：
+
+- checkpoint、暂停重建、已提交结果核对、回调隔离：DurableTaskTest。
+- WAITING 显式恢复、FAILED 显式 retry、并发额度、安全取消、强制中断保留现场：
+  DurableContractInstrumentedTest，已有 JVM 暂停/取消/重试回归继续保留。
+- 重复发布拒绝、并发 run 合并为一次业务执行、排队取消不运行主体且不泄漏额度、
+  起始/终态存储写失败传播且不触发终态通知、未处理异常保留可恢复状态：
+  新增 DurableExecutionContractTest（4项，存储用例检查两个失败窗口）。
+- 旧进程测试的 kill 场景由既有 DurableRecoveryInstrumentedTest 覆盖；新增两项正常
+  exitProcess 恢复用例，仍使用实际 FileTaskStore 和同一个 durable debug Service。
+
+不迁移旧的“强制协程取消即 CANCELLED”“未处理异常包装为业务失败”及 WorkerGroup
+重复提交接口语义；它们与当前持久化模型契约冲突。没有因测试失败而削弱新契约。
+本轮为删除/覆盖迁移，不是修复业务缺陷；没有进行旧实现失败对照。
+清理后 Android 定向套件26项，随后经本次明确授权在 M2007J3SY 执行，结果见下文。
+
+验证 PASS：从仓库根执行 `./gradlew --offline :io-task-manager:clean :io-task-manager:test
+:delta-core:build :download-core:build :app:assembleDebug :app:assembleDebugAndroidTest
+--console=plain`，`BUILD SUCCESSFUL in 1m 55s`，JVM20项无失败/跳过。
+日志：`agent-tmp/task-model-cleanup-build.log`，详细结果为模块 test-results/test XML。
+源码/配置旧类型引用搜索无匹配，clean 后重建 JAR 的33个类全部位于 durable 包，
+debug 合并清单无旧 Service 注册。
+
+Android 验证 PASS：经授权核对设备型号 M2007J3SY，经仓库 local_adb 非流式覆盖安装
+debug 主APK与测试APK，两次返回 Success。不清数据、不卸载，仅执行
+DurableContractInstrumentedTest、DurableRecoveryInstrumentedTest，结果
+`OK (26 tests)`，5.385秒，无失败或跳过，包含新增正常退出2项及原有kill恢复。
+实际命令：`python3 -m scripts.tools.local_adb adb -- shell am instrument -w -r -e class
+io.stamethyst.iotask.DurableContractInstrumentedTest,io.stamethyst.iotask.DurableRecoveryInstrumentedTest
+io.stamethyst.test/androidx.test.runner.AndroidJUnitRunner`。
+证据：`agent-tmp/task-model-cleanup-device.log`。不扩大为断电或真实Delta事务保证。
+
+### 2026-11-14 对象级 revert 与依赖纠正（清理前历史记录）
 
 删除节点式 revertTo/revertTarget，块使用 revert(index)，Task/Plan 使用无目标节点的
 revert(context)。两个 Core 以 api 依赖 Manager，Manager 不再依赖 Core。
@@ -125,7 +162,7 @@ revert(context)。两个 Core 以 api 依赖 Manager，Manager 不再依赖 Core
 ObjectRevertTest 5项），覆盖成功 Task 撤销/清空 output、Plan 选择性撤销及子与父两级
 中断恢复、活动/排队任务拒绝撤销、不支持撤销报错、旧 schema 拒绝；块测试增加重复
 revert 后字节不变、其他块保留及重开持久性断言。
-Android 测试代码编译通过，本轮未安装或执行真机测试，不宣称 schema 2 已真机验证。
+该阶段仅编译 Android 测试代码；随后扩展阶段的真机结果见下文，不视为清理后验证。
 证据：`agent-tmp/object-revert-verification-final.log` 与模块 test-results/test XML。
 未对旧实现执行新增用例的失败对照；本轮属于 API 契约变更，旧 API 与新用例不兼容。
 
@@ -144,7 +181,7 @@ DurableRecoveryInstrumentedTest 新增3项对象撤销kill恢复（Task、Plan�
 证据：`agent-tmp/android-durable-coverage-device.log`；离线构建日志为
 `agent-tmp/android-durable-coverage-build-final.log`。未覆盖断电或真实Delta业务。
 
-### 2026-11-13 验证记录
+### 2026-11-13 验证记录（包含已退出旧模型的历史结果）
 
 串行执行 `./gradlew --offline :io-task-manager:test :app:assembleDebug :app:assembleDebugAndroidTest --console=plain`
 成功。新增 DurableTaskTest 7 项通过。设备 M2007J3SY 经仓库 local_adb 非流式覆盖安装

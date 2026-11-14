@@ -21,6 +21,8 @@ import org.junit.runner.RunWith
 class DurableRecoveryInstrumentedTest {
     @Test fun checkpointSurvivesProcessKill() = verify("checkpoint")
     @Test fun committedArtifactIsNotReplayed() = verify("committed")
+    @Test fun checkpointSurvivesNormalProcessExit() = verify("checkpoint", exitNormally = true)
+    @Test fun committedArtifactIsNotReplayedAfterNormalExit() = verify("committed", exitNormally = true)
     @Test fun interruptedCleanupResumes() = verify("cleanup")
     @Test fun planCollectionSurvivesProcessKillAndDeletesRecords() = verify("reclaim")
     @Test fun partialBlockAfterProcessKillReplaysFromStart() = verify("block-write")
@@ -74,7 +76,7 @@ class DurableRecoveryInstrumentedTest {
         } finally { root.deleteRecursively() }
     }
 
-    private fun verify(mode: String) {
+    private fun verify(mode: String, exitNormally: Boolean = false) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val case = UUID.randomUUID().toString()
         val root = File(context.filesDir, "durable-recovery/$case")
@@ -96,7 +98,11 @@ class DurableRecoveryInstrumentedTest {
             assertTrue(bound)
             assertTrue(connected.await(15, TimeUnit.SECONDS))
             Messenger(remote.get()).send(Message.obtain().apply {
-                data = Bundle().apply { putString("case", case); putString("mode", mode) }
+                data = Bundle().apply {
+                    putString("case", case)
+                    putString("mode", mode)
+                    putBoolean("exitNormally", exitNormally)
+                }
             })
             assertTrue("Execution process must die", died.await(30, TimeUnit.SECONDS))
             context.unbindService(connection)
@@ -150,7 +156,11 @@ class DurableRecoveryInstrumentedTest {
                     return
                 }
                 assertEquals(if (mode == "cleanup") State.CLEANING else State.RUNNING, before.state)
-                if (mode != "cleanup") assertNotEquals(Process.myPid().toString(), before.metadata["writerPid"])
+                if (mode != "cleanup") {
+                    assertNotNull(before.metadata["writerPid"])
+                    assertNotEquals(Process.myPid().toString(), before.metadata["writerPid"])
+                    assertEquals("15", before.metadata["offset"])
+                }
                 val manager = TaskManager(it, durableProbeFactory(mode, false), 1)
                 val result = runBlocking { manager.recover().single() }
                 assertEquals(if (mode == "cleanup") State.CANCELLED else State.SUCCEEDED, result.state)

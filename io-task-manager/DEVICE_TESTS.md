@@ -8,14 +8,16 @@ FileTaskStore、TaskManager 和 TaskFactory。覆盖 checkpoint 后 kill、已�
 2026-11-14 本轮接口修改前，新旧测试合计 `OK (11 tests)`，4.33 秒；证据为
 `agent-tmp/replayable-block-device.log`。这不是当前 schema 2 / 对象级 revert 的真机结果。
 
-以下“原模型”部分描述旧入口 `io.stamethyst.iotask.TaskProcessRecoveryInstrumentedTest`，
-它使用 AtomicFile 夹具，不是新持久化后端。详细新模型契约见
+早期内存模型及其 AtomicFile 测试夹具已移除。唯一受支持的模型为
+`io.stamethyst.iotask.durable`。详细契约见
 [DURABLE_TASKS.md](DURABLE_TASKS.md)。
 
 ## 当前能力覆盖清单（源码范围，不等于已真机通过）
 
-新增 `DurableContractInstrumentedTest` 14 项，扩展 `DurableRecoveryInstrumentedTest` 至10项；
-加上旧模型4项，当前定向套件共28项。所有新用例只使用 `files/durable-recovery/<UUID>`。
+`DurableContractInstrumentedTest` 14 项，`DurableRecoveryInstrumentedTest` 12项；
+当前定向套件共26项，全部使用真实 FileTaskStore。所有用例只使用
+`files/durable-recovery/<UUID>`。删除旧模型4项，向 durable 迁入正常退出2项；
+检查点与已提交产物的 kill 恢复沿用已有 durable 用例，不重复保留旧夹具。
 
 | 能力 | Android 用例 |
 | --- | --- |
@@ -33,6 +35,7 @@ FileTaskStore、TaskManager 和 TaskFactory。覆盖 checkpoint 后 kill、已�
 | 控制请求重开不丢失 | Contract: recoveredControlRequests |
 | Plan成功回收、发布产物保留、删除不跟随符号链接 | Contract: successfulPlanReclaimsWork |
 | 原有checkpoint/提交/cleanup/reclaim/半块写入kill | Recovery原有用例 |
+| 正常退出后检查点恢复、已提交产物避免重放 | Recovery: checkpointSurvivesNormalProcessExit / committedArtifactIsNotReplayedAfterNormalExit |
 
 覆盖当前公开模型的主要正常、失败、边界与进程恢复路径，不宣称穷尽所有交错。
 不覆盖断电、设备重启、磁盘耗尽/硬件I/O故障、任意元数据规模、真实下载/Delta事务、
@@ -43,41 +46,32 @@ Android后台自动唤醒或多设备适配。编译和打包结果与真机结�
 JVM34项回归通过，主APK和测试APK打包成功。日志：
 `agent-tmp/android-durable-coverage-build-final.log`。
 
-本轮真机验证：用户授权沿用 M2007J3SY，核对型号后经仓库 local_adb 非流式覆盖安装
+清理前历史真机验证：用户授权沿用 M2007J3SY，核对型号后经仓库 local_adb 非流式覆盖安装
 主APK与测试APK，均返回 Success。仅运行上述三类，结果 **OK (28 tests)**，6.093秒，
-无失败或跳过。包含schema2、对象级撤销及三项真实kill恢复；不清数据、不卸载。
+无失败或跳过。其中旧模型4项、新模型24项。包含schema2、对象级撤销及三项真实kill恢复；不清数据、不卸载。
 证据：`agent-tmp/android-durable-coverage-device.log`。该结果仅证明本轮设备/执行窗口，
 不扩大为断电、磁盘故障或真实Delta业务验证。
 
-设备获授权后应仅定向运行以下三类，不执行整个应用测试套件：
-`DurableContractInstrumentedTest`、`DurableRecoveryInstrumentedTest`、
-`TaskProcessRecoveryInstrumentedTest`（均在 `io.stamethyst.iotask` 包）。
+设备获授权后应仅定向运行以下两类，不执行整个应用测试套件：
+`DurableContractInstrumentedTest`、`DurableRecoveryInstrumentedTest`
+（均在 `io.stamethyst.iotask` 包）。
 
-## 原模型测试范围
+## 进程测试夹具
 
-四个用例分别在检查点已保存、产物已保存但终态未写入两个窗口，触发正常进程退出或
-进程级 kill 和正常退出。使用 debug 主 APK 声明的独立 `:io_task_recovery_test` Service
-进程，不终止启动器或游戏进程。
-Service 不导出；instrumentation 与该 Service 使用相同宿主 UID，访问同一私有目录。
-请求目录被约束为 UUID，不能指定任意文件路径。
-
-测试主进程使用 Binder death 确认执行进程死亡，随后重新打开磁盘快照，重建 WorkerGroup
-及 Task；断言保存状态仍是 RUNNING、检查点完整、写入 PID 与测试主进程不同。恢复后：
-
-- 仅有检查点：经过 recover 核对后继续一次，最终 COMPLETED。
-- 已有正确产物：recover 确认完成，不重新执行 execute。
-- 重新打开存储仍是 COMPLETED，重复 recover 不重放，恢复完成回调只通知一次。
-
-测试夹具 `ProcessTestStore` 使用 Android AtomicFile 保存单任务快照，只有前后两个
-进程顺序访问。它不是生产后端，也不是通用快照序列化实现，不支持任意任务失败数据。
-测试仅在写入完成后终止进程，不覆盖写入途中断电、系统重启、多写者竞争或真实业务
-文件事务。该夹具不代表当前已实现的 FileTaskStore；真实后端测试见下方新模型说明。
-
-每个用例只访问 debug 宿主私有 files 目录下独立 UUID 子目录，结束时清理该子目录。
-意外退出使用 `Process.killProcess`，避免未捕获异常触发系统崩溃对话框和 Service 自动重启；
-测试不更改全局系统设置。正常退出使用 `exitProcess`，两者都发生在终态快照写入前。
+仅保留 debug `DurableRecoveryTestService`，运行于非导出的 `:durable_recovery_test`
+独立进程，不终止启动器或游戏进程。请求目录约束为 UUID，不能指定任意路径。
+测试通过 Binder death 确认进程死亡，再重新打开 FileTaskStore 并由 TaskFactory 重建。
+检查点与业务产物提交窗口分别覆盖 `Process.killProcess` 和 `exitProcess(0)`；
+清理、回收、撤销与半块写入窗口覆盖 kill。只删除各用例自己的 UUID 目录。
+不声称验证系统自动唤醒、断电或真实 Delta 事务。
 
 ## 本地验证
+
+2026-11-14 清理后：Manager clean/test、两个 Core build、debug 主APK和测试APK
+assemble 全部 PASS，JVM20项通过，日志 `agent-tmp/task-model-cleanup-build.log`。
+随后经本次明确授权，核对 M2007J3SY 型号，非流式覆盖安装主APK/测试APK均返回
+Success。仅运行以上两类，**OK (26 tests)**，5.385秒，无失败或跳过，包含新增正常退出
+2项及既有kill恢复。日志 `agent-tmp/task-model-cleanup-device.log`。不清数据、不卸载。
 
 从仓库根目录执行，不安装应用：
 
@@ -99,4 +93,4 @@ Service 不导出；instrumentation 与该 Service 使用相同宿主 UID，访�
 
 测试 APK 已安装且匹配宿主后，通过指定设备的 instrumentation 入口只运行上述测试类，
 不运行整个真机测试套件。实际 instrumentation component 和包名以该构建产物为准。
-进程退出后重新构建 WorkerGroup 属于被测流程；测试不声称验证了系统自动重启任务。
+进程退出后通过 TaskFactory 重建属于被测流程；测试不声称验证了系统自动重启任务。
