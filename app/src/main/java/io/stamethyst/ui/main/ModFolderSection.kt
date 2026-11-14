@@ -114,12 +114,18 @@ internal fun ModFolderSection(
     onBatchEditBarStateChange: (BatchEditBarState?) -> Unit = {},
     callbacks: ModFolderSectionCallbacks
 ) {
-    val dependencyMods = uiState.dependencyMods
     val mods = uiState.optionalMods
     val orderContext = LocalContext.current.applicationContext
     val orderStore = remember(orderContext) { ModDisplayOrder(orderContext) }
     var displayOrder by remember(orderStore) { mutableStateOf(orderStore.read()) }
+    DisposableEffect(orderStore) {
+        val stopObserving = orderStore.observe { displayOrder = it }
+        onDispose { stopObserving() }
+    }
     val orderRanks = remember(displayOrder) { displayOrder.withIndex().associate { it.value to it.index } }
+    val dependencyMods = remember(uiState.dependencyMods, orderRanks) {
+        uiState.dependencyMods.sortedBy { orderRanks[it.storagePath] ?: Int.MAX_VALUE }
+    }
     LaunchedEffect(orderContext) {
         io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator.requestCheck(orderContext)
     }
@@ -160,7 +166,8 @@ internal fun ModFolderSection(
     ) {
         mods.filter { mod ->
             (!showEnabledModsOnly || mod.enabled) && (
-                !showUpdateAvailableModsOnly || mod.workshop?.state == WorkshopModState.UpdateAvailable
+                !showUpdateAvailableModsOnly || mod.workshop?.state in setOf(
+                    WorkshopModState.UpdateAvailable, WorkshopModState.UpdatePendingInstall)
             ) && (
                 filterKeyword.isEmpty() ||
                 mod.name.contains(filterKeyword, ignoreCase = true) ||
@@ -1170,7 +1177,8 @@ internal fun ModFolderSection(
                                                         style = MaterialTheme.typography.labelSmall
                                                     )
                                                 }
-                                                val updateCount = allFolderMods.count { it.workshop?.state == WorkshopModState.UpdateAvailable }
+                                                val updateCount = allFolderMods.count { it.workshop?.state in setOf(
+                                                    WorkshopModState.UpdateAvailable, WorkshopModState.UpdatePendingInstall) }
                                                 if (updateCount > 0) {
                                                     Text(
                                                         text = stringResource(R.string.mod_folder_updates_available, updateCount),

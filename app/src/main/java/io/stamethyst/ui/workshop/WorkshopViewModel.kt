@@ -243,7 +243,8 @@ internal class WorkshopViewModel : ViewModel() {
                 WorkshopDownloadCenterStore.loadTasksWithRecovery(context)
             }
             val hasActiveDownload = loadedTasks.any { task -> task.status.isActiveDownload() }
-            if (hasActiveDownload) {
+            val hasSettledDownload = hasSettledWorkshopDownloads(WorkshopDownloadCenterStore.tasks, loadedTasks)
+            if (hasActiveDownload && !hasSettledDownload) {
                 WorkshopDownloadCenterStore.replaceInMemory(loadedTasks)
                 if (!uiState.downloadInProgress) {
                     uiState = uiState.copy(downloadInProgress = true)
@@ -262,7 +263,7 @@ internal class WorkshopViewModel : ViewModel() {
                 steamLoggedIn = steamLoggedIn,
                 listMode = activeListMode,
                 installedMods = installedMods,
-                downloadInProgress = false,
+                downloadInProgress = hasActiveDownload,
             )
             WorkshopDownloadCenterStore.replaceInMemory(loadedTasks)
         }
@@ -1112,14 +1113,6 @@ internal class WorkshopViewModel : ViewModel() {
         }
     }
 
-    fun downloadSelected(context: Context) {
-        val details = uiState.selected ?: return
-        // A partial dependency list must never bypass the missing-dependency confirmation.
-        if (uiState.detailLoadingId == details.summary.publishedFileId) return
-        markPreparingDownload(details.summary.publishedFileId)
-        startDownloadAfterDependencyCheck(context, details.summary, details)
-    }
-
     fun showWorkshopSubscriptionSteamLoginRequired(context: Context) {
         Log.w(WORKSHOP_SUBSCRIPTION_LOG_TAG, "workshop subscription action blocked reason=steamLoginRequired")
         uiState = uiState.copy(
@@ -1791,6 +1784,7 @@ internal class WorkshopViewModel : ViewModel() {
             service = WorkshopService(context.applicationContext)
             loadInstalledState(context)
         }
+        if (item.publishedFileId in uiState.preparingDownloadIds) return
         val existingTask = WorkshopDownloadCenterStore.find(item.publishedFileId)
         if (blockBlockedWorkshopDownload(context, item, existingTask)) return
         if (existingTask?.status == WorkshopDownloadTaskStatus.Paused) {
@@ -1822,10 +1816,22 @@ internal class WorkshopViewModel : ViewModel() {
         viewModelScope.launch {
             uiState = uiState.copy(downloadStatus = context.getString(R.string.workshop_status_checking_dependencies))
             runCatching {
-                withContext(Dispatchers.IO) { currentService.getDetails(item.appId, item.publishedFileId, item) }
+                prepareWorkshopDownloadDetails(
+                    item = item,
+                    awaitLoadingDetails = {
+                        // Reuse the complete pipeline, never the partial onUpdate snapshot. If
+                        // navigation cancels it, prepare independently rather than losing the click.
+                        detailLoadsInFlight[detailsCacheKey(item.appId, item.publishedFileId)]?.join()
+                        detailsCache[detailsCacheKey(item.appId, item.publishedFileId)]
+                    },
+                    loadDetails = {
+                        withContext(Dispatchers.IO) { currentService.getDetails(item.appId, item.publishedFileId, item) }
+                    },
+                )
             }.onSuccess { details ->
                 detailsCache[details.cacheKey()] = details
-                uiState = uiState.copy(selected = details)
+                // A download can finish preparation after the user opens another detail page.
+                // Its data belongs in the cache/queue, not in that page's selected snapshot.
                 startDownloadAfterDependencyCheck(context, details.summary, details)
             }.onFailure { error ->
                 uiState = uiState.copy(

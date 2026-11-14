@@ -21,6 +21,11 @@ internal object WorkshopMetadataCodec {
         .put("statusText", record.statusText)
         .put("localPreviewImagePath", record.localPreviewImagePath)
         .put("dependencies", record.dependencies.toJsonArray())
+        .put("pendingInstall", record.pendingInstall?.let { pending ->
+            JSONObject().put("localJarPaths", pending.localJarPaths.toStringJsonArray())
+                .put("updatedAtMillis", pending.updatedAtMillis)
+                .put("dependencies", pending.dependencies.toJsonArray())
+        } ?: JSONObject.NULL)
 
     fun fromJson(json: JSONObject): WorkshopInstalledModRecord = WorkshopInstalledModRecord(
         appId = json.optLong("appId").toUInt(),
@@ -44,6 +49,12 @@ internal object WorkshopMetadataCodec {
         statusText = json.optString("statusText"),
         localPreviewImagePath = json.optString("localPreviewImagePath"),
         dependencies = json.optJSONArray("dependencies").toWorkshopSummaries(),
+        pendingInstall = json.optJSONObject("pendingInstall")?.let { pending ->
+            pending.optJSONArray("localJarPaths").toStringList().takeIf { it.isNotEmpty() }?.let { paths ->
+                WorkshopPendingInstall(paths, pending.optLong("updatedAtMillis"),
+                    pending.optJSONArray("dependencies").toWorkshopSummaries())
+            }
+        },
     )
 }
 

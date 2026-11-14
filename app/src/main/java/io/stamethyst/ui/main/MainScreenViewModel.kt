@@ -108,13 +108,13 @@ import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCardState
-import io.stamethyst.backend.workshop.WorkshopModStateResolver
-import io.stamethyst.backend.workshop.WorkshopResolvedModStateKind
 import io.stamethyst.backend.workshop.WorkshopDownloadBlocklist
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.backend.workshop.allLocalJarPaths
+import io.stamethyst.backend.workshop.installationJarPaths
+import io.stamethyst.backend.workshop.installationDetails
+import io.stamethyst.backend.workshop.WorkshopPendingInstallOperations
 import io.stamethyst.backend.workshop.isActiveDownload
-import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
@@ -131,6 +131,7 @@ import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.files.JvmLogShareService
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.WorkshopDownloadTaskUi
+import io.stamethyst.ui.workshop.hasSettledWorkshopDownloads
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -791,42 +792,15 @@ class MainScreenViewModel : ViewModel() {
         val loadedTasks = withContext(Dispatchers.IO) {
             WorkshopDownloadCenterStore.loadLauncherCardTasksWithRecovery(host)
         }
+        val hasSettledDownload = hasSettledWorkshopDownloads(WorkshopDownloadCenterStore.tasks, loadedTasks)
         WorkshopDownloadCenterStore.replaceLauncherCardTasksInMemory(loadedTasks)
 
-        val visibleTasks = loadedTasks.filter { task -> task.status.shouldShowLightweightWorkshopTask() }
-        val activeTasks = loadedTasks.filter { task -> task.status.isActiveDownload() }
-        val tasksByPublishedFileId = loadedTasks.associateBy { task -> task.publishedFileId }
-        val currentOptionalMods = uiState.optionalMods
-        val updatedOptionalMods = currentOptionalMods.mapNotNull { mod ->
-            val workshop = mod.workshop ?: return@mapNotNull mod
-            val task = tasksByPublishedFileId[workshop.publishedFileId] ?: return@mapNotNull mod
-            val taskState = task.status.toWorkshopModStateOrNull()
-            if (taskState == null) {
-                if (mod.isStandaloneWorkshopTaskCard(workshop)) null else mod
-            } else {
-                mod.copy(
-                    fileSizeBytes = task.fileSizeBytes.takeIf { it > 0L } ?: mod.fileSizeBytes,
-                    workshop = workshop.copy(
-                        state = taskState,
-                        statusText = task.message.ifBlank { workshop.statusText },
-                        downloadProgressPercent = task.progressPercent,
-                    )
-                )
-            }
-        }.toMutableList()
-
-        val existingPublishedFileIds = updatedOptionalMods
-            .mapNotNull { mod -> mod.workshop?.publishedFileId }
-            .toSet()
-        visibleTasks.asReversed().forEach { task ->
-            if (task.publishedFileId !in existingPublishedFileIds) {
-                updatedOptionalMods.add(0, task.toStandaloneWorkshopModItem())
-            }
+        val update = updateWorkshopModCards(uiState.optionalMods, loadedTasks)
+        if (update.mods != uiState.optionalMods) {
+            uiState = uiState.copy(optionalMods = update.mods)
         }
-        if (updatedOptionalMods != currentOptionalMods) {
-            uiState = uiState.copy(optionalMods = updatedOptionalMods)
-        }
-        return activeTasks.isNotEmpty()
+        if (update.needsInstalledModsRefresh || hasSettledDownload) refresh(host)
+        return update.hasActiveDownloads
     }
 
     private fun clearNewlyImportedHighlights(host: Activity) {
@@ -2271,9 +2245,11 @@ class MainScreenViewModel : ViewModel() {
 
     fun onPatchWorkshopMod(host: Activity, mod: ModItemUi) {
         val workshop = mod.workshop ?: return
+        if (uiState.busy || WorkshopDownloadTaskStore(host).find(workshop.publishedFileId)?.status?.isActiveDownload() == true) return
         val record = WorkshopMetadataStore(host).findByPublishedFileId(workshop.appId, workshop.publishedFileId)
         val jarCandidates = resolveWorkshopJarCandidates(host, workshop, record)
-        val details = WorkshopDownloadTaskStore(host).find(workshop.publishedFileId)?.details
+        val details = record?.takeIf { it.pendingInstall != null }?.installationDetails()
+            ?: WorkshopDownloadTaskStore(host).find(workshop.publishedFileId)?.details
             ?: record?.toWorkshopItemDetails()
         if (jarCandidates.isEmpty()) {
             _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("未找到已下载的工坊 jar 文件")))
@@ -2352,7 +2328,7 @@ class MainScreenViewModel : ViewModel() {
             host = host,
             appId = workshop.appId,
             publishedFileId = workshop.publishedFileId,
-            localJarPaths = record?.allLocalJarPaths().orEmpty().ifEmpty { listOf(workshop.localJarPath) },
+            localJarPaths = record?.installationJarPaths().orEmpty().ifEmpty { listOf(workshop.localJarPath) },
         )
     }
 
@@ -2364,7 +2340,7 @@ class MainScreenViewModel : ViewModel() {
             host = host,
             appId = record.appId,
             publishedFileId = record.publishedFileId,
-            localJarPaths = record.allLocalJarPaths(),
+            localJarPaths = record.installationJarPaths(),
         )
     }
 
@@ -2617,6 +2593,7 @@ class MainScreenViewModel : ViewModel() {
             val appContext = host.applicationContext
             val metadataStore = WorkshopMetadataStore(appContext)
             val taskStore = WorkshopDownloadTaskStore(appContext)
+            WorkshopPendingInstallOperations.started(pending.publishedFileId)
             try {
             val existingRecord = metadataStore.findByPublishedFileId(
                 appId = pending.appId,
@@ -2701,10 +2678,9 @@ class MainScreenViewModel : ViewModel() {
                 }
                 is WorkshopAutoImportResult.Failed -> {
                     val message = "已下载但未导入：市场导入失败：${importResult.message}"
-                    metadataStore.updateState(
+                    metadataStore.markImportFailed(
                         appId = pending.appId,
                         publishedFileId = pending.publishedFileId,
-                        state = WorkshopModCardState.ImportedUnpatched,
                         statusText = message,
                     )
                     taskStore.upsertOrUpdateWorkshopImportTask(
@@ -2727,10 +2703,9 @@ class MainScreenViewModel : ViewModel() {
                     ?: taskStore.find(pending.publishedFileId)?.details
                     ?: pending.toWorkshopItemDetails()
                 runCatching {
-                    metadataStore.updateState(
+                    metadataStore.markImportFailed(
                         appId = pending.appId,
                         publishedFileId = pending.publishedFileId,
-                        state = WorkshopModCardState.ImportedUnpatched,
                         statusText = message,
                     )
                     taskStore.upsertOrUpdateWorkshopImportTask(
@@ -2747,6 +2722,8 @@ class MainScreenViewModel : ViewModel() {
                     _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString(message)))
                     refresh(host)
                 }
+            } finally {
+                WorkshopPendingInstallOperations.finished(pending.publishedFileId)
             }
         }
     }
@@ -2756,10 +2733,9 @@ class MainScreenViewModel : ViewModel() {
         pending: PendingWorkshopJarSelection,
         statusText: String,
     ) {
-        WorkshopMetadataStore(host).updateState(
+        WorkshopMetadataStore(host).markImportFailed(
             appId = pending.appId,
             publishedFileId = pending.publishedFileId,
-            state = WorkshopModCardState.ImportedUnpatched,
             statusText = statusText,
         )
         uiState = uiState.copy(pendingWorkshopJarSelection = null)
@@ -2991,18 +2967,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun WorkshopInstalledModRecord.toWorkshopItemDetails(): WorkshopItemDetails {
-        return WorkshopItemDetails(
-            summary = WorkshopItemSummary(
-                appId = appId,
-                publishedFileId = publishedFileId,
-                title = title,
-                previewUrl = previewUrl,
-                description = description,
-                fileSizeBytes = 0L,
-                updatedAtMillis = updatedAtMillis,
-            ),
-            dependencies = dependencies,
-        )
+        return installationDetails()
     }
 
     private fun PendingWorkshopJarSelection.toWorkshopItemDetails(): WorkshopItemDetails {
@@ -6388,62 +6353,4 @@ internal fun isSteamCloudStatusRefreshDue(
         return true
     }
     return nowMs < lastCheckedAtMs || nowMs - lastCheckedAtMs >= refreshIntervalMs
-}
-
-private fun WorkshopDownloadTaskStatus.shouldShowLightweightWorkshopTask(): Boolean =
-    shouldShowOnLauncherCards()
-
-private fun WorkshopDownloadTaskStatus.toWorkshopModStateOrNull(): WorkshopModState? = when (
-    WorkshopModStateResolver.resolveTaskKind(this)
-) {
-    WorkshopResolvedModStateKind.Queued -> WorkshopModState.Queued
-    WorkshopResolvedModStateKind.Downloading -> WorkshopModState.Downloading
-    WorkshopResolvedModStateKind.Cancelling -> WorkshopModState.Cancelling
-    WorkshopResolvedModStateKind.DownloadPaused -> WorkshopModState.DownloadPaused
-    WorkshopResolvedModStateKind.DownloadFailed -> WorkshopModState.DownloadFailed
-    else -> null
-}
-
-private fun WorkshopDownloadTaskStatus.defaultWorkshopStatusText(): String = when (this) {
-    WorkshopDownloadTaskStatus.Queued -> "等待下载"
-    WorkshopDownloadTaskStatus.Resolving -> "正在解析下载内容"
-    WorkshopDownloadTaskStatus.Downloading -> "正在下载"
-    WorkshopDownloadTaskStatus.Pausing -> "正在暂停"
-    WorkshopDownloadTaskStatus.Cancelling -> "正在取消"
-    WorkshopDownloadTaskStatus.Paused -> "下载已暂停，可继续"
-    WorkshopDownloadTaskStatus.Failed -> "下载失败"
-    WorkshopDownloadTaskStatus.Completed -> "下载完成"
-    WorkshopDownloadTaskStatus.Cancelled -> "下载已取消"
-}
-
-private fun ModItemUi.isStandaloneWorkshopTaskCard(workshop: WorkshopModUi): Boolean {
-    return !installed && storagePath == "workshop:${workshop.appId}:${workshop.publishedFileId}"
-}
-
-private fun WorkshopDownloadTaskUi.toStandaloneWorkshopModItem(): ModItemUi {
-    val summary = details.summary
-    val state = status.toWorkshopModStateOrNull() ?: WorkshopModState.DownloadFailed
-    return ModItemUi(
-        modId = "workshop:${publishedFileId}",
-        manifestModId = "workshop:${publishedFileId}",
-        storagePath = "workshop:${summary.appId}:${publishedFileId}",
-        name = title.ifBlank { summary.title.ifBlank { publishedFileId.toString() } },
-        version = summary.updatedAtMillis.toString(),
-        fileSizeBytes = fileSizeBytes.takeIf { it > 0L } ?: totalBytes ?: summary.fileSizeBytes,
-        description = description.ifBlank { summary.description },
-        dependencies = emptyList(),
-        required = false,
-        installed = false,
-        enabled = false,
-        explicitPriority = null,
-        effectivePriority = null,
-        workshop = WorkshopModUi(
-            appId = summary.appId,
-            publishedFileId = publishedFileId,
-            state = state,
-            statusText = message.ifBlank { status.defaultWorkshopStatusText() },
-            downloadProgressPercent = progressPercent,
-            downloadBlocked = WorkshopDownloadBlocklist.isBlocked(publishedFileId),
-        ),
-    )
 }

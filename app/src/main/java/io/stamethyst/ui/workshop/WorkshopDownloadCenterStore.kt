@@ -12,6 +12,9 @@ import io.stamethyst.backend.workshop.WorkshopInterruptedDownloadRecovery
 import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCardState
+import io.stamethyst.backend.workshop.recoverStoppedPendingInstall
+import io.stamethyst.backend.workshop.WorkshopPendingInstallOperations
+import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.backend.workshop.isRunningDownload
 import io.stamethyst.backend.workshop.shouldRecoverInterruptedDownload
 import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
@@ -34,13 +37,15 @@ internal object WorkshopDownloadCenterStore {
     fun loadTasksWithRecovery(context: Context): List<WorkshopDownloadTaskUi> {
         ensureStore(context)
         recoverInterruptedDownloadsIfNeeded(context)
-        return loadTasks()
+        val tasks = loadTasks()
+        return if (recoverStoppedPendingInstalls(context, tasks)) loadTasks() else tasks
     }
 
     fun loadLauncherCardTasksWithRecovery(context: Context): List<WorkshopDownloadTaskUi> {
         ensureStore(context)
         recoverLauncherVisibleInterruptedDownloadsIfNeeded(context)
-        return loadLauncherCardTasks()
+        val tasks = loadLauncherCardTasks()
+        return if (recoverStoppedPendingInstalls(context, tasks)) loadLauncherCardTasks() else tasks
     }
 
     fun refresh() {
@@ -298,9 +303,24 @@ internal object WorkshopDownloadCenterStore {
     private fun WorkshopDownloadTaskRecord.shouldRecoverInterrupted(context: Context, now: Long): Boolean {
         return shouldRecoverInterruptedDownload(
             nowMillis = now,
-            isActiveDownload = WorkshopDownloadProcessService.isActiveDownload(context, publishedFileId),
+            isActiveDownload = WorkshopDownloadProcessService.isActiveDownload(context, publishedFileId) ||
+                WorkshopPendingInstallOperations.isActive(publishedFileId),
             activeDownloadRecoveryGraceMs = ACTIVE_DOWNLOAD_RECOVERY_GRACE_MS,
         )
+    }
+
+    private fun recoverStoppedPendingInstalls(context: Context, tasks: List<WorkshopDownloadTaskUi>): Boolean {
+        val taskStore = store ?: return false
+        val candidates = tasks.filter { task ->
+            task.status.isActiveDownload() && task.status != WorkshopDownloadTaskStatus.Queued
+        }
+        if (candidates.isEmpty()) return false
+        val metadataStore = WorkshopMetadataStore(context)
+        var changed = false
+        candidates.forEach { task ->
+            changed = recoverStoppedPendingInstall(context, metadataStore, taskStore, task.toRecord()) || changed
+        }
+        return changed
     }
 }
 

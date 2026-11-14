@@ -196,6 +196,7 @@ import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.LauncherNavigationRequestBus
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
+import io.stamethyst.ui.workshop.WORKSHOP_DOWNLOAD_PROGRESS_REFRESH_INTERVAL_MS
 import io.stamethyst.ui.workshop.WorkshopDownloadActionButton
 import io.stamethyst.ui.workshop.WorkshopDetailScreen
 import io.stamethyst.ui.workshop.WorkshopItemCard
@@ -661,6 +662,7 @@ private fun ModsHeaderPinnedContent(
     onCheckWorkshopUpdates: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
     onOpenCommunityPatches: () -> Unit,
+    onSortModsClick: () -> Unit,
 ) {
     HeaderPinnedRow(
         iconResId = R.drawable.ic_dock_mods,
@@ -692,6 +694,7 @@ private fun ModsHeaderPinnedContent(
                 onCheckWorkshopUpdates = onCheckWorkshopUpdates,
                 onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                 onOpenCommunityPatches = onOpenCommunityPatches,
+                onSortModsClick = onSortModsClick,
             )
         }
     }
@@ -4333,15 +4336,19 @@ internal fun LauncherMainRoute(
         onOpenAiEditor = onOpenAiEditor,
     )
 
-    LaunchedEffect(hostActivity) {
+    LaunchedEffect(hostActivity, pollWorkshopDownloads) {
         if (hostActivity != null) {
             // Load persisted task state before enumerating local mods. Otherwise an import that
             // finishes between these two operations can remove its temporary card without a
             // subsequent full refresh to add the newly imported jar.
             if (pollWorkshopDownloads && !viewModel.uiState.launchInFlight) {
                 viewModel.refreshWorkshopDownloadCards(hostActivity)
+                // Dock pages stay composed. Returning from the market must rescan even inside
+                // the usual refresh cooldown: a completed task is no longer an active poll trigger.
+                viewModel.refresh(hostActivity)
+            } else {
+                viewModel.refreshIfStale(hostActivity)
             }
-            viewModel.refreshIfStale(hostActivity)
             viewModel.syncModSuggestionsIfNeeded(hostActivity)
             // Automatic entry refreshes should respect the normal Steam Cloud cooldown so a
             // freshly completed sync does not immediately restart on recomposition.
@@ -4353,7 +4360,7 @@ internal fun LauncherMainRoute(
         val activity = hostActivity ?: return@LaunchedEffect
         if (!pollWorkshopDownloads || !hasActiveWorkshopDownloads || viewModel.uiState.launchInFlight) return@LaunchedEffect
         while (true) {
-            delay(1000L)
+            delay(WORKSHOP_DOWNLOAD_PROGRESS_REFRESH_INTERVAL_MS)
             if (viewModel.uiState.launchInFlight) return@LaunchedEffect
             val stillActive = viewModel.refreshWorkshopDownloadCards(activity)
             if (!stillActive) {
@@ -5223,6 +5230,14 @@ private fun LauncherMainScreenContent(
                         var modsRefreshing by remember { mutableStateOf(false) }
                         var showEnabledModsOnly by rememberSaveable { mutableStateOf(false) }
                         var showUpdateAvailableModsOnly by rememberSaveable { mutableStateOf(false) }
+                        var showModSortDialog by rememberSaveable { mutableStateOf(false) }
+                        if (showModSortDialog) {
+                            ModSortDialogHost(
+                                mods = uiState.optionalMods + uiState.dependencyMods,
+                                enabled = uiState.controlsEnabled && actions.isHostAvailable,
+                                onDismiss = { showModSortDialog = false },
+                            )
+                        }
                         val modsPullToRefreshState = rememberPullToRefreshState()
                         val measuredModsHeaderHeight = launcherBannerExpandedHeight(232.dp)
                         val modsHeaderContentTopInset =
@@ -5319,6 +5334,7 @@ private fun LauncherMainScreenContent(
                                             showUpdateAvailableModsOnly = it
                                         },
                                         onAddFolderClick = { showCreateFolderDialog = true },
+                                        onSortModsClick = { showModSortDialog = true },
                                         onCheckWorkshopUpdates = onCheckWorkshopUpdates,
                                         onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                                         onOpenCommunityPatches = onOpenCommunityPatches,
@@ -5373,6 +5389,7 @@ private fun LauncherMainScreenContent(
                                     onShowEnabledModsOnlyChange = { showEnabledModsOnly = it },
                                     onShowUpdateAvailableModsOnlyChange = { showUpdateAvailableModsOnly = it },
                                     onAddFolderClick = { showCreateFolderDialog = true },
+                                    onSortModsClick = { showModSortDialog = true },
                                     onCheckWorkshopUpdates = onCheckWorkshopUpdates,
                                     onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                                     onOpenCommunityPatches = onOpenCommunityPatches,

@@ -32,6 +32,20 @@ class ModDetailsUiHelpersTest {
             workshop = WorkshopModUi(646570u, 1uL, WorkshopModState.TexturePackInstalled)).showsEnableControl())
     }
 
+    @Test fun pendingInstallationReplacesRatherThanAccompaniesTheEnableControl() {
+        assertFalse(mod.showsInstallControl())
+        assertFalse(mod.copy(installed = false).showsInstallControl())
+        for (installed in listOf(false, true)) {
+            WorkshopModState.entries.forEach { state ->
+                val item = mod.copy(installed = installed, workshop = WorkshopModUi(646570u, 1uL, state))
+                assertEquals("$state installed=$installed", state in setOf(WorkshopModState.ImportedUnpatched, WorkshopModState.UpdatePendingInstall),
+                    item.showsInstallControl())
+                assertFalse("Header controls must be mutually exclusive for $state",
+                    item.showsInstallControl() && item.showsEnableControl())
+            }
+        }
+    }
+
     @Test fun unknownSizesStayUnknownAndSizesUseBinaryUnits() {
         assertNull(formatModFileSize(0))
         assertNull(formatModFileSize(-1))

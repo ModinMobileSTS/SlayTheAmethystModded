@@ -40,6 +40,7 @@ internal fun ModsActionsMenu(
     onCheckWorkshopUpdates: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
     onOpenCommunityPatches: () -> Unit = {},
+    onSortModsClick: () -> Unit = {},
     selectedMods: List<ModItemUi> = emptyList(),
     batchActions: BatchEditBarState? = null,
 ) {
@@ -125,6 +126,12 @@ internal fun ModsActionsMenu(
                     onClick = { filtersExpanded = true },
                     leadingIcon = { Icon(painterResource(R.drawable.ic_filter_list), contentDescription = null) },
                     trailingIcon = { Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null) },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.main_mod_sort)) },
+                    enabled = canEditFolders,
+                    onClick = { dismiss(); onSortModsClick() },
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_sort), contentDescription = null) },
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(if (dragLocked) R.string.main_action_unlock_drag else R.string.main_action_lock_drag)) },

@@ -1,0 +1,9 @@
+<resources>
+    <string name="main_mod_sort">Sort mods</string>
+    <string name="main_mod_sort_method">Sort by</string>
+    <string name="main_mod_sort_name_ascending">Name: ascending</string>
+    <string name="main_mod_sort_name_descending">Name: descending</string>
+    <string name="main_mod_sort_modified_newest">File modified: newest first</string>
+    <string name="main_mod_sort_modified_oldest">File modified: oldest first</string>
+    <string name="main_mod_sort_overwrite_confirmation">Sorting will overwrite your existing custom order. Are you sure?</string>
+</resources>

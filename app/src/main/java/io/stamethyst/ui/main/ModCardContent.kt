@@ -351,6 +351,7 @@ private fun ModCardBadges(
     // Cancelling render no action control, so they keep their badge.
     val workshopBadgeState = mod.workshop?.state?.takeIf {
         it != WorkshopModState.ImportedUnpatched &&
+            it != WorkshopModState.UpdatePendingInstall &&
             it != WorkshopModState.DownloadFailed &&
             it != WorkshopModState.Downloading &&
             it != WorkshopModState.DownloadPaused &&
@@ -630,6 +631,7 @@ internal fun workshopStateBadgeText(state: WorkshopModState): String =
     when (state) {
         WorkshopModState.NotDownloaded -> stringResource(R.string.workshop_download_state_not_downloaded)
         WorkshopModState.ImportedUnpatched -> stringResource(R.string.main_mod_workshop_state_needs_patch)
+        WorkshopModState.UpdatePendingInstall -> stringResource(R.string.workshop_download_state_pending_install)
         WorkshopModState.ImportedPatched -> stringResource(R.string.main_mod_workshop_state_workshop)
         WorkshopModState.Queued -> stringResource(R.string.workshop_download_state_queued)
         WorkshopModState.Downloading -> stringResource(R.string.main_mod_workshop_state_downloading)

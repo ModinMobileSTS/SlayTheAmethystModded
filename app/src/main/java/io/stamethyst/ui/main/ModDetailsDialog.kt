@@ -143,6 +143,10 @@ internal fun ModDetailsSectionTitle(text: String) {
     )
 }
 
+/** A downloaded jar that still needs patch/import takes the card header's switch slot. */
+internal fun ModItemUi.showsInstallControl(): Boolean =
+    workshop?.state == WorkshopModState.ImportedUnpatched || workshop?.state == WorkshopModState.UpdatePendingInstall
+
 internal fun ModItemUi.showsEnableControl(): Boolean =
     (installed || workshop?.state == WorkshopModState.TexturePackInstalled) && when (workshop?.state) {
         null, WorkshopModState.ImportedPatched, WorkshopModState.UpdateAvailable, WorkshopModState.TexturePackInstalled -> true

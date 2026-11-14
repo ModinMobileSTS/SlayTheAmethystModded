@@ -1,6 +1,7 @@
 package io.stamethyst.ui.main
 
 import android.content.Context
+import android.content.SharedPreferences
 import org.json.JSONArray
 
 /** Presentation order only: never changes the game's load priority. */
@@ -14,6 +15,15 @@ internal class ModDisplayOrder(context: Context) {
 
     fun save(paths: List<String>) {
         preferences.edit().putString("paths", JSONArray(paths).toString()).apply()
+    }
+
+    fun observe(onChange: (List<String>) -> Unit): () -> Unit {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "paths") onChange(read())
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        onChange(read())
+        return { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 }
 

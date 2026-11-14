@@ -180,6 +180,29 @@ internal fun WorkshopDetailContent(
     }
 
     val selectedDetails = state.selected?.takeIf { it.summary.publishedFileId == publishedFileId }
+    val downloadSummary = selectedDetails?.summary ?: fallbackSummary ?: WorkshopItemSummary(
+        publishedFileId = publishedFileId,
+        appId = appId,
+        title = "Workshop $publishedFileId",
+        previewUrl = "",
+        description = "",
+    )
+    val downloadAction: @Composable () -> Unit = {
+        WorkshopDetailDownloadActionButton(
+            state = resolveWorkshopModDownloadState(
+                item = downloadSummary,
+                installedMods = state.installedMods,
+                downloadTasks = WorkshopDownloadCenterStore.tasks,
+                preparingDownloadIds = state.preparingDownloadIds,
+            ),
+            preparing = publishedFileId in state.preparingDownloadIds,
+            onClick = {
+                requestNotificationPermissionIfNeeded()
+                viewModel.download(context.applicationContext, downloadSummary)
+            },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        )
+    }
     val detailUpdate = state.detailUpdate?.takeIf { it.details.summary.publishedFileId == publishedFileId }
     val isTranslatingDetails = state.detailTranslationLoadingId == publishedFileId
     val selectedDetailsKey = selectedDetails?.summary?.let { summary ->
@@ -363,10 +386,11 @@ internal fun WorkshopDetailContent(
                         label = "workshop-detail-primary-content",
                     ) { targetState ->
                         when (targetState) {
-                            DetailPrimaryContentState.Loading -> WorkshopDetailPrimaryLoadingSkeleton()
+                            DetailPrimaryContentState.Loading -> WorkshopDetailPrimaryLoadingSkeleton(downloadAction)
                             DetailPrimaryContentState.Error -> DetailErrorCard(
                                 message = state.errorMessage.orEmpty(),
                                 onRetry = { viewModel.loadDetails(context.applicationContext, appId, publishedFileId) },
+                                downloadAction = downloadAction,
                             )
                             DetailPrimaryContentState.Content -> selectedDetails?.let { details ->
                                 val subscriptionStatus = state.detailSubscriptionStatusFor(details.summary.publishedFileId)
@@ -381,20 +405,10 @@ internal fun WorkshopDetailContent(
                                     details = details,
                                     metadataLoading = detailUpdate?.metadataLoading == true,
                                     communityLoading = detailUpdate?.communityLoading == true,
-                                    downloadLoading = state.detailLoadingId == publishedFileId,
-                                    downloadState = resolveWorkshopModDownloadState(
-                                        item = details.summary,
-                                        installedMods = state.installedMods,
-                                        downloadTasks = WorkshopDownloadCenterStore.tasks,
-                                        preparingDownloadIds = state.preparingDownloadIds,
-                                    ),
+                                    downloadAction = downloadAction,
                                     subscriptionLoading = state.detailSubscriptionLoadingId == details.summary.publishedFileId ||
                                         subscriptionStatus == WorkshopDetailSubscriptionStatus.Checking,
                                     subscribed = detailSubscribed,
-                                    onDownload = {
-                                        requestNotificationPermissionIfNeeded()
-                                        viewModel.downloadSelected(context.applicationContext)
-                                    },
                                     onOpenAuthor = onOpenAuthor,
                                     onViewChangeNotes = {
                                         showChangeNotesDialog = true
@@ -413,7 +427,7 @@ internal fun WorkshopDetailContent(
                                         }
                                     },
                                 )
-                            } ?: WorkshopDetailPrimaryLoadingSkeleton()
+                            } ?: WorkshopDetailPrimaryLoadingSkeleton(downloadAction)
                         }
                     }
                 }
@@ -1654,11 +1668,9 @@ private fun DetailModCard(
     details: WorkshopItemDetails,
     metadataLoading: Boolean,
     communityLoading: Boolean,
-    downloadLoading: Boolean,
-    downloadState: WorkshopModDownloadState,
+    downloadAction: @Composable () -> Unit,
     subscriptionLoading: Boolean,
     subscribed: Boolean,
-    onDownload: () -> Unit,
     onViewChangeNotes: () -> Unit,
     onSubscriptionClick: () -> Unit,
     onOpenAuthor: (WorkshopAuthor) -> Unit,
@@ -1687,19 +1699,7 @@ private fun DetailModCard(
                         onOpenAuthor = onOpenAuthor,
                     )
                 }
-                if (downloadLoading) {
-                    LoadingSkeletonBlock(
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        style = skeletonStyle,
-                        shape = RoundedCornerShape(999.dp),
-                    )
-                } else WorkshopDownloadActionButton(
-                    state = downloadState,
-                    onClick = onDownload,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp),
-                )
+                downloadAction()
             }
             if (metadataLoading) {
                 repeat(2) {
@@ -2206,7 +2206,7 @@ private fun CommentItemCard(
 }
 
 @Composable
-private fun DetailErrorCard(message: String, onRetry: () -> Unit) {
+private fun DetailErrorCard(message: String, onRetry: () -> Unit, downloadAction: @Composable () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -2219,6 +2219,7 @@ private fun DetailErrorCard(message: String, onRetry: () -> Unit) {
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
             WorkshopLoadFailureHint()
+            downloadAction()
             Button(
                 onClick = onRetry,
                 modifier = Modifier
@@ -2230,13 +2231,13 @@ private fun DetailErrorCard(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun WorkshopDetailPrimaryLoadingSkeleton() {
+private fun WorkshopDetailPrimaryLoadingSkeleton(downloadAction: @Composable () -> Unit) {
     val skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_primary_skeleton")
-    WorkshopDetailPrimarySkeletonCard(skeletonStyle = skeletonStyle)
+    WorkshopDetailPrimarySkeletonCard(skeletonStyle = skeletonStyle, downloadAction = downloadAction)
 }
 
 @Composable
-private fun WorkshopDetailPrimarySkeletonCard(skeletonStyle: LoadingSkeletonStyle) {
+private fun WorkshopDetailPrimarySkeletonCard(skeletonStyle: LoadingSkeletonStyle, downloadAction: @Composable () -> Unit) {
     WorkshopDetailCard {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2252,13 +2253,7 @@ private fun WorkshopDetailPrimarySkeletonCard(skeletonStyle: LoadingSkeletonStyl
                         .height(14.dp),
                     style = skeletonStyle,
                 )
-                LoadingSkeletonBlock(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    style = skeletonStyle,
-                    shape = RoundedCornerShape(999.dp),
-                )
+                downloadAction()
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 repeat(2) {
