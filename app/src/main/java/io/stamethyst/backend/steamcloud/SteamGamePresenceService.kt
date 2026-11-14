@@ -25,7 +25,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeout
-import top.apricityx.workshop.steam.protocol.SteamSessionRevokedException
 
 /** Experimental CM presence bridge. It is deliberately separate from Steam Cloud sync. */
 class SteamGamePresenceService : Service() {
@@ -36,16 +35,18 @@ class SteamGamePresenceService : Service() {
         private const val ACTION_START = "io.stamethyst.action.STEAM_GAME_PRESENCE_START"
         private const val STARTUP_TIMEOUT_MS = 60_000L
         private const val SESSION_CHECK_INTERVAL_MS = 30_000L
+        private val presenceOwnership = SteamGamePresenceOwnership()
 
         fun startIfEnabled(context: Context) {
             val appContext = context.applicationContext
             val enabled = LauncherConfig.isSteamGamePresenceEnabled(appContext)
             val state = GamePresenceStateMarker.readCurrentState(appContext)
-            val auth = SteamCloudAuthStore.readAuthMaterial(appContext)
+            val authRead = SteamCloudAuthStore.readCmAuthMaterialWithStatus(appContext)
+            val auth = authRead.material
             val skipReason = when {
                 !enabled -> "feature_disabled"
                 state.state != GamePresenceState.Game -> "game_state_not_active"
-                auth == null -> "steam_auth_material_incomplete"
+                !SteamGamePresenceLoop.shouldStart(authRead) -> "steam_auth_material_incomplete"
                 else -> ""
             }
             if (skipReason.isNotEmpty()) {
@@ -102,6 +103,8 @@ class SteamGamePresenceService : Service() {
 
     private val stopRequested = AtomicBoolean(false)
     private val terminalSummaryWritten = AtomicBoolean(false)
+    // Worker operations acquire the process ownership gate before this per-service lock.
+    // Never acquire the ownership gate from inside clientLock (or from the main thread).
     private val clientLock = Any()
     private val presenceChangeLock = ReentrantLock()
     private val presenceChangeCondition = presenceChangeLock.newCondition()
@@ -151,7 +154,7 @@ class SteamGamePresenceService : Service() {
             SteamGamePresenceDiagnosticsStore.writeSummary(
                 applicationContext,
                 "FAILED",
-                SteamCloudAuthStore.readAuthMaterial(applicationContext)?.accountName.orEmpty(),
+                SteamCloudAuthStore.readCmAuthMaterialWithStatus(applicationContext).material?.accountName.orEmpty(),
                 acceptedAtMs,
                 System.currentTimeMillis(),
                 false,
@@ -177,7 +180,7 @@ class SteamGamePresenceService : Service() {
         appIdSent = false
         clearStateSent = false
         operationStartedAtMs = acceptedAtMs
-        operationAccountName = SteamCloudAuthStore.readAuthMaterial(applicationContext)?.accountName.orEmpty()
+        operationAccountName = SteamCloudAuthStore.readCmAuthMaterialWithStatus(applicationContext).material?.accountName.orEmpty()
         SteamGamePresenceDiagnosticsStore.writeSummary(
             applicationContext,
             "STARTED",
@@ -190,9 +193,17 @@ class SteamGamePresenceService : Service() {
             null,
             "foreground_service_started_waiting_for_rich_presence",
         )
-        val thread = Thread(::runPresence, "STS-SteamGamePresence")
+        // Nonblocking handoff on the main thread; a delayed old worker must never claim again.
+        val owner = presenceOwnership.claim()
+        val thread = Thread({ runPresence(owner) }, "STS-SteamGamePresence")
         workerThread = thread
-        thread.start()
+        try {
+            thread.start()
+        } catch (error: Throwable) {
+            owner.release()
+            workerThread = null
+            throw error
+        }
         return START_NOT_STICKY
     }
 
@@ -200,68 +211,74 @@ class SteamGamePresenceService : Service() {
         stopRequested.set(true)
         stopPresenceFileObserver()
         signalPresenceChange()
+        // The worker alone decides whether credentials permit clearing and closes its client.
+        // Closing here races a failing auth read and can either skip or incorrectly send cleanup.
         workerThread?.interrupt()
-        closeClient(clearState = true)
         workerThread = null
         super.onDestroy()
     }
 
-    private fun runPresence() {
+    private fun runPresence(owner: SteamGamePresenceOwnership.Owner) {
         if (operationStartedAtMs <= 0L) operationStartedAtMs = System.currentTimeMillis()
         var failure: Throwable? = null
         var steamClient: SteamCloudClient? = null
-        var session: SteamGamePresenceSession? = null
-        val retryPolicy = SteamGamePresenceRetryPolicy()
         try {
+            if (!owner.isCurrent) return
             startPresenceFileObserver()
             var observedPresenceVersion = presenceChangeVersion
-            while (!stopRequested.get() && isStillGameActive()) {
-                val recoveryVersion = recoveryRequestVersion
-                try {
-                    // Never retain credentials across retries or resurrect a logged-out account.
-                    val auth = SteamCloudAuthStore.readAuthMaterial(applicationContext) ?: break
-                    val richPresence = RichPresenceStateFile.read(RuntimePaths.richPresenceFile(applicationContext))
-                    if (richPresence != null) {
-                        if (session == null) {
-                            val activeClient = SteamCloudClient(applicationContext)
-                            steamClient = activeClient
-                            synchronized(clientLock) {
-                                if (stopRequested.get()) {
-                                    activeClient.close()
-                                    throw InterruptedException("Steam presence service is stopping.")
-                                }
-                                client = activeClient
-                            }
-                            operationAccountName = auth.accountName
-                            activeClient.beginOperationDiagnostics("game_presence", auth.accountName, auth.guardData.isNotBlank())
-                            activeClient.start()
-                            session = createPresenceSession(activeClient)
+            var recoveryVersion = recoveryRequestVersion
+            SteamGamePresenceLoop(
+                owner = owner,
+                readAuth = { epoch -> SteamCloudAuthStore.readCmAuthMaterialWithStatus(applicationContext, epoch) },
+                readPresence = { RichPresenceStateFile.read(RuntimePaths.richPresenceFile(applicationContext)) },
+                createClient = { auth ->
+                    val activeClient = SteamCloudClient(applicationContext)
+                    steamClient = activeClient
+                    synchronized(clientLock) {
+                        if (stopRequested.get()) {
+                            activeClient.close()
+                            throw InterruptedException("Steam presence service is stopping.")
                         }
-                        val restored = session.synchronize(richPresence)
-                        retryPolicy.reset()
-                        if (restored) {
-                            SteamGamePresenceDiagnosticsStore.writeSummary(
-                                applicationContext,
-                                "RUNNING",
-                                operationAccountName,
-                                operationStartedAtMs,
-                                System.currentTimeMillis(),
-                                appIdSent,
-                                clearStateSent,
-                                null,
-                                steamClient?.snapshotDiagnostics(),
-                                "steam_presence_session_restored",
-                            )
-                        }
+                        client = activeClient
                     }
-                } catch (error: Exception) {
-                    if (stopRequested.get() || !isStillGameActive() || !SteamGamePresenceRetryPolicy.shouldRetry(error)) {
+                    try {
+                        operationAccountName = auth.accountName
+                        activeClient.beginOperationDiagnostics("game_presence", auth.accountName, auth.guardData.isNotBlank())
+                        activeClient.start()
+                        createPresenceClient(activeClient)
+                    } catch (error: Throwable) {
+                        // Ownership transfers to the loop only once the factory returns.
+                        closeClient(clearState = false)
                         throw error
                     }
-                    val retry = retryPolicy.afterFailure(SystemClock.elapsedRealtime())
+                },
+                shouldContinue = { !stopRequested.get() && isStillGameActive() },
+                nowMs = { SystemClock.elapsedRealtime() },
+                awaitChange = {
+                    // Also check idle sessions: no floor/menu change is needed to notice a disconnect.
+                    observedPresenceVersion = awaitPresenceChange(observedPresenceVersion, SESSION_CHECK_INTERVAL_MS)
+                    recoveryVersion = recoveryRequestVersion
+                },
+                awaitRetry = { retry ->
+                    awaitRetry(retry, recoveryVersion)
+                    recoveryVersion = recoveryRequestVersion
+                },
+                onRestored = {
+                    SteamGamePresenceDiagnosticsStore.writeSummary(
+                        applicationContext,
+                        "RUNNING",
+                        operationAccountName,
+                        operationStartedAtMs,
+                        System.currentTimeMillis(),
+                        appIdSent,
+                        clearStateSent,
+                        null,
+                        steamClient?.snapshotDiagnostics(),
+                        "steam_presence_session_restored",
+                    )
+                },
+                onRetry = { error ->
                     Log.w(TAG, "Steam presence interrupted; retrying while the game remains active.", error)
-                    closeClient(clearState = true)
-                    session = null
                     SteamGamePresenceDiagnosticsStore.writeSummary(
                         applicationContext,
                         "RETRYING",
@@ -274,12 +291,8 @@ class SteamGamePresenceService : Service() {
                         steamClient?.snapshotDiagnostics(),
                         "steam_presence_retry_scheduled",
                     )
-                    awaitRetry(retry, recoveryVersion)
-                    continue
-                }
-                // Also check idle sessions: no floor/menu change is needed to notice a disconnect.
-                observedPresenceVersion = awaitPresenceChange(observedPresenceVersion, SESSION_CHECK_INTERVAL_MS)
-            }
+                },
+            ).run()
         } catch (error: Throwable) {
             if (error is InterruptedException && stopRequested.get()) {
                 Thread.currentThread().interrupt()
@@ -288,8 +301,9 @@ class SteamGamePresenceService : Service() {
             }
             if (!stopRequested.get()) Log.w(TAG, "Experimental Steam presence stopped.", error)
         } finally {
+            // Also covers failure before the loop takes ownership; cannot release a newer owner.
+            owner.release()
             stopPresenceFileObserver()
-            closeClient(clearState = true)
             writeTerminalSummary(
                 if (failure == null) "STOPPED" else "FAILED",
                 operationStartedAtMs,
@@ -303,14 +317,13 @@ class SteamGamePresenceService : Service() {
         }
     }
 
-    private fun createPresenceSession(
+    private fun createPresenceClient(
         activeClient: SteamCloudClient,
-    ): SteamGamePresenceSession = SteamGamePresenceSession(object : SteamGamePresenceSession.Client {
+    ): SteamGamePresenceLoop.Client = object : SteamGamePresenceLoop.Client {
         override val sessionIdentity: Any?
             get() = activeClient.cmSessionIdentity
 
-        override fun logOn() {
-            val auth = SteamCloudAuthStore.readAuthMaterial(applicationContext) ?: throw SteamSessionRevokedException()
+        override fun logOn(auth: SteamCloudAuthStore.SavedAuthMaterial) {
             operationAccountName = auth.accountName
             // A timeout cancels this attempt, not the foreground service or its next retry.
             runBlocking {
@@ -351,7 +364,9 @@ class SteamGamePresenceService : Service() {
                     "steamDisplay=${presence["steam_display"].orEmpty()}",
             )
         }
-    })
+
+        override fun close(clearState: Boolean) = closeClient(clearState)
+    }
 
     private fun withActiveClient(activeClient: SteamCloudClient, action: () -> Unit) {
         synchronized(clientLock) {

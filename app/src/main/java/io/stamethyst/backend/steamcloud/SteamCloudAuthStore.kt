@@ -78,6 +78,13 @@ internal object SteamCloudAuthStore {
         val readFailed: Boolean,
     )
 
+    /** Like [AuthSnapshotRead], absence is conclusive only after a successful read. */
+    data class AuthMaterialRead(
+        val material: SavedAuthMaterial?,
+        val readFailed: Boolean,
+        val accountEpoch: String?,
+    )
+
     data class CachedWebAccessToken(
         val accessToken: String,
         val expiresAtMs: Long,
@@ -421,6 +428,63 @@ internal object SteamCloudAuthStore {
         val state = readStateOrNull(context) ?: return null
         return state.takeIf { it.cmAccountEpoch == epoch && SteamCmAccountEpoch.read(context) == epoch }
             ?.toAuthMaterialOrNull()
+    }
+
+    /**
+     * Status-bearing CM read for long-lived presence recovery. No cached credentials are returned
+     * on a file/KeyStore failure. A known epoch change wins even when the encrypted state cannot
+     * be read; callers retain only the epoch/identity, never a token, across retries.
+     * Existing nullable readers keep their fail-closed contract.
+     */
+    fun readCmAuthMaterialWithStatus(context: Context, expectedEpoch: String? = null): AuthMaterialRead =
+        readCmAuthMaterialWithStatus(
+            expectedEpoch = expectedEpoch,
+            readEpoch = { SteamCmAccountEpoch.read(context) },
+            readMaterial = {
+                val state = loadState(context)
+                state.cmAccountEpoch to state.toAuthMaterialOrNull()
+            },
+        )
+
+    internal fun readCmAuthMaterialWithStatus(
+        expectedEpoch: String?,
+        readEpoch: () -> String,
+        readMaterial: () -> Pair<String, SavedAuthMaterial?>,
+    ): AuthMaterialRead {
+        var epoch: String? = null
+        try {
+            epoch = readEpoch()
+            if (expectedEpoch != null && epoch != expectedEpoch) {
+                return AuthMaterialRead(null, readFailed = false, accountEpoch = epoch)
+            }
+            val (stateEpoch, material) = readMaterial()
+            val currentEpoch = readEpoch()
+            return AuthMaterialRead(
+                material.takeIf { stateEpoch == epoch && currentEpoch == epoch },
+                readFailed = false,
+                accountEpoch = currentEpoch,
+            )
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw error
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Logout may have raced a failing encrypted read. The unencrypted fence is decisive.
+            val currentEpoch = try {
+                readEpoch()
+            } catch (error: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw error
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            val revoked = currentEpoch != null &&
+                (expectedEpoch ?: epoch)?.let { it != currentEpoch } == true
+            return AuthMaterialRead(null, readFailed = !revoked, accountEpoch = currentEpoch ?: epoch)
+        }
     }
 
     fun clear(context: Context) {
