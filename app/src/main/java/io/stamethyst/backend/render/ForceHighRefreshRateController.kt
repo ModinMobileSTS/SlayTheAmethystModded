@@ -12,6 +12,7 @@ import android.view.Choreographer
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import androidx.annotation.MainThread
 import io.stamethyst.LauncherActivity
 import io.stamethyst.StsGameActivity
 import io.stamethyst.config.LauncherConfig
@@ -49,8 +50,16 @@ object ForceHighRefreshRateController {
         })
     }
 
+    @MainThread
     fun setEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setForceHighRefreshRateEnabled(context, enabled)
+        refreshFromPreferences(context)
+    }
+
+    /** Apply an already-persisted change to local windows and UI without writing it again. */
+    @MainThread
+    fun refreshFromPreferences(context: Context) {
+        val enabled = LauncherConfig.isForceHighRefreshRateEnabled(context)
         hosts.values.toList().forEach { it.refresh.run() }
         listeners.toList().forEach { it(enabled) }
     }

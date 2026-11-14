@@ -23,11 +23,19 @@ panel and cancels pending attachment. No accessibility service, overlay permissi
 boot receiver or background service is added. Existing normal refresh-rate requests remain intact
 when this workaround is off. The setting is included in settings search and exported diagnostics.
 
+Restoring launcher defaults also persists `DEFAULT_FORCE_HIGH_REFRESH_RATE` (`false`). The reset
+executor only writes the preference; its successful main-thread completion calls
+`ForceHighRefreshRateController.refreshFromPreferences` to remove any current keep-active panel,
+cancel its frame callback and notify both switch instances immediately. This refresh does not
+rewrite the preference. Returning activities still reread the stored value as usual.
+
 This uses extra power and can increase heat. OEM refresh-rate policy, battery saver, thermal limits
 and hardware restrictions still apply; enabling it does not prove the physical panel runs at 120 Hz.
 Actual LTPO behavior, visual impact and device compatibility require separately authorized device
 verification. Offline session tests cover enable/disable, repeated updates, foreground transitions
 and attachment failure/retry; compilation does not establish device behavior.
+JVM reset regressions cover the persisted default, deferred listener notification and refresh
+without duplicate writes; a source-level wiring check guards the main-thread reset completion.
 
 The mismatch dialog uses `RefreshRateSettingsDialog` with ordinary, non-scrolling content inside
 `LauncherAlertDialog`, which already owns the scroll viewport. Adding an unbounded inner vertical

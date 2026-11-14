@@ -38,6 +38,7 @@ import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -400,6 +401,10 @@ internal object SettingsRepository {
         LauncherPreferences.savePlayerName(context, LauncherPreferences.DEFAULT_PLAYER_NAME)
         RenderScaleService.reset(context)
         LauncherPreferences.saveTargetFps(context, LauncherPreferences.DEFAULT_TARGET_FPS)
+        LauncherConfig.setForceHighRefreshRateEnabled(
+            context,
+            LauncherConfig.DEFAULT_FORCE_HIGH_REFRESH_RATE
+        )
         LauncherPreferences.saveVirtualResolutionMode(
             context,
             LauncherPreferences.DEFAULT_VIRTUAL_RESOLUTION_MODE

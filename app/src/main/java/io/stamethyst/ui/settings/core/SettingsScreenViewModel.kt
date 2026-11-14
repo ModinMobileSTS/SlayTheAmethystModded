@@ -86,6 +86,7 @@ import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.resources.ArthasResourcePackService
 import io.stamethyst.backend.resources.ResourcePackStore
+import io.stamethyst.backend.render.ForceHighRefreshRateController
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -4330,6 +4331,7 @@ class SettingsScreenViewModel : ViewModel() {
                     LauncherLogcatCaptureProcessClient.stopAndClearCapture(host)
                 }
                 host.runOnUiThread {
+                    ForceHighRefreshRateController.refreshFromPreferences(host)
                     nativeLibraryMarketCatalog = emptyList()
                     LauncherThemeController.apply(host, LauncherPreferences.DEFAULT_THEME_MODE)
                     LauncherIconController.apply(host, LauncherPreferences.DEFAULT_LAUNCHER_ICON_MODE)
