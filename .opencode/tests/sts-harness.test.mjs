@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync,
 import { resolve, relative } from "node:path"
 import { test } from "node:test"
 
-import plugin, { submitNativeShell } from "../plugins/sts-harness.ts"
+import plugin, { submitNativeShell, localAdbArgs } from "../plugins/sts-harness.ts"
 
 const repoRoot = resolve(import.meta.dirname, "../..")
 mkdirSync(resolve(repoRoot, "agent-tmp"), { recursive: true })
@@ -15,6 +15,10 @@ writeFileSync(fakePython, `#!/usr/bin/env node
 const fs = require("node:fs")
 const path = require("node:path")
 const args = process.argv.slice(2)
+if (args[1] === "scripts.tools.local_adb") {
+  console.log(JSON.stringify({ argv: args, exitCode: 0 }))
+  process.exit(0)
+}
 const param = (flag) => args[args.indexOf(flag) + 1]
 const action = param("--command")
 const failInstall = action === "install" && fs.existsSync(${JSON.stringify(resolve(testRoot, "fail-install"))})
@@ -56,6 +60,39 @@ const cleanup = await plugin.setup({
 function run(name, input = {}, signal = new AbortController().signal) {
   return tools.get(name).execute({ outDir: artifactBase, ...input }, { signal, async progress() {} }).then(({ content }) => JSON.parse(content))
 }
+
+test("local ADB structured actions preserve JSON arguments and reject unsafe installs", () => {
+  assert.deepEqual(localAdbArgs({ action: "ensure" }, repoRoot), ["-m", "scripts.tools.local_adb", "ensure"])
+  for (const action of ["device-info", "package-info", "list-instrumentation", "instrument", "screenshot", "tap", "swipe", "keyevent", "start-activity", "force-stop"]) {
+    const input = { action, extras: { payload: "a; $(reboot) ' b" } }
+    const args = localAdbArgs(input, repoRoot)
+    assert.equal(args[2], action)
+    assert.equal(args[3], "--request")
+    assert.deepEqual(JSON.parse(args[4]), { extras: input.extras })
+  }
+  const args = localAdbArgs({ action: "install", apkPath: "agent-tmp/test.apk", deviceSerial: "test:1234" }, repoRoot)
+  assert.equal(JSON.parse(args[4]).apkPath, "agent-tmp/test.apk")
+  for (const deviceSerial of [undefined, "auto", "*", "-s", "a b"]) {
+    assert.throws(() => localAdbArgs({ action: "install", apkPath: "test.apk", deviceSerial }, repoRoot), /deviceSerial/)
+  }
+  assert.throws(() => localAdbArgs({ action: "install", apkPath: "../escape.apk", deviceSerial: "test:1234" }, repoRoot), /inside/)
+  assert.throws(() => localAdbArgs({ action: "shell" }, repoRoot), /Invalid/)
+  assert.throws(() => localAdbArgs({ action: "ensure", command: "reboot" }, repoRoot), /only action/)
+  assert.ok(tools.get("local_adb").input.properties.action.enum.includes("instrument"))
+})
+
+test("local ADB execution invokes the structured CLI and retains its envelope", async () => {
+  const tool = tools.get("local_adb")
+  for (const input of [{ action: "status" }, { action: "instrument", runner: "io.test/.Runner", extras: { payload: "a; b" }, timeoutSeconds: 60 }]) {
+    const result = await tool.execute(input, { signal: new AbortController().signal, async progress() {} })
+    const envelope = JSON.parse(result.content)
+    assert.equal(envelope.exitCode, 0)
+    assert.equal(envelope.cancelled, false)
+    const operation = JSON.parse(envelope.stdout)
+    assert.deepEqual(operation.argv.slice(0, 3), ["-m", "scripts.tools.local_adb", input.action])
+    if (input.runner) assert.equal(JSON.parse(operation.argv[4]).runner, input.runner)
+  }
+})
 
 test("exposes scoped tools and maps actions to Python CLI arguments", async () => {
   const names = [

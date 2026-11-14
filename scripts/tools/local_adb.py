@@ -215,10 +215,22 @@ def ensure() -> dict[str, str]:
 
 
 def main():
+    from scripts.tools.local_adb_actions import ACTIONS, run
+
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["ensure", "status", "stop", "run", "adb"])
+    parser.add_argument("action", choices=["ensure", "status", "stop", "run", "adb", *ACTIONS])
     parser.add_argument("args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if args.action in ACTIONS:
+        if len(args.args) != 2 or args.args[0] != "--request":
+            parser.error("Structured actions require --request JSON")
+        try:
+            data = json.loads(args.args[1])
+        except json.JSONDecodeError:
+            parser.error("Invalid request JSON")
+        result = run(args.action, data)
+        print(json.dumps(result))
+        raise SystemExit(result["exitCode"])
     if args.action in ("run", "adb"):
         env = ensure()
         command_args = args.args[1:] if args.args[:1] == ["--"] else args.args

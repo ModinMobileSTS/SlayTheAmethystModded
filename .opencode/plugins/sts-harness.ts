@@ -31,6 +31,26 @@ type HarnessExecution = {
 const MAX_CAPTURED_OUTPUT = 12_000
 const DEFAULT_TIMEOUT_SECONDS = 120
 const DEFAULT_LONG_TIMEOUT_SECONDS = 720
+const LOCAL_ADB_ACTIONS = ["ensure", "status", "stop", "device-info", "package-info", "install", "list-instrumentation", "instrument", "screenshot", "tap", "swipe", "keyevent", "start-activity", "force-stop"]
+
+export function localAdbArgs(value: JsonObject, repoRoot: string): string[] {
+  const action = String(value.action)
+  if (!LOCAL_ADB_ACTIONS.includes(action)) throw new Error("Invalid local_adb action")
+  const { action: _, ...request } = value
+  if (["ensure", "status", "stop"].includes(action)) {
+    if (Object.keys(request).length) throw new Error("Lifecycle actions accept only action")
+    return ["-m", "scripts.tools.local_adb", action]
+  }
+  if (action === "install") {
+    const serial = request.deviceSerial
+    if (typeof serial !== "string" || !serial || /^(auto|default|all|\*)$/i.test(serial) || serial.startsWith("-") || /\s/.test(serial)) {
+      throw new Error("Installation requires explicit user-approved deviceSerial")
+    }
+    if (typeof request.apkPath !== "string" || !request.apkPath.trim()) throw new Error("apkPath is required")
+    request.apkPath = repoPath(request.apkPath, "apkPath", repoRoot)
+  }
+  return ["-m", "scripts.tools.local_adb", action, "--request", JSON.stringify(request)]
+}
 // The Python scenario timeout excludes setup, Gradle log export, and cleanup.
 // Keep the process alive long enough for those phases to write result.json.
 const PROCESS_TIMEOUT_GRACE_SECONDS = 180
@@ -253,7 +273,7 @@ async function executeHarness(
     return { exitCode: null, cancelled: true, timedOut: false, stdout: "", stderr: "" }
   }
 
-  await context.progress({ status: "starting", command: args[4] })
+  await context.progress({ status: "starting", command: args[1] === "scripts.tools.local_adb" ? args[2] : args[4] })
   if (context.signal.aborted) {
     return { exitCode: null, cancelled: true, timedOut: false, stdout: "", stderr: "" }
   }
@@ -424,12 +444,27 @@ export default Plugin.define({
       editor.namespace({ name: "sts", description: "SlayTheAmethyst Android harness" })
       editor.add({
         name: "local_adb",
-        description: "Ensure, inspect or stop the workspace-owned wireless ADB and connector. Device settings come only from local configuration.",
-        input: { type: "object", properties: { action: { type: "string", enum: ["ensure", "status", "stop"] } }, required: ["action"], additionalProperties: false },
+        description: "Manage workspace ADB or perform structured Android operations: device/package info, install an existing repository APK (explicit user-approved deviceSerial; no build), list/run instrumentation (never installs), screenshot, tap/swipe/keyevent, start-activity and force-stop. No arbitrary shell or global ADB. Artifacts go to agent-tmp/local-adb/operations. Device settings come from local configuration.",
+        input: { type: "object", properties: {
+          action: { type: "string", enum: LOCAL_ADB_ACTIONS },
+          deviceSerial: COMMON_PROPERTIES.deviceSerial,
+          timeoutSeconds: { type: "integer", minimum: 1, maximum: 3600 },
+          apkPath: { type: "string", description: "Existing APK inside repository; install only." },
+          fastDeploy: { type: "boolean", description: "Install with --fastdeploy by default; may fall back to a full install." },
+          packageName: { type: "string" }, component: { type: "string", description: "package/activity for start-activity." },
+          runner: { type: "string", description: "package/runner for instrument." },
+          testClasses: { type: "array", items: { type: "string" }, maxItems: 100 },
+          extras: { type: "object", additionalProperties: { type: "string" }, description: "Instrumentation -e options; use testClasses instead of class." },
+          x: { type: "integer", minimum: 0, maximum: 100000 }, y: { type: "integer", minimum: 0, maximum: 100000 },
+          endX: { type: "integer", minimum: 0, maximum: 100000 }, endY: { type: "integer", minimum: 0, maximum: 100000 },
+          durationMs: { type: "integer", minimum: 0, maximum: 60000 }, keyCode: { type: "integer", minimum: 0, maximum: 1000 },
+        }, required: ["action"], additionalProperties: false },
         options: { namespace: "sts", permission: "sts_local_adb" },
         execute: async (value: JsonObject, context: ToolContext) => {
+          const args = localAdbArgs(value, repoRoot)
+          const timeout = typeof value.timeoutSeconds === "number" ? value.timeoutSeconds : value.action === "install" ? 180 : DEFAULT_TIMEOUT_SECONDS
           const execution = await withDeviceLock(context.signal, () => executeHarness(
-            ["-m", "scripts.tools.local_adb", String(value.action)], repoRoot, context, pythonExecutable, DEFAULT_TIMEOUT_SECONDS,
+            args, repoRoot, context, pythonExecutable, timeout + 30,
           ))
           return { content: JSON.stringify(execution) }
         },
