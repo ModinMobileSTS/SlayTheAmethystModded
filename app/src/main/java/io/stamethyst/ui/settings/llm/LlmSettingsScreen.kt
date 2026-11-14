@@ -14,7 +14,6 @@ import androidx.compose.material3.OutlinedButton
 import io.stamethyst.ui.LauncherAlertDialog as AlertDialog
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import kotlinx.coroutines.delay
@@ -53,8 +52,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.R
 import io.stamethyst.navigation.Route
 import io.stamethyst.backend.llm.LlmEndpoint
-import io.stamethyst.backend.llm.LlmSettings
 import io.stamethyst.backend.llm.LlmSettingsRepository
+import io.stamethyst.backend.llm.LlmSettingsEdit
+import io.stamethyst.backend.llm.LlmSettingsPatch
 import io.stamethyst.backend.network.BatteryOptimization
 import io.stamethyst.backend.llm.LlmReasoningEffort
 import io.stamethyst.backend.llm.LlmModelTestService
@@ -73,6 +73,7 @@ import io.stamethyst.ui.settings.common.SettingsDropdownField
 import io.stamethyst.ui.settings.common.SwitchSettingRow
 import io.stamethyst.ui.settings.core.SettingsScreenViewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -82,6 +83,9 @@ import kotlinx.coroutines.withContext
 
 class LlmSettingsViewModel(
     private val repository: LlmSettingsRepository,
+    writeDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val awaitDebounce: suspend () -> Unit = { delay(350) },
     private val cacheCatalog: (String, List<NewApiModel>) -> Unit = { _, _ -> },
 ) : ViewModel() {
     var settings by mutableStateOf(repository.get())
@@ -106,29 +110,24 @@ class LlmSettingsViewModel(
         private set
 
     // Drain queued edits even when navigation clears this ViewModel.
-    private val writes = Channel<LlmSettings>(Channel.CONFLATED)
-    private val writeScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    // Conflate wakeups, not edits: a timeout change must not drop a queued key/model change.
+    private val writes = Channel<Unit>(Channel.CONFLATED)
+    private val pendingEdits = mutableListOf<LlmSettingsEdit>()
+    private val writeScope = CoroutineScope(SupervisorJob() + writeDispatcher)
 
     init {
         writeScope.launch {
             try {
-                for (queued in writes) {
-                    delay(350)
-                    var draft = queued
-                    while (true) {
-                        draft = writes.tryReceive().getOrNull() ?: break
-                    }
-                    if (draft == settings) {
-                        saveError = false
-                        continue
-                    }
+                for (ignored in writes) {
+                    awaitDebounce()
+                    while (writes.tryReceive().isSuccess) Unit
+                    val edits = pendingEdits.toList()
                     runCatching {
-                        withContext(Dispatchers.IO) {
-                            repository.set(draft)
-                            repository.get()
-                        }
+                        withContext(ioDispatcher) { repository.update(edits) }
                     }.onSuccess {
-                        settings = it
+                        pendingEdits.removeAll(edits.toSet())
+                        // Edits received during IO remain visible and queued for the next write.
+                        settings = repository.preview(it, pendingEdits)
                         saveError = false
                     }.onFailure { saveError = true }
                 }
@@ -138,8 +137,41 @@ class LlmSettingsViewModel(
         }
     }
 
-    fun save(settings: LlmSettings) {
-        writes.trySend(settings)
+    fun edit(patch: LlmSettingsPatch) {
+        if (patch.apiKey != null && patch.apiKey.isBlank()) {
+            repository.discardPendingApiKey(pendingEdits)
+            refreshSettings()
+        }
+        val edit = repository.newEdit(patch) ?: return
+        pendingEdits += edit
+        settings = edit.patch.applyTo(settings)
+        writes.trySend(Unit)
+    }
+
+    fun retrySave() {
+        writes.trySend(Unit)
+    }
+
+    fun refreshSettings() {
+        settings = repository.preview(repository.get(), pendingEdits)
+    }
+
+    fun addModels(modelIds: List<String>) {
+        refreshSettings()
+        val merged = (settings.models + modelIds).map(String::trim).filter(String::isNotEmpty).distinct()
+        edit(LlmSettingsPatch(
+            models = merged,
+            modelName = if (settings.modelName.isBlank()) merged.firstOrNull().orEmpty() else null,
+        ))
+    }
+
+    fun removeModel(model: String) {
+        refreshSettings()
+        val remaining = settings.models - model
+        edit(LlmSettingsPatch(
+            models = remaining,
+            modelName = if (settings.modelName == model) remaining.firstOrNull().orEmpty() else null,
+        ))
     }
 
     override fun onCleared() {
@@ -243,46 +275,48 @@ internal fun LlmSettingsContent(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val viewModel: LlmSettingsViewModel = viewModel(factory = LlmSettingsViewModel.factory(context))
+    DisposableEffect(viewModel, lifecycleOwner) {
+        viewModel.refreshSettings()
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshSettings()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val current = viewModel.settings
     var apiKey by remember { mutableStateOf("") }
     var baseUrl by rememberSaveable { mutableStateOf(current.baseUrl) }
-    var modelName by rememberSaveable { mutableStateOf(current.modelName) }
-    var endpoint by rememberSaveable { mutableStateOf(current.endpoint) }
-    var requestTimeoutSeconds by rememberSaveable {
-        mutableStateOf(current.requestTimeoutSeconds)
-    }
-    var reasoningEffort by rememberSaveable { mutableStateOf(current.reasoningEffort) }
-    var supportsImageInput by rememberSaveable { mutableStateOf(current.supportsImageInput) }
-    var models by rememberSaveable {
-        mutableStateOf(current.models)
-    }
+    val modelName = current.modelName
+    val endpoint = current.endpoint
+    val requestTimeoutSeconds = current.requestTimeoutSeconds
+    val reasoningEffort = current.reasoningEffort
+    val supportsImageInput = current.supportsImageInput
+    val models = current.models
     var customModelInput by rememberSaveable { mutableStateOf("") }
     var showModels by rememberSaveable { mutableStateOf(false) }
     var showAddCustomModel by rememberSaveable { mutableStateOf(false) }
     var modelQuery by rememberSaveable { mutableStateOf("") }
     val effectiveKey = apiKey.trim().ifEmpty { current.apiKey }
-    val validUrl = baseUrl.trim().toHttpUrlOrNull()?.let {
+    fun validBaseUrl(value: String) = value.trim().toHttpUrlOrNull()?.let {
         it.username.isEmpty() && it.password.isEmpty() && it.query == null && it.fragment == null
     } == true
-    val draft = LlmSettings(
+    LaunchedEffect(current.baseUrl) {
+        // Keep raw typing (notably a trailing slash) while reflecting another editor's saved URL.
+        if (validBaseUrl(baseUrl) && baseUrl.trim().trimEnd('/') != current.baseUrl) {
+            baseUrl = current.baseUrl
+        }
+    }
+    LaunchedEffect(current.apiKey) {
+        if (apiKey.isNotBlank() && apiKey.trim() != current.apiKey) apiKey = ""
+    }
+    val validUrl = validBaseUrl(baseUrl)
+    val draft = current.copy(
         apiKey = effectiveKey,
         baseUrl = if (validUrl) baseUrl.trim().trimEnd('/') else current.baseUrl,
-        modelName = modelName,
-        endpoint = endpoint,
-        requestTimeoutSeconds = requestTimeoutSeconds,
-        reasoningEffort = reasoningEffort,
-        models = models,
-        supportsImageInput = supportsImageInput,
     )
-    LaunchedEffect(draft) { viewModel.save(draft) }
-    val latestDraft by rememberUpdatedState(draft)
-    DisposableEffect(viewModel) {
-        onDispose { viewModel.save(latestDraft) }
-    }
     LaunchedEffect(viewModel.remoteModels) {
         if (viewModel.remoteModels.isNotEmpty()) {
-            models = (models + viewModel.remoteModels.map { it.id }).distinct()
-            if (modelName.isBlank()) modelName = models.firstOrNull().orEmpty()
+            viewModel.addModels(viewModel.remoteModels.map { it.id })
             viewModel.consumeRemoteModels()
         }
     }
@@ -328,7 +362,7 @@ internal fun LlmSettingsContent(
         if (viewModel.saveError) {
             Column {
                 Text(stringResource(R.string.llm_save_failed), color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = { viewModel.save(draft) }) { Text(stringResource(R.string.llm_retry)) }
+                TextButton(onClick = viewModel::retrySave) { Text(stringResource(R.string.llm_retry)) }
             }
         }
         Column {
@@ -336,7 +370,10 @@ internal fun LlmSettingsContent(
                 OutlinedTextField(
                     value = baseUrl,
                     enabled = settingsControlEnabled(!uiState.busy),
-                    onValueChange = { baseUrl = it },
+                    onValueChange = {
+                        baseUrl = it
+                        if (validBaseUrl(it)) viewModel.edit(LlmSettingsPatch(baseUrl = it))
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.settings_llm_base_url)) },
                     supportingText = {
@@ -352,7 +389,10 @@ internal fun LlmSettingsContent(
                 OutlinedTextField(
                     value = apiKey,
                     enabled = settingsControlEnabled(!uiState.busy),
-                    onValueChange = { apiKey = it },
+                    onValueChange = {
+                        apiKey = it
+                        viewModel.edit(LlmSettingsPatch(apiKey = it))
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.settings_llm_api_key)) },
                     supportingText = { Text(stringResource(R.string.llm_key_hint)) },
@@ -402,7 +442,7 @@ internal fun LlmSettingsContent(
                     enabled = true,
                     options = LlmEndpoint.entries,
                     optionLabel = { stringResource(if (it == LlmEndpoint.CHAT_COMPLETIONS) R.string.settings_llm_chat_completions else R.string.settings_llm_responses) },
-                    onOptionSelected = { endpoint = it },
+                    onOptionSelected = { viewModel.edit(LlmSettingsPatch(endpoint = it)) },
                 )
                 SettingsDropdownField(
                     label = stringResource(R.string.settings_llm_timeout),
@@ -410,7 +450,7 @@ internal fun LlmSettingsContent(
                     enabled = true,
                     options = listOf(60, 180, DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS, 600, MAX_LLM_REQUEST_TIMEOUT_SECONDS),
                     optionLabel = { stringResource(R.string.settings_llm_timeout_value, it / 60) },
-                    onOptionSelected = { requestTimeoutSeconds = it },
+                    onOptionSelected = { viewModel.edit(LlmSettingsPatch(requestTimeoutSeconds = it)) },
                 )
                 SettingsDropdownField(
                     label = stringResource(R.string.settings_llm_reasoning),
@@ -418,14 +458,14 @@ internal fun LlmSettingsContent(
                     enabled = true,
                     options = LlmReasoningEffort.selectable,
                     optionLabel = { stringResource(it.labelRes) },
-                    onOptionSelected = { reasoningEffort = it },
+                    onOptionSelected = { viewModel.edit(LlmSettingsPatch(reasoningEffort = it)) },
                 )
                 SwitchSettingRow(
                     checked = supportsImageInput,
                     enabled = true,
                     title = stringResource(R.string.settings_llm_image_input),
                     description = stringResource(R.string.settings_llm_image_input_hint),
-                    onCheckedChange = { supportsImageInput = it },
+                    onCheckedChange = { viewModel.edit(LlmSettingsPatch(supportsImageInput = it)) },
                 )
             }
         }
@@ -464,7 +504,9 @@ internal fun LlmSettingsContent(
                                     Icon(painterResource(R.drawable.ic_cloud_sync), null, Modifier.size(18.dp))
                                     Text(stringResource(R.string.llm_fetch_models), Modifier.padding(start = 8.dp))
                                 }
-                                TextButton(enabled = models.isNotEmpty(), onClick = { models = emptyList(); modelName = "" }) {
+                                TextButton(enabled = models.isNotEmpty(), onClick = {
+                                    viewModel.edit(LlmSettingsPatch(models = emptyList(), modelName = ""))
+                                }) {
                                     Icon(painterResource(R.drawable.ic_delete), null, Modifier.size(18.dp))
                                     Text(stringResource(R.string.llm_clear_models), Modifier.padding(start = 8.dp))
                                 }
@@ -493,15 +535,16 @@ internal fun LlmSettingsContent(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Row(
                                 modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                                    .selectable(selected = modelName == model, role = Role.RadioButton, onClick = { modelName = model }),
+                                    .selectable(selected = modelName == model, role = Role.RadioButton, onClick = {
+                                        viewModel.edit(LlmSettingsPatch(modelName = model))
+                                    }),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 RadioButton(selected = modelName == model, onClick = null)
                                 Text(model, Modifier.weight(1f).padding(start = 8.dp))
                             }
                             IconButton(onClick = {
-                                models = models - model
-                                if (modelName == model) modelName = models.firstOrNull().orEmpty()
+                                viewModel.removeModel(model)
                             }) {
                                 Icon(painterResource(R.drawable.ic_close), stringResource(R.string.llm_remove_model, model))
                             }
@@ -540,8 +583,7 @@ internal fun LlmSettingsContent(
                     onClick = {
                         val model = customModelInput.trim()
                         if (model.isNotEmpty()) {
-                            models = (models + model).distinct()
-                            if (modelName.isBlank()) modelName = model
+                            viewModel.addModels(listOf(model))
                         }
                         showAddCustomModel = false
                         customModelInput = ""

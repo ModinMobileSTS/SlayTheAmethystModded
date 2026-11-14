@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.util.WeakHashMap
 
 private const val DEFAULT_LLM_BASE_URL = "https://api.deepseek.com/v1"
 private const val DEFAULT_LLM_MODEL_NAME = "deepseek-flash"
@@ -45,6 +46,46 @@ enum class LlmReasoningEffort {
     }
 }
 
+/** Null means untouched, including an empty API-key input (which keeps the saved key). */
+data class LlmSettingsPatch(
+    val apiKey: String? = null,
+    val baseUrl: String? = null,
+    val modelName: String? = null,
+    val endpoint: LlmEndpoint? = null,
+    val requestTimeoutSeconds: Int? = null,
+    val reasoningEffort: LlmReasoningEffort? = null,
+    val models: List<String>? = null,
+    val supportsImageInput: Boolean? = null,
+) {
+    internal fun normalized() = copy(
+        apiKey = apiKey?.trim()?.takeIf(String::isNotEmpty),
+        baseUrl = baseUrl?.trim()?.trimEnd('/'),
+        modelName = modelName?.trim(),
+        requestTimeoutSeconds = requestTimeoutSeconds?.coerceIn(
+            MIN_LLM_REQUEST_TIMEOUT_SECONDS, MAX_LLM_REQUEST_TIMEOUT_SECONDS,
+        ),
+        models = models?.map(String::trim)?.filter(String::isNotEmpty)?.distinct(),
+    )
+
+    // Stable field positions are only used by this process's edit-order fence, never persisted.
+    internal fun applyTo(settings: LlmSettings, include: (Int) -> Boolean = { true }): LlmSettings {
+        fun <T> field(index: Int, value: T?, current: T): T =
+            if (value != null && include(index)) value else current
+        return settings.copy(
+            apiKey = field(0, apiKey, settings.apiKey),
+            baseUrl = field(1, baseUrl, settings.baseUrl),
+            modelName = field(2, modelName, settings.modelName),
+            endpoint = field(3, endpoint, settings.endpoint),
+            requestTimeoutSeconds = field(4, requestTimeoutSeconds, settings.requestTimeoutSeconds),
+            reasoningEffort = field(5, reasoningEffort, settings.reasoningEffort),
+            models = field(6, models, settings.models),
+            supportsImageInput = field(7, supportsImageInput, settings.supportsImageInput),
+        )
+    }
+}
+
+internal data class LlmSettingsEdit(val patch: LlmSettingsPatch, val revision: Long)
+
 class LlmSettingsRepository(context: Context) {
     private val appContext = context.applicationContext
     private val encryptedPrefs by lazy { createEncryptedPrefsOrNull(appContext) }
@@ -52,9 +93,77 @@ class LlmSettingsRepository(context: Context) {
         appContext.getSharedPreferences(FALLBACK_PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    fun get(): LlmSettings = read(encryptedPrefs) ?: read(fallbackPrefs) ?: LlmSettings()
+    fun get(): LlmSettings = synchronized(editLock) {
+        read(encryptedPrefs) ?: read(fallbackPrefs) ?: LlmSettings()
+    }
 
-    fun set(settings: LlmSettings) {
+    fun set(settings: LlmSettings) = synchronized(editLock) {
+        val order = editOrder()
+        order.unpersistedFields.addAll(order.latest.indices)
+        persist(settings)
+        // An explicit whole-settings replacement also supersedes older queued editor writes.
+        order.latest.fill(++order.revision)
+    }
+
+    internal fun newEdit(patch: LlmSettingsPatch): LlmSettingsEdit? = synchronized(editLock) {
+        val normalized = patch.normalized()
+        val order = editOrder()
+        val revision = ++order.revision
+        var changed = false
+        normalized.applyTo(LlmSettings()) { field ->
+            order.latest[field] = revision
+            changed = true
+            true
+        }
+        if (changed) LlmSettingsEdit(normalized, revision) else null
+    }
+
+    internal fun discardPendingApiKey(edits: List<LlmSettingsEdit>) = synchronized(editLock) {
+        val order = editOrder()
+        // Clearing the input before debounce keeps the saved key. Do not cancel another
+        // editor's newer key, nor replay a superseded key when this editor later retries.
+        if (edits.any { it.patch.apiKey != null && it.revision == order.latest[0] }) {
+            order.latest[0] = ++order.revision
+        }
+    }
+
+    internal fun preview(settings: LlmSettings, edits: List<LlmSettingsEdit>): LlmSettings =
+        synchronized(editLock) { mergeEdits(settings, edits) }
+
+    // Callers hold editLock; only fields still owned by these edits participate in retries.
+    private fun mergeEdits(
+        settings: LlmSettings,
+        edits: List<LlmSettingsEdit>,
+        appliedFields: MutableSet<Int>? = null,
+    ): LlmSettings {
+        val latest = editOrder().latest
+        return edits.fold(settings) { current, edit ->
+            edit.patch.applyTo(current) { field ->
+                (latest[field] == edit.revision).also { applied ->
+                    if (applied) appliedFields?.add(field)
+                }
+            }
+        }
+    }
+
+    /** Read/merge/write is atomic across both editor repositories, including their IO workers. */
+    internal fun update(edits: List<LlmSettingsEdit>): LlmSettings = synchronized(editLock) {
+        val current = get()
+        val order = editOrder()
+        val appliedFields = mutableSetOf<Int>()
+        val merged = mergeEdits(current, edits, appliedFields)
+        // A failed SharedPreferences commit can already have changed its in-memory values.
+        // Equality is only sufficient when these fields have no unconfirmed disk write.
+        if (merged != current || appliedFields.any { it in order.unpersistedFields }) {
+            order.unpersistedFields.addAll(appliedFields)
+            persist(merged)
+        }
+        merged
+    }
+
+    private fun editOrder(): EditOrder = editOrders.getOrPut(appContext) { EditOrder() }
+
+    private fun persist(settings: LlmSettings) {
         val normalized = settings.copy(
             apiKey = settings.apiKey.trim(),
             baseUrl = settings.baseUrl.trim().trimEnd('/'),
@@ -67,6 +176,8 @@ class LlmSettingsRepository(context: Context) {
         } else {
             check(write(fallbackPrefs, normalized)) { "Unable to save LLM settings" }
         }
+        // Every successful write persists a whole snapshot, including other editors' dirty fields.
+        editOrder().unpersistedFields.clear()
     }
 
     private fun read(prefs: SharedPreferences?): LlmSettings? = prefs?.let {
@@ -118,6 +229,13 @@ class LlmSettingsRepository(context: Context) {
     }
 
     companion object {
+        private class EditOrder(
+            var revision: Long = 0,
+            val latest: LongArray = LongArray(8),
+            val unpersistedFields: MutableSet<Int> = mutableSetOf(),
+        )
+        private val editLock = Any()
+        private val editOrders = WeakHashMap<Context, EditOrder>()
         private const val ENCRYPTED_PREFS_NAME = "llm_settings"
         private const val FALLBACK_PREFS_NAME = "llm_settings_fallback"
         private const val KEY_API_KEY = "api_key"
