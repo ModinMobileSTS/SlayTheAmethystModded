@@ -1,0 +1,11 @@
+fixture,engine,codec,repeats,patch_bytes,generate_median_ms,apply_median_ms
+64m-insert-middle,hdiff-stream256,deflate6,2,39,326.55,648.83
+64m-insert-middle,xdelta-stream1024-src8m,deflate6,2,576,217.86,679.60
+64m-sparse,hdiff-stream256,deflate6,2,3727,542.58,801.95
+64m-sparse,xdelta-stream1024-src8m,deflate6,2,5469,707.00,699.59
+64m-unrelated,hdiff-stream256,deflate6,2,67129374,5927.95,1414.20
+64m-unrelated,xdelta-stream1024-src8m,deflate6,2,67131520,31041.13,1471.04
+coroutines-patch-raw,hdiff-stream256,deflate6,2,276503,44.24,42.92
+coroutines-patch-raw,xdelta-stream1024-src8m,deflate6,2,266721,96.85,45.91
+coroutines-minor-raw,hdiff-stream256,deflate6,2,1334725,115.25,57.84
+coroutines-minor-raw,xdelta-stream1024-src8m,deflate6,2,1317967,333.06,52.95

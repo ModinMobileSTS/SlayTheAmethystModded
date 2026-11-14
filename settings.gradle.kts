@@ -48,3 +48,5 @@ include(":archive-delta-generator")
 include(":io-task-manager")
 include(":download-core")
 include(":delta-core")
+// Standalone algorithm experiment; never a launcher dependency.
+include(":tools:delta-benchmark")

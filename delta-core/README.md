@@ -7,6 +7,14 @@
 不依赖 Download Core 或 Android，`:app` 尚未接入。
 完整架构见 [IO Task Manager](../io-task-manager/README.md)。
 
+## 已确认的算法选型（2026-11-14）
+
+通用二进制差分采用 **HDiffPatch**，优先使用单线程、256 KiB step 的文件流式能力。
+ZIP/JAR 作为上层输入/输出组件，不绑定通用内核。Android实测数据、固定源码版本、
+与xdelta3/BSDiff的取舍见 [选型记录](../tools/delta-benchmark/DECISION.md)。
+这是已确认的引擎选择；本模块仍未实现或接入HDiffPatch。压缩封装、硬内存/磁盘预算、
+进程中断恢复、候选发布与回退协议仍需实现验证，不能把测试工具当作生产适配器。
+
 ## 目标职责
 
 - 为可逆增量内容存储和管理提供无状态 API 及可实例化执行单元。

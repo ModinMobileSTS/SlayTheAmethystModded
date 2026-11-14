@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="Delta benchmark" android:allowBackup="false" android:debuggable="false" />
+    <instrumentation
+        android:name=".BenchmarkInstrumentation"
+        android:targetPackage="io.stamethyst.deltabench"
+        android:label="Isolated delta smoke benchmark" />
+    <instrumentation android:name=".PhaseInstrumentation"
+        android:targetPackage="io.stamethyst.deltabench"
+        android:label="Phase isolated delta benchmark" />
+</manifest>
