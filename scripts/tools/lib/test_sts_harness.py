@@ -513,7 +513,7 @@ class HarnessAdbLaunchTest(unittest.TestCase):
         self.assertEqual(harness.adb.call_args.args[0], ["shell", "am", "force-stop", "io.test"])
 
     def test_harness_status_treats_steamcloud_process_as_running(self):
-        harness = Harness(self._make_options(command="status"))
+        harness = Harness(self._make_options(command="status", device_serial="device-1"))
         harness.application_id = "io.test"
         harness.resolved_device_serial = "device-1"
         harness.resolve_device_sts_root = MagicMock(return_value={"root": "files/sts", "accessMode": "run-as"})

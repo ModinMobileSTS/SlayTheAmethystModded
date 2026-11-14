@@ -612,7 +612,10 @@ class Harness:
         from scripts.tools.harness._device import harness_logcat_dump as device_logcat_dump
         return device_logcat_dump(self._build_context(), output_directory, since_timestamp)
 
-    def resolve_device_sts_root(self) -> dict[str, Any]:
+    def resolve_device_sts_root(self, *, strict: bool = False) -> dict[str, Any]:
+        if strict:
+            from scripts.tools.harness._device import resolve_device_sts_root
+            return resolve_device_sts_root(self._build_context(), strict=True)
         package_name = self.application_id or ""
         candidates = [
             f"/sdcard/Android/data/{package_name}/files/sts",
@@ -737,7 +740,12 @@ fi
         tail_lines: int = 0,
         *,
         timeout_seconds: int = 5,
+        strict: bool = False,
     ) -> str:
+        if strict:
+            from scripts.tools.harness._device import read_remote_sts_text
+            return read_remote_sts_text(self._build_context(), sts_root, relative_path,
+                                        tail_lines=tail_lines, timeout_seconds=timeout_seconds, strict=True)
         return self.read_remote_root_text(sts_root, relative_path, tail_lines=tail_lines, timeout_seconds=timeout_seconds)
 
     def remote_sts_root_script(
@@ -755,7 +763,10 @@ fi
             allow_failure=allow_failure,
         )
 
-    def remote_sts_path_state(self, sts_root: dict[str, Any], relative_path: str) -> dict[str, Any]:
+    def remote_sts_path_state(self, sts_root: dict[str, Any], relative_path: str, *, strict: bool = False) -> dict[str, Any]:
+        if strict:
+            from scripts.tools.harness._device import remote_sts_path_state
+            return remote_sts_path_state(self._build_context(), sts_root, relative_path, strict=True)
         return self.remote_root_path_state(sts_root, relative_path)
 
     @staticmethod
@@ -1178,10 +1189,10 @@ rm -rf files/sts/package files/sts/mts_patch_cache
         self.adb(["push", str(local_spec), remote_path], timeout_seconds=30)
         return remote_path
 
-    def desktop_jar_patch_snapshot(self, sts_root: dict[str, Any]) -> dict[str, Any]:
-        desktop_jar = self.remote_sts_path_state(sts_root, "desktop-1.0.jar")
-        temp_jar = self.remote_sts_path_state(sts_root, "desktop-1.0.jar.patching.tmp")
-        backup_jar = self.remote_sts_path_state(sts_root, "desktop-1.0.jar.patching.backup")
+    def desktop_jar_patch_snapshot(self, sts_root: dict[str, Any], *, strict: bool = False) -> dict[str, Any]:
+        desktop_jar = self.remote_sts_path_state(sts_root, "desktop-1.0.jar", strict=strict)
+        temp_jar = self.remote_sts_path_state(sts_root, "desktop-1.0.jar.patching.tmp", strict=strict)
+        backup_jar = self.remote_sts_path_state(sts_root, "desktop-1.0.jar.patching.backup", strict=strict)
         return {
             "desktopJar": desktop_jar,
             "tempJar": temp_jar,
@@ -1325,10 +1336,14 @@ rm -rf files/sts/package files/sts/mts_patch_cache
         }
 
     def process_pid_text(self, process_name: str) -> str:
-        result = self.adb_shell_script(f"pidof {quote_android_shell(process_name)} 2>/dev/null || true", allow_failure=True)
-        return result.output.strip()
+        from scripts.tools.harness._status import checked_pid_text
+        result = self.adb_shell_script(f"pidof {quote_android_shell(process_name)}", allow_failure=True)
+        return checked_pid_text(result)
 
-    def package_version_info(self) -> dict[str, Any]:
+    def package_version_info(self, *, strict: bool = False) -> dict[str, Any]:
+        if strict:
+            from scripts.tools.harness._status import package_version_info
+            return package_version_info(self._build_context(), strict=True)
         quoted = quote_android_shell(self.application_id or "")
         result = self.adb_shell_script(f"dumpsys package {quoted} 2>/dev/null | grep -E 'version(Name|Code)=' || true", timeout_seconds=5, allow_failure=True)
         version_name = None
@@ -1342,20 +1357,21 @@ rm -rf files/sts/package files/sts/mts_patch_cache
         return {"versionName": version_name, "versionCode": version_code}
 
     def harness_status(self, harness_logcat_text: str | None = None, harness_logcat_path: str = "") -> dict[str, Any]:
-        sts_root = self.resolve_device_sts_root()
-        boot_text = self.read_remote_sts_text(sts_root, "boot_bridge_events.log")
-        latest_log_tail = self.read_remote_sts_text(sts_root, "latest.log", tail_lines=120)
-        desktop_jar_patch = self.desktop_jar_patch_snapshot(sts_root)
-        boot = self.parse_boot_bridge_events(boot_text)
-        crash_marker = self.find_crash_marker(latest_log_tail)
-        single_room_result = self.find_single_room_result(latest_log_tail)
-
+        from scripts.tools.harness._status import require_status_device
+        require_status_device(self.options.device_serial, self.resolved_device_serial)
         package_name = self.application_id or ""
         launcher_pid = self.process_pid_text(package_name)
         game_pid = self.process_pid_text(f"{package_name}:game")
         steamcloud_pid = self.process_pid_text(f"{package_name}:steamcloud")
         diag_pid = self.process_pid_text(f"{package_name}:diag")
         logcat_pid = self.process_pid_text(f"{package_name}:logcat")
+        sts_root = self.resolve_device_sts_root(strict=True)
+        boot_text = self.read_remote_sts_text(sts_root, "boot_bridge_events.log", strict=True)
+        latest_log_tail = self.read_remote_sts_text(sts_root, "latest.log", tail_lines=120, strict=True)
+        desktop_jar_patch = self.desktop_jar_patch_snapshot(sts_root, strict=True)
+        boot = self.parse_boot_bridge_events(boot_text)
+        crash_marker = self.find_crash_marker(latest_log_tail)
+        single_room_result = self.find_single_room_result(latest_log_tail)
 
         runtime_signal_state = None
         terminal = boot["terminalEvent"]
@@ -1399,7 +1415,7 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             "runtimeSignalState": runtime_signal_state,
             "applicationId": package_name,
             "deviceSerial": self.resolved_device_serial,
-            "package": self.package_version_info(),
+            "package": self.package_version_info(strict=True),
             "processes": {
                 "launcher": launcher_pid,
                 "game": game_pid,
@@ -1535,7 +1551,7 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             elif command == "status":
                 from scripts.tools.harness.status import run_status
                 run_status(ctx)
-                return 0
+                return 0 if ctx.result.get("success") else 1
             elif command == "mods":
                 from scripts.tools.harness.mods import run_mods
                 run_mods(ctx)

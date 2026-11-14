@@ -4,13 +4,22 @@
 
 ## 前置条件
 
+推荐配置项目 `.env.local`，由 harness 管理本地 ADB/connector 的动态端口。
+状态采集与 raw adb/shell 操作必须显式传入匹配配置的 `-DeviceSerial`；自动选择
+不授予 raw/安装权限。状态的 PID、存储目录、日志读取、文件元信息及包信息
+任一查询失败或响应格式异常，均返回失败/`UNKNOWN` 和非零退出码。
+可选文件缺失由成功的远端探测确认；父目录无法访问、权限/传输错误不能当作缺失。
+严格查询要求完整成功标记，包信息直接校验 dumpsys 的结果，不用管道吞掉错误。
+两套状态入口使用同一严格实现；其他工具的默认宽容文件探测行为保持原样。
+下面仅为无托管配置的 legacy 用法：
+
 ```bash
 export STS_CONNECTOR_PORT=39999
 python -m scripts.tools.connector start --port 39999
 # 或 harness 参数: -ConnectorPort 39999
 ```
 
-Harness **不会**自动拉起 daemon（与 arthas 客户端默认 auto_start 不同）。
+Legacy 模式的 Harness **不会**自动拉起 daemon（与 arthas 客户端默认 auto_start 不同）。
 
 ## 架构
 
@@ -117,7 +126,7 @@ python3 -m scripts.tools.connector start --port 39999
 | Gradle property | 类型 / 默认值 | 含义 |
 |---|---|---|
 | `-PpythonExecutable=<path>` | 字符串；`python` | 启动 harness 的 Python 可执行文件。系统没有 `python` 命令时使用 `python3`。 |
-| `-PdeviceSerial=<serial>` | 字符串；空 | 目标设备序列号。多设备连接时必须指定；空值由 connector 选择唯一可用设备。 |
+| `-PdeviceSerial=<serial>` | 字符串；空 | 目标设备序列号。状态与 raw 查询必须显式指定；自动选择不授予相应权限。托管模式要求与配置完全一致。 |
 | `-PharnessOutDir=<path>` | 路径；空 | 输出基目录。指定后写入 `<path>/<timestamp>/`；空值写入 `debug-artifacts/harness/perf-bench-<timestamp>/`。不会清空基目录。 |
 | `-PperfBenchTimeoutSeconds=<seconds>` | 正整数；`720` | 整轮游戏等待超时。优先级高于 `harnessTimeoutSeconds`。超时后仍会收集现有 incidents 并停止游戏。 |
 | `-PharnessTimeoutSeconds=<seconds>` | 正整数；`720`（仅本任务） | 未提供 `perfBenchTimeoutSeconds` 时的超时回退值。其他 harness task 的默认值不同。 |

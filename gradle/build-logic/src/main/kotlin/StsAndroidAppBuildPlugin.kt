@@ -799,7 +799,8 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
 
     fun adbCommand(vararg args: String): List<String> = buildList {
         if (rootProject.file(".env.local").isFile) {
-            addAll(listOf(readGradleProperty("pythonExecutable", "python3"), "-m", "scripts.tools.local_adb", "adb", "--"))
+            addAll(localAdbPrefix(readGradleProperty("pythonExecutable", "python3"), deviceSerial))
+            addAll(listOf("adb", "--"))
             addAll(args)
             return@buildList
         }

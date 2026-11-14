@@ -14,14 +14,30 @@ from scripts.tools.lib.sts_harness import (
 )
 from scripts.tools.harness._context import HarnessContext
 from scripts.tools.harness._runner import CommandResult, adb, adb_shell_script
+from scripts.tools.harness._status_query import StatusQueryError, run_status_query, status_path_probe_script
 
 
-def resolve_device_sts_root(ctx: HarnessContext) -> dict[str, Any]:
+def resolve_device_sts_root(ctx: HarnessContext, *, strict: bool = False) -> dict[str, Any]:
     package_name = ctx.application_id or ""
     candidates = [
         f"/sdcard/Android/data/{package_name}/files/sts",
         f"/storage/emulated/0/Android/data/{package_name}/files/sts",
     ]
+    if strict:
+        roots = [{"root": candidate, "accessMode": "shell"} for candidate in candidates]
+        roots.append({"root": "files/sts", "accessMode": "run-as"})
+        for root in roots:
+            script = status_path_probe_script(root["root"]) + """if [ "$sts_presence" = exists ]; then
+    (cd "$sts_path" && ls -a >/dev/null) || exit $?
+fi
+printf '%s\n' "$sts_presence"
+"""
+            output = run_status_query(ctx, script, label="resolve storage", sts_root=root)
+            if output == "exists\n":
+                return root
+            if output != "missing\n":
+                raise StatusQueryError("resolve storage query returned invalid presence data.")
+        return roots[0]
     for candidate in candidates:
         probe = adb_shell_script(ctx, f"ls {quote_android_shell(candidate)} >/dev/null 2>&1", allow_failure=True)
         if probe.exit_code == 0:
@@ -39,11 +55,29 @@ def read_remote_sts_text(
     tail_lines: int = 0,
     *,
     timeout_seconds: int = 5,
+    strict: bool = False,
 ) -> str:
     trimmed = relative_path.lstrip("/")
     root_path = str(sts_root["root"])
     remote_path = root_path if not trimmed else f"{root_path}/{trimmed}"
     quoted = quote_android_shell(remote_path)
+    if strict:
+        reader = f"tail -n {int(tail_lines)}" if tail_lines > 0 else "cat"
+        script = status_path_probe_script(remote_path) + f"""if [ "$sts_presence" = missing ]; then
+    printf 'missing\\n'
+else
+    [ -f "$sts_path" ] || {{ printf 'Expected a regular log file\\n' >&2; exit 1; }}
+    printf 'exists\\n'
+    {reader} "$sts_path" || exit $?
+fi
+"""
+        output = run_status_query(ctx, script, label=f"read {relative_path}", sts_root=sts_root,
+                                  timeout_seconds=timeout_seconds)
+        if output == "missing\n":
+            return ""
+        if not output.startswith("exists\n"):
+            raise StatusQueryError(f"read {relative_path} query returned invalid presence data.")
+        return output[len("exists\n"):]
     if tail_lines > 0:
         script = f"if [ -f {quoted} ]; then tail -n {tail_lines} {quoted}; fi"
     else:
@@ -137,11 +171,33 @@ def device_logcat_timestamp(ctx: HarnessContext) -> str:
     return ""
 
 
-def remote_sts_path_state(ctx: HarnessContext, sts_root: dict[str, Any], relative_path: str) -> dict[str, Any]:
+def remote_sts_path_state(ctx: HarnessContext, sts_root: dict[str, Any], relative_path: str, *, strict: bool = False) -> dict[str, Any]:
     trimmed = relative_path.lstrip("/")
     root_path = str(sts_root["root"])
     remote_path = root_path if not trimmed else f"{root_path}/{trimmed}"
     quoted = quote_android_shell(remote_path)
+    if strict:
+        script = status_path_probe_script(remote_path) + """if [ "$sts_presence" = missing ]; then
+    printf 'exists=0\n'
+else
+    if [ -f "$sts_path" ]; then kind=file
+    elif [ -d "$sts_path" ]; then kind=directory
+    else kind=other
+    fi
+    printf 'exists=1\ntype=%s\n' "$kind"
+    stat -c 'bytes=%s
+mtimeEpochSeconds=%Y' "$sts_path" || exit $?
+fi
+"""
+        output = run_status_query(ctx, script, label=f"path {relative_path}", sts_root=sts_root)
+        if output != "exists=0\n" and not re.fullmatch(
+            r"exists=1\ntype=(file|directory|other)\nbytes=[0-9]+\nmtimeEpochSeconds=-?[0-9]+\n", output,
+        ):
+            raise StatusQueryError(f"path {relative_path} query returned invalid metadata.")
+        state = parse_remote_path_state_output(relative_path, output)
+        if state["exists"] and state["type"] != "file":
+            state["bytes"] = 0
+        return state
     state_script = f"""if [ -e {quoted} ]; then
   echo exists=1
   if [ -f {quoted} ]; then

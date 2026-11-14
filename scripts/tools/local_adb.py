@@ -133,8 +133,15 @@ def connector_owned(state: dict, c: dict[str, str]) -> bool:
         return False
 
 
-def ensure() -> dict[str, str]:
+def validate_expected_serial(c: dict[str, str], expected_serial: str | None) -> None:
+    """Check a caller's target without connecting; configuration is not install consent."""
+    if expected_serial is not None and expected_serial != c["STS_ADB_DEVICE_ENDPOINT"]:
+        raise RuntimeError("Expected device serial differs from the configured local wireless device; refusing operation")
+
+
+def ensure(*, expected_serial: str | None = None) -> dict[str, str]:
     c = config()
+    validate_expected_serial(c, expected_serial)
     env = environment(c)
     with locked():
         state = read_state()
@@ -158,10 +165,27 @@ def ensure() -> dict[str, str]:
                 if proc.poll() is not None or time.monotonic() > deadline:
                     raise RuntimeError("Project ADB failed to start; inspect agent-tmp/local-adb/adb.log")
                 time.sleep(.1)
-        subprocess.run(command(c, "connect", c["STS_ADB_DEVICE_ENDPOINT"]), env=env,
-                       check=True, capture_output=True, timeout=15)
-        result = subprocess.run(command(c, "-s", c["STS_ADB_DEVICE_ENDPOINT"], "get-state"),
-                                env=env, capture_output=True, text=True, timeout=10)
+        try:
+            subprocess.run(command(c, "connect", c["STS_ADB_DEVICE_ENDPOINT"]), env=env,
+                           check=True, capture_output=True, timeout=15)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                "Wireless ADB connect timed out after 15s; check the phone's network/VPN and "
+                "wireless debugging port, then retry. See agent-tmp/local-adb/adb.log"
+            ) from None
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                f"Wireless ADB connect failed (exit {exc.returncode}); check the phone's "
+                "network and debugging port. See agent-tmp/local-adb/adb.log"
+            ) from None
+        try:
+            result = subprocess.run(command(c, "-s", c["STS_ADB_DEVICE_ENDPOINT"], "get-state"),
+                                    env=env, capture_output=True, text=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                "Wireless ADB device-state check timed out after 10s; check the phone's "
+                "connection and debugging authorization. See agent-tmp/local-adb/adb.log"
+            ) from None
         if result.returncode or result.stdout.strip() != "device":
             raise RuntimeError("Configured wireless device is not online/authorized; check its connection port and pairing")
         if not connector_owned(state, c):
@@ -186,21 +210,27 @@ def ensure() -> dict[str, str]:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--expected-serial", help="Exact expected device; checked before local ADB lifecycle or device commands")
     parser.add_argument("action", choices=["ensure", "status", "stop", "run", "adb"])
     parser.add_argument("args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+    if args.action not in ("run", "adb") and args.args:
+        parser.error("Lifecycle actions accept no trailing arguments; put --expected-serial before the action")
+    if args.expected_serial is not None:
+        validate_expected_serial(config(), args.expected_serial)
     if args.action in ("run", "adb"):
-        env = ensure()
         command_args = args.args[1:] if args.args[:1] == ["--"] else args.args
-        if not command_args:
+        if not command_args or (args.action == "run" and command_args[0].startswith("-")):
             parser.error("run requires a command after --")
         if args.action == "adb":
             if command_args[0].startswith("-") or command_args[0] in ("kill-server", "start-server", "server", "connect", "disconnect", "pair", "attach", "usb", "tcpip"):
                 parser.error("Use lifecycle actions for server management; device comes from local configuration")
-            command_args = command(config(), "-s", env["STS_ADB_DEVICE_ENDPOINT"], *command_args)
+        env = ensure(expected_serial=args.expected_serial)
+        if args.action == "adb":
+            command_args = command(env, "-s", env["STS_ADB_DEVICE_ENDPOINT"], *command_args)
         raise SystemExit(subprocess.call(command_args, cwd=ROOT, env=env))
     if args.action == "ensure":
-        ensure()
+        ensure(expected_serial=args.expected_serial)
         print(json.dumps({"ready": True}))
     elif args.action == "status":
         c = config()

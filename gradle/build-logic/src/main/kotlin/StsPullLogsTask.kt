@@ -53,6 +53,14 @@ abstract class StsPullLogsTask : DefaultTask() {
 
     @TaskAction
     fun pullLogs() {
+        if (localAdbPython.isPresent) {
+            // Fail before staging/polling: individual file probes below tolerate
+            // missing paths, but a rejected target must never be swallowed.
+            execOperations.exec {
+                commandLine(localAdbPrefix(localAdbPython.get(), deviceSerial.orNull.orEmpty()) + "ensure")
+                workingDir(project.rootProject.projectDir)
+            }
+        }
         val packageName = applicationId.get()
         val outputDir = logsDir.orNull
             ?.takeIf { it.isNotEmpty() }
@@ -205,7 +213,8 @@ abstract class StsPullLogsTask : DefaultTask() {
 
     private fun buildAdbArgs(vararg args: String): List<String> = buildList {
         if (localAdbPython.isPresent) {
-            addAll(listOf(localAdbPython.get(), "-m", "scripts.tools.local_adb", "adb", "--"))
+            addAll(localAdbPrefix(localAdbPython.get(), deviceSerial.orNull.orEmpty()))
+            addAll(listOf("adb", "--"))
             addAll(args.toList())
             return@buildList
         }

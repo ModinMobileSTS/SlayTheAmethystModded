@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -113,6 +114,111 @@ class LocalAdbTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "not online"):
                 adb.ensure()
             popen.assert_not_called()
+
+    def test_connection_failures_identify_stage_without_exposing_endpoint(self):
+        self.write_config()
+        state = {"identity": adb.identity(self.c), "adbPid": 123}
+        connect = adb.command(self.c, "connect", self.c["STS_ADB_DEVICE_ENDPOINT"])
+        get_state = adb.command(self.c, "-s", self.c["STS_ADB_DEVICE_ENDPOINT"], "get-state")
+        cases = (
+            ([subprocess.TimeoutExpired(connect, 15)], "connect timed out after 15s", 1),
+            ([subprocess.CalledProcessError(1, connect, stderr=b"sensitive details")],
+             "connect failed (exit 1)", 1),
+            ([subprocess.CompletedProcess(connect, 0), subprocess.TimeoutExpired(get_state, 10)],
+             "device-state check timed out after 10s", 2),
+        )
+        for results, message, calls in cases:
+            with self.subTest(message=message), \
+                    patch.object(adb, "read_state", return_value=state), \
+                    patch.object(adb, "listening", return_value=True), \
+                    patch.object(adb, "server_owned", return_value=True), \
+                    patch.object(adb.subprocess, "Popen") as popen, \
+                    patch.object(adb.subprocess, "run", side_effect=results) as run:
+                with self.assertRaises(RuntimeError) as error:
+                    adb.ensure()
+                text = str(error.exception)
+                self.assertIn(message, text)
+                self.assertIn("agent-tmp/local-adb/adb.log", text)
+                self.assertNotIn(self.c["STS_ADB_DEVICE_ENDPOINT"], text)
+                self.assertNotIn("sensitive details", text)
+                self.assertEqual(run.call_count, calls)
+                popen.assert_not_called()
+
+    def test_expected_serial_mismatch_fails_before_ensure_or_device_commands(self):
+        self.write_config()
+        for action, command_args in (
+            ("ensure", []),
+            ("adb", ["--", "shell", "am", "force-stop", "io.test"]),
+            ("adb", ["--", "shell", "am", "start", "-n", "io.test/.LauncherActivity"]),
+            ("adb", ["--", "pull", "/fake/log.zip", "unused.zip"]),
+            ("run", ["--", "./gradlew", ":app:stsStartAutoplay"]),
+        ):
+            with self.subTest(action=action, command_args=command_args), \
+                    patch("sys.argv", ["local_adb", "--expected-serial", "192.0.2.2:45678", action, *command_args]), \
+                    patch.object(adb, "ensure") as ensure, \
+                    patch.object(adb.subprocess, "call") as call:
+                with self.assertRaisesRegex(RuntimeError, "Expected device serial differs"):
+                    adb.main()
+                ensure.assert_not_called()
+                call.assert_not_called()
+
+    def test_ensure_itself_validates_before_lifecycle(self):
+        self.write_config()
+        for serial in ("192.0.2.2:45678", "", "auto"):
+            with self.subTest(serial=serial), patch.object(adb, "locked") as locked:
+                with self.assertRaisesRegex(RuntimeError, "Expected device serial differs"):
+                    adb.ensure(expected_serial=serial)
+                locked.assert_not_called()
+
+    def test_matching_expected_serial_allows_ensure(self):
+        self.write_config()
+        state = {"identity": adb.identity(self.c), "adbPid": 123, "connectorPort": 23456}
+        with patch.object(adb, "read_state", return_value=state), \
+                patch.object(adb, "listening", return_value=True), \
+                patch.object(adb, "server_owned", return_value=True), \
+                patch.object(adb, "connector_owned", return_value=True), \
+                patch.object(adb.subprocess, "Popen") as popen, \
+                patch.object(adb.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "device\n")) as run:
+            env = adb.ensure(expected_serial=self.c["STS_ADB_DEVICE_ENDPOINT"])
+            self.assertEqual(env["STS_CONNECTOR_PORT"], "23456")
+            self.assertEqual(run.call_count, 2)
+            popen.assert_not_called()
+
+    def test_misplaced_expected_serial_is_not_silently_ignored(self):
+        for action in ("ensure", "status", "stop", "run", "adb"):
+            with self.subTest(action=action), \
+                    patch("sys.argv", ["local_adb", action, "--expected-serial", "192.0.2.2:45678"]), \
+                    patch.object(adb, "ensure") as ensure, \
+                    patch.object(adb, "config") as config, \
+                    patch("sys.stderr"):
+                with self.assertRaises(SystemExit) as exit:
+                    adb.main()
+                self.assertEqual(exit.exception.code, 2)
+                ensure.assert_not_called()
+                config.assert_not_called()
+
+    def test_cli_matching_and_unspecified_targets_keep_local_server_and_device(self):
+        self.write_config()
+        device = self.c["STS_ADB_DEVICE_ENDPOINT"]
+        for expected in (None, device):
+            for command_args in (
+                ["shell", "am", "force-stop", "io.test"],
+                ["shell", "am", "start", "-n", "io.test/.LauncherActivity"],
+                ["exec-out", "run-as", "io.test", "cat", "files/log.zip"],
+                ["pull", "/fake/log.zip", "unused.zip"],
+            ):
+                flags = [] if expected is None else ["--expected-serial", expected]
+                with self.subTest(expected=expected, args=command_args), \
+                        patch("sys.argv", ["local_adb", *flags, "adb", "--", *command_args]), \
+                        patch.object(adb, "ensure", return_value=self.c) as ensure, \
+                        patch.object(adb.subprocess, "call", return_value=0) as call:
+                    with self.assertRaises(SystemExit) as exit:
+                        adb.main()
+                    self.assertEqual(exit.exception.code, 0)
+                    ensure.assert_called_once_with(expected_serial=expected)
+                    call.assert_called_once_with(
+                        adb.command(self.c, "-s", device, *command_args), cwd=self.root, env=self.c,
+                    )
 
 
 if __name__ == "__main__":

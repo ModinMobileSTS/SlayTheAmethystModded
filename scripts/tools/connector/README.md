@@ -248,7 +248,9 @@ python3 -m scripts.tools.local_adb stop
 ```
 
 OpenCode `sts` tools automatically ensure this connection; `sts.local_adb` exposes
-`ensure`, `status`, and `stop`. No device or connector port argument is needed.
+`ensure`, `status`, and `stop`. These lifecycle actions need no device or connector
+port argument. Harness status/raw queries and installation require an explicit
+device serial matching the configured endpoint; configuration is not authorization.
 The local manager allocates a connector port and replaces stale inherited
 `STS_CONNECTOR_PORT`/`STS_TEST_DEVICE` settings in its child processes. The old
 fixed-port harness auto-start is removed. Explicit legacy connectors remain
@@ -266,9 +268,31 @@ save it in tracked files. This lifecycle implementation requires Linux (`/proc`
 ownership checks and `flock`). ADB authentication keys retain the SDK's standard
 user-level behavior; this isolates the server, not the authentication identity.
 
+Connection errors identify the failed stage: `connect timed out after 15s` means
+the configured wireless connection did not complete; `device-state check timed
+out after 10s` means ADB could not confirm the device state. Check the phone's
+network/VPN, debugging port and authorization, then retry. Details remain in
+`agent-tmp/local-adb/adb.log`. A successful `status` reports the local server and
+connector processes, not phone reachability; `ensure` verifies the connection.
+
 Gradle's custom `stsStart`, `stsStartAutoplay`, `stsStop`, and `stsPullLogs` tasks
-use the local manager when `.env.local` exists. Other Android Gradle Plugin tasks
-(for example `installDebug`) must be invoked through `local_adb run` so they inherit
-the project server environment. Use the harness install tool when possible.
+use the local manager when `.env.local` exists. They forward `-PdeviceSerial` as
+`--expected-serial`: a mismatch fails before `ensure` or any device action, while
+omitting the property retains the configured non-install target. Log export checks
+this before its staging/file probes. CLI callers can use the same guard:
+
+```bash
+python3 -m scripts.tools.local_adb --expected-serial USER_APPROVED_SERIAL adb -- shell pidof io.stamethyst
+```
+
+The flag precedes the action and only validates the target; it grants no installation
+authorization. For host Gradle tasks needing the server environment use `local_adb run`.
+Automatic Gradle installation/uninstallation tasks are blocked; explicit installs use
+the harness install action with separate authorization and an exact device serial.
+
+`scripts/perf-loop.sh` lets the harness ensure the managed connector and use its dynamic
+port. Omit `--connector-port` in this mode; inherited legacy port values are ignored.
+Without managed configuration, supply a legacy port via the flag or `STS_CONNECTOR_PORT`;
+connector startup errors terminate the script. The performance flow never installs APKs.
 
 Legacy connector commands below are for explicit, externally managed setups only.

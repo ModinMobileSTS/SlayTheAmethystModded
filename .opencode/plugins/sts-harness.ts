@@ -401,20 +401,25 @@ export default Plugin.define({
       : process.env.STS_HARNESS_PYTHON || (process.platform === "win32" ? "python" : "python3")
 
     // Command executors do not submit prompts or inherit tool permission checks.
-    // Only an explicit, argument-free invocation authorizes this fixed operation.
+    // An invocation with one explicit device authorizes this fixed operation.
     await ctx.command.transform((editor) => {
       editor.add({
         name: "install-apk",
-        description: "编译当前工作区 Debug APK 并覆盖安装到配置设备（不调用 AI）",
+        description: "编译当前工作区 Debug APK 并覆盖安装到指定设备：/install-apk <deviceSerial>（不调用 AI）",
         execute: async ({ sessionID, prompt }) => {
-          if (prompt.text.trim() || prompt.files?.length || prompt.agents?.length || prompt.skills?.length) {
-            throw new Error("/install-apk does not accept arguments or attachments")
+          if (prompt.files?.length || prompt.agents?.length || prompt.skills?.length) {
+            throw new Error("/install-apk does not accept attachments")
           }
+          const deviceSerial = prompt.text.trim()
+          if (!deviceSerial || /\s/.test(deviceSerial)) {
+            throw new Error("Usage: /install-apk <deviceSerial>; exactly one explicit device is required")
+          }
+          const args = commandArgs("control_game_lifecycle", { action: "install", deviceSerial }, repoRoot)
           // SDK 2.0.18 omits session.shell from ctx.session. Target only this
           // hosting server's endpoint and verify its PID before any side effect.
           const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
           if (process.platform === "win32") throw new Error("/install-apk native shell integration currently requires a POSIX shell")
-          const command = `cd ${quote(repoRoot)} && exec ` + [pythonExecutable, "-u", ...commandArgs("control_game_lifecycle", { action: "install" }, repoRoot)].map(quote).join(" ")
+          const command = `cd ${quote(repoRoot)} && exec ` + [pythonExecutable, "-u", ...args].map(quote).join(" ")
           await submitNativeShell(sessionID, command, typeof settings.serverUrl === "string" ? settings.serverUrl : undefined)
         },
       })

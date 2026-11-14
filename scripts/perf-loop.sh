@@ -9,7 +9,7 @@
 #   --skip-install        Deprecated alias for --skip-build; APKs are never installed
 #   --update-baseline     Overwrite perf_bench_baseline.json with this run
 #   --timeout <sec>       Game run timeout in seconds (default: 360)
-#   --connector-port <p>  Connector daemon port (default: 19876)
+#   --connector-port <p>  Explicit legacy connector port (omit in managed mode)
 #   --character <id>      Autoplay character (default: IRONCLAD)
 #   -h / --help           Print this help
 #
@@ -40,7 +40,8 @@ GRADLE_BIN="${GRADLE_BIN:-$PROJECT_DIR/gradlew}"
 SKIP_BUILD=0
 UPDATE_BASELINE=0
 TIMEOUT_SEC=360
-CONNECTOR_PORT="${STS_CONNECTOR_PORT:-19876}"
+CONNECTOR_PORT="${STS_CONNECTOR_PORT:-}"
+CONNECTOR_PORT_EXPLICIT=0
 DEVICE_SERIAL="${STS_TEST_DEVICE:-}"
 CHARACTER="IRONCLAD"
 
@@ -51,7 +52,7 @@ while [[ $# -gt 0 ]]; do
         --skip-install)    SKIP_BUILD=1; shift ;;
         --update-baseline) UPDATE_BASELINE=1;   shift ;;
         --timeout)         TIMEOUT_SEC="$2";    shift 2 ;;
-        --connector-port)  CONNECTOR_PORT="$2"; shift 2 ;;
+        --connector-port)  CONNECTOR_PORT="$2"; CONNECTOR_PORT_EXPLICIT=1; shift 2 ;;
         --character)       CHARACTER="$2";      shift 2 ;;
         -h|--help)
             sed -n '/^# perf-loop/,/^[^#]/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'
@@ -64,7 +65,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-export STS_CONNECTOR_PORT="$CONNECTOR_PORT"
 if [[ -n "$DEVICE_SERIAL" ]]; then
     export STS_TEST_DEVICE="$DEVICE_SERIAL"
 fi
@@ -87,18 +87,38 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then
 fi
 
 # ── Step 2: Connector daemon ─────────────────────────────────────────────────
-printf '\n[perf-loop] Ensuring connector daemon on port %s...\n' "$CONNECTOR_PORT"
-python3 -m scripts.tools.connector start --port "$CONNECTOR_PORT" 2>&1 || true
+# Managed mode is initialized by Harness.connect_connector(), which obtains the
+# dynamically allocated port from local_adb.ensure(). Never start a legacy daemon
+# or forward an inherited legacy port in this mode.
+if [[ -f "$PROJECT_DIR/.env.local" || -n "${STS_ADB_DEVICE_ENDPOINT:-}" ]]; then
+    if [[ "$CONNECTOR_PORT_EXPLICIT" -eq 1 ]]; then
+        printf '[perf-loop] Managed local ADB allocates its connector port; remove --connector-port.\n' >&2
+        exit 1
+    fi
+    CONNECTOR_PORT=""
+    unset STS_CONNECTOR_PORT
+    printf '\n[perf-loop] Using workspace-managed connector...\n'
+else
+    if [[ -z "$CONNECTOR_PORT" ]]; then
+        printf '[perf-loop] Configure .env.local or specify --connector-port for a legacy connector.\n' >&2
+        exit 1
+    fi
+    printf '\n[perf-loop] Ensuring connector daemon on port %s...\n' "$CONNECTOR_PORT"
+    python3 -m scripts.tools.connector start --port "$CONNECTOR_PORT"
+fi
 
 # ── Step 3: Assemble harness arguments ───────────────────────────────────────
 HARNESS_ARGS=(
     sts-harness
     -Command perf-bench
-    -ConnectorPort "$CONNECTOR_PORT"
     -TimeoutSeconds "$TIMEOUT_SEC"
     -SingleRoomCharacter "$CHARACTER"
     -LaunchMode mts_basemod
 )
+
+if [[ -n "$CONNECTOR_PORT" ]]; then
+    HARNESS_ARGS+=(-ConnectorPort "$CONNECTOR_PORT")
+fi
 
 if [[ "$UPDATE_BASELINE" -eq 1 ]]; then
     HARNESS_ARGS+=(-UpdateBaseline)

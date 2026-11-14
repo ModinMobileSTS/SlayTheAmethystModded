@@ -127,7 +127,8 @@ Use `scripts/tools/main.py` for debugging and device automation tools. The `harn
 
 **Recommended:** configure the root ignored `.env.local` using `.env.local.example`.
 The harness and OpenCode tools automatically start a workspace-local wireless ADB
-server and connector; no connector port or device serial argument is needed.
+server and connector; no connector port argument is needed. Status/raw queries and
+installation require an explicit device serial matching the configured endpoint.
 See [local ADB setup](tools/connector/README.md#workspace-local-wireless-adb-linux).
 Real device endpoints must remain only in local configuration. The fixed-port
 auto-start fallback is removed; managed mode replaces inherited old connector ports.
@@ -150,7 +151,7 @@ Harness commands:
 - `stop`: force-stop the app through `:app:stsStop`.
 - `logs`: export runtime logs and a harness logcat dump.
 - `screenshot`: capture a device screenshot.
-- `status`: capture current process, boot bridge, crash marker, package, and storage state.
+- `status`: capture current process, boot bridge, crash marker, package, and storage state. Requires an explicit `-DeviceSerial`; missing targets or failed/invalid process, storage, log, path-metadata or package responses return `STATUS_QUERY_FAILED` with an `UNKNOWN` snapshot and a nonzero exit code. Optional files may be absent when a completed remote probe confirms absence; transport/permission failures are not absence.
 - `mods`: list device required mods, optional mods in `sts/mods_library`, legacy runtime mods in `sts/mods`, the current `enabled_mods.txt`, and the current `.mts_mod_file_list`.
 - `set-mods`: replace the enabled optional mod selection by writing `enabled_mods.txt`.
 - `smoke`: use the already installed app, clear runtime signals, start, wait for an expected state, capture screenshot/logs, and stop unless requested otherwise. Never installs/uninstalls APKs.
@@ -172,6 +173,12 @@ The Gradle connected/managed-device, AGP install/uninstall and macrobenchmark
 deployment tasks are blocked because they may automatically uninstall the main
 app. Prefer JVM/mock tests and Android test compilation; see `AGENTS.md` and
 [`docs/debug-automation/README.md`](../docs/debug-automation/README.md).
+
+`./scripts/perf-loop.sh [--skip-build] <deviceSerial>` uses the already installed app.
+In managed mode it obtains the connector's dynamic port through the harness; omit
+`--connector-port` (stale inherited `STS_CONNECTOR_PORT` is ignored). Without managed
+configuration, provide `--connector-port <port>` or `STS_CONNECTOR_PORT`; startup
+failures stop the script. No default fixed port or implicit installation is used.
 
 Common harness options:
 

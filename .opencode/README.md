@@ -10,21 +10,24 @@
 - Specify the exact user-approved `deviceSerial` for installation and commands using raw adb/shell. Automatic discovery, historical examples, or a sole online device do not authorize package operations.
 - Test tools only use the already installed app: smoke, single-room, performance, startup-cache and Steam Cloud tests never install/uninstall APKs. `skipInstall` is compatibility-only and cannot enable installation. Only the explicit lifecycle `install` action installs, with separate user authorization and a concrete `deviceSerial` (missing/`auto` values are rejected before spawning Python). Gradle automatic deployment tasks are blocked; see `AGENTS.md`.
 - Copy `.env.local.example` to `.env.local` and configure the absolute SDK adb binary, independent local server port and wireless device endpoint. See `scripts/tools/connector/README.md` for isolation and lifecycle details. The local file is ignored by Git; never put a real device endpoint in tracked configuration.
-- Tools automatically ensure the workspace-owned ADB and connector, and select only the configured wireless device. Old inherited `STS_CONNECTOR_PORT` values are ignored in managed mode; omit `connectorPort` and `deviceSerial`. Explicit values must match the managed instance.
+- Tools automatically ensure the workspace-owned ADB and connector, and select only the configured wireless device. Old inherited `STS_CONNECTOR_PORT` values are ignored in managed mode; omit `connectorPort`. Explicit device/port values must match the managed instance. Status and other raw adb/shell queries require an explicit `deviceSerial`; configuration or automatic selection alone does not grant that permission.
 - Without local configuration, legacy externally managed connectors require an explicit port; the previous fixed-port auto-start fallback has been removed.
 
 ## Direct slash command
 
-Use **`/install-apk`** in this project to build the current working tree's Debug APK
-(including uncommitted source changes) and install it on the device configured in
-the ignored `.env.local`. This is a plugin command executor, not a Markdown prompt
+Use **`/install-apk <deviceSerial>`** in this project to build the current working tree's Debug APK
+(including uncommitted source changes) and install it on that explicitly specified device.
+In managed mode the serial must match the ignored `.env.local` endpoint exactly.
+This is a plugin command executor, not a Markdown prompt
 template: it submits the existing Python harness `install` to the native session
 shell endpoint (`POST /api/session/:sessionID/shell`), just like composer **`!`**,
 never calls
 an agent/model, never switches agents, and does not start the game.
 
-The command accepts no arguments or attachments. Invoking it explicitly authorizes
-the fixed build/install operation: unlike agent tool calls, plugin command executors
+The command requires exactly one device serial and rejects missing/automatic targets,
+multiple arguments and attachments. Invoking it with the target explicitly authorizes
+the fixed build/install operation for that device; configuration alone is not consent.
+Unlike agent tool calls, plugin command executors
 do **not** pass through `sts_control_game_lifecycle` tool permission checks.
 OpenChamber renders native shell start/output/end through its existing `!` UI,
 instead of synthetic user messages or heartbeat spam. The native shell owns job
@@ -60,7 +63,7 @@ Tools in the `sts` namespace (effective OpenCode ID: `sts_<name>`):
 | Tool name | Purpose |
 | --- | --- |
 | `local_adb` | Ensure, inspect or stop this workspace's local wireless ADB and connector. |
-| `get_game_status` | Inspect process, runtime, installed package, and device. |
+| `get_game_status` | Inspect process, runtime, installed package, and device; requires explicit `deviceSerial`. |
 | `control_game_lifecycle` | Install, start, stop, or gracefully exit the game. |
 | `collect_game_diagnostics` | Run doctor, collect logs, or take a screenshot. |
 | `run_gameplay_scenario` | Run smoke, single-room, or probe-driven play scenarios. |
@@ -75,6 +78,13 @@ Tools in the `sts` namespace (effective OpenCode ID: `sts_<name>`):
 Multi-action tools accept an `action` enum, never an arbitrary harness command. Only the one-shot console operation is exposed; no interactive console/ADB/Gradle command tool is provided. OpenCode project permissions ask before modifying device state or the perf baseline. The names follow [Anthropic's tool guidance](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools) on meaningful namespacing and informative descriptions; `sts` already identifies the service, so the tool name focuses on the action and object.
 
 For example, request `sts.get_game_status({deviceSerial: "USER_APPROVED_SERIAL"})` to inspect the device, or `sts.run_gameplay_scenario({action: "single-room", deviceSerial: "USER_APPROVED_SERIAL", singleRoomMonster: "..."})` to start a test room. Replace the placeholder with the device approved for the current operation. Tool results include `resultJson` for full details; the model-facing result omits potentially large operation logs. Output/input paths must stay inside the repository.
+
+Status queries without an explicit target, or with failed/invalid process, storage,
+log, path-metadata or package responses,
+report `success: false`, `STATUS_QUERY_FAILED` and an `UNKNOWN` snapshot instead of
+claiming the game is running or stopped. Optional files may be absent only when a
+successful remote probe confirms absence; permission/transport errors are failures.
+Automatic selection retains its restricted permissions.
 
 All harness calls are serialized in the plugin runtime because device selection and Gradle operations share connector/ADB state. Cancellation stops the Python process group (not the separate connector daemon); a cancelled or timed-out run is never reported as successful, even if a partial `result.json` exists. The lock is local to this OpenCode process, not a cross-process lock for standalone harness runs.
 

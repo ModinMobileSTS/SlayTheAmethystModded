@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync, symlinkSync } from "node:fs"
 import { resolve, relative } from "node:path"
 import { test } from "node:test"
+import { execFileSync } from "node:child_process"
 
 import plugin, { submitNativeShell } from "../plugins/sts-harness.ts"
 
@@ -209,7 +210,7 @@ test("install-apk forwards to the native ! shell endpoint without synthetic mess
     return requests.length === 1 ? Response.json({ pid: process.pid }) : new Response(null, { status: 204 })
   }
   try {
-    await commands.get("install-apk").execute({ sessionID: "test-session", prompt: { text: "" } })
+    await commands.get("install-apk").execute({ sessionID: "test-session", prompt: { text: "approved-fake-device" } })
   } finally {
     globalThis.fetch = original
   }
@@ -220,23 +221,53 @@ test("install-apk forwards to the native ! shell endpoint without synthetic mess
   const { command } = JSON.parse(requests[1].body)
   assert.ok(command.startsWith(`cd '${repoRoot}' && exec '${fakePython}' '-u' '-m' 'scripts.tools.main'`))
   assert.match(command, /'--command' 'install'/)
+  assert.match(command, /'--device-serial' 'approved-fake-device'/)
   assert.match(command, /'--timeout-seconds' '720'/)
   assert.match(command, /'agent-tmp\/harness-tools'/)
 })
 
-test("install-apk rejects all arguments and attachments before doing work", async () => {
+test("install-apk rejects missing/automatic/multiple targets and attachments before doing work", async () => {
   const before = messages.length
-  for (const prompt of [{ text: "; rm -rf anything" }, { text: "", files: [{}] }, { text: "", agents: ["build"] }, { text: "", skills: ["test"] }]) {
-    await assert.rejects(commands.get("install-apk").execute({ sessionID: "test-session", prompt }), /does not accept/)
-  }
+  const original = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = async () => { calls++; throw new Error("must not contact server") }
+  try {
+    for (const prompt of [
+      ...["", "  ", "auto", "AUTO", "default", "all", "*", "-d", "device-a device-b", "a\nb", "; rm -rf anything"].map((text) => ({ text })),
+      { text: "approved-fake-device", files: [{}] },
+      { text: "approved-fake-device", agents: ["build"] },
+      { text: "approved-fake-device", skills: ["test"] },
+    ]) {
+      await assert.rejects(commands.get("install-apk").execute({ sessionID: "test-session", prompt }), /Usage:|explicit user-approved deviceSerial|does not accept attachments/)
+    }
+    assert.equal(calls, 0)
+  } finally { globalThis.fetch = original }
   assert.equal(messages.length, before)
+})
+
+test("install-apk shell quoting preserves the target as one literal argv value", async () => {
+  const original = globalThis.fetch
+  const deviceSerial = "fixture';$(false)"
+  let command
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith("/api/info")) return Response.json({ pid: process.pid })
+    command = JSON.parse(init.body).command
+    return new Response(null, { status: 204 })
+  }
+  try {
+    await commands.get("install-apk").execute({ sessionID: "test-session", prompt: { text: deviceSerial } })
+    // This executes only our fake Python fixture, never the real harness.
+    execFileSync("sh", ["-c", command], { encoding: "utf8" })
+    const { argv } = JSON.parse(readFileSync(resolve(testRoot, "install/result.json"), "utf8"))
+    assert.equal(argv[argv.indexOf("--device-serial") + 1], deviceSerial)
+  } finally { globalThis.fetch = original }
 })
 
 test("install-apk surfaces native shell submission failure", async () => {
   const original = globalThis.fetch
   globalThis.fetch = async (url) => String(url).endsWith("/api/info") ? Response.json({ pid: process.pid }) : new Response(null, { status: 503 })
   try {
-    await assert.rejects(commands.get("install-apk").execute({ sessionID: "test-session", prompt: { text: "" } }), /Native shell request failed/)
+    await assert.rejects(commands.get("install-apk").execute({ sessionID: "test-session", prompt: { text: "approved-fake-device" } }), /Native shell request failed/)
   } finally {
     globalThis.fetch = original
   }

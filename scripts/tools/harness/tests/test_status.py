@@ -155,7 +155,7 @@ class HarnessStatusTest(unittest.TestCase):
     def _make_ctx(self):
         return HarnessContext(
             options=HarnessOptions(
-                command="smoke", launch_mode="mts_basemod", device_serial="",
+                command="smoke", launch_mode="mts_basemod", device_serial="emulator-5554",
                 out_dir="", timeout_seconds=300, poll_interval_seconds=2,
                 force_jvm_crash=False, force_runtime_crash=False, debug_mode=False,
                 autoplay=False, skip_install=False, no_stop_after_smoke=False,
