@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.llm.AgentContextState
 import io.stamethyst.backend.llm.AgentCacheStats
-import io.stamethyst.backend.llm.AgentModelLimits
 import java.text.NumberFormat
 
 /** One tool exposed to the agent, shown in the context dialog. */
@@ -97,9 +96,6 @@ internal fun AiContextCounter(
     var showDetails by rememberSaveable(modelKey) { mutableStateOf(false) }
     var limitDraft by rememberSaveable(modelKey) { mutableStateOf("") }
     var outputDraft by rememberSaveable(modelKey) { mutableStateOf("") }
-    var windowDraft by rememberSaveable(modelKey) { mutableStateOf("") }
-    var maxInputDraft by rememberSaveable(modelKey) { mutableStateOf("") }
-    var maxOutputDraft by rememberSaveable(modelKey) { mutableStateOf("") }
     val colors = MaterialTheme.colorScheme
     val progress = if (tokens != null && limit > 0) (tokens.toFloat() / limit).coerceIn(0f, 1f) else 0f
     val usageLabel = stringResource(R.string.ai_mod_editor_context)
@@ -110,10 +106,6 @@ internal fun AiContextCounter(
             budget = AiContextLimits.budget(context, modelKey)
             limitDraft = AiContextLimits.explicitInputLimit(context, modelKey)?.toString().orEmpty()
             outputDraft = AiContextLimits.explicitOutputTarget(context, modelKey)?.toString().orEmpty()
-            val overrides = AiContextLimits.overrides(context, modelKey)
-            windowDraft = overrides.contextWindow?.toString().orEmpty()
-            maxInputDraft = overrides.maxInputTokens?.toString().orEmpty()
-            maxOutputDraft = overrides.maxOutputTokens?.toString().orEmpty()
             showDetails = true
         },
         modifier = Modifier.size(48.dp).semantics { contentDescription = "$usageLabel: $countLabel" },
@@ -131,9 +123,6 @@ internal fun AiContextCounter(
     if (showDetails) {
         val validLimit = limitDraft.isBlank() || (limitDraft.toIntOrNull() ?: 0) > 0
         val validOutput = outputDraft.isBlank() || (outputDraft.toIntOrNull() ?: 0) > 0
-        val validWindow = windowDraft.isBlank() || (windowDraft.toIntOrNull() ?: 0) >= 2
-        val validMaxInput = maxInputDraft.isBlank() || (maxInputDraft.toIntOrNull() ?: 0) > 0
-        val validMaxOutput = maxOutputDraft.isBlank() || (maxOutputDraft.toIntOrNull() ?: 0) > 0
         val state = contextState?.takeIf { it.modelKey == modelKey }
         val cache = state?.cacheStats
             ?.takeIf { endpoint == null || it.endpoint == endpoint } ?: AgentCacheStats()
@@ -158,7 +147,7 @@ internal fun AiContextCounter(
                     OutlinedTextField(
                         value = limitDraft,
                         onValueChange = { limitDraft = it.filter(Char::isDigit) },
-                        label = { Text(stringResource(R.string.ai_mod_editor_context_limit)) },
+                        label = { Text(stringResource(R.string.ai_agent_budget_input_target)) },
                         supportingText = { Text(stringResource(R.string.ai_agent_budget_input_hint)) },
                         singleLine = true,
                         enabled = !busy,
@@ -173,31 +162,8 @@ internal fun AiContextCounter(
                         singleLine = true, enabled = !busy, isError = !validOutput,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
-                    Text(stringResource(R.string.ai_agent_budget_capabilities_hint),
-                        style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                    OutlinedTextField(
-                        value = windowDraft,
-                        onValueChange = { windowDraft = it.filter(Char::isDigit) },
-                        label = { Text(stringResource(R.string.ai_agent_budget_window)) },
-                        singleLine = true, enabled = !busy, isError = !validWindow,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
-                    OutlinedTextField(
-                        value = maxInputDraft,
-                        onValueChange = { maxInputDraft = it.filter(Char::isDigit) },
-                        label = { Text(stringResource(R.string.ai_agent_budget_max_input)) },
-                        singleLine = true, enabled = !busy, isError = !validMaxInput,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
-                    OutlinedTextField(
-                        value = maxOutputDraft,
-                        onValueChange = { maxOutputDraft = it.filter(Char::isDigit) },
-                        label = { Text(stringResource(R.string.ai_agent_budget_max_output)) },
-                        singleLine = true, enabled = !busy, isError = !validMaxOutput,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
                     Text(stringResource(R.string.ai_agent_budget_effective,
-                        budget.inputLimit, budget.outputReserve, budget.summaryOutputLimit),
+                        budget.inputLimit, budget.outputReserve),
                         style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                     HorizontalDivider(color = colors.outlineVariant.copy(alpha = 0.5f))
                     Text(
@@ -232,12 +198,8 @@ internal fun AiContextCounter(
                 }
             },
             confirmButton = {
-                TextButton(enabled = validLimit && validOutput && validWindow && validMaxInput && validMaxOutput && !busy, onClick = {
-                    AiContextLimits.set(context, modelKey, limitDraft.toIntOrNull(), AgentModelLimits(
-                        contextWindow = windowDraft.toIntOrNull(),
-                        maxInputTokens = maxInputDraft.toIntOrNull(),
-                        maxOutputTokens = maxOutputDraft.toIntOrNull(),
-                    ), outputTarget = outputDraft.toIntOrNull())
+                TextButton(enabled = validLimit && validOutput && !busy, onClick = {
+                    AiContextLimits.set(context, modelKey, limitDraft.toIntOrNull(), outputDraft.toIntOrNull())
                     budget = AiContextLimits.budget(context, modelKey)
                     showDetails = false
                 }) { Text(stringResource(android.R.string.ok)) }

@@ -4,25 +4,25 @@
 
 `AgentModelBudgetPolicy.resolve(...)` 是纯 Kotlin 策略入口。它区分：
 
-- `userInputLimit` / `AgentContextBudget.limit`：用户输入预算，包含系统提示、工具定义、历史。现有 `ai_context_limits` 中保存的正整数继续按输入解释，不迁移为共享窗口。
+- `userInputLimit` / `AgentContextBudget.limit`：用户输入预算，包含系统提示、工具定义、历史，不是共享窗口。
 - `AgentModelLimits.contextWindow`：可选的输入 + 输出共享窗口。
 - `maxInputTokens` / `maxOutputTokens`：可选的模型独立能力上限。
-- `outputTarget`：主任务输出目标，默认 **20,000**，不再由输入额度推导。
-- `summaryOutputTarget`：摘要独立输出目标，默认 **2,000**，应用上限 **8,000**，继续受模型最大输出和共享窗口约束。
+- `outputTarget`：输出目标，默认 **128,000**，主任务与摘要共用，不由输入额度推导。
+- `summaryOutputLimit` 始终等于 `outputReserve`，不再单独设置摘要目标或 8k 上限；`summaryInputLimit` 等于 `inputLimit`。
 - `AgentCompactionMargin`：提前压缩余量，与输出额度分开计算。
 
-未知模型默认采用 **32,000 输入 / 20,000 主任务输出**的应用预算。这不是模型能力声明；未知的能力始终为 `null`，较小模型仍需元数据或用户覆盖。`usesDefaultInputBudget` 标识策略是否采用缺省输入预算。显式输入 200,000 会被保留，不会静默改成 32,000。已显式保存的主任务输出目标也保持不变；清空该字段恢复 20,000 默认目标。
+默认采用 **262,000 输入 / 128,000 输出**的应用预算。这不是模型能力声明；未知能力为 `null`，已知模型目录限制仍自动生效。用户仅可调整输入、输出，留空恢复默认。`usesDefaultInputBudget` 标识策略是否采用缺省输入预算。
 
-能力优先级逐字段为：**模型级用户覆盖 > 模型目录元数据 > 未知**。未显式配置输入时使用 32,000，即使模型元数据支持更大输入也不会自动扩大应用预算。
+升级后首次读取或保存预算时，一次性清除所有模型的旧输入、输出设置及模型能力覆盖，恢复新默认；标记保存在输入设置文件的 `budget_262k_128k_reset_v1`。清除操作持久化成功后才写标记，中途失败下次重试。迁移后的新编辑不会再次重置，凭据、模型选择、推理档位和模型目录缓存不受影响。迁移后不再读取用户能力覆盖。
 
 主任务分配规则：
 
 ```text
 outputReserve = min(outputTarget, model.maxOutputTokens?, model.contextWindow? - 1)
-inputLimit = min(userInputLimit or 32,000, model.maxInputTokens?, model.contextWindow? - outputReserve)
+inputLimit = min(userInputLimit or 262,000, model.maxInputTokens?, model.contextWindow? - outputReserve)
 ```
 
-因此已知共享窗口时，先保留受限输出目标，再约束输入，保证两者之和不超窗口。没有共享窗口时，绝不再次从用户输入额度里减输出。摘要用同样规则单独计算 `summaryOutputLimit` / `summaryInputLimit`，不是沿用主任务输出预留。
+因此已知共享窗口时，先保留受限输出目标，再约束输入，保证两者之和不超窗口。没有共享窗口时，不从用户输入额度里减输出。摘要与主任务使用相同输入、输出限制。
 
 ## 压缩边界
 
@@ -48,10 +48,10 @@ inputLimit = min(userInputLimit or 32,000, model.maxInputTokens?, model.contextW
 - `get(context, key)`：保留旧接口，仅返回用户输入预算/默认值，**不是完整预算解析器**。
 - `budget(context, key)`：解析完整 `AgentContextBudget`，executor 启动和运行中设置更新已使用此接口。
 - `explicitInputLimit(context, key)`：未设置时返回 null。
-- `overrides(context, key)` / `set(context, key, inputLimit?, overrides, outputTarget?)`：模型级能力覆盖与独立主任务输出目标。`explicitOutputTarget` 读取已保存的可选目标。清空输入/输出目标字段删除旧键，不把默认值重新保存为显式覆盖。
+- `set(context, key, inputLimit?, outputTarget?)`：仅保存输入、输出。`explicitOutputTarget` 读取已保存的可选目标。清空字段删除旧键，不把默认值保存为显式覆盖。
 - `cacheCatalog(context, baseUrl, models)`：成功获取模型目录后、提取显示用 id 前调用，保存可选元数据；某个返回模型不再携带元数据时会清除该模型之前缓存的能力。
 
-独立 preference 文件 `ai_model_budget_overrides`、`ai_model_budget_catalog`、`ai_model_output_targets` 使用现有 `AiContextLimits.key(baseUrl, model)` 隔离端点/模型。目录缓存端点按 repository 的规则 trim / trimEnd('/')，兼容设置页尚未保存的 URL 草稿。`AiContextCounter` 的现有设置对话框已加入主任务输出目标，以及共享窗口、最大输入、最大输出三个可选能力覆盖字段。所有新文案放在三种语言的 `ai_agent_budget.xml`，未改公共 strings.xml。
+设置按 `AiContextLimits.key(baseUrl, model)` 隔离端点/模型。目录缓存端点按 repository 的规则 trim / trimEnd('/')。`AiContextCounter` 仅显示输入、输出两个设置字段，文案位于三种语言的 `ai_agent_budget.xml`；共享窗口、最大输入、最大输出没有用户编辑入口。
 
 ## 集成状态：executor 与目录入口（已完成）
 
@@ -109,7 +109,7 @@ gateway 现有 `.maxOutputTokens(contextManager.budget.outputReserve)` 可继续
 ### 3. 模型目录/UI 外部位置
 
 - [x] `ui/settings/llm/LlmSettingsScreen.kt`：目录返回后在 IO 上调用 `cacheCatalog`，再发布目录供 UI 提取 id。
-- [x] `ui/aimod/AiContextUsagePanel.kt`：已改用 `ai_agent_budget_input_hint`，说明 32k 保守预算与模型能力的区别。
+- [x] `ui/aimod/AiContextUsagePanel.kt`：使用精简的 `ai_agent_budget_input_hint`。
 - [x] `ui/aimod/AiModEditorScreen.kt`：启动占位 LOW，异步加载 repository 后仍以保存的 OFF/LOW/HIGH/MAX 为准。
 
 ## OFF 与默认推理
@@ -125,6 +125,15 @@ gateway 保持以下已接线规则：
 - 已有 LOW/HIGH/MAX provider 映射由 gateway 所有者维护，不因新增 UI 选择而推断所有 provider 支持所有字段。
 
 ## 验证
+
+### 262k / 128k 预算调整
+
+- 一次性迁移覆盖多模型旧输入/输出和能力覆盖清除、无关设置保留、先写后读与重新获取偏好设置后不重复重置。
+- 主任务和摘要共用输出限制的测试覆盖默认 128k、自定义输出、模型上限和运行中模型切换；界面回归要求恰好两个可编辑字段。
+- 最终离线回归为 **369 项通过、0 失败、0 跳过**，包含约 13k 固定提示开销的新会话不误触发压缩回归；`:app:compileDebugAndroidTestKotlin` 通过，`BUILD SUCCESSFUL`。日志 `agent-tmp/agent-budget-262k-final.log`。
+- 未回滚共享工作区进行旧版本 Red 对照；未安装 APK、执行真机界面测试或请求真实模型服务。
+
+### 前期接入验证记录
 
 本阶段使用精确 JVM 测试类：`AgentConversationContextTest`、`AgentContextCompactionTest`、`AgentModelBudgetTest`、`NewApiModelServiceTest`、`LlmReasoningEffortTest`、`AiModelBudgetSettingsTest`、`AiConversationContextTest`。模型目录 HTTP 仅现有 MockWebServer 回环测试；无真实 provider、设备或安装操作。
 
@@ -144,7 +153,7 @@ flock agent-tmp/ai-agent-gradle.lock ./gradlew --offline :app:testDebugUnitTest 
 
 静态检查：本阶段受控文件 `git diff --check` 通过；三种语言资源 XML 解析通过，9 个 key 及格式化占位符一致。
 
-旧长历史测试 fixture 现在显式配置独立 32k 摘要输入预算，继续验证原始归档/成功提交/失败保留等行为；不再依赖旧实现发送超出摘要预算的请求。新的小摘要窗口回归验证请求过大时不发起调用、不丢失最新交换。输入额度“不额外扣输出”的既有断言保持。
+长历史测试 fixture 显式配置测试用摘要模型输入预算，继续验证原始归档/成功提交/失败保留等行为；小摘要窗口回归验证请求过大时不发起调用、不丢失最新交换。输入额度“不额外扣输出”的既有断言保持。
 
 上述预算阶段测试不证明真实 tokenizer、真实 provider 参数支持或设备 UI 显示。集成测试结果另见
 `ai-agent-efficiency.md`。未在旧工作区上回滚执行新回归，避免覆盖并行修改。

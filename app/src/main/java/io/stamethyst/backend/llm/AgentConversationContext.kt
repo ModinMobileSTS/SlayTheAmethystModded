@@ -20,7 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.ceil
 
-const val DEFAULT_AGENT_CONTEXT_LIMIT = 32_000
+const val DEFAULT_AGENT_CONTEXT_LIMIT = 262_000
 
 /**
  * Leading text of the user message that carries images read by a tool.

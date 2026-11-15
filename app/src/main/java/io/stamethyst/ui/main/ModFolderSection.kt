@@ -1427,6 +1427,7 @@ internal fun ModFolderSection(
                                       onShareAgentPatch = { _, patch -> latestCallbacks.value.onShareAgentPatch(patch) },
                                       onRenameAgentPatch = { item, patch, name, description -> latestCallbacks.value.onRenameAgentPatch(item, patch, name, description) },
                                        onRefreshAgentPatchMods = { latestCallbacks.value.onRefreshAgentPatchMods() },
+                                       onAgentPatchCatalogueRefreshed = { latestCallbacks.value.onAgentPatchCatalogueRefreshed() },
                                     onSetImportPatchEnabled = { item, moduleId, enabled ->
                                         latestCallbacks.value.onSetImportPatchEnabled(item, moduleId, enabled)
                                     },

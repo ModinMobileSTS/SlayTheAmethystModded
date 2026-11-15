@@ -15,37 +15,51 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 internal object AiContextLimits {
+    private const val BUDGET_RESET_MARKER = "budget_262k_128k_reset_v1"
+
+    /** Mark last, after durable clears, so an interrupted upgrade cannot leave old overrides active. */
+    @Synchronized
+    private fun resetLegacyBudgetsOnce(context: Context) {
+        val inputs = context.getSharedPreferences("ai_context_limits", Context.MODE_PRIVATE)
+        if (inputs.getBoolean(BUDGET_RESET_MARKER, false)) return
+        check(context.getSharedPreferences("ai_model_output_targets", Context.MODE_PRIVATE)
+            .edit().clear().commit()) { "Unable to reset legacy output budgets" }
+        check(context.getSharedPreferences("ai_model_budget_overrides", Context.MODE_PRIVATE)
+            .edit().clear().commit()) { "Unable to reset legacy model overrides" }
+        check(inputs.edit().clear().putBoolean(BUDGET_RESET_MARKER, true).commit()) {
+            "Unable to reset legacy input budgets"
+        }
+    }
+
     fun key(baseUrl: String, model: String): String = "$baseUrl/$model"
 
-    fun get(context: Context, key: String): Int = context
-        .getSharedPreferences("ai_context_limits", Context.MODE_PRIVATE)
-        .getInt(key, 0).takeIf { it > 0 } ?: DEFAULT_AGENT_CONTEXT_LIMIT
+    fun get(context: Context, key: String): Int = explicitInputLimit(context, key) ?: DEFAULT_AGENT_CONTEXT_LIMIT
 
-    fun explicitInputLimit(context: Context, key: String): Int? = context
-        .getSharedPreferences("ai_context_limits", Context.MODE_PRIVATE)
-        .getInt(key, 0).takeIf { it > 0 }
+    fun explicitInputLimit(context: Context, key: String): Int? {
+        resetLegacyBudgetsOnce(context)
+        return context.getSharedPreferences("ai_context_limits", Context.MODE_PRIVATE)
+            .getInt(key, 0).takeIf { it > 0 }
+    }
 
-    fun overrides(context: Context, key: String): AgentModelLimits = readLimits(context, "ai_model_budget_overrides", key)
-
-    fun explicitOutputTarget(context: Context, key: String): Int? = context
-        .getSharedPreferences("ai_model_output_targets", Context.MODE_PRIVATE)
-        .getInt(key, 0).takeIf { it > 0 }
+    fun explicitOutputTarget(context: Context, key: String): Int? {
+        resetLegacyBudgetsOnce(context)
+        return context.getSharedPreferences("ai_model_output_targets", Context.MODE_PRIVATE)
+            .getInt(key, 0).takeIf { it > 0 }
+    }
 
     fun budget(context: Context, key: String): AgentContextBudget = AgentModelBudgetPolicy.resolve(
         userInputLimit = explicitInputLimit(context, key),
         metadata = readLimits(context, "ai_model_budget_catalog", key),
-        overrides = overrides(context, key),
         outputTarget = explicitOutputTarget(context, key) ?: DEFAULT_AGENT_OUTPUT_TARGET,
     )
 
-    fun set(context: Context, key: String, inputLimit: Int?, overrides: AgentModelLimits, outputTarget: Int? = null) {
+    fun set(context: Context, key: String, inputLimit: Int?, outputTarget: Int? = null) {
         require(inputLimit == null || inputLimit > 0)
         require(outputTarget == null || outputTarget > 0)
+        resetLegacyBudgetsOnce(context)
         context.getSharedPreferences("ai_context_limits", Context.MODE_PRIVATE).edit().apply {
             if (inputLimit == null) remove(key) else putInt(key, inputLimit)
         }.apply()
-        context.getSharedPreferences("ai_model_budget_overrides", Context.MODE_PRIVATE).edit()
-            .putString(key, Json.encodeToString(overrides)).apply()
         context.getSharedPreferences("ai_model_output_targets", Context.MODE_PRIVATE).edit().apply {
             if (outputTarget == null) remove(key) else putInt(key, outputTarget)
         }.apply()

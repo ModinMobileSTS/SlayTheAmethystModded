@@ -22,9 +22,7 @@ data class AgentModelLimits(
     )
 }
 
-const val DEFAULT_AGENT_OUTPUT_TARGET = 20_000
-const val DEFAULT_AGENT_SUMMARY_OUTPUT_TARGET = 2_000
-const val MAX_AGENT_SUMMARY_OUTPUT_TARGET = 8_000
+const val DEFAULT_AGENT_OUTPUT_TARGET = 128_000
 
 /** Reserve 10% normally, up to 20% for the most recent tool batch; never a fixed small-window tax. */
 data class AgentCompactionMargin(
@@ -50,22 +48,20 @@ data class AgentContextBudget(
     val limit: Int = DEFAULT_AGENT_CONTEXT_LIMIT,
     val modelLimits: AgentModelLimits = AgentModelLimits(),
     val outputTarget: Int = DEFAULT_AGENT_OUTPUT_TARGET,
-    val summaryOutputTarget: Int = DEFAULT_AGENT_SUMMARY_OUTPUT_TARGET,
     val compactionMargin: AgentCompactionMargin = AgentCompactionMargin(),
     val usesDefaultInputBudget: Boolean = false,
 ) {
     init {
         require(limit > 0)
         require(outputTarget > 0)
-        require(summaryOutputTarget > 0)
     }
 
     // Reserve the requested output first only within a known shared window. With no window the
     // explicit input budget is unchanged, even when it is smaller than the output target.
     val outputReserve: Int = outputCap(outputTarget)
     val inputLimit: Int = inputCap(outputReserve)
-    val summaryOutputLimit: Int = outputCap(minOf(summaryOutputTarget, MAX_AGENT_SUMMARY_OUTPUT_TARGET))
-    val summaryInputLimit: Int = inputCap(summaryOutputLimit)
+    val summaryOutputLimit: Int = outputReserve
+    val summaryInputLimit: Int = inputLimit
 
     private fun outputCap(target: Int): Int = minOf(
         target, modelLimits.maxOutputTokens ?: Int.MAX_VALUE,
@@ -82,19 +78,17 @@ data class AgentContextBudget(
 }
 
 object AgentModelBudgetPolicy {
-    /** Explicit per-model overrides > optional catalog metadata > conservative application budgets. */
+    /** Call-site constraints > optional catalog metadata; users only configure input/output targets. */
     fun resolve(
         userInputLimit: Int? = null,
         metadata: AgentModelLimits = AgentModelLimits(),
         overrides: AgentModelLimits = AgentModelLimits(),
         outputTarget: Int = DEFAULT_AGENT_OUTPUT_TARGET,
-        summaryOutputTarget: Int = DEFAULT_AGENT_SUMMARY_OUTPUT_TARGET,
         compactionMargin: AgentCompactionMargin = AgentCompactionMargin(),
     ): AgentContextBudget = AgentContextBudget(
         limit = userInputLimit ?: DEFAULT_AGENT_CONTEXT_LIMIT,
         modelLimits = overrides.overriding(metadata),
         outputTarget = outputTarget,
-        summaryOutputTarget = summaryOutputTarget,
         compactionMargin = compactionMargin,
         usesDefaultInputBudget = userInputLimit == null,
     )

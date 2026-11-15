@@ -621,10 +621,9 @@ class MainScreenViewModel : ViewModel() {
                 val changed = AgentPatchCatalogueService.refreshIndex(appContext)
                 agentPatchCatalogueSynced = true
                 if (changed) {
-                    modManagementController.refreshAgentPatchCatalogueAvailability(appContext)
                     agentPatchCatalogueHostReference?.get()
                         ?.takeUnless { it.isFinishing || it.isDestroyed }
-                        ?.let(::republish)
+                        ?.let(::refreshAgentPatchCatalogueAvailability)
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -633,6 +632,18 @@ class MainScreenViewModel : ViewModel() {
             } finally {
                 agentPatchCatalogueSyncInFlight = false
             }
+        }
+    }
+
+    /** Catalogue changes only affect badges, never the list's initialization/lifetime. */
+    fun refreshAgentPatchCatalogueAvailability(host: Activity) {
+        val appContext = host.applicationContext
+        viewModelScope.launch {
+            val parents = withContext(Dispatchers.IO) {
+                AgentPatchCatalogueService.readCachedParentModIds(appContext)
+            }
+            modManagementController.refreshAgentPatchCatalogueAvailability(parents)
+            uiState = uiState.withAgentPatchCatalogueAvailability(parents)
         }
     }
 

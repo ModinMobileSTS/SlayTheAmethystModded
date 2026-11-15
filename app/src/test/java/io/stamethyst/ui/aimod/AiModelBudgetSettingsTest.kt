@@ -11,41 +11,51 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AiModelBudgetSettingsTest {
-    @Test fun legacySavedInputLimitRemainsAnExplicitInputBudget() {
+    @Test fun upgradeResetsLegacyBudgetsForAllModelsButKeepsUnrelatedSettings() {
         val context = context()
         val key = AiContextLimits.key("https://provider/v1", "model")
-        context.getSharedPreferences("ai_context_limits", Context.MODE_PRIVATE).edit().putInt(key, 200_000).apply()
+        context.getSharedPreferences("ai_context_limits", Context.MODE_PRIVATE).edit()
+            .putInt(key, 200_000).putInt("other", 8_000).apply()
+        context.getSharedPreferences("ai_model_output_targets", Context.MODE_PRIVATE).edit()
+            .putInt(key, 4_000).putInt("other", 500).apply()
+        context.getSharedPreferences("ai_model_budget_overrides", Context.MODE_PRIVATE).edit()
+            .putString(key, "{\"contextWindow\":32000}").putString("other", "{broken").apply()
+        context.getSharedPreferences("llm_settings", Context.MODE_PRIVATE).edit()
+            .putString("model", "selected-model").apply()
         val budget = AiContextLimits.budget(context, key)
-        assertEquals(200_000, AiContextLimits.get(context, key))
-        assertEquals(200_000, budget.inputLimit)
-        assertEquals(20_000, budget.outputReserve)
-        assertFalse(budget.usesDefaultInputBudget)
+        assertEquals(262_000, AiContextLimits.get(context, key))
+        assertEquals(262_000, budget.inputLimit)
+        assertEquals(128_000, budget.outputReserve)
+        assertEquals(128_000, budget.summaryOutputLimit)
+        assertTrue(budget.usesDefaultInputBudget)
+        assertNull(AiContextLimits.explicitInputLimit(context, "other"))
+        assertNull(AiContextLimits.explicitOutputTarget(context, "other"))
+        assertTrue(context.getSharedPreferences("ai_model_budget_overrides", Context.MODE_PRIVATE).all.isEmpty())
+        assertEquals("selected-model", context.getSharedPreferences("llm_settings", Context.MODE_PRIVATE).getString("model", null))
     }
 
     @Test fun clearingInputRestoresDefaultWithoutSavingItAsAnExplicitOverride() {
         val context = context()
-        AiContextLimits.set(context, "key", 80_000, AgentModelLimits())
-        AiContextLimits.set(context, "key", null, AgentModelLimits())
+        AiContextLimits.set(context, "key", 80_000)
+        AiContextLimits.set(context, "key", null)
         assertNull(AiContextLimits.explicitInputLimit(context, "key"))
-        assertEquals(32_000, AiContextLimits.budget(context, "key").inputLimit)
+        assertEquals(262_000, AiContextLimits.budget(context, "key").inputLimit)
         assertTrue(AiContextLimits.budget(context, "key").usesDefaultInputBudget)
     }
 
-    @Test fun catalogAndOverridePrecedenceSurvivesSavingAndIsModelScoped() {
+    @Test fun catalogConstraintsRemainAutomaticAndModelScoped() {
         val context = context()
         val base = "https://provider/v1"
         val key = AiContextLimits.key(base, "model")
         AiContextLimits.cacheCatalog(context, " $base/ ", listOf(NewApiModel("model",
             context_window = JsonPrimitive(20_000), max_output_tokens = JsonPrimitive(1_000))))
-        AiContextLimits.set(context, key, 30_000, AgentModelLimits(contextWindow = 24_000, maxOutputTokens = 2_000))
+        AiContextLimits.set(context, key, 30_000)
         val budget = AiContextLimits.budget(context, key)
-        assertEquals(22_000, budget.inputLimit)
-        assertEquals(2_000, budget.outputReserve)
-        assertEquals(AgentModelLimits(24_000, maxOutputTokens = 2_000), AiContextLimits.overrides(context, key))
-        assertEquals(32_000, AiContextLimits.budget(context, AiContextLimits.key(base, "other")).inputLimit)
-        assertEquals(32_000, AiContextLimits.budget(context, AiContextLimits.key("https://other/v1", "model")).inputLimit)
-        AiContextLimits.set(context, key, 30_000, AgentModelLimits())
-        assertEquals(19_000, AiContextLimits.budget(context, key).inputLimit)
+        assertEquals(19_000, budget.inputLimit)
+        assertEquals(1_000, budget.outputReserve)
+        assertEquals(1_000, budget.summaryOutputLimit)
+        assertEquals(262_000, AiContextLimits.budget(context, AiContextLimits.key(base, "other")).inputLimit)
+        assertEquals(262_000, AiContextLimits.budget(context, AiContextLimits.key("https://other/v1", "model")).inputLimit)
     }
 
     @Test fun catalogRefreshWithoutOptionalLimitsClearsOldCapabilities() {
@@ -57,37 +67,53 @@ class AiModelBudgetSettingsTest {
         assertEquals(AgentModelLimits(), AiContextLimits.budget(context, key).modelLimits)
     }
 
-    @Test fun modelLevelOutputTargetIsIndependentOfCapabilityOverrideAndCanBeReset() {
+    @Test fun outputChangesAlsoApplyToSummariesAndClearingRestoresDefault() {
         val context = context()
-        val limits = AgentModelLimits(contextWindow = 32_000, maxOutputTokens = 8_000)
-        AiContextLimits.set(context, "key", 32_000, limits, outputTarget = 6_000)
+        AiContextLimits.set(context, "key", 262_000, outputTarget = 6_000)
         assertEquals(6_000, AiContextLimits.explicitOutputTarget(context, "key"))
         assertEquals(6_000, AiContextLimits.budget(context, "key").outputReserve)
-        assertEquals(26_000, AiContextLimits.budget(context, "key").inputLimit)
-        assertEquals(2_000, AiContextLimits.budget(context, "key").summaryOutputLimit)
-        AiContextLimits.set(context, "key", 32_000, limits, outputTarget = 12_000)
-        assertEquals(8_000, AiContextLimits.budget(context, "key").outputReserve)
-        AiContextLimits.set(context, "key", 32_000, limits, outputTarget = null)
+        assertEquals(262_000, AiContextLimits.budget(context, "key").inputLimit)
+        assertEquals(6_000, AiContextLimits.budget(context, "key").summaryOutputLimit)
+        AiContextLimits.set(context, "key", 262_000, outputTarget = 12_000)
+        assertEquals(12_000, AiContextLimits.budget(context, "key").summaryOutputLimit)
+        AiContextLimits.set(context, "key", null, outputTarget = null)
         assertNull(AiContextLimits.explicitOutputTarget(context, "key"))
-        assertEquals(8_000, AiContextLimits.budget(context, "key").outputReserve)
-        AiContextLimits.set(context, "key", 32_000, AgentModelLimits())
-        assertEquals(20_000, AiContextLimits.budget(context, "key").outputReserve)
+        assertEquals(128_000, AiContextLimits.budget(context, "key").outputReserve)
+        assertEquals(128_000, AiContextLimits.budget(context, "key").summaryOutputLimit)
     }
 
-    @Test fun explicitlySavedOutputTargetIsPreserved() {
+    @Test fun newValuesSurviveRepeatedReadsAndReopeningPreferencesAfterOneTimeReset() {
         val context = context()
-        AiContextLimits.set(context, "key", null, AgentModelLimits(), outputTarget = 4_000)
-        assertEquals(4_000, AiContextLimits.explicitOutputTarget(context, "key"))
-        assertEquals(4_000, AiContextLimits.budget(context, "key").outputReserve)
+        // Writing before the first read must migrate first, not erase this new edit on the next read.
+        AiContextLimits.set(context, "key", 240_000, outputTarget = 96_000)
+        val reopened = object : ContextWrapper(context) {
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+                context.getSharedPreferences(name, mode)
+        }
+        repeat(3) {
+            assertEquals(240_000, AiContextLimits.get(reopened, "key"))
+            assertEquals(96_000, AiContextLimits.explicitOutputTarget(reopened, "key"))
+            assertEquals(96_000, AiContextLimits.budget(reopened, "key").summaryOutputLimit)
+        }
     }
 
-    @Test fun corruptOptionalCapabilityStorageDoesNotDiscardLegacyInputSetting() {
+    @Test fun removedCapabilityOverridesCannotChangeBudgetEvenIfWrittenAgain() {
         val context = context()
-        AiContextLimits.set(context, "key", 25_000, AgentModelLimits())
+        AiContextLimits.set(context, "key", 25_000)
         context.getSharedPreferences("ai_model_budget_overrides", Context.MODE_PRIVATE).edit()
-            .putString("key", "{broken").apply()
+            .putString("key", "{\"maxInputTokens\":100}").apply()
         assertEquals(25_000, AiContextLimits.budget(context, "key").inputLimit)
-        assertEquals(AgentModelLimits(), AiContextLimits.overrides(context, "key"))
+        assertEquals(AgentModelLimits(), AiContextLimits.budget(context, "key").modelLimits)
+    }
+
+    @Test fun outputReadAloneAlsoTriggersUpgradeAndInvalidEditsAreRejected() {
+        val context = context()
+        context.getSharedPreferences("ai_model_output_targets", Context.MODE_PRIVATE).edit()
+            .putInt("key", 4_000).apply()
+        assertNull(AiContextLimits.explicitOutputTarget(context, "key"))
+        assertThrows(IllegalArgumentException::class.java) { AiContextLimits.set(context, "key", 0) }
+        assertThrows(IllegalArgumentException::class.java) { AiContextLimits.set(context, "key", null, -1) }
+        assertEquals(128_000, AiContextLimits.budget(context, "key").summaryOutputLimit)
     }
 
     private fun context(): Context {

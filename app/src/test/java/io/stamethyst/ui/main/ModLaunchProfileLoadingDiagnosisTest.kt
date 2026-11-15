@@ -30,6 +30,25 @@ import org.json.JSONObject
 /** Characterization tests: exercise production refresh, not a simulated loading pipeline. */
 class ModLaunchProfileLoadingDiagnosisTest {
     @Test
+    fun catalogueAvailabilityUpdateDoesNotScanModsOrRewriteProfiles() = withFixture { host, controller ->
+        seedMods(host, 2)
+        controller.refresh(host, storageAccessible = true)
+        val before = controller.snapshot()
+        val writes = host.profileWrites.get()
+        // A catalogue refresh must not notice local filesystem changes or rebuild the cards.
+        val first = before.optionalMods.first()
+        assertTrue(File(first.storagePath).delete())
+
+        controller.refreshAgentPatchCatalogueAvailability(setOf(first.manifestModId.lowercase()))
+
+        val after = controller.snapshot()
+        assertEquals(before.copy(optionalMods = before.optionalMods.map {
+            it.copy(hasAgentPatchCatalogueEntries = it.storagePath == first.storagePath)
+        }), after)
+        assertEquals(writes, host.profileWrites.get())
+    }
+
+    @Test
     fun updateRetainsEnabledStateInRunningControllerAndSavedProfiles() = withFixture { host, controller ->
         seedMods(host, 2)
         val library = RuntimePaths.optionalModsLibraryDir(host)

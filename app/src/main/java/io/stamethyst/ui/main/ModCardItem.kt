@@ -107,6 +107,7 @@ internal data class ModCardCallbacks(
     val onShareAgentPatch: (ModItemUi, io.stamethyst.model.AgentPatchModUi) -> Unit = { _, _ -> },
     val onRenameAgentPatch: (ModItemUi, io.stamethyst.model.AgentPatchModUi, String, String) -> Unit = { _, _, _, _ -> },
     val onRefreshAgentPatchMods: () -> Unit = {},
+    val onAgentPatchCatalogueRefreshed: () -> Unit = {},
     val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onDragStart: (ModCardDragStartInfo) -> Unit = {},
     val onDragCancel: () -> Unit = {},
@@ -636,7 +637,7 @@ internal fun ModCard(
                         openCatalogue()
                         initialRemotePatchModId = it.patchModId
                     },
-                    onCatalogueRefreshed = callbacks.onRefreshAgentPatchMods,
+                    onCatalogueRefreshed = callbacks.onAgentPatchCatalogueRefreshed,
                 )
             },
             actionsContent = {
@@ -709,7 +710,7 @@ internal fun ModCard(
             actionsOnly = agentPatchActionsOnly,
             onDismiss = { showAgentPatchCatalogue = false },
             onInstalled = callbacks.onRefreshAgentPatchMods,
-            onCatalogueRefreshed = callbacks.onRefreshAgentPatchMods,
+            onCatalogueRefreshed = callbacks.onAgentPatchCatalogueRefreshed,
             onExport = { patch -> callbacks.onExportAgentPatch(mod, patch) },
             onShare = { patch -> callbacks.onShareAgentPatch(mod, patch) },
             onRename = { patch, name, description -> callbacks.onRenameAgentPatch(mod, patch, name, description) },

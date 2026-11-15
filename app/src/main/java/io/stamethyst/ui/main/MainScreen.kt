@@ -6610,6 +6610,7 @@ private fun ColumnScope.MainContentSwitcher(
                          onShareAgentPatch = actions.onShareAgentPatch,
                          onRenameAgentPatch = actions.onRenameAgentPatch,
                          onRefreshAgentPatchMods = actions.onRefreshMods,
+                         onAgentPatchCatalogueRefreshed = actions.onAgentPatchCatalogueRefreshed,
                          onSetImportPatchEnabled = actions.onSetImportPatchEnabled,
                         onAssociateMods = actions.onAssociateMods,
                         onRemoveModAssociation = actions.onRemoveModAssociation,

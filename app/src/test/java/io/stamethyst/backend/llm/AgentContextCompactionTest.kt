@@ -91,7 +91,7 @@ class AgentContextCompactionTest {
         val model = fake { request ->
             assertEquals("session system", (request.messages().first() as SystemMessage).text())
             assertEquals(listOf(tool), request.toolSpecifications())
-            assertEquals(2_000, request.parameters().maxOutputTokens().toInt())
+            assertEquals(128_000, request.parameters().maxOutputTokens().toInt())
             answer()
         }
         val manager = AgentContextManager(history, "session system", "read schema", AgentContextBudget(), 5,
@@ -349,11 +349,11 @@ class AgentContextCompactionTest {
         var snapshots = 0
         val outputs = ArrayList<Int>()
         val model = fake { outputs += it.parameters().maxOutputTokens(); answer() }
-        var active = AgentCompactionTarget(model, budget = AgentContextBudget(summaryOutputTarget = 600))
+        var active = AgentCompactionTarget(model, budget = AgentContextBudget(outputTarget = 600))
         val manager = AgentContextManager(history, "system", "tools", AgentContextBudget(), 5,
             fake { error("startup model is stale") }, {}, currentCompactionTarget = { snapshots++; active })
         manager.prepare(manual = true)
-        active = active.copy(budget = AgentContextBudget(summaryOutputTarget = 1_200))
+        active = active.copy(budget = AgentContextBudget(outputTarget = 1_200))
         manager.prepare(manual = true)
         assertEquals(listOf(600, 1_200), outputs)
         assertEquals(2, snapshots)
@@ -363,7 +363,7 @@ class AgentContextCompactionTest {
         val outputs = ArrayList<Int>()
         val model = fake { outputs += it.parameters().maxOutputTokens(); answer() }
         val manager = manager(state = history.copy(modelKey = "same"))
-        val next = AgentContextBudget(10_000, summaryOutputTarget = 500)
+        val next = AgentContextBudget(10_000, outputTarget = 500)
         manager.switchModel("same", next, AgentCompactionTarget(model, budget = next))
         manager.prepare(manual = true)
         assertEquals(next, manager.budget)

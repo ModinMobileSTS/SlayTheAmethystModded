@@ -136,6 +136,8 @@ object AgentPatchCatalogueService {
     private val parsedCache = ConcurrentHashMap<String, AgentPatchCatalogueSnapshot>()
     private val catalogueRequests = CatalogueRequestStateMachine<AgentPatchCatalogueData>(
         CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        // `changed` describes a fetch, not every subsequent read of its in-memory result.
+        cachedValue = { it.copy(changed = false) },
     )
     val requestState = catalogueRequests.state
 

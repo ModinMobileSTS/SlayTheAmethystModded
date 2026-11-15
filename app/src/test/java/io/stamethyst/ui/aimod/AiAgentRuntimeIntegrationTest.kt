@@ -18,6 +18,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import kotlinx.serialization.json.JsonPrimitive
 
 class AiAgentRuntimeIntegrationTest {
     @get:Rule val temporary = TemporaryFolder(
@@ -33,9 +34,13 @@ class AiAgentRuntimeIntegrationTest {
             assertEquals("test", context.getSharedPreferences("llm_settings_fallback", Context.MODE_PRIVATE).getString("api_key", null))
             assertEquals("settings must survive repository reload", settings, LlmSettingsRepository(context).get())
             AiContextLimits.set(context, AiContextLimits.key(settings.baseUrl, "wide"), 200_000,
-                AgentModelLimits(contextWindow = 60_000, maxOutputTokens = 1_000))
+                outputTarget = 1_000)
             AiContextLimits.set(context, AiContextLimits.key(settings.baseUrl, "small"), 200_000,
-                AgentModelLimits(contextWindow = 32_000, maxOutputTokens = 700))
+                outputTarget = 700)
+            AiContextLimits.cacheCatalog(context, settings.baseUrl, listOf(
+                NewApiModel("wide", context_window = JsonPrimitive(60_000)),
+                NewApiModel("small", context_window = JsonPrimitive(32_000)),
+            ))
             val sent = mutableListOf<Triple<String, LlmReasoningEffort, Int>>()
             fun response(config: OpenAiCompatibleModelConfig, request: ChatRequest): ChatResponse {
                 assertNotNull("bind on actual SDK thread", AgentRequestScope.current())

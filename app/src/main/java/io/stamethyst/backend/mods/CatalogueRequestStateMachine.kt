@@ -18,7 +18,10 @@ data class CatalogueRequestState<T>(
 )
 
 /** One process-owned request: cancelling a screen only cancels its wait, not the download. */
-internal class CatalogueRequestStateMachine<T : Any>(private val scope: CoroutineScope) {
+internal class CatalogueRequestStateMachine<T : Any>(
+    private val scope: CoroutineScope,
+    private val cachedValue: (T) -> T = { it },
+) {
     private val lock = Any()
     private val mutableState = MutableStateFlow(CatalogueRequestState<T>())
     val state: StateFlow<CatalogueRequestState<T>> = mutableState.asStateFlow()
@@ -29,7 +32,7 @@ internal class CatalogueRequestStateMachine<T : Any>(private val scope: Coroutin
             inFlight ?: run {
                 val current = mutableState.value
                 if (!force && current.phase == CatalogueRequestPhase.READY) {
-                    return current.data!!
+                    return cachedValue(current.data!!)
                 }
                 mutableState.value = current.copy(phase = CatalogueRequestPhase.FETCHING, error = null)
                 scope.async(start = CoroutineStart.LAZY) {

@@ -19,12 +19,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentConversationContextTest {
+    @Test fun newSessionWithThirteenThousandTokensOfFixedOverheadDoesNotCompact() {
+        val input = AgentContextState(messages = listOf(AgentContextMessage(1, "user", "添加一个角色")))
+        val manager = AgentContextManager(input, "s".repeat(30_000), "t".repeat(9_000),
+            AgentContextBudget(), 2, fake { error("new user-only session must not need compaction") }, {})
+
+        val request = manager.prepare()
+
+        assertEquals(2, request.size)
+        assertEquals(0, manager.state.compactionCount)
+        assertTrue(manager.state.estimatedTokens!! > 13_000)
+        assertEquals(262_000, manager.budget.inputLimit)
+    }
+
     @Test fun configuredInputLimitDoesNotDeductOutputBudget() {
         val budget = AgentContextBudget()
-        assertEquals(32_000, budget.limit)
-        assertEquals(20_000, budget.outputReserve)
-        assertEquals(32_000, budget.inputLimit)
-        assertEquals(2_000, budget.summaryOutputLimit)
+        assertEquals(262_000, budget.limit)
+        assertEquals(128_000, budget.outputReserve)
+        assertEquals(262_000, budget.inputLimit)
+        assertEquals(128_000, budget.summaryOutputLimit)
         assertEquals(200_000, AgentContextBudget(200_000).inputLimit)
         assertEquals(8000, AgentContextBudget(8000).inputLimit)
         listOf(1, 128, 32_000, 100_000, Int.MAX_VALUE).forEach { limit ->

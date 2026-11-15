@@ -25,6 +25,7 @@ internal data class ModFolderSectionCallbacks(
     val onShareAgentPatch: (AgentPatchModUi) -> Unit = {},
     val onRenameAgentPatch: (ModItemUi, AgentPatchModUi, String, String) -> Unit = { _, _, _, _ -> },
     val onRefreshAgentPatchMods: () -> Unit = {},
+    val onAgentPatchCatalogueRefreshed: () -> Unit = {},
     val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onAssociateMods: (ModItemUi, ModItemUi) -> Unit = { _, _ -> },
     val onRemoveModAssociation: (ModItemUi, ModItemUi) -> Unit = { _, _ -> },

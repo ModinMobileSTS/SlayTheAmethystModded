@@ -4,6 +4,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -25,6 +27,21 @@ import java.text.NumberFormat
 @RunWith(AndroidJUnit4::class)
 class AiContextCacheInstrumentedTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun budgetDialogOnlyAllowsInputAndOutputEdits() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        compose.setContent {
+            MaterialTheme { AiContextCounter(tokens = null, modelKey = "budget-two-fields-fixture", busy = false) }
+        }
+        val label = context.getString(R.string.ai_mod_editor_context)
+        val unknown = context.getString(R.string.ai_mod_editor_context_unknown)
+        compose.onNodeWithContentDescription("$label: $unknown").performClick()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(2)
+        compose.onNodeWithText(context.getString(R.string.ai_agent_budget_input_target))
+            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.ai_agent_budget_output_target))
+            .performScrollTo().assertIsDisplayed()
+    }
 
     @Test fun dialogShowsMeasuredCacheRatesAndUpdatesUnreportedToUnknown() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

@@ -51,6 +51,25 @@ class CatalogueRequestStateMachineTest {
     }
 
     @Test
+    fun reusedCatalogueDoesNotReplayThePreviousFetchChangeFlag() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val machine = CatalogueRequestStateMachine<AgentPatchCatalogueData>(
+                scope, cachedValue = { it.copy(changed = false) },
+            )
+            val fetched = AgentPatchCatalogueData(emptyList(), byteArrayOf(1), changed = true)
+            assertTrue(machine.load { fetched }.changed)
+            val cached = machine.load { error("Must reuse the successful catalogue") }
+            assertEquals(false, cached.changed)
+            assertTrue(cached.bytes === fetched.bytes)
+            assertTrue(machine.load(force = true) { fetched }.changed)
+            assertEquals(false, machine.load { error("Must reuse forced success") }.changed)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun failureRetainsDataAndCanBeRetried() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {

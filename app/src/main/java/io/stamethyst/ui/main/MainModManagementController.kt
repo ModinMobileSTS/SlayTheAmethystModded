@@ -249,13 +249,8 @@ internal class MainModManagementController(
     }
 
     @Synchronized
-    fun refreshAgentPatchCatalogueAvailability(context: android.content.Context) {
-        val parents = AgentPatchCatalogueService.readCachedParentModIds(context)
-        fun update(mod: ModItemUi) = mod.copy(
-            hasAgentPatchCatalogueEntries = ModManager.normalizeModId(
-                mod.manifestModId.ifBlank { mod.modId }
-            ) in parents,
-        )
+    fun refreshAgentPatchCatalogueAvailability(parents: Set<String>) {
+        fun update(mod: ModItemUi) = mod.withAgentPatchCatalogueAvailability(parents)
         for (index in requiredModsSnapshot.indices) requiredModsSnapshot[index] = update(requiredModsSnapshot[index])
         for (index in optionalModsSnapshot.indices) optionalModsSnapshot[index] = update(optionalModsSnapshot[index])
         optionalModsWithPendingSelectionDirty = true
