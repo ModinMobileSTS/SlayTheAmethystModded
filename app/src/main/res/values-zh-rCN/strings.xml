@@ -1607,8 +1607,8 @@
     <string name="settings_category_market_cloud_subtitle">Steam 云存档和市场下载设置</string>
     <string name="settings_category_llm_title">LLM 智能支持</string>
     <string name="settings_category_llm_subtitle">配置用于模组编辑辅助的 AI 模型</string>
-    <string name="settings_feedback_logs_title">文件与反馈</string>
-    <string name="settings_feedback_logs_subtitle">存档、日志导出和问题反馈</string>
+    <string name="settings_feedback_logs_title">资源与文件</string>
+    <string name="settings_feedback_logs_subtitle">资源管理、模组与存档导入导出和日志导出</string>
     <string name="settings_category_about_title">关于</string>
     <string name="settings_category_about_subtitle">项目链接、贡献者、鸣谢和说明</string>
     <string name="settings_first_run_title">基础设置引导</string>
@@ -2090,7 +2090,7 @@
     <string name="main_steam_cloud_override_failed">云存档同步失败：%1$s</string>
     <string name="settings_steam_cloud_login_cancelled_summary">用户已取消。</string>
     <string name="settings_feedback_entry_title">问题反馈</string>
-    <string name="settings_feedback_entry_desc">提交启动器问题、游戏内问题和功能建议。此汇报方式优于其他汇报方式。</string>
+    <string name="settings_feedback_entry_desc">如果发现启动器存在 bug 或者有一些改进的意见或者想法，欢迎在此提出，问题会关联到 Github Issue，看到的都尽可能回复，期待大家的捉虫和建议！</string>
     <string name="settings_feedback_entry_new">反馈新问题</string>
     <string name="settings_feedback_entry_subscriptions">我关注的议题</string>
     <string name="settings_feedback_entry_issue_browser">关注新议题</string>
@@ -2227,7 +2227,7 @@
     <string name="feedback_submission_acknowledgement_5">我知道开发者大概率没玩过出问题的模组，我的描述足够让不了解的人看懂。</string>
     <string name="feedback_submission_acknowledgement_6">我已认真阅读所有的说明，并且我不应该勾选这一个复选框。</string>
     <string name="feedback_submission_attention_warning_title">请仔细阅读注意事项！</string>
-    <string name="feedback_submission_attention_warning_message">每一个问题都要花费大量的精力定位，弹出这个弹窗说明你没认真阅读注意事项，请仔细阅读，避免浪费彼此的时间！</string>
+    <string name="feedback_submission_attention_warning_message">为避免不必要的麻烦，请认真阅读所有复选框文字😡😡😡</string>
     <string name="feedback_submission_attention_warning_close_countdown">关闭（%1$d秒）</string>
     <string name="feedback_submit">提交反馈</string>
     <string name="feedback_busy_syncing_subscriptions">正在同步我关注的议题…</string>

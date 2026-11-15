@@ -149,6 +149,7 @@ import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconController
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.ModPageLayout
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeController
 import io.stamethyst.config.LauncherThemeMode
@@ -402,6 +403,7 @@ class SettingsScreenViewModel : ViewModel() {
         val chromeBackgroundOpacity: Float =
             LauncherPreferences.DEFAULT_CHROME_BACKGROUND_OPACITY,
         val launcherBlurDisabled: Boolean = LauncherPreferences.DEFAULT_LAUNCHER_BLUR_DISABLED,
+        val modPageLayout: ModPageLayout = LauncherPreferences.DEFAULT_MOD_PAGE_LAYOUT,
         val bootOverlayStyle: BootOverlayStyle =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE,
         val slingBreakDependencyProgress: Int? = null,
@@ -746,6 +748,7 @@ class SettingsScreenViewModel : ViewModel() {
             launcherIconMode = SettingsRepository.loadLauncherIconMode(host),
             chromeBackgroundOpacity = SettingsRepository.loadChromeBackgroundOpacity(host),
             launcherBlurDisabled = SettingsRepository.loadLauncherBlurDisabled(host),
+            modPageLayout = LauncherPreferences.readModPageLayout(host),
             bootOverlayStyle = SettingsRepository.loadBootOverlayStyle(host),
             slingBreakInstalledVersion = SlingBreakInstallation.read(host)?.rawTagName.orEmpty(),
             bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host),
@@ -780,6 +783,13 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(launcherBlurDisabled = disabled)
         LauncherPreferences.saveLauncherBlurDisabled(host, disabled)
+        refreshConfiguration(host)
+    }
+
+    fun onModPageLayoutChanged(host: Activity, layout: ModPageLayout) {
+        if (uiState.busy || uiState.modPageLayout == layout) return
+        uiState = uiState.copy(modPageLayout = layout)
+        LauncherPreferences.saveModPageLayout(host, layout)
         refreshConfiguration(host)
     }
 
@@ -4750,6 +4760,7 @@ class SettingsScreenViewModel : ViewModel() {
             launcherIconMode = snapshot.launcherIconMode,
             chromeBackgroundOpacity = snapshot.chromeBackgroundOpacity,
             launcherBlurDisabled = snapshot.launcherBlurDisabled,
+            modPageLayout = snapshot.modPageLayout,
             bootOverlayStyle = snapshot.bootOverlayStyle,
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
             bootOverlayImageConfig = snapshot.bootOverlayImageConfig,

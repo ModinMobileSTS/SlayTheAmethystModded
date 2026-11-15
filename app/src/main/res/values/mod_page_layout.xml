@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_mod_page_layout_title">Mod page layout</string>
+    <string name="settings_mod_page_layout_classic">Classic (1.6.5 and earlier)</string>
+    <string name="settings_mod_page_layout_compact">Compact (1.6.6)</string>
+</resources>

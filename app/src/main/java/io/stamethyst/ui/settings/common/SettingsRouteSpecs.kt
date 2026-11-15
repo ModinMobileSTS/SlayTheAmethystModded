@@ -76,6 +76,12 @@ internal val SettingsFeedbackRouteSpec = SettingsRouteSpec(
     iconResId = R.drawable.ic_feedback_updates,
 )
 
+internal val SettingsFeedbackEntryRouteSpec = SettingsRouteSpec(
+    titleResId = R.string.settings_feedback_entry_title,
+    subtitleResId = R.string.settings_feedback_entry_desc,
+    iconResId = R.drawable.ic_settings_feedback,
+)
+
 internal val SettingsNativeLibraryMarketRouteSpec = SettingsRouteSpec(
     titleResId = R.string.settings_native_library_market_title,
     subtitleResId = R.string.settings_native_library_market_desc,
@@ -114,4 +120,5 @@ internal val SettingsHomeDestinations = listOf(
     SettingsHomeDestination(Route.NativeLibraryMarket, SettingsNativeLibraryMarketRouteSpec),
     SettingsHomeDestination(Route.DeveloperSettings, SettingsDeveloperRouteSpec),
     SettingsHomeDestination(Route.SettingsAbout, SettingsAboutRouteSpec),
+    SettingsHomeDestination(Route.Feedback, SettingsFeedbackEntryRouteSpec),
 )

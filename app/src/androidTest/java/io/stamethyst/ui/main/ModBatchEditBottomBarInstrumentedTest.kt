@@ -20,6 +20,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.R
+import io.stamethyst.config.ModPageLayout
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.LauncherBannerPageState
 import io.stamethyst.ui.LocalLauncherBannerPage
@@ -144,6 +145,36 @@ class ModBatchEditBottomBarInstrumentedTest {
         assertEquals(host.right, glass.right, 0.5f)
         assertEquals(host.bottom, glass.bottom, 0.5f)
         compose.runOnIdle { assertSame(topContent, page.content) }
+    }
+
+    @Test fun classicPageStillUsesTheNewEdgeToEdgeToolbarAndButtonLayout() {
+        val layout = mutableStateOf(ModPageLayout.CLASSIC)
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalModPageLayout provides layout.value) {
+                    Box(Modifier.width(360.dp).height(500.dp).testTag("shared_toolbar_host")) {
+                        ModBatchEditBottomBar(
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            batchEditBarState = selection(),
+                            hazeState = rememberHazeState(),
+                            onHeightChanged = {},
+                        )
+                    }
+                }
+            }
+        }
+        val host = compose.onNodeWithTag("shared_toolbar_host").fetchSemanticsNode().boundsInRoot
+        val classic = compose.onNodeWithTag(MOD_BATCH_EDIT_TOOLBAR_TAG).fetchSemanticsNode().boundsInRoot
+        val button = compose.onNodeWithText(context.getString(R.string.main_batch_action_enable))
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(host.left, classic.left, 0.5f)
+        assertEquals(host.right, classic.right, 0.5f)
+        assertEquals(host.bottom, classic.bottom, 0.5f)
+        compose.onNodeWithText(context.getString(R.string.main_batch_action_delete)).assertDoesNotExist()
+        compose.runOnIdle { layout.value = ModPageLayout.COMPACT }
+        assertEquals(classic, compose.onNodeWithTag(MOD_BATCH_EDIT_TOOLBAR_TAG).fetchSemanticsNode().boundsInRoot)
+        assertEquals(button, compose.onNodeWithText(context.getString(R.string.main_batch_action_enable))
+            .fetchSemanticsNode().boundsInRoot)
     }
 
     private fun selection() = BatchEditBarState(

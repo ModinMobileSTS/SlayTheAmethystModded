@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_mod_page_layout_title">模组页布局</string>
+    <string name="settings_mod_page_layout_classic">经典布局（1.6.5 及更早版本）</string>
+    <string name="settings_mod_page_layout_compact">紧凑布局（1.6.6）</string>
+</resources>

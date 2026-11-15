@@ -539,6 +539,7 @@ fun LauncherContent(
         LocalNavigator provides navigator,
         LocalChromeBackgroundOpacity provides chromeBackgroundOpacity,
         LocalLauncherBlurDisabled provides settingsUiState.launcherBlurDisabled,
+        io.stamethyst.ui.main.LocalModPageLayout provides settingsUiState.modPageLayout,
         LocalLauncherBannerState provides launcherBannerState,
         io.stamethyst.ui.settings.common.LocalSettingsLoadRetry provides { domain ->
             settingsViewModel.retrySettingsLoad(activity, domain)

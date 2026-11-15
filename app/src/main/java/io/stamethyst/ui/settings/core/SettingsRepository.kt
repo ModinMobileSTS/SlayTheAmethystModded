@@ -39,6 +39,7 @@ import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.ModPageLayout
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -58,6 +59,7 @@ internal object SettingsRepository {
         val launcherIconMode: LauncherIconMode,
         val chromeBackgroundOpacity: Float,
         val launcherBlurDisabled: Boolean,
+        val modPageLayout: ModPageLayout,
         val bootOverlayStyle: BootOverlayStyle,
         val bootOverlayAnimation: BootOverlayAnimation,
         val bootOverlayImageConfig: BootOverlayImageConfig,
@@ -233,6 +235,7 @@ internal object SettingsRepository {
             launcherIconMode = LauncherPreferences.readLauncherIconMode(context),
             chromeBackgroundOpacity = LauncherPreferences.readChromeBackgroundOpacity(context),
             launcherBlurDisabled = LauncherPreferences.readLauncherBlurDisabled(context),
+            modPageLayout = LauncherPreferences.readModPageLayout(context),
             bootOverlayStyle = LauncherPreferences.readBootOverlayStyle(context),
             bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
             bootOverlayImageConfig = LauncherPreferences.readBootOverlayImageConfig(context),
@@ -374,6 +377,7 @@ internal object SettingsRepository {
     }
 
     fun resetLauncherSettingsToDefaults(context: Context) {
+        LauncherPreferences.saveModPageLayout(context, LauncherPreferences.DEFAULT_MOD_PAGE_LAYOUT)
         LauncherPreferences.saveLauncherBlurDisabled(
             context,
             LauncherPreferences.DEFAULT_LAUNCHER_BLUR_DISABLED

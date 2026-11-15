@@ -267,11 +267,8 @@ internal fun WorkshopDetailContent(
     }
 
     LauncherBannerVisibility(visible = fullscreenGalleryStartIndex < 0)
-    WorkshopDetailBackdrop(
-        publishedFileId = publishedFileId,
-        previewUrl = selectedDetails?.summary?.previewUrl?.takeIf { it.isNotBlank() }
-            ?: fallbackSummary?.takeIf { it.publishedFileId == publishedFileId }?.previewUrl.orEmpty(),
-        modifier = modifier.fillMaxSize(),
+    Box(
+        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
     ) {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -403,6 +400,8 @@ internal fun WorkshopDetailContent(
                                 }
                                 DetailModCard(
                                     details = details,
+                                    previewUrl = details.summary.previewUrl.takeIf { it.isNotBlank() }
+                                        ?: fallbackSummary?.takeIf { it.publishedFileId == publishedFileId }?.previewUrl.orEmpty(),
                                     metadataLoading = detailUpdate?.metadataLoading == true,
                                     communityLoading = detailUpdate?.communityLoading == true,
                                     downloadAction = downloadAction,
@@ -1666,6 +1665,7 @@ private fun WorkshopChangeNotesDialog(
 @Composable
 private fun DetailModCard(
     details: WorkshopItemDetails,
+    previewUrl: String,
     metadataLoading: Boolean,
     communityLoading: Boolean,
     downloadAction: @Composable () -> Unit,
@@ -1676,28 +1676,36 @@ private fun DetailModCard(
     onOpenAuthor: (WorkshopAuthor) -> Unit,
 ) {
     val skeletonStyle = rememberLoadingSkeletonStyle("workshop_detail_metadata_skeleton")
-    WorkshopDetailCard {
+    WorkshopDetailHeroCard(
+        publishedFileId = details.summary.publishedFileId,
+        previewUrl = previewUrl,
+    ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SelectionContainer {
-                    if (metadataLoading && details.summary.title == "Workshop ${details.summary.publishedFileId}") {
-                        LoadingSkeletonBlock(Modifier.fillMaxWidth(0.85f).height(26.dp), style = skeletonStyle)
-                    } else Text(
-                        text = details.summary.title.ifBlank { stringResource(R.string.workshop_unnamed_mod) },
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (details.summary.authorName.isBlank() && details.creators.isEmpty() && (metadataLoading || communityLoading)) {
-                    LoadingSkeletonBlock(Modifier.fillMaxWidth(0.5f).height(16.dp), style = skeletonStyle)
-                } else {
-                    WorkshopAuthorLinks(
-                        authors = details.creators.ifEmpty { listOfNotNull(details.summary.author) },
-                        fallbackName = details.summary.authorName,
-                        onOpenAuthor = onOpenAuthor,
-                    )
+                Column(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 107.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    SelectionContainer {
+                        if (metadataLoading && details.summary.title == "Workshop ${details.summary.publishedFileId}") {
+                            LoadingSkeletonBlock(Modifier.fillMaxWidth(0.85f).height(26.dp), style = skeletonStyle)
+                        } else Text(
+                            text = details.summary.title.ifBlank { stringResource(R.string.workshop_unnamed_mod) },
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (details.summary.authorName.isBlank() && details.creators.isEmpty() && (metadataLoading || communityLoading)) {
+                        LoadingSkeletonBlock(Modifier.fillMaxWidth(0.5f).height(16.dp), style = skeletonStyle)
+                    } else {
+                        WorkshopAuthorLinks(
+                            authors = details.creators.ifEmpty { listOfNotNull(details.summary.author) },
+                            fallbackName = details.summary.authorName,
+                            onOpenAuthor = onOpenAuthor,
+                        )
+                    }
                 }
                 downloadAction()
             }

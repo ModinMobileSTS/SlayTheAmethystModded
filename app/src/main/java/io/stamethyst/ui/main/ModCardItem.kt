@@ -23,6 +23,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import io.stamethyst.ui.LauncherSwitch as Switch
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import io.stamethyst.ui.LauncherAlertDialog as AlertDialog
 import androidx.compose.material3.Text
@@ -60,6 +61,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.zIndex
 import io.stamethyst.R
+import io.stamethyst.config.ModPageLayout
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
@@ -137,6 +139,7 @@ internal fun ModCard(
     callbacks: ModCardCallbacks
 ) {
     val context = LocalContext.current
+    val classicLayout = LocalModPageLayout.current == ModPageLayout.CLASSIC
     val density = LocalDensity.current
     val showAiEditorNewBadge = AiEditorNewBadgeStore.shouldShow(context)
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
@@ -160,7 +163,7 @@ internal fun ModCard(
     var updateChangeNotesState by remember(mod.storagePath) {
         mutableStateOf<WorkshopUpdateChangeNotesState>(WorkshopUpdateChangeNotesState.Idle)
     }
-    val cardShape = RoundedCornerShape(4.dp)
+    val cardShape = RoundedCornerShape(if (classicLayout) 10.dp else 4.dp)
     val batchSelectionAnimationProgress = if (batchSelectionMode) {
         batchSelectionProgress?.value ?: 1f
     } else {
@@ -293,11 +296,19 @@ internal fun ModCard(
             .graphicsLayer {
                 alpha = if (isDraggedInOverlay) 0f else 1f
             }
-            .padding(start = 22.dp, end = 8.dp, top = 1.dp, bottom = 1.dp)
+            .padding(
+                start = if (classicLayout) 8.dp else 22.dp,
+                end = 8.dp,
+                top = if (classicLayout) 3.dp else 1.dp,
+                bottom = if (classicLayout) 3.dp else 1.dp,
+            )
             .onGloballyPositioned { cardCoordinates = it }
+            .shadow(if (classicLayout) 2.dp else 0.dp, cardShape, clip = false)
             .clip(cardShape)
             .border(
-                if (batchSelected || mod.newlyImported) 1.dp else 0.dp,
+                if (classicLayout) {
+                    if (batchSelected || mod.newlyImported) 2.dp else 1.dp
+                } else if (batchSelected || mod.newlyImported) 1.dp else 0.dp,
                 if (batchSelected) {
                     MaterialTheme.colorScheme.primary
                 } else if (mod.favorite) {
@@ -305,7 +316,7 @@ internal fun ModCard(
                 } else if (mod.newlyImported) {
                     MaterialTheme.colorScheme.tertiary
                 } else {
-                    Color.Transparent
+                    if (classicLayout) MaterialTheme.colorScheme.outlineVariant else Color.Transparent
                 },
                 cardShape
             )
@@ -314,6 +325,10 @@ internal fun ModCard(
                     MaterialTheme.colorScheme.primaryContainer
                 } else if (mod.newlyImported) {
                     MaterialTheme.colorScheme.tertiaryContainer
+                } else if (classicLayout && mod.enabled) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else if (classicLayout) {
+                    MaterialTheme.colorScheme.surfaceContainer
                 } else {
                     MaterialTheme.colorScheme.surface
                 },
@@ -326,13 +341,14 @@ internal fun ModCard(
                     easing = LinearEasing
                 )
             )
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .padding(horizontal = if (classicLayout) 10.dp else 8.dp, vertical = if (classicLayout) 10.dp else 6.dp)
+            .testTag(if (classicLayout) "mod_card_classic" else "mod_card_compact")
     ) {
         ModCardBodyContent(
             mod = mod,
             isExpanded = false,
             showModFileName = showModFileName,
-            compact = true,
+            compact = !classicLayout,
             modSuggestionText = suggestionText,
             suggestionUnread = !suggestionRead,
             suggestionBadgeEnabled = !batchSelectionMode,
@@ -398,6 +414,21 @@ internal fun ModCard(
                 }
             },
             headerTrailing = {
+                if (classicLayout && !batchSelectionMode) {
+                    IconButton(
+                        onClick = {
+                            detailsStartAtActions = true
+                            showDetailsDialog = true
+                        },
+                        enabled = actionsEnabled,
+                        modifier = Modifier.size(44.dp).testTag("mod_card_actions"),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_more_vert),
+                            contentDescription = stringResource(R.string.main_mod_actions),
+                        )
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .widthIn(min = MOD_ENABLE_CHECKBOX_SLOT_WIDTH)
@@ -405,7 +436,7 @@ internal fun ModCard(
                         .clipToBounds(),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (mod.showsInstallControl()) {
+                    if (mod.showsInstallControl() && !classicLayout) {
                         Button(
                             onClick = { callbacks.onPatchWorkshopMod(mod) },
                             enabled = !batchSelectionMode,
@@ -415,16 +446,22 @@ internal fun ModCard(
                             Text(stringResource(R.string.main_mod_workshop_action_install), maxLines = 1)
                         }
                     } else if (mod.showsEnableControl()) {
-                        Switch(
+                        val onToggle: (Boolean) -> Unit = { checked ->
+                            if (selectionEnabled) {
+                                if (checked != mod.enabled) LauncherHaptics.vibrateToggle(context)
+                                callbacks.onToggleMod(mod, checked)
+                            }
+                        }
+                        if (classicLayout) {
+                            Checkbox(
+                                checked = mod.enabled,
+                                onCheckedChange = onToggle,
+                                enabled = selectionEnabled,
+                                modifier = Modifier.testTag("mod_card_enable"),
+                            )
+                        } else Switch(
                             checked = mod.enabled,
-                            onCheckedChange = { checked ->
-                                if (selectionEnabled) {
-                                    if (checked != mod.enabled) {
-                                        LauncherHaptics.vibrateToggle(context)
-                                    }
-                                    callbacks.onToggleMod(mod, checked)
-                                }
-                            },
+                            onCheckedChange = onToggle,
                             enabled = selectionEnabled,
                             modifier = Modifier.testTag("mod_card_enable").graphicsLayer {
                                 alpha = 1f
@@ -461,8 +498,8 @@ internal fun ModCard(
             }
         )
 
-        // Installation lives in the header's enable-control slot, never a second full-width row.
-        if (!mod.showsInstallControl()) {
+        // Compact cards install from the header; classic cards keep the full-width action row.
+        if (classicLayout || !mod.showsInstallControl()) {
             ModWorkshopActions(
                 mod = mod,
                 enabled = !batchSelectionMode,
@@ -783,6 +820,7 @@ internal fun DraggingModCardOverlay(
     overlayHostTopLeftWindow: Offset,
     movingCount: Int = 1,
 ) {
+    val classicLayout = LocalModPageLayout.current == ModPageLayout.CLASSIC
     if (dragSession == null) {
         return
     }
@@ -833,6 +871,7 @@ internal fun DraggingModCardOverlay(
             ModCardBodyContent(
                 mod = mod,
                 isExpanded = dragSession.isExpanded,
+                compact = !classicLayout,
                 showModFileName = showModFileName,
                 modSuggestionText = null,
                 suggestionBadgeEnabled = false,

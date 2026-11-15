@@ -23,6 +23,7 @@ import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.ModPageLayout
 import io.stamethyst.config.FramePacingMode
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
@@ -112,6 +113,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_CHROME_BACKGROUND_OPACITY
     val DEFAULT_LAUNCHER_BLUR_DISABLED: Boolean
         get() = LauncherConfig.DEFAULT_LAUNCHER_BLUR_DISABLED
+    val DEFAULT_MOD_PAGE_LAYOUT: ModPageLayout
+        get() = LauncherConfig.DEFAULT_MOD_PAGE_LAYOUT
     val MIN_CHROME_BACKGROUND_OPACITY: Float
         get() = LauncherConfig.MIN_CHROME_BACKGROUND_OPACITY
     val MAX_CHROME_BACKGROUND_OPACITY: Float
@@ -559,6 +562,11 @@ object LauncherPreferences {
     fun readLauncherBlurDisabled(context: Context): Boolean {
         return LauncherConfig.readLauncherBlurDisabled(context)
     }
+
+    fun readModPageLayout(context: Context): ModPageLayout = LauncherConfig.readModPageLayout(context)
+
+    fun saveModPageLayout(context: Context, layout: ModPageLayout) =
+        LauncherConfig.saveModPageLayout(context, layout)
 
     fun saveLauncherBlurDisabled(context: Context, disabled: Boolean) {
         LauncherConfig.saveLauncherBlurDisabled(context, disabled)

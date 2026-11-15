@@ -2,7 +2,7 @@
 <resources>
     <string name="ai_agent_budget_input_hint">Blank: conservative 32,000 input budget, not a model capability. Includes system, tools and history. Output is separate; applies next task.</string>
     <string name="ai_agent_budget_output_target">Main task output token budget</string>
-    <string name="ai_agent_budget_output_hint">Blank: 4,000 tokens. This task target is separate from model capabilities. Summary output has its own 2,000-token target.</string>
+    <string name="ai_agent_budget_output_hint">Blank: 20,000 tokens. This task target is separate from model capabilities. Summary output has its own 2,000-token target.</string>
     <string name="ai_agent_budget_capabilities_hint">Optional per-model capability overrides. Blank uses catalog metadata when available; otherwise capability stays unknown. A known shared window constrains input + output. Both output targets are capped by model limits.</string>
     <string name="ai_agent_budget_window">Shared context window (input + output)</string>
     <string name="ai_agent_budget_max_input">Model maximum input tokens</string>

@@ -18,7 +18,7 @@ class AiModelBudgetSettingsTest {
         val budget = AiContextLimits.budget(context, key)
         assertEquals(200_000, AiContextLimits.get(context, key))
         assertEquals(200_000, budget.inputLimit)
-        assertEquals(4_000, budget.outputReserve)
+        assertEquals(20_000, budget.outputReserve)
         assertFalse(budget.usesDefaultInputBudget)
     }
 
@@ -52,7 +52,7 @@ class AiModelBudgetSettingsTest {
         val context = context()
         val key = AiContextLimits.key("base", "model")
         AiContextLimits.cacheCatalog(context, "base", listOf(NewApiModel("model", context_window = JsonPrimitive(16_000))))
-        assertEquals(12_000, AiContextLimits.budget(context, key).inputLimit)
+        assertEquals(1, AiContextLimits.budget(context, key).inputLimit)
         AiContextLimits.cacheCatalog(context, "base", listOf(NewApiModel("model")))
         assertEquals(AgentModelLimits(), AiContextLimits.budget(context, key).modelLimits)
     }
@@ -69,6 +69,15 @@ class AiModelBudgetSettingsTest {
         assertEquals(8_000, AiContextLimits.budget(context, "key").outputReserve)
         AiContextLimits.set(context, "key", 32_000, limits, outputTarget = null)
         assertNull(AiContextLimits.explicitOutputTarget(context, "key"))
+        assertEquals(8_000, AiContextLimits.budget(context, "key").outputReserve)
+        AiContextLimits.set(context, "key", 32_000, AgentModelLimits())
+        assertEquals(20_000, AiContextLimits.budget(context, "key").outputReserve)
+    }
+
+    @Test fun explicitlySavedOutputTargetIsPreserved() {
+        val context = context()
+        AiContextLimits.set(context, "key", null, AgentModelLimits(), outputTarget = 4_000)
+        assertEquals(4_000, AiContextLimits.explicitOutputTarget(context, "key"))
         assertEquals(4_000, AiContextLimits.budget(context, "key").outputReserve)
     }
 

@@ -24,7 +24,7 @@
 
 ## 模型预算和其它优化
 
-- 主模型和 OFF 同步/流式摘要模型随配置一起切换，完整预算通过推送目标传递；目录元数据在 UI 使用 id 前缓存。未知模型 32k 输入 / 4k 主输出，保留用户显式输入预算和 HIGH 等已选档位。
+- 主模型和 OFF 同步/流式摘要模型随配置一起切换，完整预算通过推送目标传递；目录元数据在 UI 使用 id 前缓存。未知模型 32k 输入 / 20k 主输出，保留用户显式输入预算、输出目标和 HIGH 等已选档位。
 - OFF 对已知 DeepSeek Chat Completions 保持 `thinking: {type: disabled}`；未知服务不猜新字段。保留设置 UI 的能力说明。
 - 局部编辑、准备流程与强制打包预检：[ai-agent-local-editing.md](ai-agent-local-editing.md)。
 - 母模组源码/classpath 缓存：[ai-agent-source-caching.md](ai-agent-source-caching.md)。

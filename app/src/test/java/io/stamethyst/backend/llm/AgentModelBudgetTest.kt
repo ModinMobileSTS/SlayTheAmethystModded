@@ -7,7 +7,7 @@ class AgentModelBudgetTest {
     @Test fun unknownModelUsesBudgetsWithoutInventingCapabilities() {
         val budget = AgentModelBudgetPolicy.resolve()
         assertEquals(32_000, budget.inputLimit)
-        assertEquals(4_000, budget.outputReserve)
+        assertEquals(20_000, budget.outputReserve)
         assertEquals(2_000, budget.summaryOutputLimit)
         assertEquals(AgentModelLimits(), budget.modelLimits)
         assertTrue(budget.usesDefaultInputBudget)
@@ -16,7 +16,7 @@ class AgentModelBudgetTest {
     @Test fun explicitLegacyInputBudgetIsNotTreatedAsASharedWindow() {
         val budget = AgentModelBudgetPolicy.resolve(userInputLimit = 200_000)
         assertEquals(200_000, budget.inputLimit)
-        assertEquals(4_000, budget.outputReserve)
+        assertEquals(20_000, budget.outputReserve)
         assertFalse(budget.usesDefaultInputBudget)
         assertEquals(128, AgentModelBudgetPolicy.resolve(userInputLimit = 128).inputLimit)
     }
@@ -38,6 +38,14 @@ class AgentModelBudgetTest {
         assertEquals(30_000, constrained.inputLimit)
         assertEquals(2_000, constrained.outputReserve)
         assertEquals(8_000, AgentModelBudgetPolicy.resolve(userInputLimit = 8_000, metadata = limits).inputLimit)
+    }
+
+    @Test fun defaultOutputTargetReservesSpaceInKnownSharedWindow() {
+        val budget = AgentModelBudgetPolicy.resolve(metadata = AgentModelLimits(contextWindow = 32_000))
+        assertEquals(20_000, budget.outputReserve)
+        assertEquals(12_000, budget.inputLimit)
+        assertEquals(2_000, budget.summaryOutputLimit)
+        assertEquals(30_000, budget.summaryInputLimit)
     }
 
     @Test fun outputTargetIsIndependentOfInputAndDoesNotGrowToTheModelMaximum() {

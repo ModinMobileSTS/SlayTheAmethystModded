@@ -94,6 +94,7 @@ object LauncherConfig {
     private const val PREF_KEY_LAUNCHER_ICON_MODE = "launcher_icon_mode"
     private const val PREF_KEY_CHROME_BACKGROUND_OPACITY = "chrome_background_opacity"
     private const val PREF_KEY_LAUNCHER_BLUR_DISABLED = "launcher_blur_disabled"
+    private const val PREF_KEY_MOD_PAGE_LAYOUT = "mod_page_layout"
     private const val LEGACY_PREF_KEY_HOME_CHROME_TRANSPARENCY = "home_chrome_transparency"
     private const val PREF_KEY_BOOT_OVERLAY_STYLE = "boot_overlay_style"
     private const val PREF_KEY_BOOT_OVERLAY_ANIMATION = "boot_overlay_animation"
@@ -321,6 +322,7 @@ object LauncherConfig {
     val DEFAULT_LAUNCHER_ICON_MODE: LauncherIconMode = LauncherIconMode.AMETHYST
     const val DEFAULT_CHROME_BACKGROUND_OPACITY = 0.0f
     const val DEFAULT_LAUNCHER_BLUR_DISABLED = false
+    val DEFAULT_MOD_PAGE_LAYOUT = ModPageLayout.COMPACT
     const val MIN_CHROME_BACKGROUND_OPACITY = 0.0f
     const val MAX_CHROME_BACKGROUND_OPACITY = 1.0f
     val DEFAULT_BOOT_OVERLAY_STYLE: BootOverlayStyle = BootOverlayStyle.MODERN
@@ -1151,6 +1153,15 @@ object LauncherConfig {
             PREF_KEY_LAUNCHER_BLUR_DISABLED,
             DEFAULT_LAUNCHER_BLUR_DISABLED
         )
+    }
+
+    fun readModPageLayout(context: Context): ModPageLayout {
+        val stored = prefs(context).getString(PREF_KEY_MOD_PAGE_LAYOUT, null)
+        return ModPageLayout.fromPersistedValue(stored) ?: DEFAULT_MOD_PAGE_LAYOUT
+    }
+
+    fun saveModPageLayout(context: Context, layout: ModPageLayout) {
+        prefs(context).edit { putString(PREF_KEY_MOD_PAGE_LAYOUT, layout.persistedValue) }
     }
 
     fun saveLauncherBlurDisabled(context: Context, disabled: Boolean) {

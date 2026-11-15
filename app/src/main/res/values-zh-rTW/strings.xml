@@ -1591,8 +1591,8 @@
     <string name="settings_category_market_cloud_subtitle">Steam 雲存檔和市場下載設定</string>
     <string name="settings_category_llm_title">LLM 智能支援</string>
     <string name="settings_category_llm_subtitle">設定用於模組編輯輔助的 AI 模型</string>
-    <string name="settings_feedback_logs_title">日誌與反饋</string>
-    <string name="settings_feedback_logs_subtitle">問題反饋、存檔/資源包和日誌匯出</string>
+    <string name="settings_feedback_logs_title">資源與檔案</string>
+    <string name="settings_feedback_logs_subtitle">資源管理、模組與存檔匯入匯出和日誌匯出</string>
     <string name="settings_category_about_title">關於</string>
     <string name="settings_category_about_subtitle">專案連結、貢獻者、鳴謝和說明</string>
     <string name="settings_first_run_title">基礎設定引導</string>

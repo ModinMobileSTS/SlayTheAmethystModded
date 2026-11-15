@@ -70,6 +70,7 @@ import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.ModPageLayout
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -95,6 +96,7 @@ internal data class AppearanceSettingsActions(
     val onResetBootOverlayImages: () -> Unit,
     val onShowModFileNameChanged: (Boolean) -> Unit,
     val onLauncherBlurDisabledChanged: (Boolean) -> Unit = {},
+    val onModPageLayoutChanged: (ModPageLayout) -> Unit = {},
     val onBootOverlayArtworkChanged: (BootOverlayArtwork) -> Unit = {},
 )
 
@@ -119,6 +121,19 @@ internal fun SettingsAppearanceSection(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (settingTitleResId == null || settingTitleResId == R.string.settings_mod_page_layout_title) {
+            SettingsChoiceDialogItem(
+                SettingsChoiceSpec(
+                    title = stringResource(R.string.settings_mod_page_layout_title),
+                    valueText = modPageLayoutDisplayName(uiState.modPageLayout),
+                    enabled = !uiState.busy,
+                    selectedValue = uiState.modPageLayout,
+                    options = ModPageLayout.entries,
+                    optionLabel = { modPageLayoutDisplayName(it) },
+                    onOptionSelected = actions.onModPageLayoutChanged,
+                )
+            )
+        }
         if (settingTitleResId == null || settingTitleResId == R.string.settings_theme_mode_title) {
             SettingsChoiceDialogItem(
                 SettingsChoiceSpec(
@@ -365,6 +380,14 @@ internal fun bootOverlayStyleDisplayName(style: BootOverlayStyle): String {
         }
     )
 }
+
+@Composable
+internal fun modPageLayoutDisplayName(layout: ModPageLayout): String = stringResource(
+    when (layout) {
+        ModPageLayout.CLASSIC -> R.string.settings_mod_page_layout_classic
+        ModPageLayout.COMPACT -> R.string.settings_mod_page_layout_compact
+    }
+)
 
 
 @Composable

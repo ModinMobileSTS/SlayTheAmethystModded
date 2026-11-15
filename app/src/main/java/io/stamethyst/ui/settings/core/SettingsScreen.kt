@@ -98,6 +98,7 @@ fun LauncherSettingsLauncherScreen(
         onLauncherBlurDisabledChanged = { disabled ->
             viewModel.onLauncherBlurDisabledChanged(activity, disabled)
         },
+        onModPageLayoutChanged = { viewModel.onModPageLayoutChanged(activity, it) },
         onBootOverlayStyleChanged = { style ->
             viewModel.onBootOverlayStyleChanged(activity, style)
         },
@@ -365,9 +366,6 @@ fun LauncherSettingsFeedbackScreen(
         modifier = modifier,
         uiState = uiState,
         onGoBack = navigator::goBack,
-        onOpenFeedback = { navigator.push(Route.Feedback) },
-        onOpenFeedbackSubscriptions = { navigator.push(Route.FeedbackSubscriptions) },
-        onOpenFeedbackIssueBrowser = { navigator.push(Route.FeedbackIssueBrowser) },
         onImportJar = viewModel::onImportJar,
         onReinstallResourcePack = LauncherNavigationRequestBus::requestResourcePack,
         onImportMods = viewModel::onImportMods,

@@ -22,7 +22,7 @@ class AgentConversationContextTest {
     @Test fun configuredInputLimitDoesNotDeductOutputBudget() {
         val budget = AgentContextBudget()
         assertEquals(32_000, budget.limit)
-        assertEquals(4_000, budget.outputReserve)
+        assertEquals(20_000, budget.outputReserve)
         assertEquals(32_000, budget.inputLimit)
         assertEquals(2_000, budget.summaryOutputLimit)
         assertEquals(200_000, AgentContextBudget(200_000).inputLimit)

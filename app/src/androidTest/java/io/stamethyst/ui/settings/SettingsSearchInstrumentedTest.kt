@@ -103,6 +103,26 @@ class SettingsSearchInstrumentedTest {
     }
 
     @Test
+    fun modLayoutCanBeChangedFromSearchWithoutNavigating() {
+        var selected: io.stamethyst.config.ModPageLayout? = null
+        showSettings { actions ->
+            actions.copy(appearance = actions.appearance.copy(onModPageLayoutChanged = { selected = it }))
+        }
+        search(R.string.settings_mod_page_layout_title)
+        clickResult(R.string.settings_mod_page_layout_title)
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.onNode(
+            hasText(context.getString(R.string.settings_mod_page_layout_classic)) and
+                hasAnyAncestor(isDialog())
+        ).performClick()
+        compose.onNode(isDialog()).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(io.stamethyst.config.ModPageLayout.CLASSIC, selected)
+            assertTrue(navigations.isEmpty())
+        }
+    }
+
+    @Test
     fun playerNameCanBeEditedFromSearchAndCancelledWithoutSaving() {
         var saves = 0
         showSettings { actions -> actions.copy(onPlayerNameChanged = { saves++; true }) }

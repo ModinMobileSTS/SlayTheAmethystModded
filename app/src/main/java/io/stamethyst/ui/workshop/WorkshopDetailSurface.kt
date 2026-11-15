@@ -1,80 +1,96 @@
 package io.stamethyst.ui.workshop
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
-import io.stamethyst.ui.FrostedGlassChrome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val LocalWorkshopDetailHazeState = staticCompositionLocalOf<HazeState> {
-    error("Workshop detail cards require a WorkshopDetailBackdrop")
-}
-
 @Composable
-internal fun WorkshopDetailBackdrop(
+internal fun WorkshopDetailHeroCard(
     publishedFileId: ULong,
     previewUrl: String,
-    modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
-    val hazeState = rememberHazeState()
-    // A new item must never briefly display the previous item's artwork.
-    val bitmap by key(publishedFileId) {
-        produceState<Bitmap?>(initialValue = null, key1 = context, key2 = previewUrl) {
+    // Reset before loading a new item or URL: never flash the previous cover.
+    val bitmap by key(publishedFileId, previewUrl) {
+        produceState<Bitmap?>(initialValue = null, key1 = context) {
             value = withContext(Dispatchers.IO) {
                 WorkshopPreviewCacheStore.load(context, publishedFileId, previewUrl)
             }
         }
     }
-    CompositionLocalProvider(LocalWorkshopDetailHazeState provides hazeState) {
-        Box(modifier = modifier) {
-            // Only the fixed artwork is sampled; foreground text and controls stay sharp.
-            Box(
-                Modifier.matchParentSize()
-                    .hazeSource(hazeState)
-                    .background(MaterialTheme.colorScheme.background),
-            ) {
-                bitmap?.let { preview ->
-                    Image(
-                        bitmap = preview.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.4f)))
-                }
+    WorkshopDetailCard {
+        Box(Modifier.fillMaxWidth()) {
+            bitmap?.let { preview ->
+                WorkshopDetailCornerArtwork(
+                    bitmap = preview,
+                    modifier = Modifier.align(BiasAlignment(1f, -1f)),
+                )
             }
-            content()
+            Column(Modifier.fillMaxWidth(), content = content)
         }
     }
+}
+
+/** Only the image is masked; the card surface, text and controls remain opaque and sharp. */
+@Composable
+internal fun WorkshopDetailCornerArtwork(bitmap: Bitmap, modifier: Modifier = Modifier) {
+    Image(
+        bitmap = bitmap.asImageBitmap(),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        alignment = BiasAlignment(0.3f, -0.44f),
+        modifier = modifier
+            .size(240.dp)
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithCache {
+                val mask = Brush.radialGradient(
+                    0f to Color.Black,
+                    0.14f to Color.Black,
+                    0.32f to Color.Black.copy(alpha = 0.85f),
+                    0.52f to Color.Black.copy(alpha = 0.28f),
+                    // Fade out early toward the lower left, well before the square image edge.
+                    0.82f to Color.Transparent,
+                    1f to Color.Transparent,
+                    center = Offset(size.width, 0f),
+                    radius = size.minDimension * (230f / 240f),
+                )
+                onDrawWithContent {
+                    drawContent()
+                    drawRect(mask, blendMode = BlendMode.DstIn)
+                }
+            },
+    )
 }
 
 @Composable
@@ -83,12 +99,11 @@ internal fun WorkshopDetailCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    FrostedGlassChrome(
+    Card(
         modifier = modifier.fillMaxWidth(),
-        hazeState = LocalWorkshopDetailHazeState.current,
-        shape = CardDefaults.shape,
-        shadowElevation = 2.dp,
-        blurRadius = 20.dp,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().then(

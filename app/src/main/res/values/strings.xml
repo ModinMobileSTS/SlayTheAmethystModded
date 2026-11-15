@@ -1611,8 +1611,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_category_market_cloud_subtitle">Steam Cloud saves and market download behavior</string>
     <string name="settings_category_llm_title">LLM support</string>
     <string name="settings_category_llm_subtitle">Configure the AI model used for mod editing assistance</string>
-    <string name="settings_feedback_logs_title">Logs and feedback</string>
-    <string name="settings_feedback_logs_subtitle">Issue reports, save/resource packages, and exported logs</string>
+    <string name="settings_feedback_logs_title">Resources and files</string>
+    <string name="settings_feedback_logs_subtitle">Manage resources, import/export mods and saves, and export logs</string>
     <string name="settings_category_about_title">About</string>
     <string name="settings_category_about_subtitle">Project links, contributors, credits, and notices</string>
     <string name="settings_first_run_title">Basic setup</string>

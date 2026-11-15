@@ -20,6 +20,11 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
     ),
     // Launcher
     entry(
+        titleResId = R.string.settings_mod_page_layout_title,
+        categoryTitleResId = R.string.settings_category_launcher_title,
+        route = Route.SettingsLauncher,
+    ),
+    entry(
         titleResId = R.string.settings_basic_tutorial_action,
         subtitleResId = R.string.settings_basic_tutorial_desc,
         categoryTitleResId = R.string.settings_category_launcher_title,
@@ -326,18 +331,18 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
     // Feedback / files
     entry(
         titleResId = R.string.settings_feedback_entry_new,
-        categoryTitleResId = R.string.settings_feedback_logs_title,
-        route = Route.SettingsFeedback,
+        categoryTitleResId = R.string.settings_feedback_entry_title,
+        route = Route.Feedback,
     ),
     entry(
         titleResId = R.string.settings_feedback_entry_subscriptions,
-        categoryTitleResId = R.string.settings_feedback_logs_title,
-        route = Route.SettingsFeedback,
+        categoryTitleResId = R.string.settings_feedback_entry_title,
+        route = Route.FeedbackSubscriptions,
     ),
     entry(
         titleResId = R.string.settings_feedback_entry_issue_browser,
-        categoryTitleResId = R.string.settings_feedback_logs_title,
-        route = Route.SettingsFeedback,
+        categoryTitleResId = R.string.settings_feedback_entry_title,
+        route = Route.FeedbackIssueBrowser,
     ),
     entry(
         titleResId = R.string.settings_mod_operations,

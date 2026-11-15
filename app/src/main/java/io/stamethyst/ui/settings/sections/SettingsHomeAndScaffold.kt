@@ -292,13 +292,22 @@ internal fun LauncherSettingsScreenContent(
             SettingsHomeDestinations.forEach { destination ->
                 item(key = destination.route.toString()) {
                     val spec = destination.spec
-                    SettingsCategoryCard(
-                        iconResId = spec.iconResId,
-                        title = stringResource(spec.titleResId),
-                        subtitle = stringResource(spec.subtitleResId),
-                        enabled = !blockingInteractionLocked,
-                        onClick = { onOpenSettingsRoute(destination.route) },
-                    )
+                    if (destination.route == Route.Feedback) {
+                        SettingsFeedbackEntryCard(
+                            busy = blockingInteractionLocked,
+                            onOpenFeedback = { onOpenSettingsRoute(Route.Feedback) },
+                            onOpenFeedbackSubscriptions = { onOpenSettingsRoute(Route.FeedbackSubscriptions) },
+                            onOpenFeedbackIssueBrowser = { onOpenSettingsRoute(Route.FeedbackIssueBrowser) },
+                        )
+                    } else {
+                        SettingsCategoryCard(
+                            iconResId = spec.iconResId,
+                            title = stringResource(spec.titleResId),
+                            subtitle = stringResource(spec.subtitleResId),
+                            enabled = !blockingInteractionLocked,
+                            onClick = { onOpenSettingsRoute(destination.route) },
+                        )
+                    }
                 }
             }
         }
@@ -334,6 +343,7 @@ internal fun LauncherSettingsLauncherScreenContent(
     onLauncherIconModeChanged: (LauncherIconMode) -> Unit = {},
     onChromeBackgroundOpacityChanged: (Float) -> Unit = {},
     onLauncherBlurDisabledChanged: (Boolean) -> Unit = {},
+    onModPageLayoutChanged: (io.stamethyst.config.ModPageLayout) -> Unit = {},
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit = {},
     onPrepareSlingBreak: () -> Unit = {},
     onDismissSlingBreakDependencyFailure: () -> Unit = {},
@@ -380,6 +390,7 @@ internal fun LauncherSettingsLauncherScreenContent(
                         onLauncherIconModeChanged = onLauncherIconModeChanged,
                         onChromeBackgroundOpacityChanged = onChromeBackgroundOpacityChanged,
                         onLauncherBlurDisabledChanged = onLauncherBlurDisabledChanged,
+                        onModPageLayoutChanged = onModPageLayoutChanged,
                         onBootOverlayStyleChanged = onBootOverlayStyleChanged,
                         onPrepareSlingBreak = onPrepareSlingBreak,
                         onDismissSlingBreakDependencyFailure = onDismissSlingBreakDependencyFailure,
@@ -805,9 +816,6 @@ internal fun LauncherSettingsFeedbackScreenContent(
     modifier: Modifier = Modifier,
     uiState: SettingsScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
-    onOpenFeedback: () -> Unit = {},
-    onOpenFeedbackSubscriptions: () -> Unit = {},
-    onOpenFeedbackIssueBrowser: () -> Unit = {},
      onImportJar: () -> Unit = {},
      onReinstallResourcePack: () -> Unit = {},
     onImportMods: () -> Unit = {},
@@ -825,14 +833,6 @@ internal fun LauncherSettingsFeedbackScreenContent(
         spec = SettingsFeedbackRouteSpec,
         onGoBack = onGoBack,
     ) {
-        item {
-            SettingsFeedbackEntryCard(
-                busy = uiState.busy,
-                onOpenFeedback = onOpenFeedback,
-                onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
-                onOpenFeedbackIssueBrowser = onOpenFeedbackIssueBrowser,
-            )
-        }
         item {
             SettingsSectionCard(title = stringResource(R.string.settings_section_resources_files), iconResId = R.drawable.ic_settings_resources) {
                 SettingsImportSection(

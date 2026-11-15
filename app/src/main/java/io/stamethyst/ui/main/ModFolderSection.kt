@@ -48,6 +48,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -85,8 +86,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.zIndex
 import io.stamethyst.R
+import io.stamethyst.config.ModPageLayout
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.ui.AppSearchBar
@@ -114,6 +117,7 @@ internal fun ModFolderSection(
     onBatchEditBarStateChange: (BatchEditBarState?) -> Unit = {},
     callbacks: ModFolderSectionCallbacks
 ) {
+    val classicLayout = LocalModPageLayout.current == ModPageLayout.CLASSIC
     val mods = uiState.optionalMods
     val orderContext = LocalContext.current.applicationContext
     val orderStore = remember(orderContext) { ModDisplayOrder(orderContext) }
@@ -1053,6 +1057,7 @@ internal fun ModFolderSection(
                                                 scaleX = folderScale
                                                 scaleY = folderScale
                                             }
+                                            .shadow(if (classicLayout) 2.dp else 0.dp, headerShape, clip = false)
                                             .then(
                                                 if (isSourceFolderDuringModDrag) {
                                                     Modifier
@@ -1088,7 +1093,7 @@ internal fun ModFolderSection(
                                                     }
                                                 }
                                             )
-                                            .padding(vertical = 2.dp)
+                                            .padding(vertical = if (classicLayout) 6.dp else 2.dp)
                                     ) {
                                         Row(
                                             modifier = Modifier
@@ -1151,40 +1156,61 @@ internal fun ModFolderSection(
                                                     callbacks.onSetFolderSelected(folderTokenId, enabled)
                                                 }
                                             }
-                                            Icon(
-                                                painter = painterResource(R.drawable.ic_mod_folder),
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.padding(end = 8.dp).size(24.dp)
-                                            )
-                                            Column(Modifier.weight(1f)) {
-                                                Text(
-                                                    text = folderUiModel.folderName,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    color = MaterialTheme.colorScheme.primary
+                                            if (classicLayout) {
+                                                TriStateCheckbox(
+                                                    state = folderUiModel.toggleState,
+                                                    enabled = allFolderMods.isNotEmpty() && organizationControlsEnabled,
+                                                    onClick = { setFolderEnabled(folderUiModel.toggleState != ToggleableState.On) },
+                                                    modifier = Modifier.testTag("mod_folder_enable_classic"),
                                                 )
                                                 Text(
                                                     text = stringResource(
-                                                        R.string.mod_folder_enabled_count, enabledCount, allFolderMods.size
+                                                        R.string.main_folder_name_count_format,
+                                                        folderUiModel.folderName,
+                                                        folderUiModel.selectedCount,
+                                                        folderUiModel.selectableCount,
                                                     ),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    modifier = Modifier.weight(1f),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    color = MaterialTheme.colorScheme.primary,
                                                 )
-                                                if (searchActive || showEnabledModsOnly || showUpdateAvailableModsOnly) {
+                                            } else {
+                                                Icon(
+                                                    painter = painterResource(R.drawable.ic_mod_folder),
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(end = 8.dp).size(24.dp)
+                                                )
+                                                Column(Modifier.weight(1f)) {
                                                     Text(
-                                                        text = stringResource(R.string.mod_folder_visible_results, folderUiModel.mods.size),
-                                                        style = MaterialTheme.typography.labelSmall
+                                                        text = folderUiModel.folderName,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        color = MaterialTheme.colorScheme.primary
                                                     )
-                                                }
-                                                val updateCount = allFolderMods.count { it.workshop?.state in setOf(
-                                                    WorkshopModState.UpdateAvailable, WorkshopModState.UpdatePendingInstall) }
-                                                if (updateCount > 0) {
                                                     Text(
-                                                        text = stringResource(R.string.mod_folder_updates_available, updateCount),
+                                                        text = stringResource(
+                                                            R.string.mod_folder_enabled_count, enabledCount, allFolderMods.size
+                                                        ),
                                                         style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.primary,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
+                                                    if (searchActive || showEnabledModsOnly || showUpdateAvailableModsOnly) {
+                                                        Text(
+                                                            text = stringResource(R.string.mod_folder_visible_results, folderUiModel.mods.size),
+                                                            style = MaterialTheme.typography.labelSmall
+                                                        )
+                                                    }
+                                                    val updateCount = allFolderMods.count { it.workshop?.state in setOf(
+                                                        WorkshopModState.UpdateAvailable, WorkshopModState.UpdatePendingInstall) }
+                                                    if (updateCount > 0) {
+                                                        Text(
+                                                            text = stringResource(R.string.mod_folder_updates_available, updateCount),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                        )
+                                                    }
                                                 }
                                             }
                                             IconButton(

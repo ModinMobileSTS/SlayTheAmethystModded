@@ -195,6 +195,7 @@ private fun SettingsSearchResultControl(
 }
 
 private val appearanceTitles = setOf(
+    R.string.settings_mod_page_layout_title,
     R.string.settings_theme_mode_title,
     R.string.settings_app_icon_title,
     R.string.settings_theme_color_title,
