@@ -213,6 +213,18 @@ The panel stays at the upper left while the switch is enabled, even with no even
 
 Validation: `VisualReleaseDebugTest` checks upload/deletion success, creation-vs-destruction colors, failed-upload exclusion, replacement/region cleanup, diagnostic-pixel exclusion, immediate newest rows, idle persistence, scroll anchoring and overflow. `ReleaseOverlayInputTest` checks wheel/drag/scrollbar/latest bounds and unrelated-input delegation. `ReleaseOverlayRenderTest` executes the production rendering methods with real glyph layout and a recording batch, checking empty/live panel persistence, position, action text, batch-state restoration, polled pointer masking, processor reattachment and cleanup; it does not issue real GPU draws. `RamSaverReleaseEventsTest` checks action masks, disabled allocation, retention and nested internal-resource suppression. `FrameHudReleaseTest` checks creation-only, destruction-only, both actions in a frame, completed-frame alignment, timing preservation and frame-ring wrap. Android gesture/rendering performance still needs device validation.
 
+45. `com.badlogic.gdx.graphics.Texture` (RamSaver's libGDX replacement)
+Uses the extension list only to select lazy loading. Existing images with an unlisted or empty
+extension use the original libGDX synchronous decoder and regular managed-texture lifecycle.
+Previously RamSaver could reject a valid image (such as a TGA or extensionless PNG), causing
+`ImageMaster.loadImage` to return null and the next draw to crash in `SpriteBatch.switchTexture`.
+Missing files and synchronous decode failures still report their original path rather than drawing a
+placeholder. Listed formats keep their existing lazy behavior and cache policy. Type: texture-loading
+compatibility/crash fix, not a global null-draw workaround.
+
+`FileTextureCompatibilityTest` uses native image decoding and mock GL to cover both reproductions,
+context reload and disposal, regular PNG laziness, missing resources, and genuine decode failures.
+
 ## Maintenance rule
 
 If you add another runtime/gameplay fix through this mod, update this README in the same change and describe:

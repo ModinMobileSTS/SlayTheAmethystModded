@@ -19,18 +19,18 @@ import java.util.*;
 import java.util.function.Consumer;
 
 public class Texture extends GLTexture {
-    private static final Set<String> imageExtensions = new HashSet<>();
+    private static final Set<String> lazyImageExtensions = new HashSet<>();
     static {
-        imageExtensions.add("jpg");
-        imageExtensions.add("jpeg");
-        imageExtensions.add("png");
-        imageExtensions.add("cim");
-        imageExtensions.add("etc1");
-        imageExtensions.add("ktx");
-        imageExtensions.add("zktx");
-        imageExtensions.add("bmp"); //do these even work in libgdx
-        imageExtensions.add("gif");
-        imageExtensions.add("sff"); //wtf vupshion
+        lazyImageExtensions.add("jpg");
+        lazyImageExtensions.add("jpeg");
+        lazyImageExtensions.add("png");
+        lazyImageExtensions.add("cim");
+        lazyImageExtensions.add("etc1");
+        lazyImageExtensions.add("ktx");
+        lazyImageExtensions.add("zktx");
+        lazyImageExtensions.add("bmp"); //do these even work in libgdx
+        lazyImageExtensions.add("gif");
+        lazyImageExtensions.add("sff"); //wtf vupshion
     }
 
     TextureData data;
@@ -130,17 +130,30 @@ public class Texture extends GLTexture {
         this(3553, createTextureHandle(), data);
     }
 
-    //Useless constructor for filepath textures
     public Texture(FileHandle file, Pixmap.Format format, boolean useMipMaps) {
-        //this(TextureData.Factory.loadFromFile(file, format, useMipMaps));
-        super(GL20.GL_TEXTURE_2D, 0);
-        this.data = placeholderData;
-        this.isFake = true;
+        this(file, format, useMipMaps, loadNonLazyFileData(file, format, useMipMaps));
+    }
 
+    private static TextureData loadNonLazyFileData(FileHandle file, Pixmap.Format format, boolean useMipMaps) {
+        if (lazyImageExtensions.contains(file.extension().toLowerCase(Locale.ROOT))) return null;
+        if (!file.exists()) throw new GdxRuntimeException("Couldn't load file: " + file);
+        // The suffix selects the optimization, not whether libGDX can decode the file.
+        // Decode before allocating a GL handle, as in the original file constructor.
+        return TextureData.Factory.loadFromFile(file, format, useMipMaps);
+    }
+
+    private Texture(FileHandle file, Pixmap.Format format, boolean useMipMaps, TextureData eagerData) {
+        super(GL20.GL_TEXTURE_2D, eagerData == null ? 0 : createTextureHandle());
+        this.isFake = eagerData == null;
         this.file = file;
         this.format = format;
         this.useMipMaps = useMipMaps;
+        if (!isFake) {
+            initializeRealTexture(eagerData);
+            return;
+        }
 
+        this.data = placeholderData;
         String textureKey = RamSaver.textureKey(file, format, useMipMaps, minFilter, magFilter, uWrap, vWrap);
         cacheKey = textureKey;
         RamSaverDiag.markFakeTextureWrapperConstructed(textureKey);
@@ -163,8 +176,7 @@ public class Texture extends GLTexture {
             throw new GdxRuntimeException("Couldn't load file: " + file);
         }
 
-        //Act like a normal texture, throwing an exception if unable to load
-        if (!file.exists() || !imageExtensions.contains(file.extension().toLowerCase())) {
+        if (!file.exists()) {
             RamSaver.recordFakeTextureCreate(textureKey, true);
             RamSaver.markTextureRejected(
                     textureKey,
@@ -206,7 +218,10 @@ public class Texture extends GLTexture {
     private Texture(int glTarget, int glHandle, TextureData data) {
         super(glTarget, glHandle);
         this.isFake = false;
-        //System.out.println("Tex (not file)");
+        initializeRealTexture(data);
+    }
+
+    private void initializeRealTexture(TextureData data) {
         try {
             this.load(data);
         } catch (RuntimeException error) {
