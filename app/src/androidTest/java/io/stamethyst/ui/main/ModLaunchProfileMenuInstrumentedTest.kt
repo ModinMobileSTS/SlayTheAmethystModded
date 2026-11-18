@@ -11,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -48,7 +50,7 @@ class ModLaunchProfileMenuInstrumentedTest {
                                 uiState = state.value,
                                 actions = MainScreenActions(
                                     isHostAvailable = true,
-                                    onSelectModLaunchProfile = { selected.add(it) },
+                                    onSelectModLaunchProfile = { id, _ -> selected.add(id) },
                                 ),
                             )
                         }
@@ -102,10 +104,10 @@ class ModLaunchProfileMenuInstrumentedTest {
                     activeProfileId = "saved",
                     enabled = scanComplete.value,
                     menuEnabled = true,
-                    onSelectProfile = { selected.add(it) },
+                    onSelectProfile = { id, _ -> selected.add(id) },
                     onAddProfile = { error("Unexpected add") },
                     onRenameProfile = { _, _ -> error("Unexpected rename") },
-                    onDeleteProfile = { error("Unexpected delete") },
+                    onDeleteProfile = { _, _ -> error("Unexpected delete") },
                 )
             }
         }
@@ -113,6 +115,8 @@ class ModLaunchProfileMenuInstrumentedTest {
             .assertIsEnabled().performClick()
         val saved = context.getString(R.string.main_mod_launch_profile_selected_item, "Saved")
         compose.onNodeWithText(saved).assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_auto_save))
+            .assertIsOn().assertIsNotEnabled()
         compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_add)).assertIsNotEnabled()
         compose.onNodeWithContentDescription(context.getString(R.string.main_mod_launch_profile_rename, "Saved"))
             .assertIsNotEnabled()
@@ -121,5 +125,88 @@ class ModLaunchProfileMenuInstrumentedTest {
         compose.runOnIdle { scanComplete.value = true }
         compose.onNodeWithText(saved).assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(listOf("saved"), selected) }
+    }
+
+    @Test fun manualActionsAppearOnlyWhenDirtyAndAutosaveCannotDiscardEdits() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val autoSave = mutableStateOf(true)
+        val dirty = mutableStateOf(false)
+        val actions = mutableListOf<String>()
+        compose.setContent {
+            MaterialTheme {
+                ModLaunchProfileMenu(
+                    profiles = listOf(ModLaunchProfile("saved", "Saved", emptySet())),
+                    activeProfileId = "saved",
+                    enabled = true,
+                    autoSave = autoSave.value,
+                    selectionDirty = dirty.value,
+                    onSelectProfile = { _, _ -> error("Unexpected select") },
+                    onAddProfile = { error("Unexpected add") },
+                    onRenameProfile = { _, _ -> error("Unexpected rename") },
+                    onDeleteProfile = { _, _ -> error("Unexpected delete") },
+                    onSetAutoSave = { autoSave.value = it },
+                    onSaveSelection = { actions.add("save"); dirty.value = false },
+                    onRestoreSelection = { actions.add("restore"); dirty.value = false },
+                )
+            }
+        }
+        val menu = compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_button, "Saved"))
+        val toggle = compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_auto_save))
+        val save = compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_save_selection))
+        val restore = compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_restore_selection))
+        menu.performClick()
+        toggle.assertIsOn().performClick()
+        toggle.assertIsOff()
+        save.assertDoesNotExist()
+        restore.assertDoesNotExist()
+
+        compose.runOnIdle { dirty.value = true }
+        save.assertIsDisplayed()
+        restore.assertIsDisplayed()
+        toggle.assertIsOff().assertIsNotEnabled()
+        compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_auto_save_guard)).assertIsDisplayed()
+        save.performClick()
+        menu.performClick()
+        save.assertDoesNotExist()
+        compose.runOnIdle { dirty.value = true }
+        restore.performClick()
+        menu.performClick()
+        restore.assertDoesNotExist()
+        toggle.performClick()
+        toggle.assertIsOn()
+        compose.runOnIdle { assertEquals(listOf("save", "restore"), actions) }
+    }
+
+    @Test fun dirtyProfileSwitchRequiresExplicitDiscard() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val selected = mutableListOf<Pair<String, Boolean>>()
+        compose.setContent {
+            MaterialTheme {
+                ModLaunchProfileMenu(
+                    profiles = listOf(
+                        ModLaunchProfile("saved", "Saved", emptySet()),
+                        ModLaunchProfile("other", "Other", emptySet()),
+                    ),
+                    activeProfileId = "saved",
+                    enabled = true,
+                    autoSave = false,
+                    selectionDirty = true,
+                    onSelectProfile = { id, discard -> selected.add(id to discard) },
+                    onAddProfile = { error("Unexpected add") },
+                    onRenameProfile = { _, _ -> error("Unexpected rename") },
+                    onDeleteProfile = { _, _ -> error("Unexpected delete") },
+                )
+            }
+        }
+        val menu = compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_button, "Saved"))
+        menu.performClick()
+        compose.onNodeWithText("Other").performClick()
+        compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_switch_guard)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.main_folder_dialog_cancel)).performClick()
+        compose.runOnIdle { assertEquals(emptyList<Pair<String, Boolean>>(), selected) }
+        menu.performClick()
+        compose.onNodeWithText("Other").performClick()
+        compose.onNodeWithText(context.getString(R.string.main_mod_launch_profile_discard_and_switch)).performClick()
+        compose.runOnIdle { assertEquals(listOf("other" to true), selected) }
     }
 }

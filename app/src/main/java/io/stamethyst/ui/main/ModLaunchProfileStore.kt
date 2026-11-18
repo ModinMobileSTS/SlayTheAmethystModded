@@ -19,12 +19,19 @@ internal const val DEFAULT_MOD_LAUNCH_PROFILE_ID = "default"
 internal class ModLaunchProfileStore {
     data class State(
         val profiles: List<ModLaunchProfile>,
-        val activeProfileId: String
-    )
+        val activeProfileId: String,
+        val autoSave: Boolean = true,
+    ) {
+        val activeProfile: ModLaunchProfile?
+            get() = profiles.firstOrNull { it.id == activeProfileId }
+
+        fun hasUnsavedSelection(workingSelection: Set<String>): Boolean =
+            !autoSave && activeProfile?.let { it.enabledModKeys != workingSelection } == true
+    }
 
     fun load(host: Activity, currentEnabledModKeys: Set<String>): State {
         val state = readOnly(host, currentEnabledModKeys)
-        persist(host, state.profiles, state.activeProfileId)
+        persist(host, state)
         return state
     }
 
@@ -32,19 +39,20 @@ internal class ModLaunchProfileStore {
     fun readOnly(host: Activity, currentEnabledModKeys: Set<String> = emptySet()): State {
         val preferences = prefs(host)
         val loadedProfiles = readProfiles(preferences)
-        val profiles = if (loadedProfiles.isEmpty()) {
-            listOf(defaultProfile(currentEnabledModKeys))
-        } else {
-            loadedProfiles
+        val profiles = when {
+            loadedProfiles.isEmpty() -> listOf(defaultProfile(currentEnabledModKeys))
+            loadedProfiles.none { it.id == DEFAULT_MOD_LAUNCH_PROFILE_ID } ->
+                listOf(defaultProfile(emptySet())) + loadedProfiles
+            else -> loadedProfiles
         }
         val requestedActiveId = preferences.getString(KEY_ACTIVE_PROFILE_ID, DEFAULT_MOD_LAUNCH_PROFILE_ID)
             ?.trim()
             .orEmpty()
         val activeProfileId = profiles.firstOrNull { it.id == requestedActiveId }?.id ?: profiles.first().id
-        return State(profiles = profiles, activeProfileId = activeProfileId)
+        return State(profiles, activeProfileId, autoSave = preferences.getBoolean(KEY_AUTO_SAVE, true))
     }
 
-    fun addProfile(host: Activity, state: State, enabledModKeys: Set<String>, name: String): State? {
+    fun addProfile(state: State, enabledModKeys: Set<String>, name: String): State? {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) {
             return null
@@ -54,12 +62,10 @@ internal class ModLaunchProfileStore {
             name = trimmedName,
             enabledModKeys = LinkedHashSet(enabledModKeys)
         )
-        val profiles = state.profiles + profile
-        persist(host, profiles, profile.id)
-        return State(profiles = profiles, activeProfileId = profile.id)
+        return state.copy(profiles = state.profiles + profile, activeProfileId = profile.id)
     }
 
-    fun renameProfile(host: Activity, state: State, profileId: String, name: String): State? {
+    fun renameProfile(state: State, profileId: String, name: String): State? {
         val targetId = profileId.trim()
         val trimmedName = name.trim()
         if (targetId == DEFAULT_MOD_LAUNCH_PROFILE_ID || trimmedName.isEmpty()) {
@@ -77,11 +83,10 @@ internal class ModLaunchProfileStore {
         if (!renamed) {
             return null
         }
-        persist(host, profiles, state.activeProfileId)
-        return State(profiles = profiles, activeProfileId = state.activeProfileId)
+        return state.copy(profiles = profiles)
     }
 
-    fun updateActiveSelection(host: Activity, state: State, enabledModKeys: Set<String>): State {
+    fun updateActiveSelection(state: State, enabledModKeys: Set<String>): State {
         val profiles = state.profiles.map { profile ->
             if (profile.id == state.activeProfileId) {
                 profile.copy(enabledModKeys = LinkedHashSet(enabledModKeys))
@@ -89,20 +94,18 @@ internal class ModLaunchProfileStore {
                 profile
             }
         }
-        persist(host, profiles, state.activeProfileId)
-        return State(profiles = profiles, activeProfileId = state.activeProfileId)
+        return state.copy(profiles = profiles)
     }
 
-    fun selectProfile(host: Activity, state: State, profileId: String): State? {
+    fun selectProfile(state: State, profileId: String): State? {
         val targetId = profileId.trim()
         if (state.profiles.none { it.id == targetId }) {
             return null
         }
-        persist(host, state.profiles, targetId)
         return state.copy(activeProfileId = targetId)
     }
 
-    fun deleteProfile(host: Activity, state: State, profileId: String): State? {
+    fun deleteProfile(state: State, profileId: String): State? {
         val targetId = profileId.trim()
         if (targetId == DEFAULT_MOD_LAUNCH_PROFILE_ID) {
             return null
@@ -116,8 +119,7 @@ internal class ModLaunchProfileStore {
         } else {
             state.activeProfileId
         }
-        persist(host, profiles, activeProfileId)
-        return State(profiles = profiles, activeProfileId = activeProfileId)
+        return state.copy(profiles = profiles, activeProfileId = activeProfileId)
     }
 
     fun sanitizeSelections(
@@ -130,8 +132,7 @@ internal class ModLaunchProfileStore {
             profile.copy(enabledModKeys = rebindReplacedModSelection(profile.enabledModKeys, installedKeys, replacements)
                 .filterTo(LinkedHashSet()) { installedKeys.contains(it) })
         }
-        persist(host, profiles, state.activeProfileId)
-        return State(profiles = profiles, activeProfileId = state.activeProfileId)
+        return state.copy(profiles = profiles).also { persist(host, it) }
     }
 
     private fun defaultProfile(currentEnabledModKeys: Set<String>): ModLaunchProfile {
@@ -164,15 +165,12 @@ internal class ModLaunchProfileStore {
                 result.add(ModLaunchProfile(id = id, name = name, enabledModKeys = enabled))
             }
         }
-        if (result.none { it.id == DEFAULT_MOD_LAUNCH_PROFILE_ID }) {
-            result.add(0, defaultProfile(emptySet()))
-        }
         return result.distinctBy { it.id }
     }
 
-    private fun persist(host: Activity, profiles: List<ModLaunchProfile>, activeProfileId: String) {
+    fun persist(host: Activity, state: State) {
         val array = JSONArray()
-        profiles.forEach { profile ->
+        state.profiles.forEach { profile ->
             val item = JSONObject()
             item.put("id", profile.id)
             item.put("name", profile.name)
@@ -184,10 +182,12 @@ internal class ModLaunchProfileStore {
         val preferences = prefs(host)
         val serialized = array.toString()
         if (preferences.getString(KEY_PROFILES, null) == serialized &&
-            preferences.getString(KEY_ACTIVE_PROFILE_ID, null) == activeProfileId) return
+            preferences.getString(KEY_ACTIVE_PROFILE_ID, null) == state.activeProfileId &&
+            preferences.getBoolean(KEY_AUTO_SAVE, true) == state.autoSave) return
         preferences.edit()
             .putString(KEY_PROFILES, serialized)
-            .putString(KEY_ACTIVE_PROFILE_ID, activeProfileId)
+            .putString(KEY_ACTIVE_PROFILE_ID, state.activeProfileId)
+            .putBoolean(KEY_AUTO_SAVE, state.autoSave)
             .apply()
     }
 
@@ -199,6 +199,7 @@ internal class ModLaunchProfileStore {
         private const val PREFS_MOD_LAUNCH_PROFILES = "ModLaunchProfiles"
         private const val KEY_PROFILES = "profiles"
         private const val KEY_ACTIVE_PROFILE_ID = "active_profile_id"
+        private const val KEY_AUTO_SAVE = "auto_save"
         private const val DEFAULT_PROFILE_NAME = "Default"
     }
 }

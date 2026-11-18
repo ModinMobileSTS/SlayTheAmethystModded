@@ -532,6 +532,16 @@
     <string name="main_mod_launch_profile_selected">已切换模组方案：%1$s</string>
     <string name="main_mod_launch_profile_delete">删除方案 %1$s</string>
     <string name="main_mod_launch_profile_deleted">已删除模组方案：%1$s</string>
+    <string name="main_mod_launch_profile_auto_save">自动保存</string>
+    <string name="main_mod_launch_profile_manual_hint">游戏按当前勾选启动。</string>
+    <string name="main_mod_launch_profile_save_selection">保存到方案</string>
+    <string name="main_mod_launch_profile_restore_selection">恢复已保存方案</string>
+    <string name="main_mod_launch_profile_unsaved">有未保存的模组改动</string>
+    <string name="main_mod_launch_profile_auto_save_guard">请先保存或恢复方案，再开启自动保存。</string>
+    <string name="main_mod_launch_profile_switch_guard">切换方案会放弃未保存的模组改动。</string>
+    <string name="main_mod_launch_profile_discard_and_switch">放弃改动并切换</string>
+    <string name="main_mod_launch_profile_delete_guard">删除当前方案也会放弃未保存的模组改动。</string>
+    <string name="main_mod_launch_profile_delete_confirm">删除方案</string>
     <string name="main_loading_mods">正在加载模组和依赖状态…</string>
     <string name="main_status_card_title">依赖状态</string>
     <string name="main_dependency_desktop_description">启动 Android 版杀戮尖塔所需的修补运行时 jar。</string>

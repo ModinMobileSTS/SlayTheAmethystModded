@@ -25,10 +25,145 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONArray
 import org.json.JSONObject
 
-/** Characterization tests: exercise production refresh, not a simulated loading pipeline. */
+/** Exercises the production profile controller and refresh pipeline. */
 class ModLaunchProfileLoadingDiagnosisTest {
+    @Test
+    fun legacySelectionSeedsDefaultAndTogglesStillAutosave() = withFixture { host, controller ->
+        seedMods(host, 2)
+        val first = jarPath(host, 0)
+        host.getSharedPreferences("ModLaunchProfiles", Context.MODE_PRIVATE).edit().clear().apply()
+        ModManager.replaceEnabledOptionalModIds(host, setOf(first))
+
+        controller.refresh(host, storageAccessible = true)
+        assertTrue(controller.snapshot().modLaunchProfileAutoSave)
+        assertEquals(setOf(first), controller.savedSelection("default"))
+
+        controller.onToggleMod(host, controller.snapshot().optionalMods.single { it.storagePath == first }, false)
+        assertFalse(controller.snapshot().modLaunchProfileDirty)
+        assertEquals(emptySet<String>(), ModLaunchProfileStore().readOnly(host).activeProfile?.enabledModKeys)
+        assertEquals(emptySet<String>(), controller.enabledSelection())
+    }
+
+    @Test
+    fun manualSelectionSurvivesRefreshRecreationAndLaunchUntilSavedOrRestored() = withFixture { host, controller ->
+        seedMods(host, 2, dependencies = mapOf(1 to listOf("diagnosis_0")))
+        controller.refresh(host, storageAccessible = true)
+        assertTrue(controller.snapshot().modLaunchProfileAutoSave) // Existing preferences have no autosave key.
+        controller.setModLaunchProfileAutoSave(host, false)
+        val working = setOf(jarPath(host, 0), jarPath(host, 1))
+        val writesBeforeToggle = host.profileWrites.get()
+        val dependent = controller.snapshot().optionalMods.single { it.storagePath == jarPath(host, 1) }
+        controller.onToggleMod(host, dependent, true)
+        assertEquals(working, controller.enabledSelection())
+        assertEquals(writesBeforeToggle, host.profileWrites.get())
+        controller.refresh(host, storageAccessible = true)
+        assertTrue(controller.snapshot().modLaunchProfileDirty)
+
+        val recreated = newController(host)
+        try {
+            recreated.refresh(host, storageAccessible = true)
+            assertFalse(recreated.snapshot().modLaunchProfileAutoSave)
+            assertTrue(recreated.snapshot().modLaunchProfileDirty)
+            assertEquals(working, recreated.enabledSelection())
+            recreated.applyPendingSelection(host) // Used by the ViewModel immediately before launch.
+            assertEquals(working, ModManager.listEnabledOptionalModFiles(host).map { it.absolutePath }.toSet())
+            assertEquals(emptySet<String>(), ModLaunchProfileStore().readOnly(host).activeProfile?.enabledModKeys)
+
+            recreated.setModLaunchProfileAutoSave(host, true)
+            assertFalse(recreated.snapshot().modLaunchProfileAutoSave)
+            assertEquals(working, recreated.enabledSelection())
+            assertEquals(emptySet<String>(), recreated.savedSelection("saved"))
+
+            recreated.restoreModLaunchProfileSelection(host)
+            assertEquals(emptySet<String>(), recreated.enabledSelection())
+            assertTrue(ModManager.listEnabledOptionalModFiles(host).isEmpty())
+            assertFalse(recreated.snapshot().modLaunchProfileDirty)
+            recreated.onToggleMod(host, dependent, true)
+            recreated.saveModLaunchProfileSelection(host)
+            assertEquals(working, ModLaunchProfileStore().readOnly(host).activeProfile?.enabledModKeys)
+            assertFalse(recreated.snapshot().modLaunchProfileDirty)
+            recreated.setModLaunchProfileAutoSave(host, true)
+            assertTrue(ModLaunchProfileStore().readOnly(host).autoSave)
+        } finally {
+            recreated.shutdown()
+        }
+    }
+
+    @Test
+    fun manualRenameCreateDeleteAndSwitchDoNotOverwriteOtherProfiles() = withFixture { host, controller ->
+        seedMods(host, 2)
+        controller.refresh(host, storageAccessible = true)
+        val working = setOf(jarPath(host, 0))
+        controller.setModLaunchProfileAutoSave(host, false)
+        controller.onToggleMod(host, controller.snapshot().optionalMods.first(), true)
+
+        controller.renameModLaunchProfile(host, "saved", "Renamed")
+        assertEquals("Renamed", ModLaunchProfileStore().readOnly(host).activeProfile?.name)
+        assertEquals(emptySet<String>(), controller.savedSelection("saved"))
+        controller.selectModLaunchProfile(host, "default")
+        controller.deleteModLaunchProfile(host, "saved")
+        assertEquals("saved", controller.snapshot().activeModLaunchProfileId)
+        assertEquals(working, controller.enabledSelection())
+
+        controller.addModLaunchProfile(host, "New")
+        val newProfileId = controller.snapshot().activeModLaunchProfileId
+        assertEquals(emptySet<String>(), controller.savedSelection("saved"))
+        assertEquals(working, controller.savedSelection(newProfileId))
+        assertFalse(controller.snapshot().modLaunchProfileAutoSave)
+        assertFalse(controller.snapshot().modLaunchProfileDirty)
+
+        controller.selectModLaunchProfile(host, "saved") // Clean; confirmation not required.
+        assertEquals("saved", controller.snapshot().activeModLaunchProfileId)
+        controller.onToggleMod(host, controller.snapshot().optionalMods.first(), true)
+        controller.deleteModLaunchProfile(host, newProfileId) // Inactive; keep the draft.
+        assertTrue(controller.snapshot().modLaunchProfileDirty)
+        assertEquals(emptySet<String>(), controller.savedSelection("saved"))
+        controller.selectModLaunchProfile(host, "default", discardUnsaved = true)
+        assertEquals(emptySet<String>(), controller.enabledSelection())
+        assertFalse(controller.snapshot().modLaunchProfileDirty)
+        assertEquals(emptySet<String>(), controller.savedSelection("saved"))
+    }
+
+    @Test
+    fun delayedDependencyDisableRespectsManualModeAndDoesNotEditAnotherProfile() = withFixture { host, controller ->
+        seedMods(host, 2, dependencies = mapOf(1 to listOf("diagnosis_0")))
+        controller.refresh(host, storageAccessible = true)
+        val dependency = controller.snapshot().optionalMods.single { it.storagePath == jarPath(host, 0) }
+        val dependent = controller.snapshot().optionalMods.single { it.storagePath == jarPath(host, 1) }
+        controller.onToggleMod(host, dependent, true)
+        val saved = setOf(dependency.storagePath, dependent.storagePath)
+        controller.onToggleMod(host, dependency, false)
+        val earlierDialog = host.effects.filterIsInstance<MainScreenViewModel.Effect.ShowBlockedModDisableDialog>().last()
+
+        controller.setModLaunchProfileAutoSave(host, false)
+        val writes = host.profileWrites.get()
+        earlierDialog.onDisableDependents()
+        assertEquals(emptySet<String>(), controller.enabledSelection())
+        assertEquals(saved, controller.savedSelection("saved"))
+        assertEquals(writes, host.profileWrites.get())
+
+        controller.restoreModLaunchProfileSelection(host)
+        controller.onToggleMod(host, dependency, false)
+        val staleDialog = host.effects.filterIsInstance<MainScreenViewModel.Effect.ShowBlockedModDisableDialog>().last()
+        controller.addModLaunchProfile(host, "Another")
+        controller.setModLaunchProfileAutoSave(host, true)
+        staleDialog.onForceDisable()
+        assertEquals(saved, controller.enabledSelection())
+        assertEquals(saved, ModLaunchProfileStore().readOnly(host).activeProfile?.enabledModKeys)
+    }
+
+    private fun MainModManagementController.enabledSelection() =
+        snapshot().optionalMods.filter { it.enabled }.map { it.storagePath }.toSet()
+
+    private fun MainModManagementController.savedSelection(profileId: String) =
+        snapshot().modLaunchProfiles.single { it.id == profileId }.enabledModKeys
+
+    private fun jarPath(host: TestActivity, index: Int) =
+        File(RuntimePaths.optionalModsLibraryDir(host), "Diagnosis%03d.jar".format(index)).absolutePath
+
     @Test
     fun catalogueAvailabilityUpdateDoesNotScanModsOrRewriteProfiles() = withFixture { host, controller ->
         seedMods(host, 2)
@@ -401,15 +536,7 @@ class ModLaunchProfileLoadingDiagnosisTest {
         val base = File(System.getProperty("user.dir"), "../agent-tmp/profile-loading-tests").apply { mkdirs() }
         val root = Files.createTempDirectory(base.toPath(), "fixture-").toFile()
         val host = TestActivity(root)
-        // android.jar's final Context.getString() is a null-returning JVM stub. Exclude
-        // unrelated localized patch labels only; storage/index/refresh/profile code stays real.
-        val controller = MainModManagementController(object : MainModManagementController.Host {
-            override fun canEditMainScreenState() = true
-            override fun isBusy() = false
-            override fun setBusy(busy: Boolean, message: UiText?, operation: UiBusyOperation, progressPercent: Int?) = Unit
-            override fun republish(host: Activity) = Unit
-            override fun emitEffect(effect: MainScreenViewModel.Effect) = Unit
-        }, loadImportPatchStates = { emptyList() })
+        val controller = newController(host)
         try {
             block(host, controller)
         } finally {
@@ -418,13 +545,32 @@ class ModLaunchProfileLoadingDiagnosisTest {
         }
     }
 
-    private fun seedMods(host: TestActivity, count: Int) {
-        val library = RuntimePaths.optionalModsLibraryDir(host).apply { mkdirs() }
+    private fun newController(host: TestActivity): MainModManagementController {
+        // android.jar's final Context.getString() is a null-returning JVM stub. Exclude
+        // unrelated localized patch labels only; storage/index/refresh/profile code stays real.
+        return MainModManagementController(object : MainModManagementController.Host {
+            override fun canEditMainScreenState() = true
+            override fun isBusy() = false
+            override fun setBusy(busy: Boolean, message: UiText?, operation: UiBusyOperation, progressPercent: Int?) = Unit
+            override fun republish(host: Activity) = Unit
+            override fun emitEffect(effect: MainScreenViewModel.Effect) {
+                host.effects.add(effect)
+            }
+        }, loadImportPatchStates = { emptyList() })
+    }
+
+    private fun seedMods(host: TestActivity, count: Int, dependencies: Map<Int, List<String>> = emptyMap()) {
+        RuntimePaths.optionalModsLibraryDir(host).mkdirs()
         repeat(count) { i ->
-            val jar = File(library, "Diagnosis%03d.jar".format(i))
+            val jar = File(jarPath(host, i))
             if (!jar.exists()) ZipOutputStream(jar.outputStream()).use { zip ->
                 zip.putNextEntry(ZipEntry("ModTheSpire.json"))
-                zip.write("""{"modid":"diagnosis_$i","name":"Diagnosis $i","version":"1.0"}""".toByteArray())
+                val manifest = JSONObject()
+                    .put("modid", "diagnosis_$i")
+                    .put("name", "Diagnosis $i")
+                    .put("version", "1.0")
+                dependencies[i]?.let { manifest.put("dependencies", JSONArray(it)) }
+                zip.write(manifest.toString().toByteArray())
                 zip.closeEntry()
             }
         }
@@ -434,6 +580,7 @@ class ModLaunchProfileLoadingDiagnosisTest {
         private val internal = File(root, "internal").apply { mkdirs() }
         private val external = File(root, "external").apply { mkdirs() }
         private val preferences = HashMap<String, SharedPreferences>()
+        val effects = ArrayList<MainScreenViewModel.Effect>()
         val storageCalls = AtomicInteger()
         val profileReads = AtomicInteger()
         val profileWrites = AtomicInteger()

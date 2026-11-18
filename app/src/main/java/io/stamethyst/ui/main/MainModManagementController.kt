@@ -87,6 +87,8 @@ internal class MainModManagementController(
         val requiredMods: List<ModItemUi>,
         val modLaunchProfiles: List<ModLaunchProfile>,
         val activeModLaunchProfileId: String,
+        val modLaunchProfileAutoSave: Boolean,
+        val modLaunchProfileDirty: Boolean,
         val modFolders: List<MainScreenViewModel.ModFolder>,
         val folderAssignments: Map<String, String>,
         val folderCollapsed: Map<String, Boolean>,
@@ -130,7 +132,7 @@ internal class MainModManagementController(
     private val pendingEnabledOptionalModIds = LinkedHashSet<String>()
     private var pendingSelectionInitialized = false
     private val profileStore = ModLaunchProfileStore()
-    private var profileState = ModLaunchProfileStore.State(emptyList(), "default")
+    private var profileState = ModLaunchProfileStore.State(emptyList(), DEFAULT_MOD_LAUNCH_PROFILE_ID)
     private val folderStateStore = MainFolderStateStore()
     private val associationStore = ModAssociationStore()
     private val favoriteModKeys = LinkedHashSet<String>()
@@ -231,6 +233,8 @@ internal class MainModManagementController(
             requiredMods = ArrayList(requiredModsSnapshot),
             modLaunchProfiles = profileState.profiles,
             activeModLaunchProfileId = profileState.activeProfileId,
+            modLaunchProfileAutoSave = profileState.autoSave,
+            modLaunchProfileDirty = profileState.hasUnsavedSelection(pendingEnabledOptionalModIds),
             modFolders = ArrayList(modFolders),
             folderAssignments = LinkedHashMap(folderAssignments),
             folderCollapsed = LinkedHashMap(folderCollapsed),
@@ -256,8 +260,9 @@ internal class MainModManagementController(
         optionalModsWithPendingSelectionDirty = true
     }
 
+    @Synchronized
     fun addModLaunchProfile(host: Activity, name: String) {
-        if (!hostCallbacks.canEditMainScreenState()) {
+        if (!canEditLaunchProfiles()) {
             return
         }
         val trimmedName = name.trim()
@@ -265,14 +270,15 @@ internal class MainModManagementController(
             emitSnackbar(UiText.StringResource(R.string.main_mod_launch_profile_name_empty))
             return
         }
-        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
-        profileState = profileStore.addProfile(host, profileState, pendingEnabledOptionalModIds, trimmedName) ?: return
-        emitSnackbar(host.getString(R.string.main_mod_launch_profile_created, activeProfileName(host)))
+        val next = profileStore.addProfile(autoSavedProfileState(), pendingEnabledOptionalModIds, trimmedName) ?: return
+        persistProfileState(host, next)
+        emitSnackbar(UiText.StringResource(R.string.main_mod_launch_profile_created, trimmedName))
         hostCallbacks.republish(host)
     }
 
+    @Synchronized
     fun renameModLaunchProfile(host: Activity, profileId: String, name: String) {
-        if (!hostCallbacks.canEditMainScreenState()) {
+        if (!canEditLaunchProfiles()) {
             return
         }
         val trimmedName = name.trim()
@@ -280,47 +286,71 @@ internal class MainModManagementController(
             emitSnackbar(UiText.StringResource(R.string.main_mod_launch_profile_name_empty))
             return
         }
-        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
-        profileState = profileStore.renameProfile(host, profileState, profileId, trimmedName) ?: return
-        emitSnackbar(host.getString(R.string.main_mod_launch_profile_renamed, trimmedName))
+        val next = profileStore.renameProfile(autoSavedProfileState(), profileId, trimmedName) ?: return
+        persistProfileState(host, next)
+        emitSnackbar(UiText.StringResource(R.string.main_mod_launch_profile_renamed, trimmedName))
         hostCallbacks.republish(host)
     }
 
-    fun selectModLaunchProfile(host: Activity, profileId: String) {
-        if (!hostCallbacks.canEditMainScreenState() || profileId == profileState.activeProfileId) {
+    @Synchronized
+    fun selectModLaunchProfile(host: Activity, profileId: String, discardUnsaved: Boolean = false) {
+        if (!canEditLaunchProfiles() || profileId == profileState.activeProfileId ||
+            (!discardUnsaved && profileState.hasUnsavedSelection(pendingEnabledOptionalModIds))
+        ) {
             return
         }
-        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
-        val nextState = profileStore.selectProfile(host, profileState, profileId) ?: return
-        val target = nextState.profiles.firstOrNull { it.id == nextState.activeProfileId } ?: return
-        profileState = nextState
-        pendingEnabledOptionalModIds.clear()
-        pendingEnabledOptionalModIds.addAll(target.enabledModKeys)
-        prunePendingSelectionToInstalled()
-        markOptionalModsWithPendingSelectionDirty()
-        applyPendingSelection(host)
-        emitSnackbar(host.getString(R.string.main_mod_launch_profile_selected, profileDisplayName(host, target)))
+        val next = profileStore.selectProfile(autoSavedProfileState(), profileId) ?: return
+        val target = next.activeProfile ?: return
+        if (!replaceWorkingSelection(host, target.enabledModKeys)) return
+        persistProfileState(host, next)
+        emitSnackbar(
+            UiText.StringResource(R.string.main_mod_launch_profile_selected, profileDisplayName(target))
+        )
         hostCallbacks.republish(host)
     }
 
-    fun deleteModLaunchProfile(host: Activity, profileId: String) {
-        if (!hostCallbacks.canEditMainScreenState()) {
+    @Synchronized
+    fun deleteModLaunchProfile(host: Activity, profileId: String, discardUnsaved: Boolean = false) {
+        if (!canEditLaunchProfiles()) {
             return
         }
         val deletedProfile = profileState.profiles.firstOrNull { it.id == profileId } ?: return
-        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
-        val nextState = profileStore.deleteProfile(host, profileState, profileId) ?: return
-        val activeChanged = nextState.activeProfileId != profileState.activeProfileId
-        profileState = nextState
-        if (activeChanged) {
-            val target = profileState.profiles.firstOrNull { it.id == profileState.activeProfileId } ?: return
-            pendingEnabledOptionalModIds.clear()
-            pendingEnabledOptionalModIds.addAll(target.enabledModKeys)
-            prunePendingSelectionToInstalled()
-            markOptionalModsWithPendingSelectionDirty()
-            applyPendingSelection(host)
+        val next = profileStore.deleteProfile(autoSavedProfileState(), profileId) ?: return
+        if (next.activeProfileId != profileState.activeProfileId) {
+            if (!discardUnsaved && profileState.hasUnsavedSelection(pendingEnabledOptionalModIds)) return
+            val target = next.activeProfile ?: return
+            if (!replaceWorkingSelection(host, target.enabledModKeys)) return
         }
-        emitSnackbar(host.getString(R.string.main_mod_launch_profile_deleted, profileDisplayName(host, deletedProfile)))
+        persistProfileState(host, next)
+        emitSnackbar(
+            UiText.StringResource(R.string.main_mod_launch_profile_deleted, profileDisplayName(deletedProfile))
+        )
+        hostCallbacks.republish(host)
+    }
+
+    @Synchronized
+    fun setModLaunchProfileAutoSave(host: Activity, autoSave: Boolean) {
+        if (!canEditLaunchProfiles() || autoSave == profileState.autoSave) return
+        if (autoSave && profileState.hasUnsavedSelection(pendingEnabledOptionalModIds)) {
+            emitSnackbar(UiText.StringResource(R.string.main_mod_launch_profile_auto_save_guard))
+            return
+        }
+        persistProfileState(host, profileState.copy(autoSave = autoSave))
+        hostCallbacks.republish(host)
+    }
+
+    @Synchronized
+    fun saveModLaunchProfileSelection(host: Activity) {
+        if (!canEditLaunchProfiles() || !profileState.hasUnsavedSelection(pendingEnabledOptionalModIds)) return
+        persistProfileState(host, profileStore.updateActiveSelection(profileState, pendingEnabledOptionalModIds))
+        hostCallbacks.republish(host)
+    }
+
+    @Synchronized
+    fun restoreModLaunchProfileSelection(host: Activity) {
+        if (!canEditLaunchProfiles() || !profileState.hasUnsavedSelection(pendingEnabledOptionalModIds)) return
+        val target = profileState.activeProfile ?: return
+        if (!replaceWorkingSelection(host, target.enabledModKeys)) return
         hostCallbacks.republish(host)
     }
 
@@ -397,7 +427,7 @@ internal class MainModManagementController(
                     rootMod = enabledRoot,
                     optionalMods = resolveOptionalModsWithPendingSelection()
                 )
-                emitAutoEnabledNotices(host, result)
+                emitAutoEnabledNotices(result)
                 if (result.missingDependencies.isNotEmpty()) {
                     showMissingDependencyDialog(host, enabledRoot, result.missingDependencies)
                 }
@@ -1180,7 +1210,7 @@ internal class MainModManagementController(
                     rootMod = mod,
                     optionalMods = resolveOptionalModsWithPendingSelection()
                 )
-                emitAutoEnabledNotices(host, result)
+                emitAutoEnabledNotices(result)
                 if (result.missingDependencies.isNotEmpty()) {
                     showMissingDependencyDialog(host, mod, result.missingDependencies)
                 }
@@ -1194,8 +1224,8 @@ internal class MainModManagementController(
                     emitBlockedModDisableDialog(
                         host = host,
                         rootMod = mod,
-                        title = host.getString(R.string.main_mod_toggle_off_blocked_title),
-                        message = host.getString(
+                        title = UiText.StringResource(R.string.main_mod_toggle_off_blocked_title),
+                        message = UiText.StringResource(
                             R.string.main_mod_delete_blocked_message,
                             result.blockedDependentModNames.joinToString(", ")
                         )
@@ -1251,7 +1281,7 @@ internal class MainModManagementController(
         try {
             if (enabled) {
                 val result = enableModWithDependencies(host, mod, resolveOptionalModsWithPendingSelection())
-                emitAutoEnabledNotices(host, result)
+                emitAutoEnabledNotices(result)
                 if (result.missingDependencies.isNotEmpty()) {
                     showMissingDependencyDialog(host, mod, result.missingDependencies)
                 }
@@ -1635,10 +1665,10 @@ internal class MainModManagementController(
         )
     }
 
-    private fun emitAutoEnabledNotices(host: Activity, result: DependencyEnableResult) {
+    private fun emitAutoEnabledNotices(result: DependencyEnableResult) {
         if (result.autoEnabledDependencyModNames.isNotEmpty()) {
             emitSnackbar(
-                host.getString(
+                UiText.StringResource(
                     R.string.main_mod_auto_enabled_dependencies,
                     result.autoEnabledDependencyModNames.joinToString(", ")
                 )
@@ -1646,7 +1676,7 @@ internal class MainModManagementController(
         }
         if (result.autoEnabledAssociationModNames.isNotEmpty()) {
             emitSnackbar(
-                host.getString(
+                UiText.StringResource(
                     R.string.main_mod_auto_enabled_associations,
                     result.autoEnabledAssociationModNames.joinToString(", ")
                 )
@@ -1712,15 +1742,24 @@ internal class MainModManagementController(
     private fun emitBlockedModDisableDialog(
         host: Activity,
         rootMod: ModItemUi,
-        title: String,
-        message: String,
+        title: UiText,
+        message: UiText,
     ) {
+        val profileId = profileState.activeProfileId
         hostCallbacks.emitEffect(
             MainScreenViewModel.Effect.ShowBlockedModDisableDialog(
-                title = UiText.DynamicString(title),
-                message = UiText.DynamicString(message),
-                onForceDisable = { forceDisableMod(host, rootMod) },
-                onDisableDependents = { disableModAndDependents(host, rootMod) },
+                title = title,
+                message = message,
+                onForceDisable = {
+                    if (canEditLaunchProfiles() && profileState.activeProfileId == profileId) {
+                        forceDisableMod(host, rootMod)
+                    }
+                },
+                onDisableDependents = {
+                    if (canEditLaunchProfiles() && profileState.activeProfileId == profileId) {
+                        disableModAndDependents(host, rootMod)
+                    }
+                },
             )
         )
     }
@@ -2564,26 +2603,49 @@ internal class MainModManagementController(
         return installedIds
     }
 
-    private fun persistActiveProfileSelection(host: Activity) {
-        if (profileState.profiles.isEmpty()) {
-            profileState = profileStore.load(host, pendingEnabledOptionalModIds)
-        }
-        profileState = profileStore.updateActiveSelection(host, profileState, pendingEnabledOptionalModIds)
+    private fun canEditLaunchProfiles(): Boolean =
+        pendingSelectionInitialized && profileState.activeProfile != null && hostCallbacks.canEditMainScreenState()
+
+    private fun autoSavedProfileState(): ModLaunchProfileStore.State =
+        if (profileState.autoSave) profileStore.updateActiveSelection(profileState, pendingEnabledOptionalModIds)
+        else profileState
+
+    private fun persistProfileState(host: Activity, state: ModLaunchProfileStore.State) {
+        profileStore.persist(host, state)
+        profileState = state
     }
 
+    @Synchronized
     private fun persistPendingSelection(host: Activity): Boolean {
+        // The live selection is also the launch input; manual mode never writes it into a profile.
+        if (!persistWorkingSelection(host)) return false
+        if (profileState.autoSave && profileState.activeProfile != null) {
+            runCatching { persistProfileState(host, autoSavedProfileState()) }
+        }
+        return true
+    }
+
+    private fun replaceWorkingSelection(host: Activity, selection: Set<String>): Boolean {
+        val previousSelection = snapshotPendingSelection()
+        restorePendingSelection(selection)
+        prunePendingSelectionToInstalled()
+        if (persistWorkingSelection(host)) return true
+        restorePendingSelection(previousSelection)
+        return false
+    }
+
+    private fun persistWorkingSelection(host: Activity): Boolean {
         try {
             applyPendingSelection(host)
         } catch (error: Throwable) {
             emitSnackbar(
-                host.getString(
+                UiText.StringResource(
                     R.string.main_mod_toggle_failed,
-                    error.message ?: host.getString(R.string.feedback_unknown_error)
+                    error.message ?: UiText.StringResource(R.string.feedback_unknown_error)
                 )
             )
             return false
         }
-        runCatching { persistActiveProfileSelection(host) }
         return true
     }
 
@@ -2597,17 +2659,11 @@ internal class MainModManagementController(
         markOptionalModsWithPendingSelectionDirty()
     }
 
-    private fun activeProfileName(host: Activity): String {
-        val profile = profileState.profiles.firstOrNull { it.id == profileState.activeProfileId }
-            ?: return ""
-        return profileDisplayName(host, profile)
-    }
-
-    private fun profileDisplayName(host: Activity, profile: ModLaunchProfile): String {
+    private fun profileDisplayName(profile: ModLaunchProfile): UiText {
         return if (profile.id == DEFAULT_MOD_LAUNCH_PROFILE_ID) {
-            host.getString(R.string.main_mod_launch_profile_default)
+            UiText.StringResource(R.string.main_mod_launch_profile_default)
         } else {
-            profile.name
+            UiText.DynamicString(profile.name)
         }
     }
 

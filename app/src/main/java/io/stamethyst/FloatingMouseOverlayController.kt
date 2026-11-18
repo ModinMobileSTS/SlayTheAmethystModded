@@ -54,11 +54,13 @@ internal data class FloatingCustomSoftKeyStored(
     val toggleable: Boolean,
     val leftFraction: Float,
     val topFraction: Float,
+    val symbol: Char? = null,
 )
 
 internal fun encodeFloatingCustomSoftKeyLayout(
     buttons: List<FloatingCustomSoftKeyStored>,
 ): String {
+    // Older records have six fields; only standalone symbols need the optional character field.
     return buttons.joinToString(separator = ";", prefix = "1;") { button ->
         listOf(
             button.keyCode.toString(),
@@ -67,7 +69,7 @@ internal fun encodeFloatingCustomSoftKeyLayout(
             button.topFraction.toString(),
             Base64.getEncoder().encodeToString(button.pickerLabel.toByteArray(StandardCharsets.UTF_8)),
             Base64.getEncoder().encodeToString(button.buttonLabel.toByteArray(StandardCharsets.UTF_8)),
-        ).joinToString(",")
+        ).joinToString(",") + (button.symbol?.let { ",${it.code}" } ?: "")
     }.removeSuffix(";")
 }
 
@@ -83,7 +85,7 @@ internal fun decodeFloatingCustomSoftKeyLayout(
     }
     return records.drop(1).mapNotNull { record ->
         val fields = record.split(',')
-        if (fields.size != 6) {
+        if (fields.size !in 6..7) {
             return@mapNotNull null
         }
         runCatching {
@@ -99,6 +101,7 @@ internal fun decodeFloatingCustomSoftKeyLayout(
                 toggleable = fields[1] == "1",
                 leftFraction = leftFraction,
                 topFraction = topFraction,
+                symbol = fields.getOrNull(6)?.toInt()?.takeIf { it in 33..126 }?.toChar(),
             )
         }.getOrNull()
     }
@@ -174,11 +177,12 @@ internal class FloatingMouseOverlayController(
         val toggleable: Boolean = false,
     )
 
-    private data class CustomSoftKeySpec(
+    internal data class CustomSoftKeySpec(
         val pickerLabel: String,
         val buttonLabel: String,
         val keyCode: Int,
         val toggleable: Boolean = false,
+        val symbol: Char? = null,
     )
 
     private data class CustomSoftKeyCategory(
@@ -207,6 +211,48 @@ internal class FloatingMouseOverlayController(
     )
 
     companion object {
+        internal fun commonCustomSoftKeys(): List<CustomSoftKeySpec> = listOf(
+            CustomSoftKeySpec("Ctrl", "Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, true),
+            CustomSoftKeySpec("Shift", "Shift", KeyEvent.KEYCODE_SHIFT_LEFT, true),
+            CustomSoftKeySpec("Alt", "Alt", KeyEvent.KEYCODE_ALT_LEFT, true),
+            CustomSoftKeySpec("Tab", "Tab", KeyEvent.KEYCODE_TAB),
+            CustomSoftKeySpec("Esc", "Esc", KeyEvent.KEYCODE_ESCAPE),
+            CustomSoftKeySpec("Enter", "Enter", KeyEvent.KEYCODE_ENTER),
+            CustomSoftKeySpec("Space", "Space", KeyEvent.KEYCODE_SPACE),
+            CustomSoftKeySpec("Backspace", "Bksp", KeyEvent.KEYCODE_DEL)
+        )
+
+        private val punctuationPairs = listOf(
+            Triple(KeyEvent.KEYCODE_GRAVE, '`', '~'),
+            Triple(KeyEvent.KEYCODE_MINUS, '-', '_'),
+            Triple(KeyEvent.KEYCODE_EQUALS, '=', '+'),
+            Triple(KeyEvent.KEYCODE_LEFT_BRACKET, '[', '{'),
+            Triple(KeyEvent.KEYCODE_RIGHT_BRACKET, ']', '}'),
+            Triple(KeyEvent.KEYCODE_BACKSLASH, '\\', '|'),
+            Triple(KeyEvent.KEYCODE_SEMICOLON, ';', ':'),
+            Triple(KeyEvent.KEYCODE_APOSTROPHE, '\'', '"'),
+            Triple(KeyEvent.KEYCODE_COMMA, ',', '<'),
+            Triple(KeyEvent.KEYCODE_PERIOD, '.', '>'),
+            Triple(KeyEvent.KEYCODE_SLASH, '/', '?'),
+        )
+        private val shiftedPunctuation = punctuationPairs.map { it.third }.toSet()
+
+        internal fun punctuationCustomSoftKeys(): List<CustomSoftKeySpec> =
+            punctuationPairs.flatMap { (keyCode, base, alternate) ->
+                listOf(base, alternate).map { symbol ->
+                    val label = symbol.toString()
+                    CustomSoftKeySpec(label, label, keyCode, symbol = symbol)
+                }
+            }
+
+        internal fun floatingSymbolModifiers(symbol: Char, currentMods: Int): Int =
+            // BaseMod's default console shortcut checks for the grave key without Shift.
+            if (symbol != '~' && symbol in shiftedPunctuation) {
+                currentMods or LwjglGlfwKeycode.GLFW_MOD_SHIFT
+            } else {
+                currentMods
+            }
+
         private const val IME_LOG_TAG = "STS-IME"
         private const val TOGETHER_IN_SPIRE_CHAT_TEXT_SYNC_SOURCE = "together_in_spire_chat"
         private const val TOGETHER_IN_SPIRE_CHAT_TEXT_SYNC_START = '\uE000'
@@ -1734,16 +1780,7 @@ internal class FloatingMouseOverlayController(
         return listOf(
             CustomSoftKeyCategory(
                 activity.getString(R.string.touch_mouse_custom_key_category_common),
-                listOf(
-                    CustomSoftKeySpec("Ctrl", "Ctrl", KeyEvent.KEYCODE_CTRL_LEFT, true),
-                    CustomSoftKeySpec("Shift", "Shift", KeyEvent.KEYCODE_SHIFT_LEFT, true),
-                    CustomSoftKeySpec("Alt", "Alt", KeyEvent.KEYCODE_ALT_LEFT, true),
-                    CustomSoftKeySpec("Tab", "Tab", KeyEvent.KEYCODE_TAB),
-                    CustomSoftKeySpec("Esc", "Esc", KeyEvent.KEYCODE_ESCAPE),
-                    CustomSoftKeySpec("Enter", "Enter", KeyEvent.KEYCODE_ENTER),
-                    CustomSoftKeySpec("Space", "Space", KeyEvent.KEYCODE_SPACE),
-                    CustomSoftKeySpec("Backspace", "Bksp", KeyEvent.KEYCODE_DEL)
-                )
+                commonCustomSoftKeys()
             ),
             CustomSoftKeyCategory(
                 activity.getString(R.string.touch_mouse_custom_key_category_function),
@@ -1774,19 +1811,7 @@ internal class FloatingMouseOverlayController(
             ),
             CustomSoftKeyCategory(
                 activity.getString(R.string.touch_mouse_custom_key_category_punctuation),
-                listOf(
-                    CustomSoftKeySpec("` / ~", "`", KeyEvent.KEYCODE_GRAVE),
-                    CustomSoftKeySpec("- / _", "-", KeyEvent.KEYCODE_MINUS),
-                    CustomSoftKeySpec("= / +", "=", KeyEvent.KEYCODE_EQUALS),
-                    CustomSoftKeySpec("[ / {", "[", KeyEvent.KEYCODE_LEFT_BRACKET),
-                    CustomSoftKeySpec("] / }", "]", KeyEvent.KEYCODE_RIGHT_BRACKET),
-                    CustomSoftKeySpec("\\ / |", "\\", KeyEvent.KEYCODE_BACKSLASH),
-                    CustomSoftKeySpec("; / :", ";", KeyEvent.KEYCODE_SEMICOLON),
-                    CustomSoftKeySpec("' / \"", "'", KeyEvent.KEYCODE_APOSTROPHE),
-                    CustomSoftKeySpec(", / <", ",", KeyEvent.KEYCODE_COMMA),
-                    CustomSoftKeySpec(". / >", ".", KeyEvent.KEYCODE_PERIOD),
-                    CustomSoftKeySpec("/ / ?", "/", KeyEvent.KEYCODE_SLASH)
-                )
+                punctuationCustomSoftKeys()
             ),
             CustomSoftKeyCategory(
                 activity.getString(R.string.touch_mouse_custom_key_category_editing),
@@ -2021,10 +2046,11 @@ internal class FloatingMouseOverlayController(
 
     private fun performCustomSoftKeyClick(state: CustomSoftKeyButtonState) {
         LauncherHaptics.perform(state.view, HapticFeedbackConstants.KEYBOARD_TAP)
-        if (state.spec.toggleable) {
-            toggleSpecialKey(state.spec.keyCode)
-        } else {
-            sendSyntheticSoftKey(state.spec.keyCode)
+        val spec = state.spec
+        when {
+            spec.toggleable -> toggleSpecialKey(spec.keyCode)
+            spec.symbol != null -> sendFloatingSymbol(spec.keyCode, spec.symbol)
+            else -> sendSyntheticSoftKey(spec.keyCode)
         }
         state.view.animate().cancel()
         state.view.animate()
@@ -2229,6 +2255,7 @@ internal class FloatingMouseOverlayController(
                         buttonLabel = stored.buttonLabel,
                         keyCode = stored.keyCode,
                         toggleable = stored.toggleable,
+                        symbol = stored.symbol,
                     ),
                     restoredPosition = FloatingMouseStoredPosition(
                         leftFraction = stored.leftFraction,
@@ -2259,6 +2286,7 @@ internal class FloatingMouseOverlayController(
                 toggleable = state.spec.toggleable,
                 leftFraction = position.leftFraction,
                 topFraction = position.topFraction,
+                symbol = state.spec.symbol,
             )
         }
         customSoftKeyPrefs.edit()
@@ -2507,6 +2535,23 @@ internal class FloatingMouseOverlayController(
             }
         }
         return handled
+    }
+
+    private fun sendFloatingSymbol(androidKeyCode: Int, symbol: Char) {
+        if (!isNativeInputDispatchReady.invoke()) return
+        when (resolveSoftKeyboardTarget()) {
+            SoftKeyboardTarget.AWT -> AWTInputBridge.sendChar(symbol)
+            SoftKeyboardTarget.GLFW -> {
+                val keyCode = AndroidGlfwKeycode.toGlfw(androidKeyCode)
+                val modifiers = floatingSymbolModifiers(symbol, CallbackBridge.getCurrentMods())
+                if (keyCode == AndroidGlfwKeycode.GLFW_KEY_UNKNOWN) {
+                    CallbackBridge.sendChar(symbol, modifiers)
+                } else {
+                    CallbackBridge.sendKeycode(keyCode, symbol, 0, modifiers, true)
+                    CallbackBridge.sendKeyPress(keyCode, 0, modifiers, false)
+                }
+            }
+        }
     }
 
     private fun sendSyntheticSoftKey(

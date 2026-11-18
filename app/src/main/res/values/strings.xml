@@ -530,6 +530,16 @@ Do you still want to continue?</string>
     <string name="main_mod_launch_profile_selected">Switched mod profile: %1$s</string>
     <string name="main_mod_launch_profile_delete">Delete profile %1$s</string>
     <string name="main_mod_launch_profile_deleted">Deleted mod profile: %1$s</string>
+    <string name="main_mod_launch_profile_auto_save">Autosave</string>
+    <string name="main_mod_launch_profile_manual_hint">Launch uses your current selection.</string>
+    <string name="main_mod_launch_profile_save_selection">Save to profile</string>
+    <string name="main_mod_launch_profile_restore_selection">Restore saved profile</string>
+    <string name="main_mod_launch_profile_unsaved">Unsaved mod changes</string>
+    <string name="main_mod_launch_profile_auto_save_guard">Save or restore your selection before turning on autosave.</string>
+    <string name="main_mod_launch_profile_switch_guard">Switching profiles discards unsaved mod changes.</string>
+    <string name="main_mod_launch_profile_discard_and_switch">Discard and switch</string>
+    <string name="main_mod_launch_profile_delete_guard">Deleting this profile also discards unsaved mod changes.</string>
+    <string name="main_mod_launch_profile_delete_confirm">Delete profile</string>
     <string name="main_loading_mods">Loading mod and dependency status...</string>
     <string name="main_status_card_title">Dependency status</string>
     <string name="main_dependency_desktop_description">Patched game runtime jar required to boot Slay the Spire on Android.</string>

@@ -65,9 +65,12 @@ internal data class MainScreenActions(
     val onMoveModsToUnassigned: (List<ModItemUi>) -> Unit = {},
     val onSetModsSelected: (List<ModItemUi>, Boolean) -> Unit = { _, _ -> },
     val onAddModLaunchProfile: (String) -> Unit = {},
-    val onSelectModLaunchProfile: (String) -> Unit = {},
+    val onSelectModLaunchProfile: (String, Boolean) -> Unit = { _, _ -> },
     val onRenameModLaunchProfile: (String, String) -> Unit = { _, _ -> },
-    val onDeleteModLaunchProfile: (String) -> Unit = {},
+    val onDeleteModLaunchProfile: (String, Boolean) -> Unit = { _, _ -> },
+    val onSetModLaunchProfileAutoSave: (Boolean) -> Unit = {},
+    val onSaveModLaunchProfileSelection: () -> Unit = {},
+    val onRestoreModLaunchProfileSelection: () -> Unit = {},
     val onRevealFolderToken: (String) -> Unit = {},
     val onRetryStorageCheck: () -> Unit = {},
     val onDismissCrashRecovery: () -> Unit = {},
@@ -197,11 +200,18 @@ internal fun rememberMainScreenActions(
                 onMoveModsToUnassigned = { mods -> viewModel.moveModsToUnassigned(activity, mods) },
                 onSetModsSelected = { mods, selected -> viewModel.setModsSelected(activity, mods, selected) },
                 onAddModLaunchProfile = { name -> viewModel.addModLaunchProfile(activity, name) },
-                onSelectModLaunchProfile = { profileId -> viewModel.selectModLaunchProfile(activity, profileId) },
+                onSelectModLaunchProfile = { profileId, discardUnsaved ->
+                    viewModel.selectModLaunchProfile(activity, profileId, discardUnsaved)
+                },
                 onRenameModLaunchProfile = { profileId, name ->
                     viewModel.renameModLaunchProfile(activity, profileId, name)
                 },
-                onDeleteModLaunchProfile = { profileId -> viewModel.deleteModLaunchProfile(activity, profileId) },
+                onDeleteModLaunchProfile = { profileId, discardUnsaved ->
+                    viewModel.deleteModLaunchProfile(activity, profileId, discardUnsaved)
+                },
+                onSetModLaunchProfileAutoSave = { viewModel.setModLaunchProfileAutoSave(activity, it) },
+                onSaveModLaunchProfileSelection = { viewModel.saveModLaunchProfileSelection(activity) },
+                onRestoreModLaunchProfileSelection = { viewModel.restoreModLaunchProfileSelection(activity) },
                 onRevealFolderToken = { folderTokenId -> viewModel.revealFolderToken(activity, folderTokenId) },
                 onRetryStorageCheck = { viewModel.refresh(activity) },
                 onDismissCrashRecovery = { viewModel.dismissCrashRecovery() },

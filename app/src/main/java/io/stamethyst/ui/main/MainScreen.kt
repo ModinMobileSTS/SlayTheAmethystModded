@@ -174,6 +174,7 @@ import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.FloatingGlassHeader
 import io.stamethyst.ui.LauncherBannerTitleRow
+import io.stamethyst.ui.LauncherSwitch
 import io.stamethyst.ui.LauncherTopAppBar
 import io.stamethyst.ui.launcherBannerExpandedHeight
 import io.stamethyst.ui.LauncherTransientNoticeBus
@@ -711,13 +712,18 @@ private fun ModsHeaderExpandedContent(
     importEnabled: Boolean,
     profiles: List<ModLaunchProfile>,
     activeProfileId: String,
+    profileAutoSave: Boolean,
+    profileDirty: Boolean,
     profileEnabled: Boolean,
     profileMenuEnabled: Boolean,
     onImportMods: () -> Unit,
-    onSelectProfile: (String) -> Unit,
+    onSelectProfile: (String, Boolean) -> Unit,
     onAddProfile: (String) -> Unit,
     onRenameProfile: (String, String) -> Unit,
-    onDeleteProfile: (String) -> Unit,
+    onDeleteProfile: (String, Boolean) -> Unit,
+    onSetProfileAutoSave: (Boolean) -> Unit,
+    onSaveProfileSelection: () -> Unit,
+    onRestoreProfileSelection: () -> Unit,
 ) {
     val canEditFolders = folderControlsEnabled && hostAvailable
 
@@ -766,12 +772,17 @@ private fun ModsHeaderExpandedContent(
                     modifier = Modifier.fillMaxSize(),
                     profiles = profiles,
                     activeProfileId = activeProfileId,
+                    autoSave = profileAutoSave,
+                    selectionDirty = profileDirty,
                     enabled = profileEnabled,
                     menuEnabled = profileMenuEnabled,
                     onSelectProfile = onSelectProfile,
                     onAddProfile = onAddProfile,
                     onRenameProfile = onRenameProfile,
                     onDeleteProfile = onDeleteProfile,
+                    onSetAutoSave = onSetProfileAutoSave,
+                    onSaveSelection = onSaveProfileSelection,
+                    onRestoreSelection = onRestoreProfileSelection,
                 )
             }
         }
@@ -5355,6 +5366,8 @@ private fun LauncherMainScreenContent(
                                         importEnabled = !batchSelectionMode && !headerUiState.busy && headerUiState.storageIssue == null,
                                         profiles = headerUiState.modLaunchProfiles,
                                         activeProfileId = headerUiState.activeModLaunchProfileId,
+                                        profileAutoSave = headerUiState.modLaunchProfileAutoSave,
+                                        profileDirty = headerUiState.modLaunchProfileDirty,
                                         profileEnabled = !headerUiState.initializing && !batchSelectionMode && actions.isHostAvailable && headerUiState.controlsEnabled && headerUiState.storageIssue == null,
                                         profileMenuEnabled = !batchSelectionMode && actions.isHostAvailable &&
                                             headerUiState.storageIssue == null &&
@@ -5365,6 +5378,9 @@ private fun LauncherMainScreenContent(
                                         onAddProfile = actions.onAddModLaunchProfile,
                                         onRenameProfile = actions.onRenameModLaunchProfile,
                                         onDeleteProfile = actions.onDeleteModLaunchProfile,
+                                        onSetProfileAutoSave = actions.onSetModLaunchProfileAutoSave,
+                                        onSaveProfileSelection = actions.onSaveModLaunchProfileSelection,
+                                        onRestoreProfileSelection = actions.onRestoreModLaunchProfileSelection,
                                     )
                                 },
                             )
@@ -6648,14 +6664,22 @@ internal fun ModLaunchProfileMenu(
     activeProfileId: String,
     enabled: Boolean,
     menuEnabled: Boolean = enabled,
-    onSelectProfile: (String) -> Unit,
+    autoSave: Boolean = true,
+    selectionDirty: Boolean = false,
+    onSelectProfile: (String, Boolean) -> Unit,
     onAddProfile: (String) -> Unit,
     onRenameProfile: (String, String) -> Unit,
-    onDeleteProfile: (String) -> Unit,
+    onDeleteProfile: (String, Boolean) -> Unit,
+    onSetAutoSave: (Boolean) -> Unit = {},
+    onSaveSelection: () -> Unit = {},
+    onRestoreSelection: () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     var creatingProfile by remember { mutableStateOf(false) }
     var renamingProfile by remember { mutableStateOf<ModLaunchProfile?>(null) }
+    var confirmSwitchTo by remember(activeProfileId) { mutableStateOf<String?>(null) }
+    var confirmDeleteActive by remember(activeProfileId) { mutableStateOf(false) }
+    val canChangeAutoSave = enabled && !selectionDirty
     val activeProfileName = profiles.firstOrNull { it.id == activeProfileId }?.displayName()
         ?: stringResource(R.string.main_mod_launch_profile_default)
     Box(modifier = modifier) {
@@ -6677,6 +6701,55 @@ internal fun ModLaunchProfileMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .toggleable(
+                        value = autoSave,
+                        enabled = canChangeAutoSave,
+                        role = Role.Switch,
+                        onValueChange = onSetAutoSave,
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.main_mod_launch_profile_auto_save),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    if (!autoSave) {
+                        Text(
+                            stringResource(
+                                if (selectionDirty) R.string.main_mod_launch_profile_auto_save_guard
+                                else R.string.main_mod_launch_profile_manual_hint
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                LauncherSwitch(checked = autoSave, onCheckedChange = null, enabled = canChangeAutoSave)
+            }
+            if (selectionDirty) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.main_mod_launch_profile_save_selection)) },
+                    enabled = enabled,
+                    onClick = {
+                        expanded = false
+                        onSaveSelection()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.main_mod_launch_profile_restore_selection)) },
+                    enabled = enabled,
+                    onClick = {
+                        expanded = false
+                        onRestoreSelection()
+                    },
+                )
+            }
+            HorizontalDivider()
             profiles.forEach { profile ->
                 val profileName = profile.displayName()
                 DropdownMenuItem(
@@ -6723,7 +6796,11 @@ internal fun ModLaunchProfileMenu(
                                 IconButton(
                                     onClick = {
                                         expanded = false
-                                        onDeleteProfile(profile.id)
+                                        if (selectionDirty && profile.id == activeProfileId) {
+                                            confirmDeleteActive = true
+                                        } else {
+                                            onDeleteProfile(profile.id, false)
+                                        }
                                     },
                                     enabled = enabled
                                 ) {
@@ -6742,7 +6819,11 @@ internal fun ModLaunchProfileMenu(
                     onClick = {
                         if (enabled) {
                             expanded = false
-                            onSelectProfile(profile.id)
+                            if (selectionDirty && profile.id != activeProfileId) {
+                                confirmSwitchTo = profile.id
+                            } else {
+                                onSelectProfile(profile.id, false)
+                            }
                         }
                     }
                 )
@@ -6766,6 +6847,22 @@ internal fun ModLaunchProfileMenu(
             )
         }
     }
+    confirmSwitchTo?.let { targetId ->
+        UnsavedModProfileDialog(
+            message = R.string.main_mod_launch_profile_switch_guard,
+            confirmLabel = R.string.main_mod_launch_profile_discard_and_switch,
+            onDismiss = { confirmSwitchTo = null },
+            onConfirm = { onSelectProfile(targetId, true) },
+        )
+    }
+    if (confirmDeleteActive) {
+        UnsavedModProfileDialog(
+            message = R.string.main_mod_launch_profile_delete_guard,
+            confirmLabel = R.string.main_mod_launch_profile_delete_confirm,
+            onDismiss = { confirmDeleteActive = false },
+            onConfirm = { onDeleteProfile(activeProfileId, true) },
+        )
+    }
     ProfileNameDialog(
         visible = creatingProfile,
         title = stringResource(R.string.main_mod_launch_profile_create_title),
@@ -6788,6 +6885,29 @@ internal fun ModLaunchProfileMenu(
             }
         )
     }
+}
+
+@Composable
+private fun UnsavedModProfileDialog(
+    message: Int,
+    confirmLabel: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        title = { Text(stringResource(R.string.main_mod_launch_profile_unsaved)) },
+        text = { Text(stringResource(message)) },
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onConfirm()
+            }) { Text(stringResource(confirmLabel)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.main_folder_dialog_cancel)) }
+        },
+    )
 }
 
 @Composable

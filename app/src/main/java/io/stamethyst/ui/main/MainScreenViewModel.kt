@@ -373,6 +373,8 @@ class MainScreenViewModel : ViewModel() {
         val pendingLaunchUnreadSuggestionModNames: List<String> = emptyList(),
         val modLaunchProfiles: List<ModLaunchProfile> = emptyList(),
         val activeModLaunchProfileId: String = "default",
+        val modLaunchProfileAutoSave: Boolean = true,
+        val modLaunchProfileDirty: Boolean = false,
         val modFolders: List<ModFolder> = emptyList(),
         val folderAssignments: Map<String, String> = emptyMap(),
         val folderCollapsed: Map<String, Boolean> = emptyMap(),
@@ -689,6 +691,7 @@ class MainScreenViewModel : ViewModel() {
                             uiState = uiState.copy(
                                 modLaunchProfiles = profiles.profiles,
                                 activeModLaunchProfileId = profiles.activeProfileId,
+                                modLaunchProfileAutoSave = profiles.autoSave,
                             )
                         }
                     }
@@ -3080,13 +3083,22 @@ class MainScreenViewModel : ViewModel() {
         modManagementController.renameModLaunchProfile(host, profileId, name)
     }
 
-    fun selectModLaunchProfile(host: Activity, profileId: String) {
-        modManagementController.selectModLaunchProfile(host, profileId)
+    fun selectModLaunchProfile(host: Activity, profileId: String, discardUnsaved: Boolean) {
+        modManagementController.selectModLaunchProfile(host, profileId, discardUnsaved)
     }
 
-    fun deleteModLaunchProfile(host: Activity, profileId: String) {
-        modManagementController.deleteModLaunchProfile(host, profileId)
+    fun deleteModLaunchProfile(host: Activity, profileId: String, discardUnsaved: Boolean) {
+        modManagementController.deleteModLaunchProfile(host, profileId, discardUnsaved)
     }
+
+    fun setModLaunchProfileAutoSave(host: Activity, autoSave: Boolean) =
+        modManagementController.setModLaunchProfileAutoSave(host, autoSave)
+
+    fun saveModLaunchProfileSelection(host: Activity) =
+        modManagementController.saveModLaunchProfileSelection(host)
+
+    fun restoreModLaunchProfileSelection(host: Activity) =
+        modManagementController.restoreModLaunchProfileSelection(host)
 
     fun setModsSelected(host: Activity, mods: List<ModItemUi>, selected: Boolean) {
         modManagementController.setModsSelected(host, mods, selected)
@@ -5625,6 +5637,8 @@ class MainScreenViewModel : ViewModel() {
             pendingLaunchUnreadSuggestionModNames = pendingLaunchUnreadSuggestionModNames,
             modLaunchProfiles = snapshot.modLaunchProfiles,
             activeModLaunchProfileId = snapshot.activeModLaunchProfileId,
+            modLaunchProfileAutoSave = snapshot.modLaunchProfileAutoSave,
+            modLaunchProfileDirty = snapshot.modLaunchProfileDirty,
             modFolders = snapshot.modFolders,
             folderAssignments = snapshot.folderAssignments,
             folderCollapsed = snapshot.folderCollapsed,

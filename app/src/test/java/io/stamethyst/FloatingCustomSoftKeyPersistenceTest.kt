@@ -55,6 +55,16 @@ class FloatingCustomSoftKeyPersistenceTest {
     }
 
     @Test
+    fun roundTripPreservesSplitSymbolsAlongsideOldKeys() {
+        val split = FloatingMouseOverlayController.punctuationCustomSoftKeys().map { key ->
+            FloatingCustomSoftKeyStored(key.pickerLabel, key.buttonLabel, key.keyCode, false, 0.2f, 0.3f, key.symbol)
+        }
+        val old = FloatingCustomSoftKeyStored("Tab", "Tab", 61, false, 0.1f, 0.4f)
+        val buttons = listOf(old) + split
+        assertEquals(buttons, decodeFloatingCustomSoftKeyLayout(encodeFloatingCustomSoftKeyLayout(buttons)))
+    }
+
+    @Test
     fun decode_rejectsUnknownVersionAndEmptyLayout() {
         assertTrue(decodeFloatingCustomSoftKeyLayout(null).isEmpty())
         assertTrue(decodeFloatingCustomSoftKeyLayout("").isEmpty())
