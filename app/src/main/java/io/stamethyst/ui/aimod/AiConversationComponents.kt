@@ -108,6 +108,9 @@ internal fun AiChatComposer(
     onCancelInboxEdit: () -> Unit = {},
     outputTokensPerSecond: Double? = null,
     onExecutionHistory: () -> Unit = {},
+    reasoningOptions: List<LlmReasoningEffort> = LlmReasoningEffort.defaults,
+    onConfigureEfforts: () -> Unit = {},
+    contextCounter: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var modelMenu by remember { mutableStateOf(false) }
@@ -184,7 +187,8 @@ internal fun AiChatComposer(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     AiMessageAction(Icons.AttachFile, stringResource(R.string.ai_mod_editor_attach), onAttach, configured)
                     Box(Modifier.weight(1f)) {
-                        AiReasoningEffortPicker(effort, onEffortChange, enabled = configured, hazeState = hazeState)
+                        AiReasoningEffortPicker(effort, reasoningOptions, onEffortChange, onConfigureEfforts,
+                            enabled = configured, hazeState = hazeState)
                     }
                     val hasContent = draft.isNotBlank() || attachments.isNotEmpty()
                     val sendEnabled = configured && hasContent
@@ -276,6 +280,7 @@ internal fun AiChatComposer(
                             }
                         }
                     }
+                    contextCounter()
                     AiHistorySpeedButton(outputTokensPerSecond, onExecutionHistory)
                 }
             }

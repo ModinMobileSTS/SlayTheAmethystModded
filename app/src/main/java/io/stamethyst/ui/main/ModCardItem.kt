@@ -146,7 +146,8 @@ internal fun ModCard(
     var handleCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var cardCoordinates by remember(mod.storagePath) { mutableStateOf<LayoutCoordinates?>(null) }
     var showDetailsDialog by remember(mod.storagePath) { mutableStateOf(false) }
-    var detailsStartAtActions by remember(mod.storagePath) { mutableStateOf(false) }
+    var detailsStartAtAi by remember(mod.storagePath) { mutableStateOf(false) }
+    var detailsCommunitySelected by remember(mod.storagePath) { mutableStateOf(false) }
     var showPriorityDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showSuggestionDialog by remember(mod.storagePath, suggestionText) { mutableStateOf(false) }
@@ -163,6 +164,11 @@ internal fun ModCard(
     var updateChangeNotesReloadToken by remember(mod.storagePath) { mutableStateOf(0) }
     var updateChangeNotesState by remember(mod.storagePath) {
         mutableStateOf<WorkshopUpdateChangeNotesState>(WorkshopUpdateChangeNotesState.Idle)
+    }
+    fun openDetails(community: Boolean = false) {
+        detailsStartAtAi = community
+        detailsCommunitySelected = community
+        showDetailsDialog = true
     }
     val cardShape = RoundedCornerShape(if (classicLayout) 10.dp else 4.dp)
     val batchSelectionAnimationProgress = if (batchSelectionMode) {
@@ -260,8 +266,7 @@ internal fun ModCard(
             if (batchSelectionMode && batchSelectionEnabled) {
                 onBatchSelectionChange(!batchSelected)
             } else {
-                detailsStartAtActions = true
-                showDetailsDialog = true
+                openDetails()
             }
         },
         onLongClick = {
@@ -367,14 +372,7 @@ internal fun ModCard(
             agentPatchMods = mod.agentPatchMods,
             onSetAgentPatchEnabled = { patch, enabled -> callbacks.onSetAgentPatchEnabled(mod, patch, enabled) },
             onOpenAgentPatchCatalogue = {
-                initialRemotePatchModId = null
-                showAgentPatchContributions = false
-                agentPatchDialogLocalOnly = false
-                agentPatchActionsOnly = false
-                initialLocalActionPatchId = null
-                initialLocalUploadPatchId = null
-                agentPatchDetails = null
-                showAgentPatchCatalogue = true
+                if (!batchSelectionMode) openDetails(community = true)
             },
             onOpenAgentPatchContributions = {
                 initialRemotePatchModId = null
@@ -418,8 +416,7 @@ internal fun ModCard(
                 if (classicLayout && !batchSelectionMode) {
                     IconButton(
                         onClick = {
-                            detailsStartAtActions = true
-                            showDetailsDialog = true
+                            openDetails()
                         },
                         enabled = actionsEnabled,
                         modifier = Modifier.size(44.dp).testTag("mod_card_actions"),
@@ -507,8 +504,7 @@ internal fun ModCard(
                 onInstall = { callbacks.onPatchWorkshopMod(mod) },
                 onRetryDownload = { callbacks.onRetryWorkshopDownload(mod) },
                 onManualHandle = {
-                    detailsStartAtActions = true
-                    showDetailsDialog = true
+                    openDetails()
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
                     .graphicsLayer { alpha = normalControlProgress },
@@ -585,7 +581,8 @@ internal fun ModCard(
             mod = mod,
             showModFileName = showModFileName,
             fileActionsEnabled = fileActionsEnabled,
-            startAtActions = detailsStartAtActions,
+            startAtActions = !detailsStartAtAi,
+            startAtAi = detailsStartAtAi,
             onDismiss = { showDetailsDialog = false },
             onFavoriteChange = { callbacks.onSetFavorite(mod, it) },
             suggestionContent = {
@@ -610,18 +607,26 @@ internal fun ModCard(
                         showWorkshopUpdateConfirmDialog = true
                     },
                     onWorkshop = openWorkshop,
-                    onCatalogue = openCatalogue,
+                    onCatalogue = {
+                        detailsCommunitySelected = true
+                        onScrollToAi()
+                    },
                     onContributions = {
                         openCatalogue()
                         showAgentPatchContributions = true
                     },
-                    onAiMods = onScrollToAi,
+                    onAiMods = {
+                        detailsCommunitySelected = false
+                        onScrollToAi()
+                    },
                 )
             },
             aiContent = {
                 ModDetailsAiSection(
                     mod = mod,
                     controlsEnabled = fileActionsEnabled,
+                    communitySelected = detailsCommunitySelected,
+                    onCommunitySelected = { detailsCommunitySelected = it },
                     onNew = openAiEditor,
                     onToggle = { patch, enabled -> callbacks.onSetAgentPatchEnabled(mod, patch, enabled) },
                     onDetails = { agentPatchDetails = it },
@@ -708,8 +713,10 @@ internal fun ModCard(
             localOnly = agentPatchDialogLocalOnly,
             contributionsOnly = showAgentPatchContributions,
             actionsOnly = agentPatchActionsOnly,
+            controlsEnabled = fileActionsEnabled,
             onDismiss = { showAgentPatchCatalogue = false },
             onInstalled = callbacks.onRefreshAgentPatchMods,
+            onSetEnabled = { patch, enabled -> callbacks.onSetAgentPatchEnabled(mod, patch, enabled) },
             onCatalogueRefreshed = callbacks.onAgentPatchCatalogueRefreshed,
             onExport = { patch -> callbacks.onExportAgentPatch(mod, patch) },
             onShare = { patch -> callbacks.onShareAgentPatch(mod, patch) },

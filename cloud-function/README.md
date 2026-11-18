@@ -141,8 +141,8 @@ another repository or an arbitrary Git path.
 Uploads are anonymous: no login, bearer token, account, or `X-Feedback-Key` is
 required. Author name and email in metadata are claims supplied by the uploader,
 not verified identity. Any anonymous uploader can create a patch or replace an
-existing patch at the same catalogue path, including changing its metadata, JAR,
-or email claim (the author name is part of the directory path).
+existing patch with the same exact `patchModId` under the same `target.modId`,
+including changing its metadata, JAR, author name or email claim.
 Do not treat the displayed name/email as proof of ownership. This intentionally
 allows destructive overwrites; there is no per-author ownership or recovery
 mechanism. Git history retains earlier commits, but the active index points at
@@ -211,17 +211,26 @@ these checks do not establish that a mod is safe or actually compatible.
 
 Files are stored together under
 `mods/<modid>/<patch name>-<author name>/metadata.json`, the selected JAR name and
-optional `src/`. The same path overwrites the previous upload after checking
-the existing author's exact name/email. Changing `jar` removes the previous JAR
+optional `src/`. Overwrites are located by patch ID, not the directory name or
+the author's name/email. The server reads `patchModId` from
+each committed JAR's `ModTheSpire.json` (including legacy uploads whose metadata
+has no ID), rather than relying on the asynchronous index. Matching is exact and
+scoped to `target.modId`. Changing the patch or author name moves the existing
+patch to the new name-author directory and removes its old directory in the same
+commit; it does not create another copy. A destination belonging to a different
+patch ID is rejected with `409`, as are multiple legacy directories sharing the
+same patch ID (these require manual resolution). Invalid existing metadata/JARs
+also block the upload rather than guessing which patch to replace.
+Changing `jar` removes the previous JAR
 in that same commit. Omitting `source` preserves existing source; providing it
 replaces the entire `src/` tree, including removal of stale source files.
-Unrelated patch files, other authors' patches and concurrent commits are preserved.
+Extra files move with the patch. Unrelated patch IDs and concurrent commits are preserved.
 
 The Git Data API creates blobs/trees, then **one reachable upload commit** and a
 non-forced branch update. Every successful request creates a commit, even if
 all bytes are unchanged. The exact message is `Example Author <author@example.com>`;
 Git `author` matches the self-reported metadata, while `committer` uses the configured service
-identity. Ref races re-read HEAD and revalidate path/Workshop constraints, then
+identity. Ref races re-read HEAD and revalidate patch IDs/path/Workshop constraints, then
 rebuild trees/commits, at most five attempts. Rejected attempts can leave
 unreachable Git objects, but do not add partial commits to the branch. The branch
 must already have an initial commit, and its rules must permit the App to push.
@@ -266,7 +275,9 @@ API gateway/WAF rate and request-size limits as well: per-instance counters do
 not provide a quota across SCF instances. Anonymous uploads remain open to abuse;
 the gateway/WAF should enforce global quotas and bot controls. Source uploads can require many GitHub
 requests; configure the SCF/gateway timeout and body-size limit for the advertised
-upload sizes, or publish lower limits if the gateway cannot accept them. Existing
+upload sizes, or publish lower limits if the gateway cannot accept them. ID lookup
+reads and validates existing JARs for the target mod; allow for this additional
+GitHub traffic and processing time, particularly for large catalogues. Existing
 feedback endpoint limits remain controlled by `BUNDLE_MAX_BYTES`.
 
 The Android upload UI is not part of this server change.

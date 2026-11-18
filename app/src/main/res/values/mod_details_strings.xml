@@ -57,7 +57,6 @@
     <string name="mod_details_ai_on">Enabled</string>
     <string name="mod_details_ai_off">Disabled</string>
     <string name="mod_details_ai_paused">Paused with parent mod</string>
-    <string name="mod_details_ai_parent_disabled">The parent mod is disabled. You can still toggle patches; enabled patches will load once the parent mod is enabled.</string>
     <string name="mod_details_ai_local">Installed locally</string>
     <string name="mod_details_ai_shared">Contributed to community</string>
     <string name="mod_details_ai_view">View</string>

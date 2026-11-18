@@ -6,11 +6,16 @@ import io.stamethyst.backend.github.GithubUserContentWattToolkitRouteProfile
 import io.stamethyst.backend.github.WattToolkitForwardTargetProbe
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.routing
+import io.stamethyst.backend.github.withHttpOptions
 import io.stamethyst.backend.network.AccelerationStrategy
 import java.io.File
 import java.io.IOException
 import java.net.InetAddress
+import java.security.MessageDigest
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
@@ -237,5 +242,91 @@ class AgentPatchCatalogueNetworkTest {
         official.enqueue(MockResponse.Builder().body(valid).build())
         assertFalse(fetch(client).changed)
         assertEquals(valid, cache.readText())
+    }
+
+    @Test fun patchDownloadShowsConnectingBeforeHeadersAndThenActualByteProgress() {
+        val body = "patch".repeat(8_192)
+        val releaseHeaders = CountDownLatch(1)
+        first.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                check(releaseHeaders.await(5, TimeUnit.SECONDS))
+                return MockResponse.Builder().body(body).build()
+            }
+        }
+        val updates = CopyOnWriteArrayList<AgentPatchInstallProgress>()
+        val reporter = AgentPatchDownloadProgressReporter(updates::add)
+        reporter.selecting("加速直连")
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val factory = client(AccelerationStrategy.BEST_PATH).withHttpOptions {
+                readTimeout(5, TimeUnit.SECONDS)
+            }
+            val result = executor.submit { downloadPatch(body, reporter, factory) }
+            assertNotNull(first.takeRequest(2, TimeUnit.SECONDS))
+            val waiting = updates.last()
+            assertEquals(AgentPatchInstallStage.SELECTING_ROUTE, waiting.stage)
+            assertEquals(AgentPatchRoutePhase.CONNECTING, waiting.routePhase)
+            assertTrue(waiting.routeTarget.orEmpty().contains("first.test"))
+            assertEquals(0L, waiting.totalBytes)
+            releaseHeaders.countDown()
+            result.get(5, TimeUnit.SECONDS)
+            val bytes = updates.filter { it.stage == AgentPatchInstallStage.DOWNLOADING }
+            assertEquals(0L, bytes.first().downloadedBytes)
+            assertEquals(body.length.toLong(), bytes.last().downloadedBytes)
+            assertTrue(bytes.any { it.downloadedBytes in 1 until body.length.toLong() })
+            assertTrue(bytes.zipWithNext().all { (a, b) -> a.downloadedBytes <= b.downloadedBytes })
+            assertEquals(body, File(temp.root, "patch.jar").readText())
+        } finally {
+            releaseHeaders.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test fun patchDownloadReportsNodeFailureAndBackupConnection() {
+        first.enqueue(MockResponse.Builder().headersDelay(800, TimeUnit.MILLISECONDS).body("stalled").build())
+        second.enqueue(MockResponse.Builder().body("patch").build())
+        val updates = mutableListOf<AgentPatchInstallProgress>()
+        val reporter = AgentPatchDownloadProgressReporter(updates::add)
+        reporter.selecting("加速直连")
+        downloadPatch("patch", reporter)
+        assertEquals(
+            listOf(AgentPatchRoutePhase.SELECTING, AgentPatchRoutePhase.CONNECTING,
+                AgentPatchRoutePhase.SWITCHING, AgentPatchRoutePhase.CONNECTING),
+            updates.filter { it.stage == AgentPatchInstallStage.SELECTING_ROUTE }.map { it.routePhase },
+        )
+        assertTrue(updates.first { it.routePhase == AgentPatchRoutePhase.SWITCHING }
+            .routeTarget.orEmpty().contains("first.test"))
+        assertTrue(updates.last { it.routePhase == AgentPatchRoutePhase.CONNECTING }
+            .routeTarget.orEmpty().contains("second.test"))
+        assertEquals(5L, updates.last().downloadedBytes)
+        assertEquals(0, official.requestCount)
+    }
+
+    @Test fun patchDownloadReportsOfficialPathWhenItWinsSelection() {
+        preferOfficial = true
+        official.enqueue(MockResponse.Builder().body("patch").build())
+        val updates = mutableListOf<AgentPatchInstallProgress>()
+        val reporter = AgentPatchDownloadProgressReporter(updates::add)
+        reporter.selecting("加速直连")
+        downloadPatch("patch", reporter)
+        assertEquals("raw.githubusercontent.com",
+            updates.single { it.routePhase == AgentPatchRoutePhase.CONNECTING }.routeTarget)
+        assertEquals(1, official.requestCount)
+        assertEquals(0, first.requestCount)
+        assertEquals(5L, updates.last().downloadedBytes)
+    }
+
+    private fun downloadPatch(
+        body: String,
+        progress: AgentPatchDownloadProgressReporter,
+        factory: Call.Factory = client(AccelerationStrategy.BEST_PATH),
+    ) {
+        val hash = MessageDigest.getInstance("SHA-256").digest(body.toByteArray())
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        AgentPatchCatalogueService.downloadPatchFromSource(
+            factory,
+            "http://raw.githubusercontent.com:${official.port}/owner/repo/main/patch.jar",
+            File(temp.root, "patch.jar"), body.length.toLong(), hash, progress,
+        )
     }
 }

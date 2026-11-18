@@ -61,7 +61,7 @@ object AgentPatchSourceCompiler {
             return AgentPatchCompileResult(
                 success = false,
                 compiledClassCount = 0,
-                diagnostics = "Java runtime not installed (missing ${rtJar.absolutePath}). Launch the game once to install it.",
+                diagnostics = "Java runtime not installed (missing runtime lib/rt.jar). Launch the game once to install it.",
             )
         }
 
@@ -81,7 +81,7 @@ object AgentPatchSourceCompiler {
             return AgentPatchCompileResult(
                 success = false,
                 compiledClassCount = 0,
-                diagnostics = "Could not create compile staging at ${stagingDir.absolutePath}.",
+                diagnostics = "Could not create compile staging; check available launcher cache storage.",
             )
         }
         val args = buildCommandLine(

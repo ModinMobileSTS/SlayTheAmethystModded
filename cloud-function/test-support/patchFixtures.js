@@ -55,10 +55,10 @@ function zip(entries) {
   return Buffer.concat([...local, directory, end]);
 }
 
-function jar(data = metadata(), extra = []) {
+function jar(data = metadata(), extra = [], patchModId = 'test_patch') {
   return zip([
     { name: 'ModTheSpire.json', content: JSON.stringify({
-      modid: 'test_patch', name: data.name, version: data.version, description: data.description,
+      modid: patchModId, name: data.name, version: data.version, description: data.description,
       dependencies: [data.target.modId]
     }), compress: true },
     { name: 'patch/Test.class', content: Buffer.from('cafebabe00000034', 'hex'), compress: true },

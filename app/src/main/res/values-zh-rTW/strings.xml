@@ -806,11 +806,12 @@
     <string name="main_mod_agent_patch_upload_confirm">上傳</string>
     <string name="main_mod_agent_patch_upload_failed">AI 補丁上傳失敗：%1$s</string>
     <string name="main_mod_agent_patch_install_failed">AI 補丁安裝失敗：%1$s</string>
-    <string name="main_mod_agent_patch_install_success">已安裝 AI 補丁：%1$s</string>
     <string name="main_mod_agent_patch_install_progress_title">正在安裝 AI 補丁</string>
     <string name="main_mod_agent_patch_install_done_title">安裝完成</string>
     <string name="main_mod_agent_patch_install_failed_title">安裝失敗</string>
     <string name="main_mod_agent_patch_install_stage_preparing">準備下載</string>
+    <string name="main_mod_agent_patch_route_connecting">正在連線至線路</string>
+    <string name="main_mod_agent_patch_route_switching">正在切換線路</string>
     <string name="main_mod_agent_patch_install_stage_downloading">下載補丁</string>
     <string name="main_mod_agent_patch_install_stage_verifying">校驗檔案</string>
     <string name="main_mod_agent_patch_install_stage_inspecting">檢查補丁內容</string>

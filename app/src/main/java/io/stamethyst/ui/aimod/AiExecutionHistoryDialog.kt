@@ -78,7 +78,7 @@ private class PreparedAiHistory(val snapshot: AiHistorySnapshot)
 
 @Composable
 internal fun AiHistorySpeedButton(speed: Double?, onClick: () -> Unit) {
-    val label = stringResource(R.string.ai_history_open)
+    val label = stringResource(R.string.ai_editor_statistics)
     Surface(onClick = onClick, color = Color.Transparent, shape = RoundedCornerShape(10.dp),
         modifier = Modifier.heightIn(min = 48.dp).testTag("ai-history-speed").semantics { contentDescription = label }) {
         Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically,
@@ -109,6 +109,21 @@ internal fun AiExecutionHistoryDialog(
 @Composable
 internal fun AiExecutionHistoryPanel(snapshot: AiHistorySnapshot?, onDismiss: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    LauncherPanelDialog(onDismissRequest = onDismiss, maxWidth = 760.dp, containerColor = colors.surfaceContainerLow) {
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.ai_history_title), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+            IconButton(onClick = onDismiss, modifier = Modifier.testTag("ai-history-close")) {
+                Icon(Icons.Close, stringResource(R.string.ai_history_close))
+            }
+        }
+        AiExecutionHistoryContent(snapshot, Modifier.weight(1f, fill = false))
+    }
+}
+
+@Composable
+internal fun AiExecutionHistoryContent(snapshot: AiHistorySnapshot?, modifier: Modifier = Modifier) {
+    val colors = MaterialTheme.colorScheme
     var expandedTurn by rememberSaveable { mutableStateOf<Long?>(null) }
     var expandedStep by rememberSaveable { mutableStateOf<String?>(null) }
     var scrollTarget by remember { mutableStateOf<Long?>(null) }
@@ -127,34 +142,19 @@ internal fun AiExecutionHistoryPanel(snapshot: AiHistorySnapshot?, onDismiss: ()
         if (index >= 0) listState.animateScrollToItem(index + 3)
         scrollTarget = null
     }
-    LauncherPanelDialog(onDismissRequest = onDismiss, maxWidth = 760.dp, containerColor = colors.surfaceContainerLow) {
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(shape = RoundedCornerShape(14.dp), color = colors.primaryContainer) {
-                Icon(painterResource(R.drawable.ic_ai_execution_history), null, Modifier.padding(10.dp).size(24.dp),
-                    tint = colors.onPrimaryContainer)
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(stringResource(R.string.ai_history_title), style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold)
-            }
-            IconButton(onClick = onDismiss, modifier = Modifier.testTag("ai-history-close")) {
-                Icon(Icons.Close, stringResource(R.string.ai_history_close))
-            }
-        }
         if (snapshot == null) {
-            Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+            Box(modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
             }
         } else if (snapshot.turns.isEmpty()) {
-            Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            Column(modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 AiHistoryGlyph(Modifier.size(52.dp))
                 Text(stringResource(R.string.ai_history_empty), style = MaterialTheme.typography.titleMedium)
             }
         } else LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).testTag("ai-history-list"),
+            modifier = modifier.fillMaxWidth().testTag("ai-history-list"),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -187,7 +187,6 @@ internal fun AiExecutionHistoryPanel(snapshot: AiHistorySnapshot?, onDismiss: ()
                 }
             }
         }
-    }
 }
 
 @Composable

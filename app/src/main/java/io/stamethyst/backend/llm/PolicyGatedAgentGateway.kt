@@ -156,36 +156,47 @@ object AgentChatModelFactory {
             emptyMap()
         }
 
-    private fun httpClientBuilder(config: OpenAiCompatibleModelConfig): AndroidCompatibleSseHttpClientBuilder {
-        val readTimeout = requestTimeout(config)
-        val timeoutSeconds = readTimeout.seconds
-        val connectTimeout = java.time.Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS)
-        val pool = connectionPoolFor(config)
-        val okHttpClient = okhttp3.OkHttpClient.Builder()
+    internal fun transportClient(
+        config: OpenAiCompatibleModelConfig,
+        streaming: Boolean = false,
+    ): okhttp3.OkHttpClient {
+        val timeoutSeconds = requestTimeout(config).seconds
+        return okhttp3.OkHttpClient.Builder()
+            .apply { LlmSettingsHttpDiagnostics.interceptor()?.let { addNetworkInterceptor(it) } }
             .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
             .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
-            .callTimeout(timeoutSeconds, TimeUnit.SECONDS)
-            .connectionPool(pool)
+            // Reads and the bound scope detect stalls; a total HTTP cap cuts off healthy thinking.
+            .callTimeout(if (streaming) 0 else timeoutSeconds, TimeUnit.SECONDS)
+            .connectionPool(connectionPoolFor(config))
             // OkHttp already retries a connection that fails before any bytes are written; keep it
             // explicit because a pooled connection can be dead when it is taken out of the pool.
             .retryOnConnectionFailure(true)
+            .build()
+    }
+
+    private fun httpClientBuilder(
+        config: OpenAiCompatibleModelConfig,
+        streaming: Boolean = false,
+    ): AndroidCompatibleSseHttpClientBuilder {
+        val readTimeout = requestTimeout(config)
+        val connectTimeout = java.time.Duration.ofSeconds(CONNECT_TIMEOUT_SECONDS)
         // Responses uses these builder values directly. Chat Completions additionally requires
         // model.timeout below: its model layer otherwise overwrites readTimeout with 60 seconds.
         return AndroidCompatibleSseHttpClientBuilder(
             dev.langchain4j.http.client.okhttp.OkHttpClientBuilder()
-                .okHttpClientBuilder(okHttpClient)
+                .okHttpClientBuilder(transportClient(config, streaming).newBuilder())
                 .connectTimeout(connectTimeout)
                 .readTimeout(readTimeout),
             connectTimeoutLimit = connectTimeout,
-            connectionPool = pool,
+            connectionPool = connectionPoolFor(config),
         )
     }
 
     fun create(config: OpenAiCompatibleModelConfig): ChatModel = when (config.endpoint) {
         LlmEndpoint.CHAT_COMPLETIONS -> OpenAiChatModel.builder()
             .httpClientBuilder(httpClientBuilder(config))
-            .baseUrl(config.baseUrl)
+            .baseUrl(requireLlmBaseUrl(config.baseUrl))
             .apiKey(config.apiKey)
             .customHeaders(affinityHeaders(config))
             .modelName(config.modelName)
@@ -199,7 +210,7 @@ object AgentChatModelFactory {
             .build()
         LlmEndpoint.RESPONSES -> OpenAiResponsesChatModel.builder()
             .httpClientBuilder(httpClientBuilder(config))
-            .baseUrl(config.baseUrl)
+            .baseUrl(requireLlmBaseUrl(config.baseUrl))
             .apiKey(config.apiKey)
             .customHeaders(affinityHeaders(config))
             .modelName(config.modelName)
@@ -212,8 +223,8 @@ object AgentChatModelFactory {
             null
         } else {
             OpenAiStreamingChatModel.builder()
-                .httpClientBuilder(httpClientBuilder(config))
-                .baseUrl(config.baseUrl)
+                .httpClientBuilder(httpClientBuilder(config, streaming = true))
+                .baseUrl(requireLlmBaseUrl(config.baseUrl))
                 .apiKey(config.apiKey)
                 .customHeaders(affinityHeaders(config))
                 .modelName(config.modelName)
@@ -364,14 +375,14 @@ class WorkspaceTextFileTool(
     workspaceRoot: File,
     private val maxBytes: Long = 64L * 1024L,
 ) : AgentTool {
-    private val canonicalWorkspaceRoot = workspaceRoot.canonicalFile
+    private val paths = AgentWorkspacePaths(workspaceRoot)
 
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("read_workspace_file")
-        .description("Read a UTF-8 text file from the agent workspace. Paths are relative to the workspace.")
+        .description("Read a UTF-8 text file from the fixed virtual workspace /. /source/, /patch_source/ and /tool_output/ are exposed.")
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Relative path of the workspace file to read.")
+                .addStringProperty("path", "Virtual path; relative paths also start at /.")
                 .required("path")
                 .additionalProperties(false)
                 .build(),
@@ -389,15 +400,12 @@ class WorkspaceTextFileTool(
                 ?.content
         }.getOrNull()?.takeIf(String::isNotBlank) ?: return failure("invalid_arguments")
 
-        val candidate = File(canonicalWorkspaceRoot, relativePath).canonicalFile
-        if (!candidate.toPath().startsWith(canonicalWorkspaceRoot.toPath())) {
-            return failure("path_outside_workspace")
-        }
+        val candidate = try { paths.resolve(relativePath) } catch (error: AgentWorkspacePathException) { return error.json() }
         if (!candidate.isFile) return failure("file_not_found")
         if (candidate.length() > maxBytes) return failure("file_too_large")
 
         return buildJsonObject {
-            put("path", JsonPrimitive(relativePath))
+            put("path", JsonPrimitive(paths.virtual(candidate)))
             put("content", JsonPrimitive(candidate.readText(Charsets.UTF_8)))
         }.toString()
     }
@@ -408,20 +416,21 @@ class WorkspaceTextFileTool(
 }
 
 class AgentWorkspaceListTool(
-    private val workspaceRoot: File,
+    workspaceRoot: File,
     private val maxEntries: Int = DEFAULT_MAX_LIST_ENTRIES,
     private val maxChars: Int = DEFAULT_MAX_LIST_CHARS,
 ) : AgentTool {
+    private val paths = AgentWorkspacePaths(workspaceRoot)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("list_agent_workspace")
         .description(
-            "List files in the selected mod's isolated agent workspace. The result is bounded, so scope " +
-                "it with 'path' (for example source or patch_source/src) when the workspace " +
+            "List files in the selected mod's virtual workspace rooted at /. The result is bounded, so scope " +
+                "it with 'path' (for example /source or /patch_source/<patch_id>/src) when the workspace " +
                 "is large; an unbounded listing is truncated.",
         )
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Optional workspace-relative directory to scope the listing.")
+                .addStringProperty("path", "Optional virtual directory; defaults to /. Relative paths also start at /.")
                 .additionalProperties(false)
                 .build(),
         )
@@ -434,19 +443,15 @@ class AgentWorkspaceListTool(
         val json = runCatching { Json.parseToJsonElement(arguments).jsonObject }.getOrNull()
             ?: return failure("invalid_arguments")
         val relativePath = json["path"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
-        val base = if (relativePath == null) {
-            workspaceRoot
-        } else {
-            resolveWorkspaceFile(workspaceRoot, relativePath) ?: return failure("path_outside_workspace")
-        }
+        val base = try { paths.resolve(relativePath ?: "/") } catch (error: AgentWorkspacePathException) { return error.json() }
         if (!base.exists()) return failure("path_not_found")
         if (base.isFile) {
             return buildJsonObject {
-                put("root", JsonPrimitive(relativePath ?: base.name))
+                put("root", JsonPrimitive(paths.virtual(base)))
                 put("file_count", JsonPrimitive(1))
                 put("truncated", JsonPrimitive(false))
                 put("files", kotlinx.serialization.json.buildJsonArray {
-                    add(JsonPrimitive(base.relativeTo(workspaceRoot).invariantSeparatorsPath))
+                    add(JsonPrimitive(paths.virtual(base)))
                 })
             }.toString()
         }
@@ -454,16 +459,16 @@ class AgentWorkspaceListTool(
         val selected = ArrayList<String>()
         var chars = 0
         var total = 0
-        base.walkTopDown().filter { it.isFile }.forEach { file ->
+        paths.files(base).forEach { file ->
             total++
             if (selected.size >= maxEntries || chars >= maxChars) return@forEach
-            val name = file.relativeTo(workspaceRoot).invariantSeparatorsPath
+            val name = paths.virtual(file)
             selected += name
             chars += name.length + 3
         }
         val truncated = selected.size < total
         return buildJsonObject {
-            put("root", JsonPrimitive(relativePath ?: "."))
+            put("root", JsonPrimitive(paths.virtual(base)))
             put("file_count", JsonPrimitive(total))
             put("returned", JsonPrimitive(selected.size))
             put("truncated", JsonPrimitive(truncated))
@@ -485,15 +490,16 @@ class AgentWorkspaceListTool(
 }
 
 class AgentWorkspaceFileTool(
-    private val workspaceRoot: File,
+    workspaceRoot: File,
     private val maxLines: Int = DEFAULT_MAX_READ_LINES,
     private val maxLineChars: Int = MAX_READ_LINE_CHARS,
     private val maxBytes: Long = DEFAULT_MAX_READ_BYTES,
 ) : AgentTool {
+    private val paths = AgentWorkspacePaths(workspaceRoot)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("read_agent_workspace_file")
         .description(
-            "Read a file in the selected mod's isolated agent workspace. Text files are read by line " +
+            "Read a file in the selected mod's virtual workspace rooted at /. Returned paths can be reused in other workspace tools. Text files are read by line " +
                 "and returned with line-number prefixes: 'offset' is the 1-indexed first line (default 1) " +
                 "and 'limit' the number of lines (default $DEFAULT_MAX_READ_LINES); a line longer than " +
                 "$MAX_READ_LINE_CHARS characters is truncated. Continue from 'next_offset' while 'truncated' " +
@@ -506,7 +512,7 @@ class AgentWorkspaceFileTool(
         )
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Relative path inside the agent workspace.")
+                .addStringProperty("path", "Virtual path such as /source/demo/A.java or /patch_source/<patch_id>/src/demo/Patch.java. Relative paths also start at /.")
                 .addStringProperty("encoding", "utf8, utf8_chars (lossless character paging), or base64; defaults to utf8.")
                 .addStringProperty(
                     "offset",
@@ -532,18 +538,19 @@ class AgentWorkspaceFileTool(
             ?: return failed("invalid_arguments")
         val relativePath = json["path"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
             ?: return failed("invalid_arguments")
-        val file = resolveWorkspaceFile(workspaceRoot, relativePath) ?: return failed("path_outside_workspace")
+        val file = try { paths.resolve(relativePath) } catch (error: AgentWorkspacePathException) { return AgentToolOutput(error.json()) }
+        val path = paths.virtual(file)
         if (!file.isFile) return failed("file_not_found")
         val encoding = json["encoding"]?.jsonPrimitive?.content?.lowercase() ?: "utf8"
         // An explicit base64 request keeps the old copyable-bytes behaviour; the default read path
         // shows an image to the model instead of dumping an unusable base64 string into context.
         if (encoding != "base64") {
-            readImage(relativePath, file)?.let { return it }
+            readImage(path, file)?.let { return it }
         }
         val text = when (encoding) {
-            "utf8" -> readText(relativePath, file, json)
-            "utf8_chars" -> readCharacters(relativePath, file, json)
-            "base64" -> readBytes(relativePath, file, json)
+            "utf8" -> readText(path, file, json)
+            "utf8_chars" -> readCharacters(path, file, json)
+            "base64" -> readBytes(path, file, json)
             else -> return failed("unsupported_encoding")
         }
         return AgentToolOutput(text)
@@ -757,21 +764,22 @@ class AgentWorkspaceFileTool(
  * [AgentWorkspaceListTool], which is capped and gives no way to ask "where are the .java sources".
  */
 class AgentWorkspaceGlobTool(
-    private val workspaceRoot: File,
+    workspaceRoot: File,
     private val maxResults: Int = DEFAULT_MAX_GLOB_RESULTS,
 ) : AgentTool {
+    private val paths = AgentWorkspacePaths(workspaceRoot)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("glob_agent_workspace")
         .description(
             "Find files in the selected mod's isolated agent workspace by glob pattern, for example " +
-                "'**/*.java' or 'source/ThMod/cards/**'. Paths are workspace-relative and always use '/' " +
+                "'**/*.java' or '/source/ThMod/cards/**'. Paths start at the fixed virtual root / and always use '/' " +
                 "separators. Prefer this over list_agent_workspace when you know the extension or a path " +
                 "fragment; the result is capped at $DEFAULT_MAX_GLOB_RESULTS matches.",
         )
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("pattern", "Glob pattern, for example '**/*.java' or 'source/ThMod/**'.")
-                .addStringProperty("path", "Optional workspace-relative directory to scope the search.")
+                .addStringProperty("pattern", "Glob matched from / (not relative to path), for example '**/*.java' or '/source/ThMod/**'. A leading / is optional.")
+                .addStringProperty("path", "Optional virtual directory to scope the search; defaults to /. Relative paths also start at /.")
                 .required("pattern")
                 .additionalProperties(false)
                 .build(),
@@ -787,36 +795,32 @@ class AgentWorkspaceGlobTool(
         val rawPattern = json["pattern"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
             ?: return failure("invalid_arguments")
         val scopeArg = json["path"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
-        val base = if (scopeArg == null) {
-            workspaceRoot
-        } else {
-            resolveWorkspaceFile(workspaceRoot, scopeArg) ?: return failure("path_outside_workspace")
-        }
+        val base = try { paths.resolve(scopeArg ?: "/") } catch (error: AgentWorkspacePathException) { return error.json() }
         if (!base.exists()) return failure("path_not_found")
         if (!base.isDirectory) return failure("not_a_directory")
 
-        val normalized = rawPattern.replace('\\', '/')
-        if (normalized.startsWith("/") || normalized.split('/').any { it == ".." }) {
+        val normalized = rawPattern.removePrefix("/")
+        if ('\\' in normalized || '\u0000' in normalized || normalized.split('/').any { it == ".." }) {
             return failure("invalid_pattern")
         }
         val matches = compileGlob(normalized) ?: return failure("invalid_pattern")
 
         val matched = ArrayList<String>()
         var truncated = false
-        base.walkTopDown().filter { it.isFile }.forEach { file ->
+        paths.files(base).forEach { file ->
             if (matched.size >= maxResults) {
                 truncated = true
                 return@forEach
             }
-            val relative = file.relativeTo(workspaceRoot).invariantSeparatorsPath
-            if (matches(relative)) matched += relative
+            val path = paths.virtual(file)
+            if (matches(path.removePrefix("/"))) matched += path
         }
         matched.sort()
         val capped = truncated || matched.size > maxResults
         val returned = matched.take(maxResults)
         return buildJsonObject {
             put("pattern", JsonPrimitive(normalized))
-            put("root", JsonPrimitive(scopeArg ?: "."))
+            put("root", JsonPrimitive(paths.virtual(base)))
             put("returned", JsonPrimitive(returned.size))
             put("truncated", JsonPrimitive(capped))
             if (capped) {
@@ -842,23 +846,24 @@ class AgentWorkspaceGlobTool(
  * number, and a truncated line preview, and the result stops at [DEFAULT_MAX_GREP_MATCHES] lines.
  */
 class AgentWorkspaceGrepTool(
-    private val workspaceRoot: File,
+    workspaceRoot: File,
     private val maxMatches: Int = DEFAULT_MAX_GREP_MATCHES,
     private val maxLineChars: Int = MAX_GREP_LINE_CHARS,
 ) : AgentTool {
+    private val paths = AgentWorkspacePaths(workspaceRoot)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("grep_agent_workspace")
         .description(
             "Search the text of files in the selected mod's isolated agent workspace by regular " +
                 "expression. Returns matching lines as file:line: text, capped at $DEFAULT_MAX_GREP_MATCHES " +
                 "matches. Use 'include' to restrict files (for example '*.java' or '*.json'). Matches that " +
-                "contain NUL bytes are treated as binary and skipped.",
+                "contain NUL bytes are treated as binary and skipped. Paths use the fixed virtual root /.",
         )
         .parameters(
             JsonObjectSchema.builder()
                 .addStringProperty("pattern", "Java regular expression, for example 'CustomRelic|addCard'.")
-                .addStringProperty("path", "Optional workspace-relative directory to scope the search.")
-                .addStringProperty("include", "Optional glob applied to the workspace-relative path, for example '*.java'.")
+                .addStringProperty("path", "Optional virtual file or directory to scope the search; defaults to /. Relative paths also start at /.")
+                .addStringProperty("include", "Optional glob applied from / or to the filename, for example '*.java' or '/patch_source/**/*.java'.")
                 .required("pattern")
                 .additionalProperties(false)
                 .build(),
@@ -875,11 +880,7 @@ class AgentWorkspaceGrepTool(
             ?: return failure("invalid_arguments")
         val scopeArg = json["path"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
         val includeArg = json["include"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
-        val base = if (scopeArg == null) {
-            workspaceRoot
-        } else {
-            resolveWorkspaceFile(workspaceRoot, scopeArg) ?: return failure("path_outside_workspace")
-        }
+        val base = try { paths.resolve(scopeArg ?: "/") } catch (error: AgentWorkspacePathException) { return error.json() }
         if (!base.exists()) return failure("path_not_found")
 
         val regex = try {
@@ -887,7 +888,8 @@ class AgentWorkspaceGrepTool(
         } catch (error: IllegalArgumentException) {
             return failure("invalid_pattern")
         }
-        val includeGlob = includeArg?.let { compileGlob(it.replace('\\', '/')) }
+        if (includeArg != null && ('\\' in includeArg || '\u0000' in includeArg || includeArg.split('/').any { it == ".." })) return failure("invalid_include")
+        val includeGlob = includeArg?.let { compileGlob(it.removePrefix("/")) }
         if (includeArg != null && includeGlob == null) return failure("invalid_include")
         val include = includeGlob
 
@@ -895,16 +897,16 @@ class AgentWorkspaceGrepTool(
         if (base.isFile) {
             files += base
         } else {
-            base.walkTopDown().filter { it.isFile }.forEach { files += it }
+            paths.files(base).forEach { files += it }
         }
-        files.sortBy { it.relativeTo(workspaceRoot).invariantSeparatorsPath }
+        files.sortBy { paths.virtual(it) }
 
         val matches = ArrayList<GrepMatch>()
         var truncated = false
         var searchedFiles = 0
         for (file in files) {
-            val relative = file.relativeTo(workspaceRoot).invariantSeparatorsPath
-            if (include != null && !include(relative) && !include(file.name)) continue
+            val relative = paths.virtual(file)
+            if (include != null && !include(relative.removePrefix("/")) && !include(file.name)) continue
             if (file.length() > MAX_GREP_FILE_BYTES) continue
             val content = runCatching { file.readText(Charsets.UTF_8) }.getOrElse { continue }
             if (content.indexOf('\u0000') >= 0) continue
@@ -925,7 +927,7 @@ class AgentWorkspaceGrepTool(
         return buildJsonObject {
             put("pattern", JsonPrimitive(patternArg))
             if (includeArg != null) put("include", JsonPrimitive(includeArg))
-            put("root", JsonPrimitive(scopeArg ?: "."))
+            put("root", JsonPrimitive(paths.virtual(base)))
             put("searched_files", JsonPrimitive(searchedFiles))
             put("returned", JsonPrimitive(matches.size))
             put("truncated", JsonPrimitive(truncated))
@@ -958,15 +960,16 @@ class AgentWorkspaceGrepTool(
 }
 
 class AgentWorkspaceWriteTool(
-    private val workspaceRoot: File,
+    workspaceRoot: File,
     private val maxBytes: Long = 64L * 1024L * 1024L,
 ) : AgentTool {
+    private val paths = AgentWorkspacePaths(workspaceRoot)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("write_agent_workspace_file")
-        .description("Create or replace a file under patch_source/<patch_id>/ in the selected mod's agent workspace. Prefer edit_agent_workspace_file for small changes to existing text files; use this tool for creation or intentional full replacement. Use the patch_workspace_path returned by create_agent_patch_workspace. The source/ tree is read-only and cannot be modified by the agent.")
+        .description("Create or replace a file under /patch_source/<patch_id>/ in the selected mod's virtual workspace rooted at /. Prefer edit_agent_workspace_file for small changes to existing text files; use this tool for creation or intentional full replacement. Use the patch_workspace_path returned by create_agent_patch_workspace. /source/ and /tool_output/ are read-only. Paths never depend on the active patch.")
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Workspace-relative path under patch_source/<patch_id>/.")
+                .addStringProperty("path", "Virtual path under /patch_source/<patch_id>/. Relative paths also start at /, never inside the active patch.")
                 .addStringProperty("content", "UTF-8 file content.")
                 .addStringProperty("contentBase64", "Binary content encoded as base64.")
                 .required("path")
@@ -983,7 +986,7 @@ class AgentWorkspaceWriteTool(
             ?: return failure("invalid_arguments")
         val relativePath = json["path"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
             ?: return failure("invalid_arguments")
-        val target = resolvePatchSourceFile(workspaceRoot, relativePath) ?: return failure("path_outside_patch_source")
+        val target = try { paths.resolve(relativePath, writable = true) } catch (error: AgentWorkspacePathException) { return error.json() }
         val hasText = json["content"] != null
         val hasBytes = json["contentBase64"] != null
         if (hasText == hasBytes) return failure("provide_exactly_one_content_field")
@@ -995,24 +998,25 @@ class AgentWorkspaceWriteTool(
         target.parentFile?.mkdirs()
         runCatching { target.writeBytes(bytes) }.getOrElse { return failure("write_failed") }
         return buildJsonObject {
-            put("path", JsonPrimitive(relativePath))
+            put("path", JsonPrimitive(paths.virtual(target)))
             put("bytes", JsonPrimitive(bytes.size))
         }.toString()
     }
 }
 
 class AgentWorkspaceDeleteTool(
-    private val workspaceRoot: File,
+    workspaceRoot: File,
 ) : AgentTool {
+    private val paths = AgentWorkspacePaths(workspaceRoot)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("delete_agent_workspace_file")
         .description(
-            "Delete a file or directory under patch_source/<patch_id>/ in the selected mod's agent workspace. Pass " +
-                "recursive=true to delete a directory and everything under it. The source/ tree is read-only.",
+            "Delete a file or subdirectory under /patch_source/<patch_id>/ in the fixed virtual workspace /. Pass " +
+                "recursive=true to delete a directory and everything under it. /source/ and /tool_output/ are read-only. Use delete_agent_patch_mod to remove an entire patch revision.",
         )
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Workspace-relative path under patch_source/<patch_id>/.")
+                .addStringProperty("path", "Virtual path under /patch_source/<patch_id>/. Relative paths also start at /.")
                 .addBooleanProperty("recursive", "Delete a non-empty directory and everything under it. Defaults to false.")
                 .required("path")
                 .additionalProperties(false)
@@ -1029,25 +1033,28 @@ class AgentWorkspaceDeleteTool(
         val relativePath = json["path"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
             ?: return failure("invalid_arguments")
         val recursive = json["recursive"]?.jsonPrimitive?.booleanOrNull ?: false
-        val target = resolvePatchSourceFile(workspaceRoot, relativePath, allowRoot = true) ?: return failure("path_outside_patch_source")
-        val targetPath = target.toPath()
-        if (targetPath == File(workspaceRoot, "patch_source").canonicalFile.toPath()) {
-            return failure("cannot_delete_patch_source_root")
-        }
+        val target = try { paths.resolve(relativePath, writable = true, deleting = true) } catch (error: AgentWorkspacePathException) { return error.json() }
         if (!target.exists()) return failure("file_not_found")
 
         val wasDirectory = target.isDirectory
-        val deletedFiles = if (wasDirectory && recursive) target.walkBottomUp().count { it.isFile } else 0
+        var deletedFiles = 0
         val deleted = runCatching {
-            if (wasDirectory && !recursive) {
-                target.delete()
+            if (wasDirectory && recursive) {
+                paths.checkDeleteTree(target)
+                java.nio.file.Files.walk(target.toPath()).use { entries ->
+                    val all = entries.sorted(Comparator.reverseOrder()).collect(java.util.stream.Collectors.toList())
+                    deletedFiles = all.count { java.nio.file.Files.isRegularFile(it, java.nio.file.LinkOption.NOFOLLOW_LINKS) }
+                    all.forEach { java.nio.file.Files.delete(it) }
+                }
+                true
             } else {
-                target.deleteRecursively()
+                deletedFiles = 0
+                target.delete()
             }
-        }.getOrElse { return failure("delete_failed") }
+        }.getOrElse { return if (it is AgentWorkspacePathException) it.json() else failure("delete_failed") }
         if (!deleted && target.exists()) return failure("delete_failed")
         return buildJsonObject {
-            put("path", JsonPrimitive(relativePath))
+            put("path", JsonPrimitive(paths.virtual(target)))
             put("type", JsonPrimitive(if (wasDirectory) "directory" else "file"))
             put("files_deleted", JsonPrimitive(deletedFiles))
         }.toString()
@@ -1196,7 +1203,7 @@ class AgentModClassDecompileTool(
             put("mod_id", JsonPrimitive(target.modId))
             put("materialized", JsonPrimitive(materialize))
             if (sourceFile != null && inspection != null) {
-                put("source_path", JsonPrimitive(sourceFile.relativeTo(inspection.root).invariantSeparatorsPath))
+                put("source_path", JsonPrimitive(AgentWorkspacePaths(inspection.root).virtual(sourceFile)))
                 put("source_sha256", JsonPrimitive(inspection.sourceSha256))
             }
             put("source", JsonPrimitive(result.source))
@@ -1765,19 +1772,19 @@ class AgentPatchWorkspaceCreateTool(
             put("status", JsonPrimitive("created"))
             put("parent_mod_id", JsonPrimitive(workspace.parentModId))
             put("patch_id", JsonPrimitive(workspace.patchId))
-            put("workspace_root", JsonPrimitive(workspace.root.absolutePath))
-            put("source_root", JsonPrimitive(workspace.sourceRoot.absolutePath))
-            put("patch_root", JsonPrimitive(workspace.patchRoot.absolutePath))
+            put("workspace_root", JsonPrimitive("/"))
+            put("source_root", JsonPrimitive("/source"))
+            put("patch_root", JsonPrimitive(AgentWorkspacePaths(workspace.root).virtual(workspace.patchRoot)))
             put(
                 "patch_workspace_path",
-                JsonPrimitive(workspace.patchRoot.relativeTo(workspace.root).invariantSeparatorsPath),
+                JsonPrimitive(AgentWorkspacePaths(workspace.root).virtual(workspace.patchRoot)),
             )
             put(
                 "source_note",
                 JsonPrimitive(
-                    "source/ is an on-demand read-only cache for parent classes; use inspect_agent_class, " +
+                    "/source/ is an on-demand read-only cache for parent classes; use inspect_agent_class, " +
                         "decompile_agent_class, and read_agent_mod_resource to access the JAR. " +
-                        "This patch mod's files belong under patch_source/${workspace.patchId}/.",
+                        "This patch mod's files belong under /patch_source/${workspace.patchId}/.",
                 ),
             )
         }.toString()
@@ -1831,12 +1838,13 @@ class AgentPatchModCompileTool(
         }
         val result = runCatching {
             AgentPatchSourceCompiler.compile(context, activeWorkspace, parentJar)
-        }.getOrElse { return failure(it.message ?: "compile_failed") }
+        }.getOrElse { return failure(AgentWorkspacePaths(activeWorkspace.root).diagnostics(it.message ?: "compile_failed")) }
         return buildJsonObject {
             put("status", JsonPrimitive(if (result.success) "compiled" else "failed"))
             put("patch_id", JsonPrimitive(activeWorkspace.patchId))
+            put("patch_workspace_path", JsonPrimitive(AgentWorkspacePaths(activeWorkspace.root).virtual(activeWorkspace.patchRoot)))
             put("compiled_class_count", JsonPrimitive(result.compiledClassCount))
-            put("diagnostics", JsonPrimitive(result.diagnostics))
+            put("diagnostics", JsonPrimitive(AgentWorkspacePaths(activeWorkspace.root).diagnostics(result.diagnostics)))
         }.toString()
     }
 
@@ -1875,8 +1883,8 @@ class AgentModSourceDecompileTool(
             put("status", JsonPrimitive("ready"))
             put("parent_mod_id", JsonPrimitive(inspection.parentModId))
             put("inspection_id", JsonPrimitive(inspection.inspectionId))
-            put("workspace_root", JsonPrimitive(inspection.root.absolutePath))
-            put("source_root", JsonPrimitive(inspection.sourceRoot.absolutePath))
+            put("workspace_root", JsonPrimitive("/"))
+            put("source_root", JsonPrimitive("/source"))
             put("source_mode", JsonPrimitive("on_demand"))
             put("source_sha256", JsonPrimitive(inspection.sourceSha256))
             put("next_step", JsonPrimitive("Call decompile_agent_class or read_agent_mod_resource."))
@@ -1951,7 +1959,7 @@ class AgentPatchTargetInspectTool(
             put("status", JsonPrimitive("inspected"))
             put("target_class", JsonPrimitive(inspection.targetClassName))
             put("member", JsonPrimitive(inspection.memberName))
-            put("class_origin", JsonPrimitive(inspection.classOrigin))
+            put("class_origin", JsonPrimitive(File(inspection.classOrigin).name))
             put("overloads", kotlinx.serialization.json.buildJsonArray {
                 inspection.overloads.forEachIndexed { index, signature ->
                     if (overloadIndex != null && index != overloadIndex) return@forEachIndexed
@@ -2044,6 +2052,18 @@ class AgentPatchSkeletonTool(
         if (targetClass.isBlank() || member.isBlank() || packageName.isBlank() || className.isBlank()) {
             return failure("invalid_arguments")
         }
+        val paths = AgentWorkspacePaths(activeWorkspace.root)
+        // Generation is also a workspace mutation: validate its destination before creating a file.
+        val destination = try {
+            paths.resolve("${paths.virtual(activeWorkspace.patchRoot)}/src/${packageName.replace('.', '/')}/$className.java", writable = true)
+        } catch (error: AgentWorkspacePathException) { return error.json() }
+        if (destination.exists() && !overwrite) {
+            return buildJsonObject {
+                put("error", JsonPrimitive("source_already_exists"))
+                put("path", JsonPrimitive(paths.virtual(destination)))
+                put("hint", JsonPrimitive("Read and edit this file, or explicitly pass overwrite=true to regenerate it."))
+            }.toString()
+        }
         val classpath = runCatching { AgentPatchSourceCompiler.resolveCompileClasspath(context, parentJar) }
             .getOrElse { return failure(it.message ?: "classpath_failed") }
         val skeleton = runCatching {
@@ -2058,10 +2078,11 @@ class AgentPatchSkeletonTool(
                 classpath = classpath,
                 overwrite = overwrite,
             )
-        }.getOrElse { return failure(it.message ?: "skeleton_generation_failed") }
+        }.getOrElse { return failure(AgentWorkspacePaths(activeWorkspace.root).diagnostics(it.message ?: "skeleton_generation_failed")) }
         return buildJsonObject {
             put("status", JsonPrimitive("generated"))
-            put("path", JsonPrimitive(skeleton.file.relativeTo(activeWorkspace.patchRoot).invariantSeparatorsPath))
+            put("patch_id", JsonPrimitive(activeWorkspace.patchId))
+            put("path", JsonPrimitive(AgentWorkspacePaths(activeWorkspace.root).virtual(skeleton.file)))
             put("target_class", JsonPrimitive(skeleton.targetClassName))
             put("member", JsonPrimitive(skeleton.memberName))
             put("descriptor", JsonPrimitive(skeleton.descriptor))
@@ -2128,14 +2149,14 @@ private fun runPreflight(
     val classpath = runCatching { AgentPatchSourceCompiler.resolveCompileClasspath(context, parentJar) }
         .getOrElse { return buildJsonObject { put("error", JsonPrimitive(it.message ?: "classpath_failed")) }.toString() }
     val result = runCatching { AgentPatchPreflight.validate(workspace.patchRoot, classpath) }
-        .getOrElse { return buildJsonObject { put("error", JsonPrimitive(it.message ?: "preflight_failed")) }.toString() }
+        .getOrElse { return buildJsonObject { put("error", JsonPrimitive(AgentWorkspacePaths(workspace.root).diagnostics(it.message ?: "preflight_failed"))) }.toString() }
     return buildJsonObject {
         put("status", JsonPrimitive(if (result.valid) "valid" else "failed"))
         put("patch_class_count", JsonPrimitive(result.patchClassCount))
         put("patch_annotation_count", JsonPrimitive(result.patchAnnotationCount))
         put("patch_initializer_count", JsonPrimitive(result.patchInitializerCount))
-        put("issues", kotlinx.serialization.json.buildJsonArray { result.issues.forEach { add(JsonPrimitive(it)) } })
-        put("warnings", kotlinx.serialization.json.buildJsonArray { result.warnings.forEach { add(JsonPrimitive(it)) } })
+        put("issues", kotlinx.serialization.json.buildJsonArray { result.issues.forEach { add(JsonPrimitive(AgentWorkspacePaths(workspace.root).patchDiagnostic(it, workspace.patchRoot))) } })
+        put("warnings", kotlinx.serialization.json.buildJsonArray { result.warnings.forEach { add(JsonPrimitive(AgentWorkspacePaths(workspace.root).patchDiagnostic(it, workspace.patchRoot))) } })
     }.toString()
 }
 
@@ -2205,7 +2226,8 @@ class AgentPatchModPackageTool(
             put("parent_mod_id", JsonPrimitive(activeWorkspace.parentModId))
             put("patch_id", JsonPrimitive(info.patchId))
             put("patch_mod_id", JsonPrimitive(info.patchModId))
-            put("jar_path", JsonPrimitive(info.jarFile.absolutePath))
+            put("jar_name", JsonPrimitive(info.jarFile.name))
+            put("patch_workspace_path", JsonPrimitive(AgentWorkspacePaths(activeWorkspace.root).virtual(activeWorkspace.patchRoot)))
             put("enabled", JsonPrimitive(info.enabled))
             put("next_step", JsonPrimitive("Ask the user whether to enable this packaged patch mod."))
         }.toString()
@@ -2307,7 +2329,8 @@ class AgentPatchModUpdateTool(
             put("patch_mod_id", JsonPrimitive(info.patchModId))
             put("name", JsonPrimitive(info.name))
             put("version", JsonPrimitive(info.version))
-            put("jar_path", JsonPrimitive(info.jarFile.absolutePath))
+            put("jar_name", JsonPrimitive(info.jarFile.name))
+            put("patch_workspace_path", JsonPrimitive(AgentWorkspacePaths(workspace.root).virtual(workspace.patchRoot)))
             put("enabled", JsonPrimitive(info.enabled))
         }.toString()
     }
@@ -2385,6 +2408,7 @@ class AgentPatchModListTool(
             AgentPatchModManager.listPackaged(context, parentModId).forEach { patch ->
                 add(buildJsonObject {
                     put("patch_id", JsonPrimitive(patch.patchId))
+                    put("patch_workspace_path", JsonPrimitive("/patch_source/${patch.patchId}"))
                     put("patch_mod_id", JsonPrimitive(patch.patchModId))
                     put("name", JsonPrimitive(patch.name))
                     put("version", JsonPrimitive(patch.version))
@@ -2436,31 +2460,9 @@ class AgentPatchModDeleteTool(
     }.toString()
 }
 
-private fun resolveWorkspaceFile(root: File, relativePath: String): File? {
-    val candidate = File(root, relativePath).canonicalFile
-    return candidate.takeIf { it.toPath().startsWith(root.canonicalFile.toPath()) }
-}
-
 /** Reads an integer tool argument that arrives as a JSON string. */
 private fun JsonObject.intParam(name: String): Int? =
     this[name]?.jsonPrimitive?.content?.toIntOrNull()
-
-internal fun resolvePatchSourceFile(root: File, relativePath: String, allowRoot: Boolean = false): File? = runCatching {
-    if (File(relativePath).isAbsolute) return@runCatching null
-    val candidate = resolveWorkspaceFile(root, relativePath) ?: return@runCatching null
-    val patchSourceRoot = File(root.canonicalFile, "patch_source")
-    // A symlinked patch_source root must not turn source/ (or another tree) into writable data.
-    if (patchSourceRoot.canonicalFile != patchSourceRoot) return@runCatching null
-    val candidatePath = candidate.toPath()
-    val patchSourcePath = patchSourceRoot.toPath()
-    if (!candidatePath.startsWith(patchSourcePath)) return@runCatching null
-    // Delete needs to distinguish this case for its explicit cannot-delete-root error.
-    if (candidatePath == patchSourcePath) return@runCatching candidate.takeIf { allowRoot }
-    val relative = patchSourcePath.relativize(candidatePath)
-    candidate.takeIf {
-        relative.nameCount >= 2 && relative.getName(0).toString().startsWith("patch-")
-    }
-}.getOrNull()
 
 private fun failure(code: String): String = buildJsonObject {
     put("error", JsonPrimitive(code))
@@ -2568,6 +2570,7 @@ class PolicyGatedAgentGateway(
     private val sleep: (Long) -> Unit = { Thread.sleep(it) },
     /** Stable configuration snapshot; includes endpoint/model/reasoning changes, never logged. */
     private val currentModelConfiguration: (() -> Any)? = null,
+    private val onNonStreamingThinking: (String) -> Unit = {},
 ) {
     private val toolScheduler = AgentToolScheduler(toolRegistry, maxParallelTools, checkCancelled)
     private val ownsRequestControl = requestControl == null
@@ -2578,7 +2581,7 @@ class PolicyGatedAgentGateway(
     private var progressStop: String? = null
 
     fun respond(systemPrompt: String, userPrompt: String): AgentReply =
-        runConversation(systemPrompt, userPrompt, null, onNonStreamingText, {})
+        runConversation(systemPrompt, userPrompt, null, onNonStreamingText, onNonStreamingThinking)
 
     fun respondStreaming(
         systemPrompt: String,
@@ -2616,7 +2619,7 @@ class PolicyGatedAgentGateway(
                 publishExecutionStep(agentErrorStep("PROGRESS", explanation))
                 throw AgentExecutionLimitException(explanation)
             }
-            // One budget spans retries, empty responses, fallback, backoff and radio recovery.
+            // Retries/fallback/recovery share a budget, renewed only by meaningful stream progress.
             val budget = AgentRoundBudget(streamingTimeoutMillis, requestClock)
             var lastResult: StreamingResult? = null
             var accepted: StreamingResult? = null
@@ -2624,7 +2627,7 @@ class PolicyGatedAgentGateway(
             for (attempt in 0..MAX_EMPTY_RETRIES) {
                 val candidate = modelTurn(messages, budget, useStream) { activeMessages, scope ->
                     if (useStream) streamRequest(requireNotNull(stream), activeMessages, onText, onThinking, scope)
-                    else syncRequest(activeModel, activeMessages)
+                    else syncRequest(activeModel, activeMessages, onThinking)
                 }
                 val message = candidate.response.aiMessage()
                 lastResult = candidate
@@ -2644,7 +2647,7 @@ class PolicyGatedAgentGateway(
                 // cannot assemble, so the round arrives with no text and no tool call. Retrying the
                 // same streamed request rarely helps; re-issue it non-streaming, where the tool call
                 // is read straight from the response body.
-                val fallback = modelTurn(messages, budget, false) { activeMessages, _ -> syncRequest(activeModel, activeMessages) }
+                val fallback = modelTurn(messages, budget, false) { activeMessages, _ -> syncRequest(activeModel, activeMessages, onThinking) }
                 lastResult = fallback
                 val fallbackMessage = fallback.response.aiMessage()
                 val fallbackText = fallback.text
@@ -2688,9 +2691,10 @@ class PolicyGatedAgentGateway(
         if (reason == "LENGTH" || reason == "CONTENT_FILTER") throw AgentResponseTerminatedException(reason)
     }
 
-    private fun syncRequest(model: ChatModel, messages: List<ChatMessage>): StreamingResult {
+    private fun syncRequest(model: ChatModel, messages: List<ChatMessage>, onThinking: (String) -> Unit): StreamingResult {
         val startedAt = requestClock.nowMillis()
-        val response = model.chat(chatRequest(messages))
+        val response = parseAgentThinkingContent(model.chat(chatRequest(messages)))
+        response.aiMessage().thinking()?.takeIf { it.isNotEmpty() }?.let(onThinking)
         val elapsed = requestClock.nowMillis() - startedAt
         response.tokenUsage()?.outputTokenCount()?.takeIf { it > 0 }?.let {
             if (elapsed > 0) onOutputSpeed(it.toDouble() * 1_000 / elapsed)
@@ -2773,7 +2777,10 @@ class PolicyGatedAgentGateway(
         publishExecutionStep(timer.step)
         val result = try {
             val total = budget.requestTimeoutMillis(streamingTimeoutMillis)
-            control.newRequest(agentAttemptPolicy(total, streaming)).use { scope ->
+            val policy = agentAttemptPolicy(total, streaming, progressTimeoutMillis = streamingTimeoutMillis)
+            control.newRequest(policy, onProgress = {
+                if (streaming) budget.onMeaningfulEvent()
+            }).use { scope ->
                 try {
                     scope.bind { request(messages, scope) }.also { scope.throwIfStopped() }
                 } catch (error: Throwable) {
@@ -2996,15 +3003,16 @@ class PolicyGatedAgentGateway(
         return builder.toString()
     }
 
-    /** Writes the full tool result under the workspace and returns its workspace-relative path. */
+    /** Writes the full tool result under the workspace and returns a reusable virtual path. */
     private fun persistToolResult(result: String): String? {
         val root = agentWorkspaceRoot ?: return null
         return runCatching {
             val directory = File(root, TOOL_OUTPUT_DIR)
+            AgentWorkspacePaths(root).resolve("/$TOOL_OUTPUT_DIR")
             if (!directory.isDirectory && !directory.mkdirs()) return null
             val name = "tool-output-${System.currentTimeMillis()}-${java.util.UUID.randomUUID().toString().take(8)}.txt"
             File(directory, name).writeText(result, Charsets.UTF_8)
-            "$TOOL_OUTPUT_DIR/$name"
+            AgentWorkspacePaths(root).virtual(File(directory, name))
         }.getOrNull()
     }
 
@@ -3048,6 +3056,12 @@ class PolicyGatedAgentGateway(
         val failure = java.util.concurrent.atomic.AtomicReference<Throwable?>()
         val closed = java.util.concurrent.atomic.AtomicBoolean(false)
         val text = StringBuilder()
+        val contentParser = AgentThinkingContentParser({ value ->
+            text.append(value)
+            onText(value)
+        }, onThinking)
+        var receivedContent = false
+        var receivedThinking = false
         try {
           streamingModel.chat(
             chatRequest(messages),
@@ -3056,8 +3070,8 @@ class PolicyGatedAgentGateway(
                     synchronized(lock) {
                         if (closed.get()) return
                         if (partialResponse.isNotEmpty()) scope.onMeaningfulEvent()
-                        text.append(partialResponse)
-                        onText(partialResponse)
+                        if (partialResponse.isNotEmpty()) receivedContent = true
+                        contentParser.append(partialResponse)
                     }
                 }
 
@@ -3066,6 +3080,7 @@ class PolicyGatedAgentGateway(
                         if (closed.get()) return
                         val value = partialThinking.text()
                         if (value.isNotEmpty()) {
+                            receivedThinking = true
                             scope.onMeaningfulEvent()
                             onThinking(value)
                         }
@@ -3081,7 +3096,11 @@ class PolicyGatedAgentGateway(
                 override fun onCompleteResponse(completed: ChatResponse) {
                     synchronized(lock) {
                         if (closed.getAndSet(true)) return
-                        response.set(completed)
+                        if (!receivedThinking) completed.aiMessage().thinking()
+                            ?.takeIf { it.isNotEmpty() }?.let(onThinking)
+                        if (!receivedContent) contentParser.append(completed.aiMessage().text().orEmpty())
+                        contentParser.finish()
+                        response.set(parseAgentThinkingContent(completed))
                         lock.notifyAll()
                     }
                 }

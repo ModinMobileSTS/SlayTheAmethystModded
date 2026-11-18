@@ -294,6 +294,51 @@ class LlmSettingsViewModelTest {
         assertEquals("", repository.get().modelName)
     }
 
+    @Test fun fetchedModelsReplaceSavedAndPendingModelsAndSelectFirstWhenPreviousIsMissing() {
+        repository.set(initial)
+        val editor = editor()
+        editor.model.addModels(listOf("pending-custom"))
+        editor.model.edit(LlmSettingsPatch(requestTimeoutSeconds = 600))
+
+        editor.model.replaceModels(listOf(" remote-a ", "remote-b", "remote-a", " "))
+
+        val expected = initial.copy(
+            models = listOf("remote-a", "remote-b"), modelName = "remote-a", requestTimeoutSeconds = 600,
+        )
+        assertEquals(expected, editor.model.settings)
+        editor.flush()
+        assertEquals(expected, repository.get())
+        assertEquals(expected, LlmSettingsRepository(contextFor(preferences.reopen())).get())
+    }
+
+    @Test fun replacingModelsPreservesLatestSelectionWhenStillAvailableAndCustomModelsStillAppend() {
+        repository.set(initial)
+        val first = editor()
+        val second = editor()
+        second.model.edit(LlmSettingsPatch(modelName = "remote-b", models = listOf("remote-b")))
+        second.flush()
+
+        first.model.replaceModels(listOf("remote-a", "remote-b"))
+        assertEquals("remote-b", first.model.settings.modelName)
+        first.model.addModels(listOf("custom", "remote-a"))
+        first.flush()
+        assertEquals(initial.copy(
+            models = listOf("remote-a", "remote-b", "custom"), modelName = "remote-b",
+        ), repository.get())
+    }
+
+    @Test fun emptyFetchedModelsClearSavedModelsAndSelection() {
+        repository.set(initial)
+        val editor = editor()
+
+        editor.model.replaceModels(emptyList())
+
+        assertEquals(emptyList<String>(), editor.model.settings.models)
+        assertEquals("", editor.model.settings.modelName)
+        editor.flush()
+        assertEquals(initial.copy(models = emptyList(), modelName = ""), repository.get())
+    }
+
     private fun editor(ioDispatcher: CoroutineDispatcher = Dispatchers.Unconfined): Editor = Editor(ioDispatcher).also(editors::add)
 
     private inner class Editor(ioDispatcher: CoroutineDispatcher) {

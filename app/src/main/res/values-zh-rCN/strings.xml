@@ -818,11 +818,12 @@
     <string name="main_mod_agent_patch_upload_confirm">上传</string>
     <string name="main_mod_agent_patch_upload_failed">AI 补丁上传失败：%1$s</string>
     <string name="main_mod_agent_patch_install_failed">AI 补丁安装失败：%1$s</string>
-    <string name="main_mod_agent_patch_install_success">已安装 AI 补丁：%1$s</string>
     <string name="main_mod_agent_patch_install_progress_title">正在安装 AI 补丁</string>
     <string name="main_mod_agent_patch_install_done_title">安装完成</string>
     <string name="main_mod_agent_patch_install_failed_title">安装失败</string>
     <string name="main_mod_agent_patch_install_stage_preparing">准备下载</string>
+    <string name="main_mod_agent_patch_route_connecting">正在连接线路</string>
+    <string name="main_mod_agent_patch_route_switching">正在切换线路</string>
     <string name="main_mod_agent_patch_install_stage_downloading">下载补丁</string>
     <string name="main_mod_agent_patch_install_stage_verifying">校验文件</string>
     <string name="main_mod_agent_patch_install_stage_inspecting">检查补丁内容</string>

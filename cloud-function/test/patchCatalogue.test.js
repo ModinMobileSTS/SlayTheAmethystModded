@@ -8,11 +8,11 @@ const { parsePatchUpload, publishPatchUpload, ensurePatchUploadsConfigured } = r
 const { loadPatchCatalogueConfig } = require('../src/config');
 const { metadata, jar, zip, config, githubFixture } = require('../test-support/patchFixtures');
 
-function uploadRequest(data = metadata(), { source, consent = { publicEmail: true, redistribution: true } } = {}) {
+function uploadRequest(data = metadata(), { source, patchModId, consent = { publicEmail: true, redistribution: true } } = {}) {
   return {
     is: (type) => type === 'multipart/form-data',
     body: { metadata: JSON.stringify(data), consent: JSON.stringify(consent) },
-    files: { jar: [{ buffer: jar(data) }], ...(source ? { source: [{ buffer: source }] } : {}) }
+    files: { jar: [{ buffer: jar(data, [], patchModId) }], ...(source ? { source: [{ buffer: source }] } : {}) }
   };
 }
 
@@ -86,7 +86,7 @@ test('uploads without Workshop IDs coexist with known IDs and allow adding or om
   const local = await parse(data);
   await publishPatchUpload(local, config());
   assert.deepEqual(JSON.parse(fixture.read(`${local.path}/metadata.json`)), data);
-  await publishPatchUpload(await parse(metadata({ name: 'Known ID' })), config());
+  await publishPatchUpload(await parse(metadata({ name: 'Known ID' }), { patchModId: 'known_patch' }), config());
   await publishPatchUpload(await parse(metadata()), config());
   await publishPatchUpload(local, config());
   const conflicting = metadata({ name: 'Conflicting', target: { ...data.target, workshopId: '123' } });
@@ -117,6 +117,131 @@ test('source ZIP replaces src atomically and removes stale source files', async 
   await publishPatchUpload(second, config());
   assert.ok(!fixture.paths().includes(`${first.path}/src/old.java`));
   assert.equal(fixture.read(`${first.path}/src/new.java`), 'new');
+});
+
+test('patch ID overwrite migrates renamed patch/author atomically and preserves omitted source and extra files', async (t) => {
+  const fixture = githubFixture(t);
+  const first = await parse(metadata(), { source: zip([{ name: 'old.java', content: 'old source' }]) });
+  await publishPatchUpload(first, config());
+  fixture.addFiles({ [`${first.path}/notes.txt`]: 'keep me' });
+  const unrelated = await parse(metadata({ name: 'Unrelated' }), { patchModId: 'unrelated_patch' });
+  await publishPatchUpload(unrelated, config());
+  const before = fixture.head();
+  const data = metadata({
+    name: 'Renamed Patch', version: '2.0.0', jar: 'Updated.jar',
+    author: { name: 'New Player', email: 'new@example.com' }
+  });
+  const update = await parse(data);
+  const result = await publishPatchUpload(update, config());
+  assert.equal(fixture.git(['rev-list', '--count', `${before}..${fixture.head()}`]), '1');
+  assert.equal(result.path, update.path);
+  assert.ok(!fixture.paths().some((name) => name.startsWith(`${first.path}/`)));
+  assert.deepEqual(JSON.parse(fixture.read(`${update.path}/metadata.json`)), data);
+  assert.ok(fixture.paths().includes(`${update.path}/Updated.jar`));
+  assert.ok(!fixture.paths().includes(`${update.path}/${first.metadata.jar}`));
+  assert.equal(fixture.read(`${update.path}/src/old.java`), 'old source');
+  assert.equal(fixture.read(`${update.path}/notes.txt`), 'keep me');
+  assert.deepEqual(JSON.parse(fixture.read(`${unrelated.path}/metadata.json`)), unrelated.metadata);
+  assert.equal(fixture.git(['show', '-s', '--format=%an <%ae>', fixture.head()]), 'New Player <new@example.com>');
+});
+
+test('changing only the author or patch name also overwrites by ID, including case-only renames', async (t) => {
+  const fixture = githubFixture(t);
+  let previous = await parse(metadata(), { source: zip([{ name: 'old.java', content: 'old source' }]) });
+  await publishPatchUpload(previous, config());
+  for (const data of [
+    metadata({ author: { name: 'Other Player', email: 'other@example.com' } }),
+    metadata({ name: 'Renamed' }),
+    metadata({ name: 'RENAMED' })
+  ]) {
+    const update = await parse(data, { source: zip([{ name: 'new.java', content: data.name }]) });
+    await publishPatchUpload(update, config());
+    assert.ok(!fixture.paths().some((name) => name.startsWith(`${previous.path}/`)));
+    assert.deepEqual(JSON.parse(fixture.read(`${update.path}/metadata.json`)), data);
+    assert.equal(fixture.paths().filter((name) => name.endsWith('/metadata.json')).length, 1);
+    assert.equal(fixture.read(`${update.path}/src/new.java`), data.name);
+    assert.ok(!fixture.paths().includes(`${update.path}/src/old.java`));
+    previous = update;
+  }
+});
+
+test('different patch IDs cannot overwrite the same destination, even when moving an existing ID', async (t) => {
+  const fixture = githubFixture(t);
+  const first = await parse();
+  const other = await parse(metadata({ name: 'Other' }), { patchModId: 'other_patch' });
+  await publishPatchUpload(first, config());
+  await publishPatchUpload(other, config());
+  const before = fixture.head();
+  await assert.rejects(publishPatchUpload(await parse(metadata(), { patchModId: 'new_patch' }), config()),
+    /different patchModId/);
+  await assert.rejects(publishPatchUpload(await parse(metadata({ name: 'Other' })), config()),
+    /different patchModId/);
+  assert.equal(fixture.head(), before);
+  assert.deepEqual(JSON.parse(fixture.read(`${first.path}/metadata.json`)), first.metadata);
+  assert.deepEqual(JSON.parse(fixture.read(`${other.path}/metadata.json`)), other.metadata);
+});
+
+test('patch ID matching is exact and scoped to the target mod ID', async (t) => {
+  const fixture = githubFixture(t);
+  const first = await parse();
+  await publishPatchUpload(first, config());
+  const otherTarget = await parse(metadata({ target: { modId: 'othermod', versions: ['*'] } }));
+  await publishPatchUpload(otherTarget, config());
+  const otherCase = await parse(metadata({ name: 'Different case ID' }), { patchModId: 'TEST_PATCH' });
+  await publishPatchUpload(otherCase, config());
+  assert.equal(fixture.paths().filter((name) => name.endsWith('/metadata.json')).length, 3);
+  for (const upload of [first, otherTarget, otherCase]) {
+    assert.deepEqual(JSON.parse(fixture.read(`${upload.path}/metadata.json`)), upload.metadata);
+  }
+});
+
+test('ambiguous legacy duplicate IDs fail without silently deleting either patch', async (t) => {
+  const fixture = githubFixture(t);
+  const first = await parse();
+  await publishPatchUpload(first, config());
+  const duplicate = await parse(metadata({ name: 'Legacy duplicate' }));
+  fixture.addFiles({
+    [`${duplicate.path}/metadata.json`]: JSON.stringify(duplicate.metadata),
+    [`${duplicate.path}/${duplicate.metadata.jar}`]: duplicate.jar
+  });
+  const before = fixture.head();
+  await assert.rejects(publishPatchUpload(await parse(metadata({ name: 'Updated' })), config()),
+    /Multiple existing patches have patchModId/);
+  assert.equal(fixture.head(), before);
+  assert.equal(fixture.paths().filter((name) => name.endsWith('/metadata.json')).length, 2);
+});
+
+test('invalid legacy JARs cannot be silently replaced using only a matching path', async (t) => {
+  const fixture = githubFixture(t);
+  const first = await parse();
+  await publishPatchUpload(first, config());
+  fixture.addFiles({ [`${first.path}/${first.metadata.jar}`]: 'not a jar' });
+  const before = fixture.head();
+  await assert.rejects(publishPatchUpload(first, config()), /Invalid existing JAR/);
+  assert.equal(fixture.head(), before);
+});
+
+test('ref retry resolves an ID introduced concurrently under a different directory', async (t) => {
+  const fixture = githubFixture(t);
+  const existing = await parse();
+  const update = await parse(metadata({ name: 'Renamed', version: '2.0.0' }));
+  let races = 0;
+  fixture.beforeUpdate = () => {
+    if (races++ > 0) return 0;
+    fixture.addFiles({
+      [`${existing.path}/metadata.json`]: JSON.stringify(existing.metadata),
+      [`${existing.path}/${existing.metadata.jar}`]: existing.jar,
+      [`${existing.path}/src/concurrent.java`]: 'keep concurrent source'
+    });
+    return 422;
+  };
+  await publishPatchUpload(update, config());
+  assert.ok(!fixture.paths().some((name) => name.startsWith(`${existing.path}/`)));
+  assert.deepEqual(JSON.parse(fixture.read(`${update.path}/metadata.json`)), update.metadata);
+  assert.equal(fixture.read(`${update.path}/src/concurrent.java`), 'keep concurrent source');
+  assert.equal(fixture.paths().filter((name) => name.endsWith('/metadata.json')).length, 1);
+  assert.equal(fixture.calls.filter((call) => call.method === 'PATCH').length, 2);
+  assert.equal(fixture.calls.filter((call) => call.method === 'POST' && call.route === '/git/blobs').length, 2);
 });
 
 test('ref race rebases onto latest HEAD and preserves concurrent files without uploading blobs twice', async (t) => {
@@ -183,10 +308,10 @@ test('anonymous overwrite, Workshop conflicts and Unicode case-folded path alias
   await assert.rejects(publishPatchUpload(await parse(changedWorkshop), config()), /Workshop/);
   const changedCase = metadata({ target: { ...data.target, modId: 'BaseMod' } });
   await assert.rejects(publishPatchUpload(await parse(changedCase), config()), /collision/);
-  const unicode = await parse(metadata({ name: 'Straße' }));
+  const unicode = await parse(metadata({ name: 'Straße' }), { patchModId: 'unicode_patch' });
   await publishPatchUpload(unicode, config());
   const afterUnicode = fixture.head();
-  await assert.rejects(publishPatchUpload(await parse(metadata({ name: 'STRASSE' })), config()), /collision/);
+  await assert.rejects(publishPatchUpload(await parse(metadata({ name: 'STRASSE' }), { patchModId: 'other_patch' }), config()), /collision/);
   assert.equal(fixture.head(), afterUnicode);
   assert.notEqual(before, afterUnicode);
 });

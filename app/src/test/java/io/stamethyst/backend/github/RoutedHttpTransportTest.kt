@@ -1,5 +1,7 @@
 package io.stamethyst.backend.github
 
+import io.stamethyst.backend.network.AcceleratedRouteEvent
+import io.stamethyst.backend.network.AcceleratedRouteObserver
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
@@ -383,6 +385,36 @@ class RoutedHttpTransportTest {
                 }
                 assertEquals(host, forward.takeRequest(1, TimeUnit.SECONDS)!!.headers["Host"])
             }
+        }
+    }
+
+    @Test fun routeObserverOnlyReceivesItsTaggedRequestsEvents() {
+        MockWebServer().use { forward ->
+            forward.start()
+            repeat(2) { forward.enqueue(MockResponse.Builder().body("ok").build()) }
+            val transport = transport(forward)
+            val events = mutableListOf<AcceleratedRouteEvent>()
+            val observed = request().newBuilder()
+                .tag(AcceleratedRouteObserver::class.java, AcceleratedRouteObserver { events += it })
+                .build()
+            transport.newCall(observed).execute().use { assertEquals("ok", it.body.string()) }
+            assertEquals(2, events.size)
+            assertTrue(events[0] is AcceleratedRouteEvent.ForwardTargetAttempt)
+            assertTrue(events[1] is AcceleratedRouteEvent.ForwardTargetSucceeded)
+            transport.newCall(request()).execute().use { assertEquals("ok", it.body.string()) }
+            assertEquals(2, events.size)
+        }
+    }
+
+    @Test fun brokenRouteObserverDoesNotFailTheRequest() {
+        MockWebServer().use { forward ->
+            forward.start()
+            forward.enqueue(MockResponse.Builder().body("ok").build())
+            val observed = request().newBuilder()
+                .tag(AcceleratedRouteObserver::class.java, AcceleratedRouteObserver { error("UI failure") })
+                .build()
+            transport(forward).newCall(observed).execute().use { assertEquals("ok", it.body.string()) }
+            assertEquals(1, forward.requestCount)
         }
     }
 

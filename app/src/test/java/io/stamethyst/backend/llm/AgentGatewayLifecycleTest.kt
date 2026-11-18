@@ -116,25 +116,89 @@ class AgentGatewayLifecycleTest {
         assertEquals(0, time.pending)
     }
 
-    @Test fun firstEventIdleAndTotalEnforcedAtGatewayWithoutRealSleeps() {
-        listOf(AgentRequestTimeoutKind.FIRST_EVENT, AgentRequestTimeoutKind.STREAM_IDLE, AgentRequestTimeoutKind.TOTAL).forEach { kind ->
+    @Test fun longThinkingTextAndToolArgumentsCanContinueBeyondFiveMinutes() {
+        val time = FakeTime()
+        val streaming = stream { handler ->
+            repeat(3) {
+                time.advance(240_000)
+                handler.onPartialThinking(PartialThinking("thinking"))
+                time.advance(240_000)
+                handler.onPartialResponse("answer")
+                time.advance(240_000)
+                handler.onPartialToolCall(PartialToolCall.builder().index(0).id("call").name("read").partialArguments("{").build())
+            }
+            time.advance(240_000)
+            handler.onCompleteResponse(answer("done"))
+        }
+        assertEquals("answeransweranswer", gateway(time).respondStreaming("system", "go", streaming, {}).text)
+        assertTrue(time.now > 300_000)
+        assertEquals(0, time.pending)
+    }
+
+    @Test fun longThinkingLeavesBudgetForRetryButRetryWaitDoesNotRenewIt() {
+        val time = FakeTime()
+        var attempts = 0
+        val streaming = stream { handler ->
+            attempts++
+            if (attempts == 1) {
+                repeat(3) { time.advance(240_000); handler.onPartialThinking(PartialThinking("thinking")) }
+                time.advance(1_000)
+                handler.onError(IOException("transient"))
+            } else {
+                time.advance(240_000)
+                handler.onCompleteResponse(answer("done"))
+            }
+        }
+        assertEquals("done", gateway(time).respondStreaming("system", "go", streaming, {}).text)
+        assertEquals(2, attempts)
+        assertEquals(0, time.pending)
+    }
+
+    @Test fun silentStreamAndEmptyCallbacksStillExpireAtConfiguredLimit() {
+        listOf(false, true).forEach { hadProgress ->
             val time = FakeTime()
             val gateway = gateway(time, onRetry = { error -> throw error })
             val failure = assertThrows(AgentRequestTimeoutException::class.java) {
                 gateway.respondStreaming("system", "go", stream { handler ->
-                    when (kind) {
-                        AgentRequestTimeoutKind.FIRST_EVENT -> {
-                            handler.onPartialResponse("") // An empty callback/keepalive is not progress.
-                            time.advance(120_000)
-                        }
-                        AgentRequestTimeoutKind.STREAM_IDLE -> { handler.onPartialResponse("x"); time.advance(60_000) }
-                        else -> repeat(6) { time.advance(50_000); handler.onPartialResponse("x") }
+                    if (hadProgress) {
+                        time.advance(240_000)
+                        handler.onPartialThinking(PartialThinking("thinking"))
                     }
+                    time.advance(299_999)
+                    handler.onPartialResponse("") // An empty callback/keepalive is not progress.
+                    time.advance(1)
                 }, {})
             }
-            assertEquals(if (kind == AgentRequestTimeoutKind.TOTAL) AgentRequestTimeoutKind.ROUND_BUDGET else kind, failure.kind)
+            assertEquals(AgentRequestTimeoutKind.ROUND_BUDGET, failure.kind)
             assertEquals(0, time.pending)
         }
+    }
+
+    @Test fun nonStreamingStillHasHardLimitAndLongToolWorkGetsFreshModelBudget() {
+        val syncTime = FakeTime()
+        val slowModel = model { syncTime.advance(300_000); answer("too late") }
+        val failure = assertThrows(AgentRequestTimeoutException::class.java) {
+            PolicyGatedAgentGateway(slowModel, registry(), requestControl = syncTime.control(),
+                requestClock = syncTime, sleep = syncTime::advance).respond("s", "u")
+        }
+        assertEquals(AgentRequestTimeoutKind.ROUND_BUDGET, failure.kind)
+
+        val time = FakeTime()
+        var rounds = 0
+        val streaming = stream { handler ->
+            rounds++
+            time.advance(240_000)
+            handler.onPartialThinking(PartialThinking("thinking"))
+            handler.onCompleteResponse(if (rounds == 1) calls(1) else answer("done"))
+        }
+        val result = PolicyGatedAgentGateway(model { fail("unexpected sync"); answer("") },
+            registry { time.advance(600_000); "done" }, maxParallelTools = 1,
+            requestControl = time.control(), requestClock = time, sleep = time::advance)
+            .respondStreaming("s", "u", streaming, {})
+        assertEquals("done", result.text)
+        assertEquals(1, result.toolRounds)
+        assertEquals(2, rounds)
+        assertEquals(0, time.pending)
     }
 
     @Test fun fallbackUsesOnlyRemainingRoundBudget() {

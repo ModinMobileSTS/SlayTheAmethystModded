@@ -55,11 +55,37 @@
   --tests 'io.stamethyst.backend.llm.AgentCache*Test' \
   --tests 'io.stamethyst.backend.llm.AgentConversationContextTest' \
   --tests 'io.stamethyst.backend.llm.PolicyGatedAgentGatewayTest' \
+  --tests 'io.stamethyst.backend.llm.AgentContextCompactionTest' \
   --tests 'io.stamethyst.backend.llm.OpenCodeLiveTestConfigTest' \
   --tests 'io.stamethyst.ui.aimod.*Test' --console=plain
 ```
 
 覆盖缓存字段归一、缺失/零值/无效值、加权汇总、旧会话迁移、持久化、状态追加与恢复的前缀不变性、压缩后的固定前缀、工具排序，以及真实 LangChain4j 编解码器的非流式/SSE 用量提取。普通测试不联网。
+
+`AgentCacheWorkflowTest` 额外使用 `AiModAgentExecutor` 的真实入口捕获 system 和完整工具 schema，不复制一份可能过期的工具列表。它验证：
+
+- 三次较长、非重复的合成源码读取结果超过固定 system/tools 的估算体量，但每个结果不超过网关的 51,200 字节上限。
+- 两次工具循环及序列化恢复之后，真实 HTTP 编码中的既有消息逐条不变，工具 schema、调用 ID、原生 thinking 和结果顺序不变；恢复不会重放工具。
+- 压缩确实替换历史前缀，但保留 system、工具定义和归档；checkpoint 恢复及后续追加保持稳定。
+- 没有服务端 usage 时缓存率仍为未知，不能将离线结构测试当成真实缓存率测量。
+
+`AgentCacheAccountingRegressionTest` 用已记录的 Terra 数值回放统计，验证最近值 93.80% 与已报告样本累计值 70.95% 可以同时成立；另外验证标准 OpenAI 的 16,000 缓存 / 20,000 输入就是 80%，不把缓存或输出 tokens 再加入分母，以及最近接近 100% 时累计仍可能只有约 75%。这不能替代用户实际请求的计数核对。2026-11-17 的统计专项回归（`AgentCache*Test` + `AiEditorCachePresentationTest`）31 项全部通过，未联网。
+
+### Responses SDK 默认零值回归与修复（2026-11-17）
+
+用户实际截图显示最近为 **0 / 106,891（0%）**，累计为 **78.7%**，压缩次数 0；用户确认使用 **Chat Completions**。截图中的上次输入 106,891 加输出 806 等于估算上下文 107,697，会话输入 4,180,157 加输出 24,195 等于已报告总量 4,204,352。界面没有显示网关归一化标记。这些数值本身没有显示分母重复计数，但不能仅凭截图判断缓存 0 的上游来源。
+
+为排除 SDK 把未知转成 0，新增 `AgentCacheStreamingAccountingTest`，通过真实 LangChain4j 编解码器和本机 MockWebServer 检查：
+
+- Chat Completions SSE 的缓存字段缺失、空详情、null 保持未知，显式 0 才计为已报告的 0%；未报告的新响应不稀释先前已知累计值。
+- **确实复现了另一个接口的 bug**：Responses SDK 在原始 usage 没有缓存字段时仍生成 `cachedTokens=0`，旧 `AgentCacheUsage.from` 取该 SDK 值回填，导致未知被计成 0%，错误扩大累计分母。原实现回归失败：`expected null, but was:<0>`，记录为 `agent-tmp/kv-cache-screenshot-accounting-tests.log`。
+- 修复为：有捕获的原始响应/SSE payload 时，缓存统计只认原始缓存字段；仅完全没有原始 payload 的 SDK-only 响应允许使用 SDK 缓存计数。原始 usage 存在时也不从 SDK 补出缓存字段。显式零、正数、无原始 payload 的合法 SDK-only 数值均保持支持。
+- 补充 Responses 缓存字段缺失、空详情、null、整个 usage 缺失/null/空对象、显式零及连续累计的回归。专项 `AgentCache*Test`、`AiEditorCachePresentationTest`、`AiExecutionHistoryTest` 共 **58 项通过**，日志为 `agent-tmp/kv-cache-responses-accounting-fix-tests.log`。没有付费请求或设备操作。
+- 最终更广回归：`backend.llm.*Test` 与 `ui.aimod.*Test` 共 **52 类、472 项全部通过**，无跳过；日志为 `agent-tmp/kv-cache-accounting-fix-broad-tests.log`。
+
+这个 Responses bug **不能直接归因于用户已确认的 Chat Completions 截图**。当前 SSE 缺失字段回归没有复现假零，仍需该请求原始 usage 的纯数值字段判断是否真的未命中、网关填零或兼容字段冲突。顶部用量覆盖按所有模型/摘要请求步骤统计，缓存覆盖按已完成主响应统计，46/49 与 46/46 不必相等。
+
+修复只保证新响应不再发生上述误计；历史缓存记录没有保留逐请求原始字段，无法安全区分历史真零与 SDK 默认零，不能把旧 0% 全部改成未知或自动清除用户统计。
 
 ## 手动真实接口验收
 
@@ -67,12 +93,29 @@
 ./gradlew :app:aiCacheAcceptanceTest --console=plain
 ```
 
-只在显式调用时开启；每次都重测，不复用 Gradle 成功结果。固定测试模型为 `deepseek-v4-flash`。使用 app 的模型工厂和上下文管理器发送虚构参考材料与工具 schema，不读取或发送用户对话/Mod 文件。
+只在显式调用时开启；每次都重测，不复用 Gradle 成功结果。默认模型为 `deepseek-v4-flash`；可通过 `STS_AI_CACHE_MODEL` 明确选择配置中声明的其他模型，绝不悄悄退回默认模型。使用 app 的模型工厂和上下文管理器发送虚构参考材料与工具 schema，不读取或发送用户对话/Mod 文件。
 
-包含两个独立用例：
+包含三个独立用例：
 
 1. 冷请求 → 创建补丁状态 → 三次状态变化和序列化恢复 → 真实模型生成工具调用及结果恢复。要求热续聊至少一次缓存读取比例达到 90%，工具恢复续聊达到 90%。有限次数重试允许服务端异步建立缓存，但不会无限重试掩盖故障。初次冷请求也进入累计值，因此累计值不要求达到 90%。真实工具是无副作用的虚构只读工具，测试不伪造历史 thinking/调用 ID。
-2. 非流式预热 → 单次流式请求。要求直接收到可见文本、缓存统计、90% 以上缓存率，不允许用非流式回退假装流式通过。若服务端流式协议异常，此用例应失败并单独报告，不影响识别非流式编排的结果。
+2. 编辑器真实 system 和完整工具集的非流式预热 → 单次流式续聊。不再向 system 填充 400 行参考材料。要求收到真正的文本 delta、缓存统计、90% 以上缓存率，并记录首个文本 delta 的耗时；不允许用非流式回退假装流式通过。若服务端流式协议异常，此用例应失败并单独报告。
+3. `completeEditorToolHistoryRestoreAndCompactionReportMeasuredCacheReuse`：真实 system/完整工具集 → 两轮模型生成的真实文件读取调用及较长合成结果 → 会话恢复 → 压缩 → checkpoint 续聊。不会执行任何真实编辑器工具；仅接受模型的一次 `read_agent_workspace_file`，由测试提供合成结果。正常为 8 次主请求 + 1 次压缩请求，总尝试数上限 10，每次输出上限 2,048 tokens。逐请求输出输入、缓存读取/创建、比例、相同前缀消息数、耗时和非标准输入口径标志；另外汇总包含压缩的全部已完成响应。
+
+第三个用例要求热请求缓存读取量**超过整个初始输入 token 数**，证明工具/对话历史也在复用，而不是仅凭固定 system/tools 的缓存达到漂亮比例。主请求使用 LOW，压缩请求像编辑器一样使用 OFF。每次追加大量新工具结果时缓存率自然下降，因此不要求每一轮都超过 90%。初始请求可能已经命中公共 system/tools，不强行称为“全冷”；压缩后第一次请求和再次续聊分开报告。
+
+部分网关会在冷请求/未命中时省略缓存字段：此时保留未知，不填 0，恢复续聊、第二批工具结果、压缩后续聊三个热检查点仍必须报告真实缓存读取。除已报告样本的加权比例外，报告也按未知读取的可能范围给出整个工作负载的比例下界/上界，避免未报告的冷启动成本被悄悄隐藏；`AgentCacheProbeBoundsTest` 验证其加权和未知值语义。这里只测配置接口报告的缓存计数，不证明其后端实际 GPU KV 的驻留位置或计费准确性。
+
+仅运行完整工作流和流式两个用例，例如：
+
+```bash
+STS_AI_CACHE_MODEL=gpt-6.1-terra \
+./gradlew :app:aiCacheAcceptanceTest :app:testDebugUnitTest \
+  --tests 'io.stamethyst.backend.llm.AgentCacheNetworkAcceptanceTest.completeEditorToolHistoryRestoreAndCompactionReportMeasuredCacheReuse' \
+  --tests 'io.stamethyst.backend.llm.AgentCacheNetworkAcceptanceTest.streamingEndpointReportsWarmCacheUsage' \
+  --console=plain
+```
+
+同模型有多个 provider 且默认模型所属 provider 无法消歧时，再设置 `STS_AI_CACHE_PROVIDER`。这些测试需要明确授权，因为会消耗真实 API 额度。
 
 ### 密钥安全
 
@@ -84,6 +127,7 @@ SQLite 通过 Python 3 标准库以 `mode=ro` 打开，不修改数据库、不�
 
 - `STS_AI_CACHE_OPENCODE_CONFIG`：另一个本机 JSON 配置文件。
 - `STS_AI_CACHE_PROVIDER`：选择 provider ID。
+- `STS_AI_CACHE_MODEL`：测试模型 ID，默认 `deepseek-v4-flash`；所选 provider 必须声明该模型。
 - `STS_AI_CACHE_OPENCODE_DB`：只读凭据数据库路径（其次使用 `OPENCODE_DB`，最后使用默认路径；可用 `opencode debug paths db` 查询）。
 
 密钥不写入项目、Gradle 属性、命令行或报告。日志只显示 token 数和比例；真实 HTTP 异常替换为不包含 endpoint、凭据或请求体的错误。不要启用 HTTP 请求/响应调试日志。验收会产生实际 API 消耗。
@@ -110,3 +154,32 @@ SQLite 通过 Python 3 标准库以 `mode=ro` 打开，不修改数据库、不�
 - 本地临时源码、探针和执行日志均在被忽略的 `agent-tmp/`；真实请求日志仅包含数值计数、比例和脱敏错误类型。
 
 接口恢复后重跑 `:app:aiCacheAcceptanceTest`，设备恢复后执行上述 scoped instrumented test。这两项不能用本地模拟测试替代。
+
+## 本机验收记录（2026-11-17，GPT-6.1 Terra）
+
+用户授权调用 `gpt-6.1-terra`，使用本机已配置网关的 Chat Completions 接口。仅运行新增完整工作流和改进后的流式用例，没有重跑原来的 400 行固定材料用例。未修改业务缓存策略，也没有发送用户对话或 Mod 文件。
+
+完整工作流最终通过，使用编辑器实际生成的 **28 个工具定义**，没有向 system 注入长参考材料：
+
+| 阶段 | 输入 tokens | 缓存读取 tokens | 缓存率 |
+| --- | ---: | ---: | ---: |
+| 初始请求 | 6,878 | 未报告 | 未知 |
+| 第一次文件工具调用 | 6,937 | 未报告 | 未知 |
+| 加入第一批长工具结果 | 26,508 | 6,784 | 25.59% |
+| 序列化恢复后的续聊 | 26,531 | 26,368 | 99.39% |
+| 第二次文件工具调用 | 26,590 | 26,368 | 99.17% |
+| 加入第二批长工具结果 | 46,195 | 26,496 | 57.36% |
+| 独立压缩摘要请求 | 46,678 | 未报告 | 未知 |
+| 压缩后的首次主请求 | 7,073 | 6,656 | 94.10% |
+| checkpoint 再次续聊 | 7,096 | 6,656 | 93.80% |
+
+- 主请求 8 次，6 次报告缓存读取；已报告样本的 token 加权比例为 **70.95%**。将两次未报告读取的请求纳入不确定范围后，整个主工作负载的比例在 **64.58%–73.56%**，不能把 70.95% 当作覆盖所有请求的精确值。
+- 包含独立压缩共 9 次已完成调用，总输入 **200,486 tokens**，已确认缓存读取 **99,328 tokens**。因为摘要请求也未报告缓存读取，全部调用的比例只能界定为 **49.54%–79.72%**。缓存创建字段全部未报告，累计日志中的已知创建数为 0 不代表服务端实际没有创建。
+- 恢复续聊的读取超过整个初始输入 **19,490 tokens**，第二批工具结果阶段超过 **19,618 tokens**，证明真实工具/对话历史也在复用，而不是只有 system/tools。
+- 第一、第二批长结果分别新增约 19.5k 输入 tokens；当轮的 25.59% / 57.36% 不能直接解释为旧前缀失效。恢复后小增量续聊达 99.39%。
+- 压缩将主请求从约 46k 降至约 7k；虽然随后比例仍约 94%，但读取量 6,656 不超过初始输入，**本轮只证明固定前缀仍可复用，没有证明新 checkpoint 内容已进入缓存**。未追加付费保温或额外探测来美化结果。
+- 独立流式用例通过：输入 **6,943**、缓存读取 **6,784**、比例 **97.71%**，收到真实文本 delta，首个文本约 **2,534 ms**；没有非流式回退。
+- 最终离线回归：`./gradlew :app:testDebugUnitTest --tests 'io.stamethyst.backend.llm.*Test' --tests 'io.stamethyst.ui.aimod.*Test' --console=plain`，**50 个测试类、461 项全部通过**，没有跳过，也没有运行任何联网验收类。日志为 `agent-tmp/kv-cache-final-offline-tests.log`。本次未进行设备/UI 验收。
+- 两次前置探测曾因测试假设失败：首次错误要求冷请求一定报告缓存字段；第二次错误要求压缩后消息总列表不追加合法的活动补丁状态。现已分别保留未知语义、验证原归档逐条保留并只允许追加对应状态通知；后者补入离线回归。没有修改业务实现或降低热检查点的报告要求。
+
+上述是所配置网关报告的合成测试结果，不是所有真实任务的命中保证，也不证明上游 GPU KV 驻留或账单口径。脱敏执行日志保存在被忽略的 `agent-tmp/kv-cache-terra-live-initial-attempt.log`、`agent-tmp/kv-cache-terra-workflow-live-tests.log`、`agent-tmp/kv-cache-terra-workflow-live-final.log`；最后一次完整工作流的 XML 另存为 `agent-tmp/kv-cache-terra-workflow-live-final.xml`。

@@ -31,8 +31,13 @@ data class AgentCacheUsage(
                 val root = Json.parseToJsonElement(body).jsonObject
                 (root["usage"] as? JsonObject) ?: (root["response"] as? JsonObject)?.get("usage") as? JsonObject
             }.getOrNull() }.firstOrNull()
-            return parse(raw, response.tokenUsage()?.inputTokenCount()?.toLong(),
-                (response.tokenUsage() as? OpenAiTokenUsage)?.inputTokensDetails()?.cachedTokens()?.toLong(),
+            // The Responses decoder synthesizes cachedTokens=0 even when the wire usage omits it.
+            // Captured payloads are authoritative about whether cache usage was actually reported.
+            // Keep SDK-only responses supported when no raw payload is available.
+            val fallbackRead = (response.tokenUsage() as? OpenAiTokenUsage)
+                ?.inputTokensDetails()?.cachedTokens()?.toLong()
+                ?.takeUnless { bodies.any(String::isNotBlank) }
+            return parse(raw, response.tokenUsage()?.inputTokenCount()?.toLong(), fallbackRead,
                 inputExcludesCached)
         }
 
@@ -45,7 +50,7 @@ data class AgentCacheUsage(
             val details = (raw?.get("prompt_tokens_details") as? JsonObject)
                 ?: (raw?.get("input_tokens_details") as? JsonObject)
             val read = details.number("cached_tokens") ?: raw.number("prompt_cache_hit_tokens") ?:
-                raw.number("cached_tokens") ?: raw.number("cache_read_input_tokens") ?: fallbackRead
+                raw.number("cached_tokens") ?: raw.number("cache_read_input_tokens") ?: fallbackRead?.takeIf { raw == null }
             val write = details.number("cache_write_tokens") ?: raw.number("cache_creation_input_tokens") ?:
                 raw.number("cache_created_input_tokens")
             // Some compatibility bridges forward Anthropic-style *uncached* input as prompt_tokens

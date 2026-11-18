@@ -1,5 +1,6 @@
 package io.stamethyst.backend.llm
 
+import dev.langchain4j.exception.HttpException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -48,9 +49,10 @@ class NewApiModelService {
         baseUrl: String,
         apiKey: String,
         timeoutSeconds: Int = 30,
-    ): List<NewApiModel> {
-        val endpoint = baseUrl.trim().trimEnd('/') + "/models"
+    ): List<NewApiModel> = LlmSettingsHttpDiagnostics.capture(baseUrl, apiKey) {
+        val endpoint = requireLlmBaseUrl(baseUrl) + "/models"
         val client = OkHttpClient.Builder()
+            .apply { LlmSettingsHttpDiagnostics.interceptor()?.let { addNetworkInterceptor(it) } }
             .connectTimeout(timeoutSeconds.toLong(), TimeUnit.SECONDS)
             .readTimeout(timeoutSeconds.toLong(), TimeUnit.SECONDS)
             .callTimeout(timeoutSeconds.toLong(), TimeUnit.SECONDS)
@@ -63,10 +65,10 @@ class NewApiModelService {
             .build()
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
-            check(response.isSuccessful) {
-                "NewAPI model request failed (${response.code}): ${body.take(240)}"
+            if (!response.isSuccessful) {
+                throw HttpException(response.code, body.ifBlank { response.message })
             }
-            return parseModels(body)
+            parseModels(body)
         }
     }
 }

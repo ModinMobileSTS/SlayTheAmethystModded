@@ -55,6 +55,21 @@ class AgentRequestTransportTest {
         if (cleanupStarted.get() && resources.remove(resource)) runCatching { resource.close() }
     }
 
+    @Test fun streamingTransportHasNoHardTotalButKeepsStallLimitsAndSharedPool() {
+        val config = OpenAiCompatibleModelConfig("http://localhost/v1/", "test", "test")
+        val streaming = AgentChatModelFactory.transportClient(config, streaming = true)
+        val sync = AgentChatModelFactory.transportClient(config)
+        assertEquals(0, streaming.callTimeoutMillis)
+        assertEquals(300_000, sync.callTimeoutMillis)
+        listOf(streaming, sync).forEach { client ->
+            assertEquals(30_000, client.connectTimeoutMillis)
+            assertEquals(300_000, client.readTimeoutMillis)
+            assertEquals(300_000, client.writeTimeoutMillis)
+            assertTrue(client.retryOnConnectionFailure)
+        }
+        assertSame(streaming.connectionPool, sync.connectionPool)
+    }
+
     @Test(timeout = 5_000) fun productionStreamingFactoryCapturesScopeBeforeFirstModelToken() {
         MockWebServer().tracked().use { server ->
             server.start()
@@ -371,7 +386,11 @@ class AgentRequestTransportTest {
         assertProgressDeadlineClosesSocket(AgentRequestTimeoutKind.TOTAL)
     }
 
-    private fun assertProgressDeadlineClosesSocket(expected: AgentRequestTimeoutKind) {
+    @Test(timeout = 5_000) fun renewableStreamStillClosesActualSocketWhenProgressStops() {
+        assertProgressDeadlineClosesSocket(AgentRequestTimeoutKind.STREAM_IDLE, renewable = true)
+    }
+
+    private fun assertProgressDeadlineClosesSocket(expected: AgentRequestTimeoutKind, renewable: Boolean = false) {
         MockWebServer().tracked().use { server ->
             server.start()
             val body = HeldBody("data: progress\n\n")
@@ -384,11 +403,19 @@ class AgentRequestTransportTest {
                 val clock = AgentRequestClock { now.get() }
                 val scheduler = AgentRequestScheduler { _, _ -> AutoCloseable {} }
                 AgentRequestControl(clock, scheduler).tracked().use { owner ->
-                    owner.newRequest(AgentRequestTimeoutPolicy(1_000, 100, 200)).use { scope ->
+                    owner.newRequest(AgentRequestTimeoutPolicy(1_000, 100, 200, extendOnProgress = renewable)).use { scope ->
                         val listener = StreamResult { scope.onMeaningfulEvent() }
                         scope.bind { client.execute(request(server), listener) }
                         assertTrue(listener.firstEvent.await(2, TimeUnit.SECONDS))
-                        if (expected == AgentRequestTimeoutKind.TOTAL) {
+                        if (renewable) {
+                            (100L..1_900L step 100).forEach {
+                                now.set(it)
+                                scope.onMeaningfulEvent()
+                                assertNull(scope.stopReason)
+                                assertFalse(probe.call.get().isCanceled())
+                            }
+                            now.set(2_100)
+                        } else if (expected == AgentRequestTimeoutKind.TOTAL) {
                             (100L..900L step 100).forEach { now.set(it); scope.onMeaningfulEvent() }
                             now.set(1_000)
                         } else {

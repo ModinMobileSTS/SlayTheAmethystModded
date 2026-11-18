@@ -153,7 +153,7 @@ internal class AiModAgentExecutor(
                 policyGate = agentToolPolicyGate,
                 onToolExecution = onToolExecution,
         )
-        val systemPrompt = buildAiEditorSystemPrompt(modName, modId, workspaceAccessRoot)
+        val systemPrompt = buildAiEditorSystemPrompt(modName, modId)
         val modelKey = AiContextLimits.key(settings.baseUrl, settings.modelName)
         val budget = AiContextLimits.budget(context, modelKey)
         val compaction = summaryTarget(config, budget)
@@ -202,6 +202,7 @@ internal class AiModAgentExecutor(
             checkCancelled = checkCancelled,
             onRetry = onRetry,
             onNonStreamingText = onText,
+            onNonStreamingThinking = onThinking,
             onOutputSpeed = onOutputSpeed,
             onExecutionStep = onExecutionStep,
             currentChatModel = { activeModel },
@@ -379,8 +380,9 @@ internal class AiModAgentExecutor(
 }
 
 /** Shared instructions precede Mod/device-specific data so different editors share a long prefix. */
-internal fun buildAiEditorSystemPrompt(modName: String, modId: String, workspaceAccessRoot: File): String = """
+internal fun buildAiEditorSystemPrompt(modName: String, modId: String): String = """
         You are a safe mod editing assistant inside a mobile launcher.
+        All workspace tools share a fixed virtual filesystem root /. It belongs to the selected parent mod and contains multiple patch revisions. /source/ and /tool_output/ are read-only; only files and subdirectories inside /patch_source/<patch_id>/ are writable. Launcher state, conversations and device files are not exposed. Every returned workspace path starts with / and can be passed unchanged to another workspace tool. Relative inputs also start at /; there is no cd and the active patch never changes path resolution. Never use Android/device absolute paths, and never shorten /patch_source/<patch_id>/src/A.java to src/A.java. Use the exact paths returned by tools; do not guess a patch ID.
         Independent read/search/inspect tool calls may be issued together in one response; the launcher runs parallel-safe tools concurrently. Workspace changes, decompilation, compilation, packaging, activation, deletion, and smoke tests run exclusively in call order. If a call needs an earlier tool's output, wait for that output before choosing its arguments.
         Use workspace tools for listing and reading the patch workspace. source/ is a read-only, on-demand cache; it is not a full extraction of the parent JAR and must never be written or deleted through workspace tools. Use list_agent_mod_entries to discover JAR paths, inspect_agent_class for bytecode metadata, decompile_agent_class for one parent or installed-mod class, decompile_agent_api_class for game/BaseMod/StSLib/dependency classes (pass several names at once; large classes return a member index plus a skeleton, and 'member' reads one body), and read_agent_mod_resource for one resource. patch_source/ is the agent-owned patch tree and is the only directory writable or deletable through workspace tools.
         To find something in the workspace, locate it before reading: use grep_agent_workspace to search file contents by regular expression and glob_agent_workspace to find files by pattern like '**/*.java'. Fall back to list_agent_workspace only when you do not know what to look for; it is capped and lists paths only.
@@ -416,5 +418,5 @@ internal fun buildAiEditorSystemPrompt(modName: String, modId: String, workspace
         Never claim that a patch mod was created, packaged, updated, enabled, disabled, or deleted until the corresponding tool confirms it.
         Ask before calling delete_agent_patch_mod unless the user explicitly requested the removal.
         The selected parent mod is '$modName' ($modId).
-        Your agent workspace root is '$workspaceAccessRoot'. It contains source/ and patch_source/ for the selected mod.
+        Your virtual workspace root is /. Use /source/, /patch_source/ and /tool_output/ for the selected mod.
     """.trimIndent()

@@ -1,0 +1,25 @@
+<resources>
+    <string name="ai_editor_menu">Editor menu</string>
+    <string name="ai_editor_sessions">Session history</string>
+    <string name="ai_editor_statistics">Session statistics</string>
+    <string name="ai_editor_model_config">Model configuration</string>
+    <string name="ai_editor_trajectory">Conversation timeline</string>
+    <string name="ai_editor_session_actions">Actions for %1$s</string>
+    <string name="ai_editor_delete">Delete</string>
+    <string name="ai_editor_delete_title">Delete conversation?</string>
+    <string name="ai_editor_delete_message">Delete “%1$s” and its messages? This cannot be undone. Generated patch mods will not be deleted.</string>
+    <string name="ai_editor_delete_running">This conversation has a running task. Stop it before deleting.</string>
+    <string name="ai_editor_delete_failed">Unable to delete the conversation. Please try again.</string>
+    <string name="ai_editor_current_session">Current session</string>
+    <string name="ai_editor_total_usage">Total session usage</string>
+    <string name="ai_editor_usage_breakdown">Reported input %1$s · output %2$s</string>
+    <string name="ai_editor_budget_saved">Saved. Applies to the next task.</string>
+    <string name="ai_editor_report_coverage">Usage reported for %1$d / %2$d requests</string>
+    <string name="ai_editor_turns_steps">%1$d turns · %2$d execution steps</string>
+    <string name="ai_editor_output_speed">Output speed</string>
+    <string name="ai_editor_budget">Context and generation</string>
+    <string name="ai_editor_available_efforts">Available reasoning efforts</string>
+    <string name="ai_editor_configure_efforts">Configure available efforts</string>
+    <string name="ai_editor_efforts_description">Select the levels to show in the mod editor.</string>
+    <string name="ai_editor_efforts_warning">Some models do not support all reasoning efforts. The launcher cannot detect this; configure the levels according to the model’s actual support.</string>
+</resources>

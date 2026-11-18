@@ -22,11 +22,12 @@ class AgentRequestTimeoutException(val kind: AgentRequestTimeoutKind) :
 
 data class AgentRequestTimeoutState(val remainingMillis: Long, val expired: AgentRequestTimeoutKind?)
 
-/** All limits are finite. Progress resets only the idle timer, never the total request budget. */
+/** Limits are finite; opt-in streaming policies replace the total cap with idle after progress. */
 data class AgentRequestTimeoutPolicy(
     val totalTimeoutMillis: Long,
     val firstEventTimeoutMillis: Long = totalTimeoutMillis,
     val idleTimeoutMillis: Long = totalTimeoutMillis,
+    val extendOnProgress: Boolean = false,
 ) {
     init {
         require(totalTimeoutMillis > 0 && firstEventTimeoutMillis > 0 && idleTimeoutMillis > 0)
@@ -36,7 +37,8 @@ data class AgentRequestTimeoutPolicy(
     fun evaluate(elapsedMillis: Long, lastEventElapsedMillis: Long?): AgentRequestTimeoutState {
         require(elapsedMillis >= 0)
         require(lastEventElapsedMillis == null || lastEventElapsedMillis in 0..elapsedMillis)
-        val totalRemaining = (totalTimeoutMillis - elapsedMillis).coerceAtLeast(0)
+        val totalRemaining = if (extendOnProgress && lastEventElapsedMillis != null) Long.MAX_VALUE
+            else (totalTimeoutMillis - elapsedMillis).coerceAtLeast(0)
         val phase = if (lastEventElapsedMillis == null) AgentRequestTimeoutKind.FIRST_EVENT
             else AgentRequestTimeoutKind.STREAM_IDLE
         val phaseRemaining = if (lastEventElapsedMillis == null) {
@@ -57,12 +59,17 @@ class AgentRoundBudget(
     val totalBudgetMillis: Long,
     private val clock: AgentRequestClock = AgentRequestClock.SYSTEM,
 ) {
-    private val startedAt = clock.nowMillis()
+    private var startedAt = clock.nowMillis()
 
     init { require(totalBudgetMillis > 0) }
 
-    fun remainingMillis(): Long =
+    @Synchronized fun remainingMillis(): Long =
         (totalBudgetMillis - (clock.nowMillis() - startedAt).coerceAtLeast(0)).coerceAtLeast(0)
+
+    /** Only accepted model progress renews the budget; retries and network activity never do. */
+    @Synchronized fun onMeaningfulEvent() {
+        if (remainingMillis() > 0) startedAt = clock.nowMillis()
+    }
 
     fun requestTimeoutMillis(configuredTimeoutMillis: Long): Long {
         require(configuredTimeoutMillis > 0)
@@ -109,11 +116,11 @@ class AgentRequestControl(
     private val requests = LinkedHashSet<AgentRequestScope>()
     private var cancellation: CancellationException? = null
 
-    fun newRequest(policy: AgentRequestTimeoutPolicy): AgentRequestScope {
+    fun newRequest(policy: AgentRequestTimeoutPolicy, onProgress: () -> Unit = {}): AgentRequestScope {
         checkActive()
         val request = synchronized(lock) {
             cancellation?.let { throw it }
-            AgentRequestScope(policy, clock, scheduler, ::finished).also { requests += it }
+            AgentRequestScope(policy, clock, scheduler, ::finished, onProgress).also { requests += it }
         }
         request.startTimer()
         return request
@@ -151,6 +158,7 @@ class AgentRequestScope internal constructor(
     private val clock: AgentRequestClock,
     private val scheduler: AgentRequestScheduler,
     private val onFinished: (AgentRequestScope) -> Unit,
+    private val onProgress: () -> Unit,
 ) : AutoCloseable {
     private val lock = Any()
     private val startedAt = clock.nowMillis()
@@ -200,7 +208,10 @@ class AgentRequestScope internal constructor(
             if (state.expired != null) {
                 stopLocked(AgentRequestTimeoutException(state.expired))
             } else {
-                if (markEvent) lastEventElapsed = elapsed
+                if (markEvent) {
+                    lastEventElapsed = elapsed
+                    onProgress()
+                }
                 timer?.close()
                 timer = scheduler.schedule(policy.evaluate(elapsed, lastEventElapsed).remainingMillis) {
                     checkTimeout()

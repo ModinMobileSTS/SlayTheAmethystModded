@@ -4,8 +4,35 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import org.json.JSONObject
 
 class OpenCodeLiveTestConfigTest {
+    @Test fun requestedModelUsesDefaultProvidersDeclarationWithoutFallingBackToItsDefaultModel() {
+        val config = JSONObject("""{"model":"preferred/gpt-6.1-sol","providers":{
+            "preferred":{"models":{"gpt-6.1-sol":{},"gpt-6.1-terra":{}}},
+            "other":{"models":{"gpt-6.1-terra":{}}}
+        }}""")
+        assertEquals("preferred", OpenCodeLiveTestConfig.selectProvider(config, "gpt-6.1-terra"))
+        assertEquals("other", OpenCodeLiveTestConfig.selectProvider(config, "gpt-6.1-terra", "other"))
+        assertThrows(IllegalStateException::class.java) {
+            OpenCodeLiveTestConfig.selectProvider(config, "missing-model")
+        }
+    }
+
+    @Test fun ambiguousOrUndeclaredExplicitProvidersFailBeforeLookingUpCredentials() {
+        val config = JSONObject("""{"provider":{
+            "a":{"models":{"gpt-6.1-terra":{}}},"b":{"models":{"gpt-6.1-terra":{}}},
+            "wrong":{"models":{"deepseek-v4-flash":{}}}
+        }}""")
+        assertThrows(IllegalStateException::class.java) {
+            OpenCodeLiveTestConfig.selectProvider(config, "gpt-6.1-terra")
+        }
+        assertThrows(IllegalStateException::class.java) {
+            OpenCodeLiveTestConfig.selectProvider(config, "gpt-6.1-terra", "wrong")
+        }
+        assertEquals("wrong", OpenCodeLiveTestConfig.selectProvider(config, "deepseek-v4-flash"))
+    }
+
     @Test fun databaseLookupUsesOnlyActiveApiCredentialAndDoesNotModifyDatabase() {
         val root = File("../agent-tmp").apply { mkdirs() }
         val directory = Files.createTempDirectory(root.toPath(), "cache-credential-fixture-").toFile()

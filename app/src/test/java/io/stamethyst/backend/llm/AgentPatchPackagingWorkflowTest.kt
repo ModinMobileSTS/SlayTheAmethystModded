@@ -49,7 +49,9 @@ class AgentPatchPackagingWorkflowTest {
         assertEquals("valid", preflight.text("status"))
         assertTrue(preflight["issues"]!!.jsonArray.isEmpty())
         assertTrue(preflight["warnings"]!!.jsonArray.any { it.jsonPrimitive.content.contains("resource or helper-only") })
-        assertTrue(File(packaged.text("jar_path")!!).isFile)
+        assertFalse("jar_path" in packaged)
+        assertEquals("/patch_source/${workspace.patchId}", packaged.text("patch_workspace_path"))
+        assertTrue(AgentPatchModManager.listPackaged(context, "parent").single().jarFile.isFile)
 
         File(workspace.patchRoot, "asset.txt").writeText("updated resource")
         val updated = result(AgentPatchModUpdateTool(context, "parent", jar)
@@ -71,7 +73,7 @@ class AgentPatchPackagingWorkflowTest {
     @Test fun failingUpdateLeavesThePackagedJarAndVersionIntact() {
         val (context, jar, workspace) = fixture()
         val packaged = result(AgentPatchModPackageTool(context, jar) { workspace }.execute("""{"version":"1.0.0"}"""))
-        val packagedJar = File(packaged.text("jar_path")!!)
+        val packagedJar = AgentPatchModManager.listPackaged(context, "parent").single().jarFile
         val original = packagedJar.readBytes()
         File(workspace.patchRoot, "Broken.class").writeBytes(byteArrayOf(1, 2, 3))
 

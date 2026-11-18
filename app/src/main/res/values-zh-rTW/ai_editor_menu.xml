@@ -1,0 +1,25 @@
+<resources>
+    <string name="ai_editor_menu">編輯器選單</string>
+    <string name="ai_editor_sessions">歷史會話列表</string>
+    <string name="ai_editor_statistics">會話資料統計</string>
+    <string name="ai_editor_model_config">模型設定</string>
+    <string name="ai_editor_trajectory">對話歷史軌跡</string>
+    <string name="ai_editor_session_actions">%1$s 的會話操作</string>
+    <string name="ai_editor_delete">刪除</string>
+    <string name="ai_editor_delete_title">刪除對話？</string>
+    <string name="ai_editor_delete_message">刪除「%1$s」及其訊息？此操作無法復原，不會刪除已生成的補丁模組。</string>
+    <string name="ai_editor_delete_running">該會話有正在執行的任務，請先停止任務再刪除。</string>
+    <string name="ai_editor_delete_failed">刪除會話失敗，請重試。</string>
+    <string name="ai_editor_current_session">目前會話</string>
+    <string name="ai_editor_total_usage">會話累計用量</string>
+    <string name="ai_editor_usage_breakdown">已回報輸入 %1$s · 輸出 %2$s</string>
+    <string name="ai_editor_budget_saved">已儲存，下次任務生效。</string>
+    <string name="ai_editor_report_coverage">用量回報覆蓋：%1$d / %2$d 次請求</string>
+    <string name="ai_editor_turns_steps">%1$d 輪對話 · %2$d 個執行步驟</string>
+    <string name="ai_editor_output_speed">輸出速度</string>
+    <string name="ai_editor_budget">上下文與生成</string>
+    <string name="ai_editor_available_efforts">可用推理強度</string>
+    <string name="ai_editor_configure_efforts">設定可用檔位</string>
+    <string name="ai_editor_efforts_description">選擇要在模組編輯器中顯示的檔位。</string>
+    <string name="ai_editor_efforts_warning">有的模型不支援部分推理強度，啟動器無法探測，請根據模型實際支援的推理強度進行設定。</string>
+</resources>

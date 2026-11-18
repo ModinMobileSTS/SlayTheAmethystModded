@@ -23,26 +23,29 @@ data class LlmSettings(
      * when this is on; otherwise it describes them in text so a text-only model still answers.
      */
     val supportsImageInput: Boolean = true,
+    val availableReasoningEfforts: List<LlmReasoningEffort> = LlmReasoningEffort.defaults,
 ) {
     fun isConfigured(): Boolean = apiKey.isNotBlank() && modelName.isNotBlank() && baseUrl.isNotBlank()
 }
 
 enum class LlmReasoningEffort {
     OFF,
+    NONE,
+    MINIMAL,
     LOW,
+    MEDIUM,
     HIGH,
+    XHIGH,
     MAX;
 
     companion object {
-        val selectable = listOf(OFF, LOW, HIGH, MAX)
+        val selectable = listOf(NONE, MINIMAL, LOW, MEDIUM, HIGH, XHIGH, MAX)
+        val defaults = listOf(LOW, MEDIUM, HIGH, XHIGH, MAX)
 
-        fun fromStored(value: String?): LlmReasoningEffort = when (value) {
-            "OFF" -> OFF
-            "LOW" -> LOW
-            "MAX" -> MAX
-            "HIGH", "MEDIUM" -> HIGH // Preserve the legacy MEDIUM migration.
-            else -> LOW
-        }
+        fun fromStored(value: String?): LlmReasoningEffort = entries.firstOrNull { it.name == value } ?: LOW
+
+        fun normalize(options: List<LlmReasoningEffort>): List<LlmReasoningEffort> =
+            selectable.filter { it in options }.ifEmpty { listOf(LOW) }
     }
 }
 
@@ -56,6 +59,7 @@ data class LlmSettingsPatch(
     val reasoningEffort: LlmReasoningEffort? = null,
     val models: List<String>? = null,
     val supportsImageInput: Boolean? = null,
+    val availableReasoningEfforts: List<LlmReasoningEffort>? = null,
 ) {
     internal fun normalized() = copy(
         apiKey = apiKey?.trim()?.takeIf(String::isNotEmpty),
@@ -65,21 +69,29 @@ data class LlmSettingsPatch(
             MIN_LLM_REQUEST_TIMEOUT_SECONDS, MAX_LLM_REQUEST_TIMEOUT_SECONDS,
         ),
         models = models?.map(String::trim)?.filter(String::isNotEmpty)?.distinct(),
+        availableReasoningEfforts = availableReasoningEfforts?.let(LlmReasoningEffort::normalize),
     )
 
     // Stable field positions are only used by this process's edit-order fence, never persisted.
     internal fun applyTo(settings: LlmSettings, include: (Int) -> Boolean = { true }): LlmSettings {
         fun <T> field(index: Int, value: T?, current: T): T =
             if (value != null && include(index)) value else current
+        val optionsChanged = availableReasoningEfforts != null && include(8)
+        val options = LlmReasoningEffort.normalize(
+            if (optionsChanged) availableReasoningEfforts!! else settings.availableReasoningEfforts,
+        )
+        val effort = field(5, reasoningEffort, settings.reasoningEffort)
         return settings.copy(
             apiKey = field(0, apiKey, settings.apiKey),
             baseUrl = field(1, baseUrl, settings.baseUrl),
             modelName = field(2, modelName, settings.modelName),
             endpoint = field(3, endpoint, settings.endpoint),
             requestTimeoutSeconds = field(4, requestTimeoutSeconds, settings.requestTimeoutSeconds),
-            reasoningEffort = field(5, reasoningEffort, settings.reasoningEffort),
+            reasoningEffort = if (effort !in options && (effort != LlmReasoningEffort.OFF || optionsChanged))
+                options.first() else effort,
             models = field(6, models, settings.models),
             supportsImageInput = field(7, supportsImageInput, settings.supportsImageInput),
+            availableReasoningEfforts = options,
         )
     }
 }
@@ -94,7 +106,19 @@ class LlmSettingsRepository(context: Context) {
     }
 
     fun get(): LlmSettings = synchronized(editLock) {
-        read(encryptedPrefs) ?: read(fallbackPrefs) ?: LlmSettings()
+        val preferEncrypted = runCatching {
+            fallbackPrefs.getString(KEY_ACTIVE_STORE, null) == STORE_ENCRYPTED
+        }.getOrElse { error ->
+            Log.w(TAG, "Unable to read LLM storage selection.", error)
+            false
+        }
+        // Legacy versions cleared fallback after a successful encrypted save. A populated legacy
+        // fallback therefore represents recovery data, not an empty/default encrypted snapshot.
+        if (preferEncrypted) {
+            read(encryptedPrefs) ?: read(fallbackPrefs) ?: LlmSettings()
+        } else {
+            read(fallbackPrefs) ?: read(encryptedPrefs) ?: LlmSettings()
+        }
     }
 
     fun set(settings: LlmSettings) = synchronized(editLock) {
@@ -172,9 +196,11 @@ class LlmSettingsRepository(context: Context) {
         )
         val savedEncrypted = encryptedPrefs?.let { write(it, normalized) } == true
         if (savedEncrypted) {
-            fallbackPrefs.edit().clear().apply()
+            // Commit the selection and remove the old plaintext snapshot atomically. An async
+            // clear could resurrect it after restart, and a failed commit must remain retryable.
+            check(selectEncryptedStore()) { "Unable to save LLM storage selection" }
         } else {
-            check(write(fallbackPrefs, normalized)) { "Unable to save LLM settings" }
+            check(write(fallbackPrefs, normalized, STORE_FALLBACK)) { "Unable to save LLM settings" }
         }
         // Every successful write persists a whole snapshot, including other editors' dirty fields.
         editOrder().unpersistedFields.clear()
@@ -182,11 +208,14 @@ class LlmSettingsRepository(context: Context) {
 
     private fun read(prefs: SharedPreferences?): LlmSettings? = prefs?.let {
         runCatching {
+            // EncryptedSharedPreferences may contain only crypto metadata. That is not a saved
+            // settings snapshot and must not hide a real snapshot in the other store.
+            if (SETTINGS_KEYS.none(it::contains)) return@runCatching null
             LlmSettings(
                 apiKey = it.getString(KEY_API_KEY, "").orEmpty(),
                 baseUrl = it.getString(KEY_BASE_URL, DEFAULT_LLM_BASE_URL).orEmpty(),
                 modelName = it.getString(KEY_MODEL_NAME, DEFAULT_LLM_MODEL_NAME).orEmpty(),
-                models = it.getString("models", null)?.let { value ->
+                models = it.getString(KEY_MODELS, null)?.let { value ->
                     val array = org.json.JSONArray(value)
                     List(array.length()) { index -> array.getString(index) }
                 } ?: listOf(it.getString(KEY_MODEL_NAME, DEFAULT_LLM_MODEL_NAME).orEmpty()),
@@ -199,6 +228,12 @@ class LlmSettingsRepository(context: Context) {
                 ).coerceIn(MIN_LLM_REQUEST_TIMEOUT_SECONDS, MAX_LLM_REQUEST_TIMEOUT_SECONDS),
                 reasoningEffort = LlmReasoningEffort.fromStored(it.getString(KEY_REASONING_EFFORT, null)),
                 supportsImageInput = it.getBoolean(KEY_SUPPORTS_IMAGE_INPUT, true),
+                availableReasoningEfforts = it.getString(KEY_REASONING_OPTIONS, null)?.let { value ->
+                    val array = org.json.JSONArray(value)
+                    LlmReasoningEffort.normalize(List(array.length()) { index ->
+                        LlmReasoningEffort.entries.firstOrNull { entry -> entry.name == array.optString(index) }
+                    }.filterNotNull())
+                } ?: LlmReasoningEffort.defaults,
             )
         }.getOrElse { error ->
             Log.w(TAG, "Unable to read LLM settings.", error)
@@ -206,12 +241,25 @@ class LlmSettingsRepository(context: Context) {
         }
     }
 
-    private fun write(prefs: SharedPreferences, settings: LlmSettings): Boolean = runCatching {
+    private fun selectEncryptedStore(): Boolean = runCatching {
+        val editor = fallbackPrefs.edit()
+        SETTINGS_KEYS.forEach { editor.remove(it) }
+        editor.putString(KEY_ACTIVE_STORE, STORE_ENCRYPTED).commit()
+    }.getOrElse { error ->
+        Log.w(TAG, "Unable to save LLM storage selection.", error)
+        false
+    }
+
+    private fun write(
+        prefs: SharedPreferences,
+        settings: LlmSettings,
+        activeStore: String? = null,
+    ): Boolean = runCatching {
         prefs.edit()
             .putString(KEY_API_KEY, settings.apiKey)
             .putString(KEY_BASE_URL, settings.baseUrl)
             .putString(KEY_MODEL_NAME, settings.modelName)
-            .putString("models", org.json.JSONArray(settings.models).toString())
+            .putString(KEY_MODELS, org.json.JSONArray(settings.models).toString())
             .putString(KEY_ENDPOINT, settings.endpoint.name)
             .putInt(
                 KEY_REQUEST_TIMEOUT_SECONDS,
@@ -222,6 +270,8 @@ class LlmSettingsRepository(context: Context) {
             )
             .putString(KEY_REASONING_EFFORT, settings.reasoningEffort.name)
             .putBoolean(KEY_SUPPORTS_IMAGE_INPUT, settings.supportsImageInput)
+            .putString(KEY_REASONING_OPTIONS, org.json.JSONArray(settings.availableReasoningEfforts.map { it.name }).toString())
+            .apply { if (activeStore != null) putString(KEY_ACTIVE_STORE, activeStore) }
             .commit()
     }.getOrElse { error ->
         Log.w(TAG, "Unable to save LLM settings.", error)
@@ -231,20 +281,31 @@ class LlmSettingsRepository(context: Context) {
     companion object {
         private class EditOrder(
             var revision: Long = 0,
-            val latest: LongArray = LongArray(8),
+            val latest: LongArray = LongArray(9),
             val unpersistedFields: MutableSet<Int> = mutableSetOf(),
         )
         private val editLock = Any()
         private val editOrders = WeakHashMap<Context, EditOrder>()
         private const val ENCRYPTED_PREFS_NAME = "llm_settings"
         private const val FALLBACK_PREFS_NAME = "llm_settings_fallback"
+        // This non-secret marker is stored beside fallback data and changes in the same commit.
+        private const val KEY_ACTIVE_STORE = "active_store"
+        private const val STORE_ENCRYPTED = "encrypted"
+        private const val STORE_FALLBACK = "fallback"
         private const val KEY_API_KEY = "api_key"
         private const val KEY_BASE_URL = "base_url"
         private const val KEY_MODEL_NAME = "model_name"
+        private const val KEY_MODELS = "models"
         private const val KEY_ENDPOINT = "endpoint"
         private const val KEY_REQUEST_TIMEOUT_SECONDS = "request_timeout_seconds"
         private const val KEY_REASONING_EFFORT = "reasoning_effort"
+        private const val KEY_REASONING_OPTIONS = "reasoning_options"
         private const val KEY_SUPPORTS_IMAGE_INPUT = "supports_image_input"
+        private val SETTINGS_KEYS = listOf(
+            KEY_API_KEY, KEY_BASE_URL, KEY_MODEL_NAME, KEY_MODELS, KEY_ENDPOINT,
+            KEY_REQUEST_TIMEOUT_SECONDS, KEY_REASONING_EFFORT, KEY_SUPPORTS_IMAGE_INPUT,
+            KEY_REASONING_OPTIONS,
+        )
         private const val TAG = "LlmSettings"
     }
 }

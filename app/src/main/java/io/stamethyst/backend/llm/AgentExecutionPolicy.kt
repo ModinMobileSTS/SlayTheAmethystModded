@@ -80,9 +80,14 @@ internal class AgentProgressGuard(private val repeatLimit: Int) {
     }
 }
 
-/** Streaming progress is observable; synchronous generation must retain the full user limit. */
-internal fun agentAttemptPolicy(totalMillis: Long, streaming: Boolean) = AgentRequestTimeoutPolicy(
+/** Main streams may renew on progress. Summaries and synchronous requests retain a hard cap. */
+internal fun agentAttemptPolicy(
+    totalMillis: Long,
+    streaming: Boolean,
+    progressTimeoutMillis: Long? = null,
+) = AgentRequestTimeoutPolicy(
     totalTimeoutMillis = totalMillis,
-    firstEventTimeoutMillis = if (streaming) minOf(totalMillis, 120_000) else totalMillis,
-    idleTimeoutMillis = if (streaming) minOf(totalMillis, 60_000) else totalMillis,
+    firstEventTimeoutMillis = if (streaming && progressTimeoutMillis == null) minOf(totalMillis, 120_000) else totalMillis,
+    idleTimeoutMillis = if (streaming) progressTimeoutMillis ?: minOf(totalMillis, 60_000) else totalMillis,
+    extendOnProgress = streaming && progressTimeoutMillis != null,
 )

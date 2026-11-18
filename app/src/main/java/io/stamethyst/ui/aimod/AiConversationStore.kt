@@ -19,6 +19,8 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+internal enum class AiConversationDeleteResult { DELETED, NOT_FOUND, RUNNING }
+
 /**
  * SQLite-backed storage for AI conversations.
  *
@@ -143,6 +145,31 @@ internal class AiConversationStore(root: File) {
 
     fun update(sessionId: String, transform: (AiEditorSession) -> AiEditorSession) {
         mutate(sessionId, transform = transform)
+    }
+
+    /** Clear content atomically but keep a tombstone so delayed writes/imports cannot revive it. */
+    fun delete(
+        sessionId: String,
+        isJobRunning: (String) -> Boolean = { false },
+    ): AiConversationDeleteResult {
+        migrateLegacyJobs()
+        return withLockedDatabase(sessionId, create = false) { db ->
+            db.beginWriteTransactionWithRetry()
+            try {
+                if (readJobs(db).any { it.status == AiAgentJobStatus.RUNNING || isJobRunning(it.jobId) }) {
+                    return@withLockedDatabase AiConversationDeleteResult.RUNNING
+                }
+                listOf(TABLE_MESSAGES, TABLE_JOBS, "context_messages", "context_state", "context_legacy", TABLE_CONVERSATION)
+                    .forEach { db.delete(it, null, null) }
+                // Message children (attachments, tools and execution steps) cascade with messages.
+                db.execSQL("INSERT INTO conversation_deleted(id) VALUES(1)")
+                contextStorage.invalidate(db.path)
+                db.setTransactionSuccessful()
+                AiConversationDeleteResult.DELETED
+            } finally {
+                db.endTransaction()
+            }
+        } ?: AiConversationDeleteResult.NOT_FOUND
     }
 
     /** Updates one message without loading or rewriting the rest of the conversation. */
@@ -386,7 +413,9 @@ internal class AiConversationStore(root: File) {
             }
         }
         try {
-            block(database)
+            if (database.isDeleted()) null else block(database)
+        } catch (_: DeletedConversationException) {
+            null
         } catch (error: Throwable) {
             // A failed commit/transform must never leave uncommitted context in the revision cache.
             contextStorage.invalidate(database.path)
@@ -402,7 +431,17 @@ internal class AiConversationStore(root: File) {
     /** Retry only before executing a caller's transform; replaying a whole mutation is unsafe. */
     private fun SQLiteDatabase.beginWriteTransactionWithRetry() {
         retryDatabaseLocked { beginTransactionNonExclusive() }
+        // Recheck after the write lock: another process may have deleted after this handle opened.
+        if (isDeleted()) {
+            endTransaction()
+            throw DeletedConversationException()
+        }
     }
+
+    private class DeletedConversationException : IllegalStateException()
+
+    private fun SQLiteDatabase.isDeleted(): Boolean = version >= 9 &&
+        rawQuery("SELECT 1 FROM conversation_deleted LIMIT 1", null).use { it.moveToFirst() }
 
     private fun <T> retryDatabaseLocked(block: () -> T): T {
         val deadline = android.os.SystemClock.elapsedRealtime() + 5_000L
@@ -463,6 +502,7 @@ internal class AiConversationStore(root: File) {
     }
 
     private fun createSchema(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS conversation_deleted (id INTEGER PRIMARY KEY CHECK (id = 1))")
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS conversation (
@@ -1123,7 +1163,7 @@ internal class AiConversationStore(root: File) {
     private companion object {
         const val LOG_TAG = "AiModStore"
         /** Bump when [createSchema] changes so existing files are migrated on next open. */
-        const val SCHEMA_VERSION = 8
+        const val SCHEMA_VERSION = 9
         const val DATABASE_EXTENSION = "db"
         const val LEGACY_CONVERSATIONS_FILE = "conversations.json"
         const val LEGACY_JOBS_FILE = "agent_jobs.json"

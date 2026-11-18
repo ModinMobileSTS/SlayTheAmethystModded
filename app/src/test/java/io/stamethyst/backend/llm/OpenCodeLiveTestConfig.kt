@@ -5,7 +5,8 @@ import java.io.File
 
 /** Test-only credential lookup. Never print configuration, URLs, keys or HTTP request bodies. */
 internal object OpenCodeLiveTestConfig {
-    fun load(): OpenAiCompatibleModelConfig {
+    fun load(model: String = System.getenv("STS_AI_CACHE_MODEL")?.takeIf(String::isNotBlank)
+        ?: "deepseek-v4-flash"): OpenAiCompatibleModelConfig {
         val home = File(requireNotNull(System.getProperty("user.home")))
         val configHome = System.getenv("XDG_CONFIG_HOME")?.let(::File) ?: File(home, ".config")
         val dataHome = System.getenv("XDG_DATA_HOME")?.let(::File) ?: File(home, ".local/share")
@@ -14,13 +15,7 @@ internal object OpenCodeLiveTestConfig {
         check(file.isFile) { "OpenCode JSON configuration not found; set STS_AI_CACHE_OPENCODE_CONFIG." }
         val config = JSONObject(file.readText())
         val providers = config.optJSONObject("providers") ?: config.optJSONObject("provider") ?: JSONObject()
-        val model = "deepseek-v4-flash"
-        val candidates = providers.keys().asSequence().filter {
-            providers.optJSONObject(it)?.optJSONObject("models")?.has(model) == true
-        }.toList()
-        val selected = (config.optString("model").substringBefore('/')).takeIf { it in candidates }
-        val providerId = System.getenv("STS_AI_CACHE_PROVIDER") ?: selected ?: candidates.singleOrNull()
-            ?: error("Select a deepseek-v4-flash provider with STS_AI_CACHE_PROVIDER.")
+        val providerId = selectProvider(config, model, System.getenv("STS_AI_CACHE_PROVIDER"))
         val provider = providers.optJSONObject(providerId) ?: error("Selected OpenCode provider is missing.")
         val settings = provider.optJSONObject("settings") ?: provider.optJSONObject("options") ?: JSONObject()
         val authFile = File(dataHome, "opencode/auth.json")
@@ -47,6 +42,21 @@ internal object OpenCodeLiveTestConfig {
         val baseUrl = resolve(settings.optString("baseURL"))
         check(baseUrl.isNotBlank() && key.isNotBlank()) { "OpenCode provider needs an endpoint and API credential." }
         return OpenAiCompatibleModelConfig(baseUrl.trimEnd('/'), key, model, requestTimeoutSeconds = 300)
+    }
+
+    /** Resolve only declared models; never silently replace an explicitly requested test model. */
+    internal fun selectProvider(config: JSONObject, model: String, explicit: String? = null): String {
+        val providers = config.optJSONObject("providers") ?: config.optJSONObject("provider") ?: JSONObject()
+        val candidates = providers.keys().asSequence().filter {
+            providers.optJSONObject(it)?.optJSONObject("models")?.has(model) == true
+        }.toList()
+        val selected = (config.optString("model").substringBefore('/')).takeIf { it in candidates }
+        if (explicit != null) {
+            check(explicit in candidates) { "Selected provider does not declare the requested cache-test model." }
+            return explicit
+        }
+        return selected ?: candidates.singleOrNull()
+            ?: error("Select a provider declaring the requested model with STS_AI_CACHE_PROVIDER.")
     }
 
     /** V2 stores credentials in SQLite, not auth.json. Python's stdlib avoids an app/JDBC dependency. */

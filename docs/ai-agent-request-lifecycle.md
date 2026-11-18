@@ -30,20 +30,25 @@ current API and is not given an additional subscription-time scope adapter here.
 
 ## Deadline meanings
 
-`AgentRequestTimeoutPolicy(totalTimeoutMillis, firstEventTimeoutMillis, idleTimeoutMillis)`:
+`AgentRequestTimeoutPolicy(totalTimeoutMillis, firstEventTimeoutMillis, idleTimeoutMillis,
+extendOnProgress = false)`:
 
-- **Total** starts when the attempt scope is created and never extends. Keep
-  `requestTimeoutSeconds * 1000` as the configured total single-request limit.
+- **Total** starts when the attempt scope is created. By default it never extends.
+  With `extendOnProgress`, it bounds the wait before the first meaningful event; after that,
+  the idle deadline controls the request instead of a fixed wall-clock cap.
 - **First event** applies until meaningful model output arrives. Headers, heartbeat comments and
   empty SSE events do not count.
 - **Idle** starts/reset only on `scope.onMeaningfulEvent()`: nonempty text, thinking or partial
   tool-argument deltas. It is independent of total elapsed time.
 - `policy.evaluate(elapsedMillis, lastEventElapsedMillis)` is pure, with total taking precedence at
-  a simultaneous expiry. Defaults for first-event and idle equal the total, preserving the old
-   configured total semantics for compatibility callers. Production integration selects first-event
-   `min(total, 120s)` and idle `min(total, 60s)` for streams. Text, thinking and partial tool arguments
-   all reset idle. Non-streaming has no observable intermediate progress, so both phase limits equal
-   total there; a long synchronous reasoning response retains the user's full timeout.
+  a simultaneous expiry. Defaults preserve hard-total semantics for compatibility callers.
+  Main-model streams opt into `extendOnProgress`: the first event must arrive within the remaining
+  round budget, then each nonempty text, thinking or partial tool-argument delta grants the full
+  configured request timeout of idle waiting. Empty callbacks, SSE comments, headers and heartbeats
+  do not renew it. Thus healthy long reasoning can exceed five minutes without being cut off.
+  Summary streams retain their finite cumulative cap and first-event `min(total, 120s)` /
+  idle `min(total, 60s)` limits. Non-streaming has no observable intermediate progress, so both phase
+  limits equal total there; synchronous reasoning still obeys the user's configured hard timeout.
 
 The production scheduler closes the real calls at the nearest deadline. The scheduler and
 monotonic `AgentRequestClock` are injectable for deterministic tests. `checkTimeout()` and
@@ -56,7 +61,9 @@ but calls are marked cancelled immediately and cannot continue normal network wo
 1. **Factory:** no new argument is required. All models already using
    `AndroidCompatibleSseHttpClientBuilder` automatically capture bound scopes, including streaming
    Chat Completions and non-streaming Chat Completions/Responses summary models. Keep the existing shared
-   pool, headers and per-call upper bound. The scope may impose a shorter remaining-round limit.
+   pool and headers. Non-streaming keeps the configured HTTP call-total limit. Streaming disables
+   that fixed HTTP total (which would otherwise cut off healthy reasoning); finite connect/read
+   limits and the bound scope still cancel stalled requests, including heartbeat-only streams.
 2. **Executor/stop:** the Service creates one `AgentRequestControl` before starting its worker and
    passes it through Executor → Gateway and ContextManager → Compaction. Stop and `onDestroy` call
    `control.cancel()` before interrupting the worker, including during synchronous chat. Executor's
@@ -65,6 +72,9 @@ but calls are marked cancelled immediately and cannot continue normal network wo
 3. **Gateway:** `AgentRoundBudget` is created once outside retries, network recovery and
    streaming-to-nonstreaming fallback for each model/tool round. Its budget equals the configured
    single-request timeout, not four times that timeout.
+   Meaningful progress on a main-model stream renews this budget; retries, empty responses,
+   network recovery and fallback alone never renew it. An expired/cancelled scope cannot renew a
+   budget, and a late event cannot revive an expired budget.
    Before each attempt, compute `round.requestTimeoutMillis(configuredTimeoutMillis)`; zero throws
    `AgentRequestTimeoutException(ROUND_BUDGET)`. Create a scope using that total, bind the actual
    SDK invocation, and close it in the existing terminal/wait `finally`. Forward nonempty response,
@@ -73,9 +83,10 @@ but calls are marked cancelled immediately and cannot continue normal network wo
    `scope.cancel()` before exiting. Fake/custom models also need `scope.throwIfStopped()` in waits.
 4. **Backoff/network:** test `round.canWait(delayMillis)` before waiting. Recheck remaining time
    during/after recovery; clamp each recovery wait to the remaining budget and recheck before the
-   next attempt. Time is measured from the original round start, so backoff/network delays cannot
-   reset the budget. A `ROUND_BUDGET` timeout ends that round, even though socket timeouts remain
-   generally retryable under the ordinary short policy when budget remains.
+   next attempt. Time is measured from the round start or its last accepted main-stream progress,
+   so backoff/network delays cannot reset the budget. A `ROUND_BUDGET` timeout ends that round,
+   even though socket timeouts remain generally retryable under the ordinary short policy when
+   budget remains.
 5. **Compaction:** uses the same execution control and fresh attempt scopes binding actual
    sync/streaming calls. It has a separate cumulative budget equal to `summaryTimeoutMillis` (the
    executor uses the user's request timeout). Shrinking, protocol flattening, one template correction
@@ -95,7 +106,7 @@ for those failures is separate from cancellation and is not used to stop an acti
 
 ## Verification boundary
 
-Focused tests cover pure first/idle/total policy, finite cumulative retry budgets, deterministic
+Focused tests cover hard-total and renewable first/idle policy, finite no-progress retry budgets, deterministic
 clock/scheduler expiry, scope isolation and cancellation races, plus localhost HTTP/SSE calls and
 socket release. A silent localhost TLS peer observes the client socket closing before the first
 event; MockWebServer cases observe real OkHttp connection-release and call-terminal events before
@@ -106,6 +117,37 @@ ContextManager localhost cancellation for sync, streaming and both summary trans
 owners remain active. Injected time covers meaningful progress, all three request deadlines, fallback,
 network waits and summary correction budgets. Service destruction and executor model switching have
 separate integration regressions. Full commands/results are recorded in `ai-agent-efficiency.md`.
+
+Long-thinking regressions use an injected monotonic clock: main-stream thinking, text and tool
+arguments can continue well beyond the configured timeout, while silent/empty streams, synchronous
+requests, retry waits, network recovery and summaries remain bounded. Tool work longer than five
+minutes does not consume the next model turn's fresh budget. Default hard-total scopes remain
+covered by the existing transport deadline and cancellation tests.
+
+For the long-thinking fix, temporarily restoring only the old main-request timeout selection,
+non-renewing round behavior and fixed HTTP call cap made all three selected regressions fail
+(long progress, retry after long thinking, streaming HTTP configuration). Restoring the fix passed
+221 tests across 14 JVM suites, including request control/retry/transport, gateway lifecycle,
+thinking parsing, context/compaction, cache transport, tool scheduling and execution history:
+
+```bash
+./gradlew :app:testDebugUnitTest --offline \
+  --tests 'io.stamethyst.backend.llm.AgentRequest*Test' \
+  --tests 'io.stamethyst.backend.llm.AgentGatewayLifecycleTest' \
+  --tests 'io.stamethyst.backend.llm.PolicyGatedAgentGatewayTest' \
+  --tests 'io.stamethyst.backend.llm.Agent*ContextTest' \
+  --tests 'io.stamethyst.backend.llm.Agent*Compaction*Test' \
+  --tests 'io.stamethyst.backend.llm.Agent*TransportTest' \
+  --tests 'io.stamethyst.backend.llm.AgentThinking*Test' \
+  --tests 'io.stamethyst.backend.llm.AgentExecutionHistoryTest' \
+  --tests 'io.stamethyst.backend.llm.AgentToolScheduler*Test'
+```
+
+An additional `./gradlew :app:testDebugUnitTest --offline --tests
+'io.stamethyst.ui.aimod.AiAgentRuntimeIntegrationTest'` passed all three executor-switching,
+service-stop and service-destruction regressions (224 tests total across the two final runs).
+
+These are offline checks, not an Android-device or live-provider long-reasoning verification.
 
 Transport fixtures also register owners/servers for runner-thread `@After` cleanup: JUnit 4's timed
 test interrupt does not join a blocked worker. The silent TLS peer uses a dedicated executor and

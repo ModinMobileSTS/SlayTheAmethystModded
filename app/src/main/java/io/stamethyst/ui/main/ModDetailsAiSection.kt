@@ -49,6 +49,8 @@ import kotlinx.coroutines.withContext
 internal fun ModDetailsAiSection(
     mod: ModItemUi,
     controlsEnabled: Boolean,
+    communitySelected: Boolean,
+    onCommunitySelected: (Boolean) -> Unit,
     onNew: () -> Unit,
     onToggle: (AgentPatchModUi, Boolean) -> Unit,
     onDetails: (AgentPatchModUi) -> Unit,
@@ -58,7 +60,6 @@ internal fun ModDetailsAiSection(
 ) {
     val context = LocalContext.current.applicationContext
     val parentId = mod.manifestModId.ifBlank { mod.modId }
-    var communitySelected by remember(parentId) { mutableStateOf(false) }
     var retryToken by remember(parentId) { mutableIntStateOf(0) }
     var snapshot by remember(parentId) { mutableStateOf<AgentPatchCatalogueSnapshot?>(null) }
     var loading by remember(parentId) { mutableStateOf(false) }
@@ -90,18 +91,14 @@ internal fun ModDetailsAiSection(
             TextButton(onClick = onNew, enabled = controlsEnabled) { Text(stringResource(R.string.mod_details_ai_new)) }
         }
         PrimaryTabRow(selectedTabIndex = if (communitySelected) 1 else 0) {
-            Tab(selected = !communitySelected, onClick = { communitySelected = false },
+            Tab(selected = !communitySelected, onClick = { onCommunitySelected(false) },
                 text = { Text(stringResource(R.string.mod_details_ai_installed, mod.agentPatchMods.size)) })
-            Tab(selected = communitySelected, onClick = { communitySelected = true }, text = {
+            Tab(selected = communitySelected, onClick = { onCommunitySelected(true) }, text = {
                 Text(if (snapshot == null) stringResource(R.string.mod_details_ai_community)
                     else stringResource(R.string.mod_details_ai_community_count, snapshot!!.patches.size))
             })
         }
         if (!communitySelected) {
-            if (!mod.enabled && mod.agentPatchMods.isNotEmpty()) {
-                Text(stringResource(R.string.mod_details_ai_parent_disabled), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
             if (mod.agentPatchMods.isEmpty()) {
                 Text(stringResource(R.string.main_mod_agent_patch_local_empty), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)

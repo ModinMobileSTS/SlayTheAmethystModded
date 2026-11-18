@@ -444,7 +444,7 @@ class AgentContextManager(
         if (activeRecords().lastOrNull { it.patchState != null }?.patchState == patch) return
         state = state.copy(messages = state.messages + AgentContextMessage(
             sourceMessageId, "user",
-            "Launcher state update (not a new user request): Current active patch ID: $patch; workspace: patch_source/$patch/.",
+            "Launcher state update (not a new user request): Current active patch ID: $patch; workspace: /patch_source/$patch/. The virtual root stays /; file paths never become relative to this patch.",
             patchState = patch,
         ))
     }

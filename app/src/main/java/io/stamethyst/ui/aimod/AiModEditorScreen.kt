@@ -339,7 +339,7 @@ internal class AiModEditorViewModel(
                 .onFailure(::reportStorageFailure).getOrDefault(LlmSettings())
             withContext(Dispatchers.Main.immediate) {
                 llmSettings = loadedSettings
-                reasoningEffort = loadedSettings.reasoningEffort
+                reasoningEffort = resolveAiReasoningEffort(loadedSettings.reasoningEffort, loadedSettings.availableReasoningEfforts)
             }
             loadConversation()
         }
@@ -535,10 +535,17 @@ internal class AiModEditorViewModel(
     }
 
     fun updateReasoningEffort(value: LlmReasoningEffort) {
+        if (value !in llmSettings.availableReasoningEfforts && value != LlmReasoningEffort.OFF) return
         reasoningEffort = value
         val updated = llmSettings.copy(reasoningEffort = value)
         llmSettings = updated
-        launchStorage { settingsRepository.set(updated) }
+        val edit = settingsRepository.newEdit(io.stamethyst.backend.llm.LlmSettingsPatch(reasoningEffort = value)) ?: return
+        launchStorage { settingsRepository.update(listOf(edit)) }
+    }
+
+    fun acceptSettings(settings: LlmSettings) {
+        llmSettings = settings
+        reasoningEffort = resolveAiReasoningEffort(settings.reasoningEffort, settings.availableReasoningEfforts)
     }
 
     fun selectModel(modelName: String) {
@@ -546,12 +553,13 @@ internal class AiModEditorViewModel(
         if (trimmed.isEmpty() || trimmed == llmSettings.modelName) return
         val updated = llmSettings.copy(modelName = trimmed)
         llmSettings = updated
-        launchStorage { settingsRepository.set(updated) }
+        val edit = settingsRepository.newEdit(io.stamethyst.backend.llm.LlmSettingsPatch(modelName = trimmed)) ?: return
+        launchStorage { settingsRepository.update(listOf(edit)) }
     }
 
     fun send(prompt: String, attachments: List<AiAttachment> = emptyList()) {
         val trimmed = prompt.trim()
-        if (!storageReady || currentSessionId.isBlank() || (trimmed.isEmpty() && attachments.isEmpty())) return
+        if (!storageReady || switchingConversation || currentSessionId.isBlank() || (trimmed.isEmpty() && attachments.isEmpty())) return
         if (busy) {
             val sessionId = currentSessionId
             val item = AiInboxItem(UUID.randomUUID().toString(), trimmed, attachments,
@@ -676,13 +684,44 @@ internal class AiModEditorViewModel(
         }
     }
 
+    fun deleteConversation(sessionId: String) {
+        if (!storageReady || switchingConversation || busy || sessions.none { it.id == sessionId }) return
+        switchingConversation = true
+        launchStorage {
+            try {
+                val result = conversationStore.delete(sessionId, AiAgentExecutionService::isJobRunning)
+                withContext(Dispatchers.Main.immediate) {
+                    if (result == AiConversationDeleteResult.RUNNING) {
+                        LauncherTransientNoticeBus.show(UiText.StringResource(R.string.ai_editor_delete_running))
+                    } else {
+                        sessions.removeAll { it.id == sessionId }
+                        if (currentSessionId == sessionId) {
+                            val replacement = AiEditorSession(UUID.randomUUID().toString())
+                            currentSessionId = replacement.id
+                            installSession(replacement)
+                            appliedBackupPath = null
+                            error = null
+                        }
+                    }
+                }
+            } catch (failure: Exception) {
+                withContext(Dispatchers.Main.immediate) {
+                    LauncherTransientNoticeBus.show(UiText.StringResource(R.string.ai_editor_delete_failed))
+                }
+                throw failure
+            } finally {
+                withContext(Dispatchers.Main.immediate) { switchingConversation = false }
+            }
+        }
+    }
+
     fun compactConversation() {
         if (messages.isEmpty() || !llmSettings.isConfigured()) return
         startRequest(compact = true)
     }
 
     private fun startRequest(compact: Boolean = false) {
-        if (!storageReady || currentSessionId.isBlank() || busy) return
+        if (!storageReady || switchingConversation || currentSessionId.isBlank() || busy) return
         val jobId = UUID.randomUUID().toString()
         if (!AiAgentExecutionService.reserve(jobId)) {
             error = "Another AI task is running."
@@ -828,7 +867,6 @@ fun LauncherAiModEditorScreen(
             if (originallyEnabled) window?.addFlags(flag) else window?.clearFlags(flag)
         }
     }
-    val historyContentDescription = stringResource(R.string.ai_mod_editor_history)
     val navigator = currentNavigator
     val viewModel: AiModEditorViewModel = viewModel(
         key = "${modId}:${conversationId.orEmpty()}",
@@ -858,8 +896,7 @@ fun LauncherAiModEditorScreen(
     var showApplyConfirmation by rememberSaveable { mutableStateOf(false) }
     var showRestoreConfirmation by rememberSaveable { mutableStateOf(false) }
     var rollbackTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
-    var showHistory by remember { mutableStateOf(false) }
-    var showExecutionHistory by rememberSaveable(viewModel.currentSessionId) { mutableStateOf(false) }
+    var menuPage by rememberSaveable { mutableStateOf<Int?>(null) }
     val settings = viewModel.llmSettings
     val configured = settings.isConfigured()
     val attachmentScope = rememberCoroutineScope()
@@ -968,71 +1005,17 @@ fun LauncherAiModEditorScreen(
         initialScrollApplied = initialScrollApplied,
     )
 
+    AiEditorPageTransition(menuPage, modifier) { page ->
+    if (page == null) {
     Scaffold(
-        modifier = modifier,
+        modifier = Modifier.fillMaxSize(),
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 LauncherTopAppBar(
                 title = {
-                    Box {
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable(enabled = viewModel.storageReady && !viewModel.switchingConversation) { showHistory = !showHistory }
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                                .semantics { contentDescription = historyContentDescription },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column {
-                                Text(stringResource(R.string.ai_mod_editor_title), style = MaterialTheme.typography.titleMedium)
-                                Text(modName, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Icon(
-                                Icons.KeyboardArrowUp,
-                                contentDescription = null,
-                                modifier = Modifier.padding(start = 4.dp).size(20.dp).rotate(if (showHistory) 0f else 180f),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showHistory,
-                            onDismissRequest = { showHistory = false },
-                        ) {
-                            Text(
-                                stringResource(R.string.ai_mod_editor_history),
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            val conversationHistory = viewModel.history
-                            if (conversationHistory.isEmpty()) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.ai_mod_editor_history_empty)) },
-                                    onClick = { showHistory = false },
-                                )
-                            } else {
-                                conversationHistory.asReversed().forEach { session ->
-                                    val isSelected = session.id == viewModel.currentSessionId
-                                    DropdownMenuItem(
-                                        modifier = Modifier.semantics { selected = isSelected },
-                                        text = { Text(session.displayTitle(), maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                                        leadingIcon = if (isSelected) {
-                                            {
-                                                Icon(
-                                                    Icons.CheckCircle,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                )
-                                            }
-                                        } else null,
-                                        onClick = {
-                                            showHistory = false
-                                            viewModel.switchConversation(session.id)
-                                        },
-                                    )
-                                }
-                            }
-                        }
+                    Column {
+                        Text(stringResource(R.string.ai_mod_editor_title), style = MaterialTheme.typography.titleMedium)
+                        Text(modName, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 navigationIcon = {
@@ -1063,16 +1046,10 @@ fun LauncherAiModEditorScreen(
                         },
                         highlighted = keepScreenOn,
                     )
-                    AiContextCounter(
-                        tokens = if (viewModel.messages.isEmpty()) 0 else viewModel.sessions
-                            .firstOrNull { it.id == viewModel.currentSessionId }?.context
-                            ?.takeIf { it.modelKey == AiContextLimits.key(settings.baseUrl, settings.modelName) }?.estimatedTokens,
-                        modelKey = "${settings.baseUrl}/${settings.modelName}",
-                        busy = viewModel.busy,
-                        tools = viewModel.availableTools(),
-                        contextState = viewModel.sessions.firstOrNull { it.id == viewModel.currentSessionId }?.context,
-                        endpoint = settings.endpoint.name,
-                        onCompact = viewModel::compactConversation,
+                    AiMessageAction(
+                        icon = ImageVector.vectorResource(R.drawable.ic_editor_menu),
+                        label = stringResource(R.string.ai_editor_menu),
+                        onClick = { menuPage = 0 },
                     )
                 },
                 )
@@ -1234,14 +1211,6 @@ fun LauncherAiModEditorScreen(
         }
         }
         val outputSpeeds by AiAgentExecutionService.outputSpeeds.collectAsState()
-        if (showExecutionHistory) {
-            AiExecutionHistoryDialog(
-                sessionId = viewModel.currentSessionId,
-                revision = viewModel.transcriptRevision,
-                messages = viewModel.messages,
-                onDismiss = { showExecutionHistory = false },
-            )
-        }
         AiChatComposer(
             modifier = Modifier.align(Alignment.BottomCenter),
             hazeState = composerHazeState,
@@ -1253,10 +1222,25 @@ fun LauncherAiModEditorScreen(
             attachments = draftAttachments,
             onRemoveAttachment = { draftAttachments.remove(it) },
             onAttach = { picker.launch(arrayOf("text/*", "application/json", "application/octet-stream", "image/*")) },
-            configured = configured && viewModel.storageReady,
+            configured = configured && viewModel.storageReady && !viewModel.switchingConversation,
             busy = viewModel.busy,
             outputTokensPerSecond = outputSpeeds[modId to viewModel.currentSessionId],
-            onExecutionHistory = { showExecutionHistory = true },
+            onExecutionHistory = { menuPage = 1 },
+            onConfigureEfforts = { menuPage = 2 },
+            reasoningOptions = settings.availableReasoningEfforts,
+            contextCounter = {
+                AiContextCounter(
+                    tokens = if (viewModel.messages.isEmpty()) 0 else viewModel.sessions
+                        .firstOrNull { it.id == viewModel.currentSessionId }?.context
+                        ?.takeIf { it.modelKey == AiContextLimits.key(settings.baseUrl, settings.modelName) }?.estimatedTokens,
+                    modelKey = AiContextLimits.key(settings.baseUrl, settings.modelName),
+                    busy = viewModel.busy,
+                    tools = viewModel.availableTools(),
+                    contextState = viewModel.sessions.firstOrNull { it.id == viewModel.currentSessionId }?.context,
+                    endpoint = settings.endpoint.name,
+                    onCompact = viewModel::compactConversation,
+                )
+            },
             inbox = viewModel.inbox,
             onInboxChange = viewModel::updateInbox,
             onResumeInbox = viewModel::resumeInbox,
@@ -1351,6 +1335,14 @@ fun LauncherAiModEditorScreen(
             },
         )
         }
+    }
+    } else {
+        val speeds by AiAgentExecutionService.outputSpeeds.collectAsState()
+        AiEditorMenuScreen(page, modName, viewModel, speeds[modId to viewModel.currentSessionId],
+            onBack = { menuPage = null },
+            onTutorial = { navigator.push(Route.SettingsLlmTutorial) },
+            modifier = Modifier.fillMaxSize())
+    }
     }
 }
 

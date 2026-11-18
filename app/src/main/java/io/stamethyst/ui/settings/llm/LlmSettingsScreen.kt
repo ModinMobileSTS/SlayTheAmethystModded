@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import io.stamethyst.ui.LauncherAlertDialog as AlertDialog
@@ -17,7 +18,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import kotlinx.coroutines.delay
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -61,6 +61,8 @@ import io.stamethyst.backend.llm.LlmModelTestService
 import io.stamethyst.backend.llm.OpenAiCompatibleModelConfig
 import io.stamethyst.backend.llm.NewApiModel
 import io.stamethyst.backend.llm.NewApiModelService
+import io.stamethyst.backend.llm.llmSettingsErrorDetail
+import io.stamethyst.backend.llm.isValidLlmBaseUrl
 import io.stamethyst.backend.llm.DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS
 import io.stamethyst.backend.llm.MAX_LLM_REQUEST_TIMEOUT_SECONDS
 import io.stamethyst.navigation.currentNavigator
@@ -89,8 +91,6 @@ class LlmSettingsViewModel(
     private val cacheCatalog: (String, List<NewApiModel>) -> Unit = { _, _ -> },
 ) : ViewModel() {
     var settings by mutableStateOf(repository.get())
-        private set
-    var remoteModels by mutableStateOf<List<NewApiModel>>(emptyList())
         private set
     var refreshingModels by mutableStateOf(false)
         private set
@@ -165,6 +165,15 @@ class LlmSettingsViewModel(
         ))
     }
 
+    fun replaceModels(modelIds: List<String>) {
+        refreshSettings()
+        val models = modelIds.map(String::trim).filter(String::isNotEmpty).distinct()
+        edit(LlmSettingsPatch(
+            models = models,
+            modelName = settings.modelName.takeIf { it in models } ?: models.firstOrNull().orEmpty(),
+        ))
+    }
+
     fun removeModel(model: String) {
         refreshSettings()
         val remaining = settings.models - model
@@ -179,26 +188,24 @@ class LlmSettingsViewModel(
         super.onCleared()
     }
 
-    fun consumeRemoteModels() {
-        remoteModels = emptyList()
-    }
-
     fun refreshModels(baseUrl: String, apiKey: String) {
         if (refreshingModels || baseUrl.isBlank() || apiKey.isBlank()) return
         refreshingModels = true
         modelFetchError = null
         remoteModelsEmpty = false
-        remoteModels = emptyList()
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) {
                 NewApiModelService().fetchModels(baseUrl, apiKey).also { models ->
                     cacheCatalog(baseUrl, models)
                 }
             } }
-                .onSuccess { models -> remoteModels = models; remoteModelsEmpty = models.isEmpty() }
+                .onSuccess { models ->
+                    replaceModels(models.map { it.id })
+                    remoteModelsEmpty = models.isEmpty()
+                }
                 .onFailure { error ->
                     if (error is kotlinx.coroutines.CancellationException) throw error
-                    modelFetchError = error.javaClass.simpleName
+                    modelFetchError = llmSettingsErrorDetail(error, apiKey)
                 }
             refreshingModels = false
         }
@@ -215,8 +222,7 @@ class LlmSettingsViewModel(
                 .onSuccess { modelTestResult = it }
                 .onFailure { error ->
                     if (error is kotlinx.coroutines.CancellationException) throw error
-                    modelTestError = error.message?.takeIf(String::isNotBlank)
-                        ?: error.javaClass.simpleName
+                    modelTestError = llmSettingsErrorDetail(error, config.apiKey)
                 }
             testingModel = false
         }
@@ -261,6 +267,7 @@ internal fun LlmSettingsContent(
     embedded: Boolean = false,
     onGoBack: () -> Unit = {},
     onOpenTutorial: () -> Unit,
+    settingsViewModel: LlmSettingsViewModel? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -274,7 +281,7 @@ internal fun LlmSettingsContent(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    val viewModel: LlmSettingsViewModel = viewModel(factory = LlmSettingsViewModel.factory(context))
+    val viewModel: LlmSettingsViewModel = settingsViewModel ?: viewModel(factory = LlmSettingsViewModel.factory(context))
     DisposableEffect(viewModel, lifecycleOwner) {
         viewModel.refreshSettings()
         val observer = LifecycleEventObserver { _, event ->
@@ -289,7 +296,6 @@ internal fun LlmSettingsContent(
     val modelName = current.modelName
     val endpoint = current.endpoint
     val requestTimeoutSeconds = current.requestTimeoutSeconds
-    val reasoningEffort = current.reasoningEffort
     val supportsImageInput = current.supportsImageInput
     val models = current.models
     var customModelInput by rememberSaveable { mutableStateOf("") }
@@ -297,9 +303,7 @@ internal fun LlmSettingsContent(
     var showAddCustomModel by rememberSaveable { mutableStateOf(false) }
     var modelQuery by rememberSaveable { mutableStateOf("") }
     val effectiveKey = apiKey.trim().ifEmpty { current.apiKey }
-    fun validBaseUrl(value: String) = value.trim().toHttpUrlOrNull()?.let {
-        it.username.isEmpty() && it.password.isEmpty() && it.query == null && it.fragment == null
-    } == true
+    fun validBaseUrl(value: String) = isValidLlmBaseUrl(value)
     LaunchedEffect(current.baseUrl) {
         // Keep raw typing (notably a trailing slash) while reflecting another editor's saved URL.
         if (validBaseUrl(baseUrl) && baseUrl.trim().trimEnd('/') != current.baseUrl) {
@@ -314,13 +318,6 @@ internal fun LlmSettingsContent(
         apiKey = effectiveKey,
         baseUrl = if (validUrl) baseUrl.trim().trimEnd('/') else current.baseUrl,
     )
-    LaunchedEffect(viewModel.remoteModels) {
-        if (viewModel.remoteModels.isNotEmpty()) {
-            viewModel.addModels(viewModel.remoteModels.map { it.id })
-            viewModel.consumeRemoteModels()
-        }
-    }
-
     SettingsDetailRouteLayout(
         embedded = embedded,
         modifier = modifier.imePadding(),
@@ -452,14 +449,9 @@ internal fun LlmSettingsContent(
                     optionLabel = { stringResource(R.string.settings_llm_timeout_value, it / 60) },
                     onOptionSelected = { viewModel.edit(LlmSettingsPatch(requestTimeoutSeconds = it)) },
                 )
-                SettingsDropdownField(
-                    label = stringResource(R.string.settings_llm_reasoning),
-                    valueText = stringResource(reasoningEffort.labelRes),
-                    enabled = true,
-                    options = LlmReasoningEffort.selectable,
-                    optionLabel = { stringResource(it.labelRes) },
-                    onOptionSelected = { viewModel.edit(LlmSettingsPatch(reasoningEffort = it)) },
-                )
+                LlmReasoningOptions(current.availableReasoningEfforts) {
+                    viewModel.edit(LlmSettingsPatch(availableReasoningEfforts = it))
+                }
                 SwitchSettingRow(
                     checked = supportsImageInput,
                     enabled = true,
@@ -514,7 +506,9 @@ internal fun LlmSettingsContent(
                             if (viewModel.refreshingModels) LinearProgressIndicator(Modifier.fillMaxWidth())
                             if (viewModel.remoteModelsEmpty) Text(stringResource(R.string.llm_remote_empty))
                             viewModel.modelFetchError?.let {
-                                Text(stringResource(R.string.llm_fetch_failed, it), color = MaterialTheme.colorScheme.error)
+                                SelectionContainer {
+                                    Text(stringResource(R.string.llm_fetch_failed, it), color = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
@@ -611,10 +605,12 @@ internal fun LlmSettingsContent(
                             Text(stringResource(R.string.llm_test_model_running))
                         }
                         viewModel.modelTestError != null -> {
-                            Text(
-                                stringResource(R.string.llm_test_model_failed, viewModel.modelTestError.orEmpty()),
-                                color = MaterialTheme.colorScheme.error,
-                            )
+                            SelectionContainer {
+                                Text(
+                                    stringResource(R.string.llm_test_model_failed, viewModel.modelTestError.orEmpty()),
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                         else -> {
                             Text(stringResource(R.string.llm_test_model_success))
@@ -626,11 +622,3 @@ internal fun LlmSettingsContent(
         )
     }
 }
-
-private val LlmReasoningEffort.labelRes: Int
-    get() = when (this) {
-        LlmReasoningEffort.OFF -> R.string.settings_llm_reasoning_off
-        LlmReasoningEffort.LOW -> R.string.settings_llm_reasoning_low
-        LlmReasoningEffort.HIGH -> R.string.settings_llm_reasoning_high
-        LlmReasoningEffort.MAX -> R.string.settings_llm_reasoning_max
-    }

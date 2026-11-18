@@ -4,11 +4,11 @@
 
 ## 局部文本编辑
 
-`edit_agent_workspace_file` 是独占执行的 `WORKSPACE_WRITE` 工具，复用 write/delete 的路径解析策略，仅编辑 `patch_source/patch-*/` 下已有文件。拒绝路径越界、指向 source/ 或工作区外的符号链接，以及被符号链接重定向的 patch_source 根目录。创建文件继续使用 `write_agent_workspace_file`。
+`edit_agent_workspace_file` 是独占执行的 `WORKSPACE_WRITE` 工具，复用 write/delete 的虚拟路径解析策略，仅编辑 `/patch_source/patch-*/` 下已有文件。创建文件继续使用 `write_agent_workspace_file`。
 
 参数：
 
-- `path`：工作区相对路径。
+- `path`：以模组工作区为固定 `/` 的虚拟路径，例如 `/patch_source/patch-123/src/demo/Patch.java`。兼容省略前导 `/`，但不相对于活动 patch 解析。
 - `old_text`：必须非空、按字面精确匹配且只出现一次（重叠匹配也算多匹配）。
 - `new_text`：替换文本；空字符串表示删除这一段。
 - `expected_sha256`：可选的完整文件版本哈希，推荐传入最近 read/edit 返回的 `sha256`；冲突不写入。
@@ -30,3 +30,26 @@
 ## 离线回归
 
 `AgentWorkspaceEditToolTest` 覆盖精确替换、非目标字节保真、分页哈希接续、冲突不写入、路径/符号链接边界、非法文本、文件大小和权限/独占策略。`AiAgentEditingWorkflowTest` 通过真实 executor 工具列表验证注册与本地化说明，并检查最终系统提示的流程约束。`AgentPatchPackagingWorkflowTest` 通过本地合成 JAR 验证无需独立 validate 也会返回预检警告，非法字节码仍阻止 package/update，失败更新保留原 JAR。既有 workspace read、调度和网关测试继续覆盖相关行为。
+
+## 固定虚拟文件视图
+
+所有 workspace 工具共用 `AgentWorkspacePaths`；`/` 是当前母模组的工作区，不是 Android 根目录，包含多个 patch revision：
+
+```text
+/
+├── source/               # 母模组的按需缓存，只读
+├── patch_source/
+│   ├── patch-123/        # 可修改其文件、子目录
+│   └── patch-456/
+└── tool_output/          # 超长工具输出，只读
+```
+
+- list/read/glob/grep/write/edit/delete 的返回路径、骨架生成的 `path`、反编译缓存的 `source_path`、创建/列举 patch 的 `patch_workspace_path` 统一为虚拟绝对路径，可以原样跨工具传递。
+- 不提供 `cd`，活动 patch 只影响默认编译/打包目标，不影响路径寻址。`src/A.java` 不会猜测为当前 patch 下的源码。glob pattern（包括带 `path` scope 时）仍从虚拟根匹配；支持可选前导 `/`。
+- 创建工作区和准备 source 的 `workspace_root` 为 `/`，不向模型输出设备物理根路径。package/update 返回 `jar_name` 和 `patch_workspace_path`，不再返回不可由工作区工具访问的物理 `jar_path`。实际 JAR 存储与加载位置不变。
+- 编译诊断中的物理工作区前缀替换为 `/`，preflight 的补丁相对 `.class` 位置扩展为完整虚拟路径；不改写被读取的源码内容。
+- 会话、凭据、metadata 和其他内部目录不属于公开视图；显式读取与遍历都不暴露它们。`/source/` 和 `/tool_output/` 只读；根目录、`/patch_source/` 及单个 patch 根不能通过通用 delete 删除，整个 revision 应使用 `delete_agent_patch_mod`。
+- 保留 canonical path 检查；拒绝越界、跨公开树的符号链接和重定向的挂载根。搜索不递归跟随目录符号链接，递归删除预先检查整棵树且不跟随目录链接。
+- 路径失败返回 `error`、`path`、`hint`，区分 `path_not_exposed`、`read_only_path`、`incomplete_patch_path`、`protected_patch_directory`、`invalid_path`、`path_outside_workspace` 和 `unsafe_symlink`，不再使用笼统的 `path_outside_patch_source`。
+
+`AgentWorkspaceVirtualPathsTest` 覆盖多 revision 跨工具路径复用、内部文件隔离、只读树、路径规范化/越界、目录循环与链接逃逸、骨架生成后原路径读/改/删，以及真实离线 ECJ 错误诊断路径。

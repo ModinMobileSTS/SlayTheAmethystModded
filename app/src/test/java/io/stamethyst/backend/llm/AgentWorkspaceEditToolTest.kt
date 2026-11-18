@@ -173,14 +173,17 @@ class AgentWorkspaceEditToolTest {
         val root = workspace()
         val source = File(root, "source/Original.java").apply { parentFile.mkdirs(); writeText("old") }
         val outside = File(root.parentFile, "outside.txt").apply { writeText("old") }
-        val paths = listOf("source/Original.java", "../outside.txt", "patch_source/patch-test/../../source/Original.java",
-            "patch_source/invalid/file.txt", "patch_source/loose.txt", source.absolutePath, "bad\u0000path")
-        for (candidate in paths) {
-            assertError("path_outside_patch_source", AgentWorkspaceEditTool(root).execute(arguments("old", "new", candidate)))
+        val paths = mapOf("source/Original.java" to "read_only_path", "../outside.txt" to "path_outside_workspace",
+            "patch_source/patch-test/../../source/Original.java" to "read_only_path",
+            "patch_source/invalid/file.txt" to "incomplete_patch_path", "patch_source/loose.txt" to "incomplete_patch_path",
+            source.absolutePath to "path_not_exposed", "bad\u0000path" to "invalid_path")
+        for ((candidate, code) in paths) {
+            assertError(code, AgentWorkspaceEditTool(root).execute(arguments("old", "new", candidate)))
             val write = buildJsonObject { put("path", JsonPrimitive(candidate)); put("content", JsonPrimitive("new")) }
             val delete = buildJsonObject { put("path", JsonPrimitive(candidate)) }
-            assertEquals(candidate, "path_outside_patch_source", result(AgentWorkspaceWriteTool(root).execute(write.toString())).text("error"))
-            assertEquals(candidate, "path_outside_patch_source", result(AgentWorkspaceDeleteTool(root).execute(delete.toString())).text("error"))
+            assertEquals(candidate, code, result(AgentWorkspaceWriteTool(root).execute(write.toString())).text("error"))
+            assertEquals(candidate, if (code == "incomplete_patch_path") "protected_patch_directory" else code,
+                result(AgentWorkspaceDeleteTool(root).execute(delete.toString())).text("error"))
         }
         assertEquals("old", source.readText())
         assertEquals("old", outside.readText())
@@ -205,7 +208,8 @@ class AgentWorkspaceEditToolTest {
         val paths = listOf("source.java", "outside.java", "dir/Original.java")
         paths.forEach { name ->
             val linkPath = "patch_source/patch-test/src/$name"
-            assertError("path_outside_patch_source", AgentWorkspaceEditTool(root).execute(arguments("old", "new", linkPath)))
+            assertError(if (name == "source.java") "unsafe_symlink" else "path_outside_workspace",
+                AgentWorkspaceEditTool(root).execute(arguments("old", "new", linkPath)))
         }
         assertEquals("old", source.readText())
         assertEquals("old", outsideFile.readText())
@@ -218,19 +222,19 @@ class AgentWorkspaceEditToolTest {
         val originalSource = File(root, "source").toPath()
         Files.createSymbolicLink(patchSource, originalSource.toAbsolutePath())
         assertTrue("Fixture must redirect patch_source to source", Files.isSameFile(patchSource, originalSource))
-        assertError("path_outside_patch_source", AgentWorkspaceEditTool(root).execute(arguments("old", "new")))
-        assertEquals("path_outside_patch_source", result(AgentWorkspaceWriteTool(root).execute("""{"path":"$path","content":"new"}""")).text("error"))
-        assertEquals("path_outside_patch_source", result(AgentWorkspaceDeleteTool(root).execute("""{"path":"$path"}""")).text("error"))
+        assertError("unsafe_symlink", AgentWorkspaceEditTool(root).execute(arguments("old", "new")))
+        assertEquals("unsafe_symlink", result(AgentWorkspaceWriteTool(root).execute("""{"path":"$path","content":"new"}""")).text("error"))
+        assertEquals("unsafe_symlink", result(AgentWorkspaceDeleteTool(root).execute("""{"path":"$path"}""")).text("error"))
         assertEquals("old", source.readText())
     }
 
     @Test fun patchSourceRootItselfCannotBeEditedEvenIfItIsARegularFile() {
         val root = workspace()
         val malformedRoot = File(root, "patch_source").apply { writeText("old") }
-        assertError("path_outside_patch_source", AgentWorkspaceEditTool(root).execute(arguments("old", "new", "patch_source")))
-        assertEquals("path_outside_patch_source", result(AgentWorkspaceWriteTool(root)
+        assertError("incomplete_patch_path", AgentWorkspaceEditTool(root).execute(arguments("old", "new", "patch_source")))
+        assertEquals("incomplete_patch_path", result(AgentWorkspaceWriteTool(root)
             .execute("""{"path":"patch_source","content":"new"}""")).text("error"))
-        assertEquals("cannot_delete_patch_source_root", result(AgentWorkspaceDeleteTool(root)
+        assertEquals("protected_patch_directory", result(AgentWorkspaceDeleteTool(root)
             .execute("""{"path":"patch_source"}""")).text("error"))
         assertEquals("old", malformedRoot.readText())
     }

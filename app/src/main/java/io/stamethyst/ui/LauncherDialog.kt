@@ -29,7 +29,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalTextInputService
+import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -109,6 +115,19 @@ private fun AnimatedDialogWindow(entry: LauncherDialogEntry, onExited: () -> Uni
         ),
     ) {
         val view = LocalView.current
+        // Capture these before restoring caller locals: they belong to this window's Compose
+        // owner, not the activity (or parent dialog). In particular, the parent loses window
+        // focus when this dialog opens, which would suppress the cursor and selection handles.
+        @Suppress("DEPRECATION")
+        val windowInputLocals = arrayOf(
+            LocalView provides view,
+            LocalWindowInfo provides LocalWindowInfo.current,
+            LocalFocusManager provides LocalFocusManager.current,
+            LocalInputModeManager provides LocalInputModeManager.current,
+            LocalTextInputService provides LocalTextInputService.current,
+            LocalSoftwareKeyboardController provides LocalSoftwareKeyboardController.current,
+            LocalTextToolbar provides LocalTextToolbar.current,
+        )
         SideEffect {
             (view.parent as DialogWindowProvider).window.apply {
                 setWindowAnimations(0)
@@ -153,9 +172,8 @@ private fun AnimatedDialogWindow(entry: LauncherDialogEntry, onExited: () -> Uni
             ) {
                 entry.locals?.let {
                     CompositionLocalProvider(it) {
-                        // Keep caller navigation/theme locals, but use this dialog's View
-                        // for keyboard, focus, nested windows and WindowProvider access.
-                        CompositionLocalProvider(LocalView provides view) { entry.content() }
+                        // Keep caller navigation/theme locals without replacing window input services.
+                        CompositionLocalProvider(*windowInputLocals) { entry.content() }
                     }
                 }
             }

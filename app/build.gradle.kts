@@ -568,7 +568,7 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
 
 tasks.register("aiCacheAcceptanceTest") {
     group = "verification"
-    description = "Manually tests prompt-cache reuse with deepseek-v4-flash using local OpenCode credentials."
+    description = "Manually tests prompt-cache reuse using local OpenCode credentials (DeepSeek default; STS_AI_CACHE_MODEL overrides)."
     dependsOn("testDebugUnitTest")
 }
 

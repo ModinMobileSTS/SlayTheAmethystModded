@@ -1,5 +1,6 @@
 package io.stamethyst.backend.llm
 
+import dev.langchain4j.exception.HttpException
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -43,6 +44,33 @@ class NewApiModelServiceTest {
             {"id":"c","context_window":999999999999,"max_input_tokens":2.5,"max_output_tokens":[]}
         ]}""")
         models.forEach { assertEquals(AgentModelLimits(), it.limits) }
+    }
+
+    @Test
+    fun failedFetchPreservesHttpStatusAndProviderBodyBeyondOld240CharacterLimit() = runBlocking {
+        val body = """{"error":{"message":"${"diagnostic ".repeat(30)}quota exhausted","code":"quota"}}"""
+        server.enqueue(MockResponse.Builder().code(402).body(body).build())
+
+        val error = runCatching {
+            NewApiModelService().fetchModels(server.url("/v1").toString(), "secret")
+        }.exceptionOrNull()
+
+        assertTrue(error is HttpException)
+        assertEquals(402, (error as HttpException).statusCode())
+        assertEquals(body, error.message)
+        val detail = llmSettingsErrorDetail(error, "secret")
+        assertTrue(detail.contains("HTTP 402"))
+        assertTrue(detail.contains("quota exhausted"))
+    }
+
+    @Test
+    fun failedFetchWithoutResponseBodyStillShowsHttpStatus() = runBlocking {
+        server.enqueue(MockResponse.Builder().code(403).build())
+        val error = runCatching {
+            NewApiModelService().fetchModels(server.url("/v1").toString(), "secret")
+        }.exceptionOrNull()!!
+
+        assertTrue(llmSettingsErrorDetail(error, "secret").contains("HTTP 403"))
     }
 
     @Test

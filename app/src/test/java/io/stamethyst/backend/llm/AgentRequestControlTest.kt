@@ -25,6 +25,50 @@ class AgentRequestControlTest {
         assertEquals(AgentRequestTimeoutKind.TOTAL, AgentRequestTimeoutPolicy(100).evaluate(100, null).expired)
     }
 
+    @Test fun renewableStreamUsesFullConfiguredIdleLimitAfterShortRemainingFirstWait() {
+        val policy = agentAttemptPolicy(30_000, streaming = true, progressTimeoutMillis = 300_000)
+        assertEquals(AgentRequestTimeoutState(1, null), policy.evaluate(29_999, null))
+        assertNotNull(policy.evaluate(30_000, null).expired)
+        assertEquals(AgentRequestTimeoutState(300_000, null), policy.evaluate(29_999, 29_999))
+        assertNull(policy.evaluate(900_000, 899_999).expired)
+        assertEquals(AgentRequestTimeoutKind.STREAM_IDLE, policy.evaluate(1_199_999, 899_999).expired)
+        val sync = agentAttemptPolicy(30_000, streaming = false, progressTimeoutMillis = 300_000)
+        assertEquals(AgentRequestTimeoutKind.TOTAL, sync.evaluate(30_000, 29_999).expired)
+    }
+
+    @Test fun acceptedProgressRenewsRoundButLateOrCancelledEventsCannotReviveIt() {
+        val clock = FakeTime()
+        val scheduler = FakeScheduler(clock)
+        val budget = AgentRoundBudget(300_000, clock)
+        AgentRequestControl(clock, scheduler).use { owner ->
+            owner.newRequest(agentAttemptPolicy(300_000, true, 300_000), budget::onMeaningfulEvent).use { scope ->
+                repeat(5) {
+                    scheduler.advanceTo(clock.now + 240_000)
+                    scope.onMeaningfulEvent()
+                    assertNull(scope.stopReason)
+                    assertEquals(300_000L, budget.remainingMillis())
+                    assertEquals(1, scheduler.pendingCount)
+                }
+                clock.now += 300_000 // Deliberately do not run the scheduler: the event must check expiry.
+                scope.onMeaningfulEvent()
+                assertEquals(AgentRequestTimeoutKind.STREAM_IDLE, (scope.stopReason as AgentRequestTimeoutException).kind)
+                assertEquals(0L, budget.remainingMillis())
+                scope.onMeaningfulEvent()
+                budget.onMeaningfulEvent()
+                assertEquals(0L, budget.remainingMillis())
+            }
+            val cancelledBudget = AgentRoundBudget(300_000, clock)
+            owner.newRequest(agentAttemptPolicy(300_000, true, 300_000), cancelledBudget::onMeaningfulEvent).use { scope ->
+                scope.cancel()
+                clock.now += 1_000
+                scope.onMeaningfulEvent()
+                assertEquals(299_000L, cancelledBudget.remainingMillis())
+                assertTrue(scope.stopReason is CancellationException)
+            }
+        }
+        assertEquals(0, scheduler.pendingCount)
+    }
+
     @Test fun invalidAndUnlimitedPoliciesAreRejected() {
         assertThrows(IllegalArgumentException::class.java) { AgentRequestTimeoutPolicy(0) }
         assertThrows(IllegalArgumentException::class.java) { AgentRequestTimeoutPolicy(100, -1, 100) }

@@ -4,6 +4,7 @@ import android.content.Context
 import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.backend.network.AcceleratedRouteEvent
 import io.stamethyst.backend.network.AcceleratedRouteEvents
+import io.stamethyst.backend.network.AcceleratedRouteObserver
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.RuntimePaths
 import java.io.File
@@ -444,7 +445,8 @@ internal class WattRouteExecutor(
                     failedForwardTargets.add(usedForwardTarget)
                 ) {
                     responseTransferred = true
-                    AcceleratedRouteEvents.emit(
+                    reportRouteEvent(
+                        logicalRequest,
                         AcceleratedRouteEvent.ForwardTargetFailed(
                             host = logicalRequest.url.host,
                             target = usedForwardTarget,
@@ -580,22 +582,24 @@ internal class WattRouteExecutor(
             try {
                 checkActive()
                 if (candidateRoute == null || candidateRoute.isOfficial) {
-                    AcceleratedRouteEvents.emit(AcceleratedRouteEvent.OfficialAttempt(logicalHost))
+                    reportRouteEvent(logicalRequest, AcceleratedRouteEvent.OfficialAttempt(logicalHost))
                     val officialResponse = officialRequestExecutor(logicalRequest)
                     validateCandidateResponse(logicalRequest, officialResponse)
-                    AcceleratedRouteEvents.emit(AcceleratedRouteEvent.OfficialSucceeded(logicalHost))
+                    reportRouteEvent(logicalRequest, AcceleratedRouteEvent.OfficialSucceeded(logicalHost))
                     return ForwardedExecution(
                         response = officialResponse,
                         usedForwardTarget = null,
                         usedOfficial = true,
                     )
                 }
-                AcceleratedRouteEvents.emit(
+                reportRouteEvent(
+                    logicalRequest,
                     AcceleratedRouteEvent.ForwardTargetAttempt(logicalHost, candidateTarget.orEmpty()),
                 )
                 val response = executeCandidate(logicalRequest, buildNetworkRequest(forwardedRequest, candidateRoute), candidateRoute)
                 validateCandidateResponse(logicalRequest, response)
-                AcceleratedRouteEvents.emit(
+                reportRouteEvent(
+                    logicalRequest,
                     AcceleratedRouteEvent.ForwardTargetSucceeded(logicalHost, candidateTarget.orEmpty()),
                 )
                 return ForwardedExecution(
@@ -608,7 +612,8 @@ internal class WattRouteExecutor(
                 if (!logicalRequest.canReplayHttpRequest() || error is ProtocolException) throw error
                 if (candidateTarget != null) {
                     failedForwardTargets += candidateTarget
-                    AcceleratedRouteEvents.emit(
+                    reportRouteEvent(
+                        logicalRequest,
                         AcceleratedRouteEvent.ForwardTargetFailed(
                             host = logicalHost,
                             target = candidateTarget,
@@ -618,7 +623,8 @@ internal class WattRouteExecutor(
                 }
                 lastError = error
                 if (candidateRoute == null || candidateRoute.isOfficial) {
-                    AcceleratedRouteEvents.emit(
+                    reportRouteEvent(
+                        logicalRequest,
                         AcceleratedRouteEvent.OfficialFailed(logicalHost, error.routeFailureReason()),
                     )
                     routeResolvers
@@ -628,6 +634,14 @@ internal class WattRouteExecutor(
             }
         }
         throw lastError ?: IOException("No acceleration route candidate was available")
+    }
+
+    private fun reportRouteEvent(request: Request, event: AcceleratedRouteEvent) {
+        AcceleratedRouteEvents.emit(event)
+        // UI observers must never break routing or fail the download.
+        runCatching {
+            request.tag(AcceleratedRouteObserver::class.java)?.onEvent(event)
+        }
     }
 
     private fun validateCandidateResponse(request: Request, response: Response) {

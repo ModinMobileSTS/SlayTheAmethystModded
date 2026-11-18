@@ -1,0 +1,25 @@
+<resources>
+    <string name="ai_editor_menu">编辑器菜单</string>
+    <string name="ai_editor_sessions">历史会话列表</string>
+    <string name="ai_editor_statistics">会话数据统计</string>
+    <string name="ai_editor_model_config">模型配置</string>
+    <string name="ai_editor_trajectory">对话历史轨迹</string>
+    <string name="ai_editor_session_actions">%1$s 的会话操作</string>
+    <string name="ai_editor_delete">删除</string>
+    <string name="ai_editor_delete_title">删除对话？</string>
+    <string name="ai_editor_delete_message">删除“%1$s”及其消息？此操作无法撤销，不会删除已生成的补丁模组。</string>
+    <string name="ai_editor_delete_running">该会话有正在运行的任务，请先停止任务再删除。</string>
+    <string name="ai_editor_delete_failed">删除会话失败，请重试。</string>
+    <string name="ai_editor_current_session">当前会话</string>
+    <string name="ai_editor_total_usage">会话累计用量</string>
+    <string name="ai_editor_usage_breakdown">已报告输入 %1$s · 输出 %2$s</string>
+    <string name="ai_editor_budget_saved">已保存，下次任务生效。</string>
+    <string name="ai_editor_report_coverage">用量报告覆盖：%1$d / %2$d 次请求</string>
+    <string name="ai_editor_turns_steps">%1$d 轮对话 · %2$d 个执行步骤</string>
+    <string name="ai_editor_output_speed">输出速度</string>
+    <string name="ai_editor_budget">上下文与生成</string>
+    <string name="ai_editor_available_efforts">可用推理强度</string>
+    <string name="ai_editor_configure_efforts">配置可用档位</string>
+    <string name="ai_editor_efforts_description">选择要在模组编辑器中显示的档位。</string>
+    <string name="ai_editor_efforts_warning">有的模型不支持部分推理强度，启动器无法探测，请根据模型实际支持的推理强度进行配置。</string>
+</resources>

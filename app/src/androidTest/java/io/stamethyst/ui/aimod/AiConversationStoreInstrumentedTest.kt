@@ -28,6 +28,68 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AiConversationStoreInstrumentedTest {
+    @Test fun deletionClearsMessagesContextJobsAndPreventsDelayedWritesOrLegacyResurrection() {
+        val root = newRoot()
+        try {
+            val store = AiConversationStore(root)
+            val session = AiEditorSession("deleted", messages = listOf(AiEditorMessage(1, true, "delete me",
+                attachments = listOf(AiAttachment("private.txt", "private content")))),
+                context = AgentContextState(messages = listOf(AgentContextMessage(1, "user", "private context"))))
+            store.mutate(session.id, create = session) { it }
+            val survivor = AiEditorSession("survivor", messages = listOf(AiEditorMessage(1, true, "keep me")))
+            store.mutate(survivor.id, create = survivor) { it }
+            val completed = AiAgentJobRecord("job", session.id, "mod", "Mod", "", 2, status = AiAgentJobStatus.SUCCEEDED)
+            store.upsertJob(completed)
+
+            assertEquals(AiConversationDeleteResult.DELETED, store.delete(session.id))
+            val reopened = AiConversationStore(root)
+            assertNull(reopened.load(session.id))
+            assertNull(reopened.revision(session.id))
+            assertTrue(reopened.listJobs(session.id).isEmpty())
+            assertEquals(listOf("survivor"), reopened.loadSummaries().map { it.id })
+            assertEquals("keep me", reopened.load("survivor")!!.messages.single().text)
+            var transformed = false
+            assertNull(reopened.mutate(session.id, create = session) { transformed = true; it })
+            assertTrue(!transformed)
+            reopened.upsertJob(completed)
+            assertTrue(reopened.listJobs(session.id).isEmpty())
+            File(root, "conversations.json").writeText(Json.encodeToString(listOf(session)))
+            assertNull(AiConversationStore(root).load(session.id))
+            assertEquals(AiConversationDeleteResult.NOT_FOUND, reopened.delete(session.id))
+
+            // Tombstones keep no message/context payload, even though the small DB remains.
+            root.listFiles { file -> file.extension == "db" }!!.forEach { file ->
+                SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                    val deleted = db.rawQuery("SELECT 1 FROM conversation_deleted", null).use { it.moveToFirst() }
+                    if (deleted) listOf("messages", "attachments", "tool_calls", "execution_steps", "agent_jobs",
+                        "context_messages", "context_state", "context_legacy", "conversation").forEach { table ->
+                        db.rawQuery("SELECT COUNT(*) FROM $table", null).use {
+                            assertTrue(it.moveToFirst()); assertEquals(0L, it.getLong(0))
+                        }
+                    }
+                }
+            }
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun deletionRejectsRunningJobsAndReservationsWithoutChangingConversation() {
+        val root = newRoot()
+        try {
+            val store = AiConversationStore(root)
+            val session = AiEditorSession("running", messages = listOf(AiEditorMessage(1, true, "keep while running")))
+            store.mutate(session.id, create = session) { it }
+            val job = AiAgentJobRecord("running-job", session.id, "mod", "Mod", "", 2)
+            store.upsertJob(job)
+            assertEquals(AiConversationDeleteResult.RUNNING, store.delete(session.id))
+            assertNotNull(store.load(session.id))
+            store.updateJob(job.jobId) { it.copy(status = AiAgentJobStatus.SUCCEEDED) }
+            assertEquals(AiConversationDeleteResult.RUNNING, store.delete(session.id) { it == job.jobId })
+            assertNotNull(store.load(session.id))
+            assertEquals(AiConversationDeleteResult.DELETED, store.delete(session.id))
+            assertNull(store.load(session.id))
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun externalWriteLockWaitsWithoutReplayingMutation() {
         val root = newRoot()
         val locked = CountDownLatch(1)

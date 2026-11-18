@@ -143,21 +143,26 @@ Scheduler/loop regression tests (no real LLM service or device required):
 
 The editor exposes these tools for the selected mod workspace:
 
-- `list_agent_workspace`: list all materialized and generated files.
-- `read_agent_workspace_file`: read UTF-8 or base64 content from any workspace file.
+All workspace tools share a fixed virtual root `/` containing `/source/`, `/patch_source/` (multiple
+revisions), and `/tool_output/`. Returned paths are virtual absolute paths reusable across tools;
+relative inputs also start at `/`, never at the active patch. Launcher state and physical device paths
+are not exposed. See [the virtual path contract](ai-agent-local-editing.md#固定虚拟文件视图).
+
+- `list_agent_workspace`: list materialized and generated files in the public virtual view.
+- `read_agent_workspace_file`: read UTF-8 or base64 content from an exposed workspace file.
 - `glob_agent_workspace`: find files by glob pattern (for example `**/*.java`), optionally scoped with `path`.
 - `grep_agent_workspace`: search workspace file contents by regular expression, optionally scoped with `path` and filtered by an `include` glob. Returns file, line number, and a preview of each matching line.
 - `create_agent_patch_workspace`: create and activate a new patch workspace/revision. Required arguments: `name` (the agent
-  chooses it), optional `version` and `description`. Extracts the full parent JAR into the shared
+  chooses it), optional `version` and `description`. Records the immutable parent JAR in the shared
   source snapshot metadata and seeds a new `patch_source/<patch_id>/` with `ModTheSpire.json` and
   `agent-patch.json`. This only prepares a workspace; it does not compile, package, install, or enable a mod.
   Do not call it for changes to an existing patch revision: reuse that revision's `patch_source/<patch_id>/` tree,
   compile it with the same `patch_id`, and call `update_agent_patch_mod`.
-- `write_agent_workspace_file`: create or replace files only under `patch_source/`. For patch-mod
+- `write_agent_workspace_file`: create or replace files only inside `/patch_source/<patch_id>/`. For patch-mod
   work, the agent uses the `patch_workspace_path` returned by `create_agent_patch_workspace`, while
   `source/` remains read-only context.
 - `delete_agent_workspace_file`: delete files or, with `recursive=true`, non-empty directories only
-  under `patch_source/`. The `source/` tree and `patch_source/` root cannot be deleted.
+  inside `/patch_source/<patch_id>/`. Read-only trees, `/`, `/patch_source/` and individual patch roots cannot be deleted by this tool.
 - `decompile_agent_mod_source`: prepare the parent JAR snapshot without extracting it.
 - `list_agent_mod_entries`: discover resource or class paths in the parent or an installed mod JAR without extraction; use `source="game"` for the imported `desktop-1.0.jar`.
 - `inspect_agent_class`: inspect one parent class and its exact declared API without extraction.
@@ -191,7 +196,8 @@ The editor exposes these tools for the selected mod workspace:
   compilation" below.
 - `package_agent_patch_mod`: validate and package the active `patch_source/<patch_id>/` into
   `agent_mods/<modid>/`. Rejects
-  packaging when Java sources are present but no classes have been compiled.
+  packaging when Java sources are present but no classes have been compiled. Returns `jar_name` and
+  the virtual `patch_workspace_path`, not a physical `jar_path`.
 - `update_agent_patch_mod`: repackage an already packaged revision in place from its patch
   workspace with a new `version` (and optional `name`/`description`). The `patch_id`, patch mod id,
   and enabled state are unchanged, so updating never creates a duplicate or forces re-enabling.

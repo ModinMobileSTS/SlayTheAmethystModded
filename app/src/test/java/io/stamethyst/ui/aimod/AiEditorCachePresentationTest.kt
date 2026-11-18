@@ -2,7 +2,6 @@ package io.stamethyst.ui.aimod
 
 import org.junit.Assert.*
 import org.junit.Test
-import java.io.File
 
 class AiEditorCachePresentationTest {
     @Test fun unknownIsNotPresentedAsZeroPercent() {
@@ -18,12 +17,12 @@ class AiEditorCachePresentationTest {
     }
 
     @Test fun differentModsShareAllCommonRulesBeforeTheirSpecificEnvironment() {
-        val a = buildAiEditorSystemPrompt("Alpha", "alpha", File("/synthetic/alpha"))
-        val b = buildAiEditorSystemPrompt("Beta", "beta", File("/synthetic/beta"))
+        val a = buildAiEditorSystemPrompt("Alpha", "alpha")
+        val b = buildAiEditorSystemPrompt("Beta", "beta")
         val shared = a.commonPrefixWith(b)
         assertTrue(shared.length > a.length * 0.95)
         assertTrue(shared.contains("Never claim that a patch mod was created"))
         assertTrue(a.endsWith("for the selected mod."))
-        assertEquals(a, buildAiEditorSystemPrompt("Alpha", "alpha", File("/synthetic/alpha")))
+        assertEquals(a, buildAiEditorSystemPrompt("Alpha", "alpha"))
     }
 }

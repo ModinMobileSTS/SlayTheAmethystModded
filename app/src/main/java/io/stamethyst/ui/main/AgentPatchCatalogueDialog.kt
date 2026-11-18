@@ -65,6 +65,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -76,6 +78,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.mods.AgentPatchCatalogueService
 import io.stamethyst.backend.mods.AgentPatchInstallProgress
 import io.stamethyst.backend.mods.AgentPatchInstallStage
+import io.stamethyst.backend.mods.AgentPatchRoutePhase
 import io.stamethyst.backend.mods.AgentPatchModManager
 import io.stamethyst.backend.mods.AgentPatchUploadAuthor
 import io.stamethyst.backend.mods.AgentPatchUploadProgress
@@ -84,6 +87,7 @@ import io.stamethyst.backend.mods.AgentPatchUploadStage
 import io.stamethyst.backend.mods.RemoteAgentPatch
 import io.stamethyst.model.AgentPatchModUi
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.ui.LauncherSwitch
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
@@ -112,8 +116,10 @@ internal fun AgentPatchCatalogueDialog(
     localOnly: Boolean = false,
     contributionsOnly: Boolean = false,
     actionsOnly: Boolean = false,
+    controlsEnabled: Boolean = true,
     onDismiss: () -> Unit,
     onInstalled: () -> Unit,
+    onSetEnabled: (AgentPatchModUi, Boolean) -> Unit,
     onCatalogueRefreshed: () -> Unit = {},
     onExport: AgentPatchFileAction,
     onShare: AgentPatchFileAction,
@@ -221,7 +227,6 @@ internal fun AgentPatchCatalogueDialog(
                             progress = AgentPatchInstallProgress(AgentPatchInstallStage.DONE, 1f),
                             done = true,
                         )
-                    notice = resources.getString(R.string.main_mod_agent_patch_install_success, patch.name)
                     onInstalled()
                 }.onFailure {
                     if (it is CancellationException) throw it
@@ -436,6 +441,8 @@ internal fun AgentPatchCatalogueDialog(
                                 workingPatchModId = workingPatchModId,
                                 onDetails = { details = it },
                                 onInstall = startInstall,
+                                controlsEnabled = controlsEnabled,
+                                onSetEnabled = onSetEnabled,
                             )
                         }
                     }
@@ -845,6 +852,8 @@ internal fun RemoteAgentPatchList(
     workingPatchModId: String?,
     onDetails: (RemoteAgentPatch) -> Unit,
     onInstall: (RemoteAgentPatch) -> Unit,
+    controlsEnabled: Boolean = true,
+    onSetEnabled: (AgentPatchModUi, Boolean) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -857,11 +866,13 @@ internal fun RemoteAgentPatchList(
                 modifier = Modifier.animateItem(),
                 patch = patch,
                 parentVersion = parentVersion,
-                installed = installed != null,
+                installed = installed,
                 hasUpdate = hasUpdate,
                 working = workingPatchModId == patch.patchModId,
+                controlsEnabled = controlsEnabled,
                 onDetails = { onDetails(patch) },
                 onInstall = { onInstall(patch) },
+                onSetEnabled = { enabled -> installed?.let { onSetEnabled(it, enabled) } },
             )
         }
     }
@@ -872,11 +883,13 @@ private fun RemoteAgentPatchRow(
     modifier: Modifier = Modifier,
     patch: RemoteAgentPatch,
     parentVersion: String,
-    installed: Boolean,
+    installed: AgentPatchModUi?,
     hasUpdate: Boolean,
     working: Boolean,
+    controlsEnabled: Boolean,
     onDetails: () -> Unit,
     onInstall: () -> Unit,
+    onSetEnabled: (Boolean) -> Unit,
 ) {
     Card(
         modifier = modifier.animateContentSize(animationSpec = tween(durationMillis = 180)),
@@ -894,18 +907,27 @@ private fun RemoteAgentPatchRow(
                         Text(compatibilityText(patch, parentVersion), style = MaterialTheme.typography.labelSmall, color = if (isCompatibleWithVersion(patch, parentVersion)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Button(
-                    enabled = !working && (!installed || hasUpdate),
-                    onClick = onInstall,
-                    modifier = Modifier.animateContentSize(animationSpec = tween(durationMillis = 180)),
-                ) {
-                    Text(
-                        stringResource(
-                            if (hasUpdate) R.string.main_mod_agent_patch_update
-                            else if (installed) R.string.main_mod_agent_patch_installed
-                            else R.string.main_mod_agent_patch_install
-                        )
+                if (installed != null && !hasUpdate) {
+                    val toggleDescription = stringResource(R.string.mod_details_toggle, patch.name)
+                    LauncherSwitch(
+                        checked = installed.enabled,
+                        onCheckedChange = onSetEnabled,
+                        enabled = controlsEnabled && !working,
+                        modifier = Modifier.semantics { contentDescription = toggleDescription },
                     )
+                } else {
+                    Button(
+                        enabled = controlsEnabled && !working,
+                        onClick = onInstall,
+                        modifier = Modifier.animateContentSize(animationSpec = tween(durationMillis = 180)),
+                    ) {
+                        Text(
+                            stringResource(
+                                if (hasUpdate) R.string.main_mod_agent_patch_update
+                                else R.string.main_mod_agent_patch_install
+                            )
+                        )
+                    }
                 }
             }
             if (hasUpdate) Text("${stringResource(R.string.main_mod_agent_patch_update)} · ${patch.version}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 5.dp))
@@ -1062,6 +1084,7 @@ private enum class AgentPatchStepStatus { DONE, ACTIVE, PENDING }
 
 private val INSTALL_STAGES = listOf(
     AgentPatchInstallStage.PREPARING,
+    AgentPatchInstallStage.SELECTING_ROUTE,
     AgentPatchInstallStage.DOWNLOADING,
     AgentPatchInstallStage.VERIFYING,
     AgentPatchInstallStage.INSPECTING,
@@ -1085,6 +1108,7 @@ private fun AgentPatchInstallProgressDialog(
 ) {
     val working = state.working
     val progress = state.progress
+    val selectingRoute = progress.stage == AgentPatchInstallStage.SELECTING_ROUTE
     val animated by animateFloatAsState(
         targetValue = progress.fraction.coerceIn(0f, 1f),
         animationSpec = tween(320),
@@ -1121,16 +1145,21 @@ private fun AgentPatchInstallProgressDialog(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                LinearProgressIndicator(
-                    progress = { animated },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (selectingRoute && working) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                } else {
+                    LinearProgressIndicator(
+                        progress = { animated },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        "${(animated * 100).roundToInt()}%",
+                        if (selectingRoute) installRoutePhaseLabel(progress.routePhase)
+                        else "${(animated * 100).roundToInt()}%",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1157,6 +1186,7 @@ private fun AgentPatchInstallProgressDialog(
                         }
                         val detail = when {
                             status != AgentPatchStepStatus.ACTIVE -> null
+                            stage == AgentPatchInstallStage.SELECTING_ROUTE -> progress.routeTarget
                             stage == AgentPatchInstallStage.DOWNLOADING && progress.totalBytes > 0L -> {
                                 val percent = ((progress.downloadedBytes * 100) / progress.totalBytes)
                                     .toInt()
@@ -1552,12 +1582,22 @@ private fun AgentPatchStepRow(
 private fun installStageLabel(stage: AgentPatchInstallStage): String = stringResource(
     when (stage) {
         AgentPatchInstallStage.PREPARING -> R.string.main_mod_agent_patch_install_stage_preparing
+        AgentPatchInstallStage.SELECTING_ROUTE -> R.string.catalogue_load_phase_resolving_route
         AgentPatchInstallStage.DOWNLOADING -> R.string.main_mod_agent_patch_install_stage_downloading
         AgentPatchInstallStage.VERIFYING -> R.string.main_mod_agent_patch_install_stage_verifying
         AgentPatchInstallStage.INSPECTING -> R.string.main_mod_agent_patch_install_stage_inspecting
         AgentPatchInstallStage.PACKAGING -> R.string.main_mod_agent_patch_install_stage_packaging
         AgentPatchInstallStage.INSTALLING -> R.string.main_mod_agent_patch_install_stage_installing
         AgentPatchInstallStage.DONE -> R.string.main_mod_agent_patch_install_done_title
+    }
+)
+
+@Composable
+private fun installRoutePhaseLabel(phase: AgentPatchRoutePhase?): String = stringResource(
+    when (phase) {
+        AgentPatchRoutePhase.CONNECTING -> R.string.main_mod_agent_patch_route_connecting
+        AgentPatchRoutePhase.SWITCHING -> R.string.main_mod_agent_patch_route_switching
+        else -> R.string.catalogue_load_phase_resolving_route
     }
 )
 

@@ -3,7 +3,7 @@
 const { githubFetchJson } = require('./github');
 const { httpError, encodePath, encodePathSegment } = require('./utils');
 const {
-  MAX_JSON_BYTES, requireValid, patchDirectory, parseJson, validateMetadata, validateJar, readSourceArchive
+  MAX_JSON_BYTES, MAX_JAR_BYTES, requireValid, patchDirectory, parseJson, validateMetadata, validateJar, readSourceArchive
 } = require('./patchValidation');
 
 const MAX_COMMIT_ATTEMPTS = 5;
@@ -71,16 +71,38 @@ async function publishPatchUpload(upload, config) {
       throw repositoryError(`Case-insensitive catalogue path collision: ${expected}`);
     }
   };
-  const readMetadata = async (sha) => {
+  const readBlob = async (sha, maximum, label) => {
     const blob = await request(`/git/blobs/${encodePathSegment(sha)}`);
-    if (blob.encoding !== 'base64' || blob.size > MAX_JSON_BYTES || typeof blob.content !== 'string') {
-      throw repositoryError('Existing metadata blob is invalid or exceeds limit');
+    if (blob.encoding !== 'base64' || !Number.isInteger(blob.size) || blob.size < 1 ||
+        blob.size > maximum || typeof blob.content !== 'string') {
+      throw repositoryError(`Existing ${label} blob is invalid or exceeds limit`);
     }
+    const bytes = Buffer.from(blob.content, 'base64');
+    if (bytes.length !== blob.size) throw repositoryError(`Existing ${label} blob size mismatch`);
+    return bytes;
+  };
+  const readMetadata = async (sha) => {
+    const bytes = await readBlob(sha, MAX_JSON_BYTES, 'metadata');
     try {
-      return validateMetadata(parseJson(Buffer.from(blob.content, 'base64'), 'existing metadata'));
+      return validateMetadata(parseJson(bytes, 'existing metadata'));
     } catch (error) {
       throw repositoryError(error.message);
     }
+  };
+  // Legacy metadata has no patch ID. Read it from the committed JAR rather than
+  // trusting the asynchronously generated index; reuse validations on ref retries.
+  const existingJarInfo = new Map();
+  const readJarInfo = async (sha, existing) => {
+    const key = JSON.stringify([sha, existing]);
+    if (!existingJarInfo.has(key)) {
+      const bytes = await readBlob(sha, MAX_JAR_BYTES, 'JAR');
+      try {
+        existingJarInfo.set(key, await validateJar(bytes, existing));
+      } catch (error) {
+        throw repositoryError(`Invalid existing JAR: ${error.message}`);
+      }
+    }
+    return existingJarInfo.get(key);
   };
   const createTree = (tree, baseTree) => request('/git/trees', 'POST', {
     ...(baseTree ? { base_tree: baseTree } : {}), tree
@@ -106,8 +128,7 @@ async function publishPatchUpload(upload, config) {
     const mod = treeEntry(modsTree, modId);
     const modTree = mod ? await getTree(mod.sha, true) : [];
     const topLevel = modTree.filter((entry) => !entry.path.includes('/'));
-    checkCase(topLevel.map((entry) => entry.path), directoryName);
-    const patch = treeEntry(topLevel, directoryName);
+    let patch = null;
     let previousMetadata = null;
 
     // Read committed metadata rather than the asynchronously generated index.
@@ -128,12 +149,27 @@ async function publishPatchUpload(upload, config) {
           existing.target.workshopId !== metadata.target.workshopId) {
         throw repositoryError(`Conflicting Workshop IDs for ${modId}`);
       }
-      if (entry.path === directoryName) previousMetadata = existing;
+      const jar = modTree.find((item) => item.path === `${entry.path}/${existing.jar}`);
+      if (!jar || jar.type !== 'blob' || jar.mode !== '100644') {
+        throw repositoryError('Existing metadata JAR is missing or not a regular file');
+      }
+      const info = await readJarInfo(jar.sha, existing);
+      if (info.patchModId === upload.jarInfo.patchModId) {
+        if (patch) throw repositoryError(`Multiple existing patches have patchModId ${info.patchModId}`);
+        patch = entry;
+        previousMetadata = existing;
+      }
     }
+    const otherPatches = topLevel.filter((entry) => entry !== patch);
+    checkCase(otherPatches.map((entry) => entry.path), directoryName);
+    if (treeEntry(otherPatches, directoryName)) {
+      throw repositoryError('Catalogue path belongs to a different patchModId');
+    }
+    const previousDirectoryName = patch && patch.path;
     const previousFiles = patch ? modTree.filter((entry) =>
-      entry.path.startsWith(`${directoryName}/`) && !entry.path.slice(directoryName.length + 1).includes('/')
-    ).map((entry) => ({ ...entry, path: entry.path.slice(directoryName.length + 1) })) : [];
-    for (const entry of modTree.filter((item) => item.path.startsWith(`${directoryName}/`))) {
+      entry.path.startsWith(`${previousDirectoryName}/`) && !entry.path.slice(previousDirectoryName.length + 1).includes('/')
+    ).map((entry) => ({ ...entry, path: entry.path.slice(previousDirectoryName.length + 1) })) : [];
+    for (const entry of modTree.filter((item) => patch && item.path.startsWith(`${previousDirectoryName}/`))) {
       if (!['100644', '100755', '040000'].includes(entry.mode)) {
         throw repositoryError('Existing patch contains symlinks or unsupported file modes');
       }
@@ -144,13 +180,6 @@ async function publishPatchUpload(upload, config) {
     if (previousFiles.some((entry) => entry.path === metadata.jar && entry.type !== 'blob')) {
       throw repositoryError('JAR filename collides with a directory');
     }
-    if (previousMetadata) {
-      const oldJar = previousFiles.find((entry) => entry.path === previousMetadata.jar);
-      if (!oldJar || oldJar.type !== 'blob' || oldJar.mode !== '100644') {
-        throw repositoryError('Existing metadata JAR is missing or not a regular file');
-      }
-    }
-
     if (!additions) {
       const metadataBytes = Buffer.from(`${JSON.stringify(metadata, null, 2)}\n`);
       const metadataSha = await createBlob(metadataBytes);
@@ -174,9 +203,13 @@ async function publishPatchUpload(upload, config) {
       }
     }
     const patchTree = await createTree(changes, patch && patch.sha);
-    const updatedModTree = await createTree([
+    const modChanges = [
       { path: directoryName, mode: '040000', type: 'tree', sha: patchTree.sha }
-    ], mod && mod.sha);
+    ];
+    if (patch && previousDirectoryName !== directoryName) {
+      modChanges.push({ path: previousDirectoryName, mode: '040000', type: 'tree', sha: null });
+    }
+    const updatedModTree = await createTree(modChanges, mod && mod.sha);
     const updatedModsTree = await createTree([
       { path: modId, mode: '040000', type: 'tree', sha: updatedModTree.sha }
     ], mods && mods.sha);

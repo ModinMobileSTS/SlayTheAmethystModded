@@ -8,6 +8,7 @@ import io.stamethyst.backend.github.GithubResourceRequests
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.update.toGithubMirrorHttpException
 import io.stamethyst.backend.github.AcceleratedResponseValidator
+import io.stamethyst.backend.network.AcceleratedRouteObserver
 import io.stamethyst.config.RuntimePaths
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -84,6 +85,7 @@ data class AgentPatchUploadResult(
 
 enum class AgentPatchInstallStage {
     PREPARING,
+    SELECTING_ROUTE,
     DOWNLOADING,
     VERIFYING,
     INSPECTING,
@@ -97,6 +99,8 @@ data class AgentPatchInstallProgress(
     val fraction: Float,
     val downloadedBytes: Long = 0L,
     val totalBytes: Long = 0L,
+    val routePhase: AgentPatchRoutePhase? = null,
+    val routeTarget: String? = null,
 )
 
 enum class AgentPatchUploadStage {
@@ -297,17 +301,7 @@ object AgentPatchCatalogueService {
         val downloaded = File(targetDir, ".$stablePatchId.${System.nanoTime()}.download")
         val packaged = File(targetDir, ".$stablePatchId.${System.nanoTime()}.tmp")
         try {
-            onProgress(AgentPatchInstallProgress(AgentPatchInstallStage.DOWNLOADING, 0.02f))
-            downloadToFile(context, patch.downloadUrl, downloaded, patch.size, patch.sha256) { fraction, downloadedBytes, totalBytes ->
-                onProgress(
-                    AgentPatchInstallProgress(
-                        stage = AgentPatchInstallStage.DOWNLOADING,
-                        fraction = (0.02f + fraction * 0.68f).coerceIn(0.02f, 0.70f),
-                        downloadedBytes = downloadedBytes,
-                        totalBytes = totalBytes,
-                    )
-                )
-            }
+            downloadToFile(context, patch.downloadUrl, downloaded, patch.size, patch.sha256, onProgress)
             onProgress(AgentPatchInstallProgress(AgentPatchInstallStage.VERIFYING, 0.72f))
             if (!sha256(downloaded).equals(patch.sha256, ignoreCase = true)) {
                 throw IOException("AI patch SHA-256 does not match the catalogue.")
@@ -623,39 +617,58 @@ object AgentPatchCatalogueService {
         target: File,
         expectedSize: Long,
         expectedSha256: String,
-        onProgress: (fraction: Float, downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _, _ -> },
+        onProgress: (AgentPatchInstallProgress) -> Unit,
     ) {
-        GithubResourceRequests.run(context, sharedClients(context), url) { client, requestUrl ->
-            val request = Request.Builder().url(requestUrl).get().header("User-Agent", USER_AGENT).build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw response.toGithubMirrorHttpException("Patch download failed.")
-                val declaredLength = response.header("Content-Length")?.toLongOrNull()
-                if (declaredLength != null && declaredLength != expectedSize) throw IOException("Patch download size does not match the catalogue.")
-                val input = response.body.byteStream()
-                target.outputStream().buffered().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var count = 0L
-                    var lastPercent = -1
-                    while (true) {
-                        if (Thread.currentThread().isInterrupted) throw IOException("Patch download was cancelled.")
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        if (read == 0) continue
-                        count += read
-                        if (count > expectedSize || count > MAX_PATCH_BYTES) throw IOException("Patch download exceeds its size limit.")
-                        output.write(buffer, 0, read)
-                        val percent = ((count * 100) / expectedSize).toInt().coerceIn(0, 100)
-                        if (percent != lastPercent) {
-                            lastPercent = percent
-                            onProgress(percent / 100f, count, expectedSize)
-                        }
+        val progress = AgentPatchDownloadProgressReporter(onProgress)
+        GithubResourceRequests.run(
+            context, sharedClients(context), url,
+            onAttempt = progress::attemptingSource,
+            onFailure = { source, _ -> progress.switching(source.displayName) },
+        ) { client, requestUrl ->
+            downloadPatchFromSource(client, requestUrl, target, expectedSize, expectedSha256, progress)
+        }
+    }
+
+    internal fun downloadPatchFromSource(
+        client: Call.Factory,
+        url: String,
+        target: File,
+        expectedSize: Long,
+        expectedSha256: String,
+        progress: AgentPatchDownloadProgressReporter,
+    ) {
+        val request = Request.Builder().url(url).get().header("User-Agent", USER_AGENT)
+            .tag(AcceleratedRouteObserver::class.java, AcceleratedRouteObserver(progress::onRouteEvent))
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw response.toGithubMirrorHttpException("Patch download failed.")
+            val declaredLength = response.header("Content-Length")?.toLongOrNull()
+            if (declaredLength != null && declaredLength != expectedSize) throw IOException("Patch download size does not match the catalogue.")
+            val input = response.body.byteStream()
+            progress.downloading(0L, expectedSize)
+            target.outputStream().buffered().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var count = 0L
+                var lastPercent = -1
+                while (true) {
+                    if (Thread.currentThread().isInterrupted) throw IOException("Patch download was cancelled.")
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (read == 0) continue
+                    count += read
+                    if (count > expectedSize || count > MAX_PATCH_BYTES) throw IOException("Patch download exceeds its size limit.")
+                    output.write(buffer, 0, read)
+                    val percent = ((count * 100) / expectedSize).toInt().coerceIn(0, 100)
+                    if (percent != lastPercent) {
+                        lastPercent = percent
+                        progress.downloading(count, expectedSize)
                     }
-                    if (count != expectedSize) throw IOException("Patch download size is incomplete.")
                 }
+                if (count != expectedSize) throw IOException("Patch download size is incomplete.")
             }
-            if (!sha256(target).equals(expectedSha256, ignoreCase = true)) {
-                throw IOException("AI patch SHA-256 does not match the catalogue.")
-            }
+        }
+        if (!sha256(target).equals(expectedSha256, ignoreCase = true)) {
+            throw IOException("AI patch SHA-256 does not match the catalogue.")
         }
     }
 

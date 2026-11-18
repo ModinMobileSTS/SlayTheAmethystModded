@@ -15,7 +15,7 @@ class LlmModelTestService {
     suspend fun test(
         config: OpenAiCompatibleModelConfig,
         prompt: String = DEFAULT_TEST_PROMPT,
-    ): String {
+    ): String = LlmSettingsHttpDiagnostics.capture(config.baseUrl, config.apiKey) {
         val model = AgentChatModelFactory.create(config.copy(reasoningEffort = LlmReasoningEffort.OFF))
         val request = ChatRequest.builder()
             .messages(UserMessage.from(prompt))
@@ -23,7 +23,7 @@ class LlmModelTestService {
         val response = model.chat(request)
         val text = response.aiMessage().text().orEmpty().trim()
         check(text.isNotEmpty()) { "The model returned an empty response." }
-        return text
+        text
     }
 
     companion object {

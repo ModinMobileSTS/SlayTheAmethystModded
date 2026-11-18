@@ -48,7 +48,7 @@ class PolicyGatedAgentGatewayTest {
         server.enqueue(toolCallResponse())
         server.enqueue(finalResponse("The workspace note was read."))
         val workspace = createTempDirectory("agent-workspace").toFile().apply {
-            resolve("note.txt").writeText("artifact validation passed")
+            resolve("source/note.txt").apply { parentFile!!.mkdirs(); writeText("artifact validation passed") }
         }
 
         val reply = newGateway(workspace).respond(
@@ -82,10 +82,10 @@ class PolicyGatedAgentGatewayTest {
 
     @Test
     fun respond_sendsAnImageReadByAToolAsAUserImagePart() {
-        server.enqueue(toolCallResponse("read_agent_workspace_file"))
+        server.enqueue(toolCallResponse("read_agent_workspace_file", path = "/source/note.txt"))
         server.enqueue(finalResponse("I can see a 1x1 image."))
         val workspace = createTempDirectory("agent-image").toFile().apply {
-            resolve("note.txt").writeBytes(java.util.Base64.getDecoder().decode(ONE_PIXEL_PNG_BASE64))
+            resolve("source/note.txt").apply { parentFile.mkdirs(); writeBytes(java.util.Base64.getDecoder().decode(ONE_PIXEL_PNG_BASE64)) }
         }
 
         val reply = newGateway(workspace, tools = listOf(AgentWorkspaceFileTool(workspace)))
@@ -165,7 +165,7 @@ class PolicyGatedAgentGatewayTest {
         server.enqueue(twoToolCallResponse())
         server.enqueue(finalResponse("Both reads completed."))
         val workspace = createTempDirectory("agent-multi-tool").toFile().apply {
-            resolve("note.txt").writeText("artifact validation passed")
+            resolve("source/note.txt").apply { parentFile!!.mkdirs(); writeText("artifact validation passed") }
         }
 
         val reply = newGateway(workspace).respond(
@@ -193,7 +193,7 @@ class PolicyGatedAgentGatewayTest {
         server.enqueue(twoToolCallResponse(reasoning = "Inspect both files before answering."))
         server.enqueue(finalResponse("Both reads completed."))
         val workspace = createTempDirectory("agent-thinking").toFile().apply {
-            resolve("note.txt").writeText("verified")
+            resolve("source/note.txt").apply { parentFile!!.mkdirs(); writeText("verified") }
         }
         newGateway(workspace).respond(systemPrompt = "Inspect the note.", userPrompt = "Read twice.")
         server.takeRequest()
@@ -212,7 +212,7 @@ class PolicyGatedAgentGatewayTest {
     fun respondStreaming_preservesSingleReasoningBlockForParallelToolCallsInHttpRequest() {
         val reasoning = "Inspect both files before answering."
         val calls = (0..1).joinToString(",") { index ->
-            """{"index":$index,"id":"call-$index","type":"function","function":{"name":"read_workspace_file","arguments":"{\"path\":\"note.txt\"}"}}"""
+            """{"index":$index,"id":"call-$index","type":"function","function":{"name":"read_workspace_file","arguments":"{\"path\":\"/source/note.txt\"}"}}"""
         }
         server.enqueue(MockResponse.Builder().addHeader("Content-Type", "text/event-stream").body(
             "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"reasoning_content\":\"$reasoning\"}}]}\n\n" +
@@ -224,7 +224,7 @@ class PolicyGatedAgentGatewayTest {
                 "data: [DONE]\n\n",
         ).build())
         val workspace = createTempDirectory("agent-thinking-stream").toFile().apply {
-            resolve("note.txt").writeText("verified")
+            resolve("source/note.txt").apply { parentFile!!.mkdirs(); writeText("verified") }
         }
         val config = OpenAiCompatibleModelConfig(
             baseUrl = server.url("/v1/").toString(), apiKey = "test-key",
@@ -289,10 +289,10 @@ class PolicyGatedAgentGatewayTest {
     @Test
     fun respond_continuesBeyondFormerToolRoundLimit() {
         // A long task must keep going while it obtains new evidence, not reread one unchanged file.
-        repeat(25) { server.enqueue(toolCallResponse(path = "note-$it.txt")) }
+        repeat(25) { server.enqueue(toolCallResponse(path = "/source/note-$it.txt")) }
         server.enqueue(finalResponse("Inspection complete."))
         val workspace = createTempDirectory("agent-workspace").toFile().apply {
-            repeat(25) { resolve("note-$it.txt").writeText("artifact $it validation passed") }
+            repeat(25) { resolve("source/note-$it.txt").apply { parentFile!!.mkdirs(); writeText("artifact $it validation passed") } }
         }
 
         val reply = newGateway(workspace).respond(
@@ -326,7 +326,7 @@ class PolicyGatedAgentGatewayTest {
         server.enqueue(finalResponse("Done, the note was inspected."))
 
         val reply = newGateway(createTempDirectory("agent-workspace").toFile().apply {
-            resolve("note.txt").writeText("ok")
+            resolve("source/note.txt").apply { parentFile!!.mkdirs(); writeText("ok") }
         }).respond(systemPrompt = "Inspect.", userPrompt = "Inspect the note.")
 
         assertEquals("Done, the note was inspected.", reply.text)
@@ -335,7 +335,7 @@ class PolicyGatedAgentGatewayTest {
     @Test
     fun registry_notifiesToolExecutionForBothStartAndCompletion() {
         val workspace = createTempDirectory("agent-workspace-registry").toFile().apply {
-            resolve("note.txt").writeText("hello")
+            resolve("source/note.txt").apply { parentFile!!.mkdirs(); writeText("hello") }
         }
         val events = mutableListOf<AgentToolExecutionEvent>()
         val registry = AgentToolRegistry(
@@ -348,7 +348,7 @@ class PolicyGatedAgentGatewayTest {
             dev.langchain4j.agent.tool.ToolExecutionRequest.builder()
                 .id("call-1")
                 .name("read_workspace_file")
-                .arguments("""{"path":"note.txt"}""")
+                .arguments("""{"path":"/source/note.txt"}""")
                 .build(),
         )
 
@@ -541,7 +541,9 @@ class PolicyGatedAgentGatewayTest {
         assertEquals("1.2.0", manifest.getString("version"))
         assertEquals("Buff a card.", manifest.getString("description"))
         assertEquals("parent", manifest.getJSONArray("dependencies").getString(0))
-        assertEquals("patch_source/${workspace.patchId}", first["patch_workspace_path"]!!.jsonPrimitive.content)
+        assertEquals("/patch_source/${workspace.patchId}", first["patch_workspace_path"]!!.jsonPrimitive.content)
+        assertEquals("/", first["workspace_root"]!!.jsonPrimitive.content)
+        assertFalse(first.toString().contains(workspace.root.absolutePath))
 
         val second = Json.parseToJsonElement(tool.execute("""{"name":"Another name"}""")).jsonObject
         assertEquals("created", second["status"]!!.jsonPrimitive.content)
@@ -578,7 +580,8 @@ class PolicyGatedAgentGatewayTest {
         assertEquals("valid", result["preflight"]!!.jsonObject["status"]!!.jsonPrimitive.content)
         assertTrue(result["preflight"]!!.jsonObject["warnings"]!!.jsonArray.isNotEmpty())
 
-        ZipFile(File(result["jar_path"]!!.jsonPrimitive.content)).use { jar ->
+        assertFalse("jar_path" in result)
+        ZipFile(AgentPatchModManager.listPackaged(context, "parent").single().jarFile).use { jar ->
             val manifest = JSONObject(
                 jar.getInputStream(jar.getEntry("ModTheSpire.json"))
                     .use { it.readBytes() }
@@ -614,11 +617,11 @@ class PolicyGatedAgentGatewayTest {
             tool.execute("""{"path":"patch_source/patch-test/src/Notes.java","content":"class Notes {}"}"""),
         ).jsonObject
 
-        assertEquals("patch_source/patch-test/src/Notes.java", result["path"]!!.jsonPrimitive.content)
+        assertEquals("/patch_source/patch-test/src/Notes.java", result["path"]!!.jsonPrimitive.content)
         assertTrue(File(workspaceRoot, "patch_source/patch-test/src/Notes.java").isFile)
-        assertTrue(tool.execute("""{"path":"patch_source/Notes.java","content":"class Notes {}"}""").contains("path_outside_patch_source"))
-        assertTrue(tool.execute("""{"path":"source/Notes.java","content":"class Notes {}"}""").contains("path_outside_patch_source"))
-        assertTrue(tool.execute("""{"path":"../secret.txt","content":"secret"}""").contains("path_outside_patch_source"))
+        assertTrue(tool.execute("""{"path":"patch_source/Notes.java","content":"class Notes {}"}""").contains("incomplete_patch_path"))
+        assertTrue(tool.execute("""{"path":"source/Notes.java","content":"class Notes {}"}""").contains("read_only_path"))
+        assertTrue(tool.execute("""{"path":"../secret.txt","content":"secret"}""").contains("path_outside_workspace"))
     }
 
     @Test
@@ -644,7 +647,7 @@ class PolicyGatedAgentGatewayTest {
         val sourceResult = Json.parseToJsonElement(
             tool.execute("""{"path":"source/original.txt"}"""),
         ).jsonObject
-        assertTrue(sourceResult["error"]!!.jsonPrimitive.content == "path_outside_patch_source")
+        assertTrue(sourceResult["error"]!!.jsonPrimitive.content == "read_only_path")
         assertTrue(sourceFile.exists())
     }
 
@@ -675,7 +678,7 @@ class PolicyGatedAgentGatewayTest {
 
         val result = tool.execute("""{"path":"patch_source","recursive":true}""")
 
-        assertTrue(result.contains("cannot_delete_patch_source_root"))
+        assertTrue(result.contains("protected_patch_directory"))
         assertTrue(workspaceRoot.exists())
     }
 
@@ -717,18 +720,24 @@ class PolicyGatedAgentGatewayTest {
         val overflow = File(workspace, "tool_output").listFiles().orEmpty()
         assertEquals(1, overflow.size)
         assertEquals(payload, overflow.single().readText())
-        assertTrue("the model must be told where the full output is", toolMessage.contains("tool_output/"))
+        val virtualPath = "/tool_output/${overflow.single().name}"
+        assertTrue("the model must be told where the full output is", toolMessage.contains(virtualPath))
+        val page = Json.parseToJsonElement(AgentWorkspaceFileTool(workspace).execute(
+            """{"path":"$virtualPath","encoding":"utf8_chars","limit":"4000"}""",
+        )).jsonObject
+        assertEquals(virtualPath, page["path"]!!.jsonPrimitive.content)
+        assertEquals(payload.take(4000), page["content"]!!.jsonPrimitive.content)
     }
 
     @Test
     fun listTool_boundsLargeListingsAndSupportsScoping() {
         val root = createTempDirectory("agent-workspace-list").toFile()
-        val scoped = File(root, "patch/one").apply { mkdirs() }
+        val scoped = File(root, "patch_source/patch-one/src").apply { mkdirs() }
         repeat(20) { File(scoped, "file$it.java").writeText("x") }
         val tool = AgentWorkspaceListTool(root, maxEntries = 5)
 
         val scopedResult = Json.parseToJsonElement(
-            tool.execute("""{"path":"patch/one"}"""),
+            tool.execute("""{"path":"/patch_source/patch-one/src"}"""),
         ).jsonObject
         assertEquals(20, scopedResult["file_count"]!!.jsonPrimitive.content.toInt())
         assertEquals(5, scopedResult["returned"]!!.jsonPrimitive.content.toInt())
@@ -742,10 +751,10 @@ class PolicyGatedAgentGatewayTest {
     fun readTool_returnsTextByLineAndSignalsContinuation() {
         val root = createTempDirectory("agent-workspace-lines").toFile()
         val lines = (1..50).map { "line $it" }
-        File(root, "big.txt").writeText(lines.joinToString("\n"))
+        File(root, "tool_output/big.txt").apply { parentFile.mkdirs(); writeText(lines.joinToString("\n")) }
         val tool = AgentWorkspaceFileTool(root, maxLines = 10)
 
-        val first = Json.parseToJsonElement(tool.execute("""{"path":"big.txt"}""")).jsonObject
+        val first = Json.parseToJsonElement(tool.execute("""{"path":"/tool_output/big.txt"}""")).jsonObject
         assertTrue(first["truncated"]!!.jsonPrimitive.content.toBoolean())
         assertEquals(10, first["returned_lines"]!!.jsonPrimitive.content.toInt())
         assertEquals("1: line 1\n2: line 2\n", first["content"]!!.jsonPrimitive.content.take(20))
@@ -753,7 +762,7 @@ class PolicyGatedAgentGatewayTest {
         assertEquals(11, nextOffset)
 
         val second = Json.parseToJsonElement(
-            tool.execute("""{"path":"big.txt","offset":"$nextOffset"}"""),
+            tool.execute("""{"path":"/tool_output/big.txt","offset":"$nextOffset"}"""),
         ).jsonObject
         assertTrue(second["content"]!!.jsonPrimitive.content.startsWith("11: line 11\n"))
     }
@@ -761,10 +770,10 @@ class PolicyGatedAgentGatewayTest {
     @Test
     fun readTool_truncatesVeryLongLines() {
         val root = createTempDirectory("agent-workspace-longline").toFile()
-        File(root, "long.txt").writeText("a".repeat(5000))
+        File(root, "tool_output/long.txt").apply { parentFile.mkdirs(); writeText("a".repeat(5000)) }
         val tool = AgentWorkspaceFileTool(root, maxLineChars = 2000)
 
-        val result = Json.parseToJsonElement(tool.execute("""{"path":"long.txt"}""")).jsonObject
+        val result = Json.parseToJsonElement(tool.execute("""{"path":"/tool_output/long.txt"}""")).jsonObject
 
         assertEquals("1: " + "a".repeat(2000) + "\n", result["content"]!!.jsonPrimitive.content)
         assertTrue(result["long_lines_truncated"]!!.jsonPrimitive.content.toBoolean())
@@ -775,13 +784,13 @@ class PolicyGatedAgentGatewayTest {
         val root = createTempDirectory("agent-workspace-char-pages").toFile()
         try {
             val text = """{"content":"${"\u6c49\u5b57".repeat(30_000)}"}"""
-            File(root, "output.txt").writeText(text)
+            File(root, "tool_output/output.txt").apply { parentFile.mkdirs(); writeText(text) }
             val tool = AgentWorkspaceFileTool(root)
             val recovered = StringBuilder()
             var offset = 0
             do {
                 val page = Json.parseToJsonElement(tool.execute(
-                    """{"path":"output.txt","encoding":"utf8_chars","offset":"$offset","limit":"4000"}""",
+                    """{"path":"/tool_output/output.txt","encoding":"utf8_chars","offset":"$offset","limit":"4000"}""",
                 )).jsonObject
                 recovered.append(page["content"]!!.jsonPrimitive.content)
                 val next = page["next_offset"]?.jsonPrimitive?.content?.toInt()
@@ -813,11 +822,11 @@ class PolicyGatedAgentGatewayTest {
     @Test
     fun readTool_readsBinaryAsBase64ByByteRange() {
         val root = createTempDirectory("agent-workspace-base64").toFile()
-        File(root, "blob.bin").writeBytes(ByteArray(200) { it.toByte() })
+        File(root, "source/blob.bin").apply { parentFile.mkdirs(); writeBytes(ByteArray(200) { it.toByte() }) }
         val tool = AgentWorkspaceFileTool(root, maxBytes = 64)
 
         val first = Json.parseToJsonElement(
-            tool.execute("""{"path":"blob.bin","encoding":"base64"}"""),
+            tool.execute("""{"path":"/source/blob.bin","encoding":"base64"}"""),
         ).jsonObject
 
         assertTrue(first["truncated"]!!.jsonPrimitive.content.toBoolean())
@@ -1163,7 +1172,7 @@ class PolicyGatedAgentGatewayTest {
         override fun execute(arguments: String): String = payload
     }
 
-    private fun toolCallResponse(toolName: String = "read_workspace_file", path: String = "note.txt"): MockResponse = MockResponse.Builder()
+    private fun toolCallResponse(toolName: String = "read_workspace_file", path: String = "/source/note.txt"): MockResponse = MockResponse.Builder()
         .code(200)
         .body(
             """
@@ -1213,7 +1222,7 @@ class PolicyGatedAgentGatewayTest {
                       "type": "function",
                       "function": {
                         "name": "read_workspace_file",
-                        "arguments": "{\"path\":\"note.txt\"}"
+                        "arguments": "{\"path\":\"/source/note.txt\"}"
                       }
                     },
                     {
@@ -1221,7 +1230,7 @@ class PolicyGatedAgentGatewayTest {
                       "type": "function",
                       "function": {
                         "name": "read_workspace_file",
-                        "arguments": "{\"path\":\"note.txt\"}"
+                        "arguments": "{\"path\":\"/source/note.txt\"}"
                       }
                     }
                   ]

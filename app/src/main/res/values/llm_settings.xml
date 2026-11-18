@@ -94,7 +94,7 @@
     <string name="llm_fetch_models">Fetch from provider</string>
     <string name="llm_clear_models">Clear all</string>
     <string name="llm_remote_empty">The provider returned no available models.</string>
-    <string name="llm_fetch_failed">Could not load models (%1$s). Check the address, credentials and network, then retry.</string>
+    <string name="llm_fetch_failed">Could not load models:\n%1$s</string>
     <string name="llm_request_options">Request options</string>
     <string name="llm_save_failed">Could not save settings. Please retry.</string>
     <string name="llm_manage_models">Manage models (%1$d)</string>
@@ -103,7 +103,7 @@
     <string name="llm_select_model">Select model</string>
     <string name="llm_done">Done</string>
     <string name="llm_retry">Retry</string>
-    <string name="llm_invalid_url">Enter a valid HTTP or HTTPS API address. The last valid address is still in use.</string>
+    <string name="llm_invalid_url">Enter only the HTTP or HTTPS API Base URL, without spaces, curl commands, headers or JSON. Fetching and testing are disabled until corrected.</string>
     <string name="llm_test_model">Test model</string>
     <string name="llm_test_model_running">Testing the model…</string>
     <string name="llm_test_model_success">Model response:</string>

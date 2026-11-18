@@ -51,8 +51,9 @@ internal fun ModDetailsDialog(
     aiContent: @Composable () -> Unit,
     actionsContent: @Composable () -> Unit,
     suggestionContent: @Composable () -> Unit = {},
+    startAtAi: Boolean = false,
 ) {
-    val pager = rememberPagerState(initialPage = if (startAtActions) 0 else 1, pageCount = { 3 })
+    val pager = rememberPagerState(initialPage = if (startAtAi) 2 else if (startAtActions) 0 else 1, pageCount = { 3 })
     val scope = rememberCoroutineScope()
     val title = stringResource(R.string.mod_details_title)
     val maxHeight = (LocalConfiguration.current.screenHeightDp.dp - 48.dp).coerceIn(180.dp, 760.dp)

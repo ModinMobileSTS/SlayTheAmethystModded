@@ -820,11 +820,12 @@ Do you still want to continue?</string>
     <string name="main_mod_agent_patch_upload_confirm">Upload</string>
     <string name="main_mod_agent_patch_upload_failed">AI patch upload failed: %1$s</string>
     <string name="main_mod_agent_patch_install_failed">AI patch install failed: %1$s</string>
-    <string name="main_mod_agent_patch_install_success">Installed AI patch: %1$s</string>
     <string name="main_mod_agent_patch_install_progress_title">Installing AI patch</string>
     <string name="main_mod_agent_patch_install_done_title">Installation complete</string>
     <string name="main_mod_agent_patch_install_failed_title">Installation failed</string>
     <string name="main_mod_agent_patch_install_stage_preparing">Preparing download</string>
+    <string name="main_mod_agent_patch_route_connecting">Connecting to route</string>
+    <string name="main_mod_agent_patch_route_switching">Switching routes</string>
     <string name="main_mod_agent_patch_install_stage_downloading">Downloading patch</string>
     <string name="main_mod_agent_patch_install_stage_verifying">Verifying file</string>
     <string name="main_mod_agent_patch_install_stage_inspecting">Inspecting patch contents</string>

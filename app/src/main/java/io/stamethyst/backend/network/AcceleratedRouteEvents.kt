@@ -49,6 +49,11 @@ internal sealed interface AcceleratedRouteEvent {
     data class OfficialSucceeded(override val host: String) : AcceleratedRouteEvent
 }
 
+/** Optional request tag: observes only this request's foreground routing, not unrelated traffic. */
+internal fun interface AcceleratedRouteObserver {
+    fun onEvent(event: AcceleratedRouteEvent)
+}
+
 /**
  * Process-wide fan-out for [AcceleratedRouteEvent].
  *

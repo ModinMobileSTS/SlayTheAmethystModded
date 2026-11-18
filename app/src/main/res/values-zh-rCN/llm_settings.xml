@@ -94,7 +94,7 @@
     <string name="llm_fetch_models">从上游获取</string>
     <string name="llm_clear_models">清除全部</string>
     <string name="llm_remote_empty">上游未返回可用模型。</string>
-    <string name="llm_fetch_failed">获取模型失败（%1$s），请检查地址、凭证和网络后重试。</string>
+    <string name="llm_fetch_failed">获取模型失败：\n%1$s</string>
     <string name="llm_request_options">请求选项</string>
     <string name="llm_save_failed">设置保存失败，请重试。</string>
     <string name="llm_manage_models">管理模型（%1$d）</string>
@@ -103,7 +103,7 @@
     <string name="llm_select_model">选择模型</string>
     <string name="llm_done">完成</string>
     <string name="llm_retry">重试</string>
-    <string name="llm_invalid_url">请输入有效的 HTTP 或 HTTPS API 地址，当前仍使用上一次有效地址。</string>
+    <string name="llm_invalid_url">请仅填写 HTTP 或 HTTPS API 基础地址，不要包含空格、curl 命令、请求头或 JSON。修正前无法拉取或测试模型。</string>
     <string name="llm_test_model">测试模型</string>
     <string name="llm_test_model_running">正在测试模型…</string>
     <string name="llm_test_model_success">模型响应：</string>
