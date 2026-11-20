@@ -3,6 +3,7 @@ package io.stamethyst.ui.settings.sections
 import android.graphics.Paint
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -15,11 +16,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +38,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -59,13 +68,16 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.render.DisplayRegionCorner
 import io.stamethyst.backend.render.GameDisplayRegion
-import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.render.GameResolutionDraft
+import io.stamethyst.backend.render.GameResolutionPreset
 import io.stamethyst.backend.render.VirtualResolutionPolicy
 import io.stamethyst.ui.LauncherAlertDialog
 import io.stamethyst.ui.settings.common.SettingsActionListItem
@@ -74,9 +86,9 @@ import io.stamethyst.ui.settings.core.SettingsScreenViewModel
 import kotlin.math.roundToInt
 
 @Composable
-internal fun GameDisplayRegionSetting(
+internal fun GameResolutionSetting(
     uiState: SettingsScreenViewModel.UiState,
-    onRegionSaved: (GameDisplayRegion) -> Unit,
+    onSave: (GameResolutionDraft) -> Unit,
 ) {
     val activity = LocalActivity.current
     val hostView = LocalView.current
@@ -86,64 +98,212 @@ internal fun GameDisplayRegionSetting(
     val geometry = remember(activity, hostView, configuration, showEditor) {
         activity?.let { DeviceDisplayGeometry.read(it, hostView) }
     }
-    val initialRegion = uiState.gameDisplayRegion ?: geometry?.legacyRegion(
-        uiState.avoidDisplayCutout, uiState.cropScreenBottom
-    ) ?: GameDisplayRegion.FULLSCREEN
+    val initial = geometry?.let {
+        GameResolutionDraft.fromSaved(
+            uiState.gameDisplayRegion ?: it.legacyRegion(uiState.avoidDisplayCutout, uiState.cropScreenBottom),
+            uiState.selectedRenderScale, uiState.virtualResolutionMode, it.width, it.height,
+        )
+    }
+    val area = if (geometry != null && initial != null) initial.region.toPixels(geometry.width, geometry.height) else null
     SettingsActionListItem(
-        title = stringResource(R.string.settings_game_display_size_title),
-        supportingText = stringResource(R.string.settings_game_display_size_value,
-            (initialRegion.width * 100).roundToInt(), (initialRegion.height * 100).roundToInt()),
-        enabled = !uiState.busy && geometry != null,
+        title = stringResource(R.string.settings_game_resolution_title),
+        supportingText = area?.let {
+            stringResource(R.string.settings_game_resolution_dimensions, it.width, it.height)
+        },
+        enabled = !uiState.busy && initial != null,
         onClick = { showEditor = true },
     )
-    if (showEditor && geometry != null) {
-        GameDisplayRegionDialog(
-            initialRegion, geometry, uiState.virtualResolutionMode, !uiState.busy,
+    if (showEditor && geometry != null && initial != null) {
+        GameResolutionDialog(
+            initial, geometry, !uiState.busy,
             onDismiss = { showEditor = false },
-            onSave = { onRegionSaved(it); showEditor = false },
+            onSave = { onSave(it); showEditor = false },
         )
     }
 }
 
 @Composable
-internal fun GameDisplayRegionDialog(
-    initialRegion: GameDisplayRegion,
+internal fun GameResolutionDialog(
+    initial: GameResolutionDraft,
     geometry: DeviceDisplayGeometry,
-    resolutionMode: VirtualResolutionMode,
     enabled: Boolean,
     onDismiss: () -> Unit,
-    onSave: (GameDisplayRegion) -> Unit,
+    onSave: (GameResolutionDraft) -> Unit,
 ) {
-    var serializedDraft by rememberSaveable { mutableStateOf(initialRegion.persistedValue()) }
-    val region = GameDisplayRegion.fromPersistedValue(serializedDraft) ?: initialRegion
-    val rect = region.toPixels(geometry.width, geometry.height)
+    var serializedDraft by rememberSaveable { mutableStateOf(initial.region.persistedValue()) }
+    var scale by rememberSaveable { mutableStateOf(initial.scale) }
+    var showSizeInputs by rememberSaveable { mutableStateOf(false) }
+    var chosenPreset by rememberSaveable { mutableStateOf<String?>(null) }
+    val region = GameDisplayRegion.fromPersistedValue(serializedDraft) ?: initial.region
+    val (screenWidth, screenHeight) = geometry
+    val rect = region.toPixels(screenWidth, screenHeight)
+    var widthInput by rememberSaveable(screenWidth, screenHeight) { mutableStateOf(rect.width.toString()) }
+    var heightInput by rememberSaveable(screenWidth, screenHeight) { mutableStateOf(rect.height.toString()) }
+    val minWidth = minOf(rect.width, GameDisplayRegion.minPixelExtent(screenWidth))
+    val minHeight = minOf(rect.height, GameDisplayRegion.minPixelExtent(screenHeight))
+    val widthValid = widthInput.toIntOrNull()?.let { it in minWidth..screenWidth } == true
+    val heightValid = heightInput.toIntOrNull()?.let { it in minHeight..screenHeight } == true
+    val controlsEnabled = settingsControlEnabled(enabled)
+    val minimumScale = VirtualResolutionPolicy.minimumScale(rect.width, rect.height)
+    val render = VirtualResolutionPolicy.resolve(rect.width, rect.height, scale)
+    val draft = GameResolutionDraft(region, render.effectiveScale)
+    val pixelSize = stringResource(R.string.settings_game_resolution_dimensions, render.width, render.height)
+    val renderSize = if (render.width.toLong() * rect.height == render.height.toLong() * rect.width) {
+        pixelSize
+    } else {
+        stringResource(R.string.settings_game_resolution_approximate, pixelSize)
+    }
+    val scaleLabel = stringResource(R.string.settings_game_resolution_percent, (render.effectiveScale * 100).roundToInt())
+    val presets = remember(screenWidth, screenHeight) {
+        GameResolutionPreset.entries.associateWith { it.resolve(screenWidth, screenHeight) }
+    }
+    val matchingPresets = GameResolutionPreset.entries.filter { presets[it] == draft }
+    val selectedPreset = matchingPresets.firstOrNull { it.name == chosenPreset } ?: matchingPresets.firstOrNull()
+
+    fun updateFromFields() {
+        val width = widthInput.toIntOrNull() ?: return
+        val height = heightInput.toIntOrNull() ?: return
+        val current = GameDisplayRegion.fromPersistedValue(serializedDraft) ?: initial.region
+        current.withPixelSize(screenWidth, screenHeight, width, height)?.let {
+            serializedDraft = it.persistedValue()
+            scale = GameResolutionDraft(it, scale).withRegion(it, screenWidth, screenHeight).scale
+            chosenPreset = null
+        }
+    }
+
+    fun updateFromPreview(next: GameDisplayRegion) {
+        serializedDraft = next.persistedValue()
+        scale = GameResolutionDraft(next, scale).withRegion(next, screenWidth, screenHeight).scale
+        chosenPreset = null
+        val size = next.toPixels(screenWidth, screenHeight)
+        widthInput = size.width.toString()
+        heightInput = size.height.toString()
+    }
+
     LauncherAlertDialog(
         scrollableText = false,
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag("game_display_region_dialog"),
-        title = { Text(stringResource(R.string.settings_game_display_size_title)) },
+        title = { Text(stringResource(R.string.settings_game_resolution_title)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 GameDisplayRegionPreview(
-                    region, geometry, resolutionMode, settingsControlEnabled(enabled),
-                    onRegionChange = { serializedDraft = it.persistedValue() },
+                    region, geometry, controlsEnabled,
+                    onRegionChange = ::updateFromPreview,
                 )
-                Text(stringResource(R.string.settings_game_display_size_pixels,
-                    rect.width, rect.height, geometry.width, geometry.height), style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(enabled = settingsControlEnabled(enabled), onClick = { serializedDraft = GameDisplayRegion.FULLSCREEN.persistedValue() }) {
-                        Text(stringResource(R.string.settings_game_display_reset))
+                Text(
+                    stringResource(R.string.settings_game_display_screen_pixels, screenWidth, screenHeight),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.settings_game_display_drag_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
+                Row(
+                    Modifier.fillMaxWidth().testTag("game_display_resolution_toggle")
+                        .clickable(enabled = controlsEnabled) {
+                            if (!showSizeInputs || (widthValid && heightValid)) showSizeInputs = !showSizeInputs
+                        }
+                        .heightIn(min = 48.dp)
+                        .padding(vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.settings_game_display_resolution), style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.settings_game_display_resolution_short), style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(stringResource(R.string.settings_game_resolution_dimensions, rect.width, rect.height))
+                    Text(if (showSizeInputs) "⌃" else "⌄")
+                }
+                if (showSizeInputs) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = widthInput,
+                            onValueChange = { widthInput = it; updateFromFields() },
+                            modifier = Modifier.weight(1f).testTag("game_display_region_width"),
+                            enabled = controlsEnabled,
+                            label = { Text(stringResource(R.string.settings_game_display_width_px)) },
+                            singleLine = true,
+                            isError = !widthValid,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            supportingText = if (widthValid) null else {
+                                { Text(stringResource(R.string.settings_game_display_input_range, minWidth, screenWidth)) }
+                            },
+                        )
+                        OutlinedTextField(
+                            value = heightInput,
+                            onValueChange = { heightInput = it; updateFromFields() },
+                            modifier = Modifier.weight(1f).testTag("game_display_region_height"),
+                            enabled = controlsEnabled,
+                            label = { Text(stringResource(R.string.settings_game_display_height_px)) },
+                            singleLine = true,
+                            isError = !heightValid,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            supportingText = if (heightValid) null else {
+                                { Text(stringResource(R.string.settings_game_display_input_range, minHeight, screenHeight)) }
+                            },
+                        )
                     }
                     if (geometry.cutoutBounds.isNotEmpty()) {
-                        TextButton(enabled = settingsControlEnabled(enabled), onClick = {
-                            serializedDraft = geometry.legacyRegion(true, false).persistedValue()
+                        TextButton(enabled = controlsEnabled, onClick = {
+                            updateFromPreview(geometry.legacyRegion(true, false))
                         }) { Text(stringResource(R.string.settings_game_display_avoid_cutout)) }
+                    }
+                }
+                HorizontalDivider()
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.settings_game_render_resolution), style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.settings_game_render_resolution_short), style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(renderSize, modifier = Modifier.testTag("game_render_resolution_value"))
+                }
+                Slider(
+                    value = render.effectiveScale,
+                    onValueChange = { scale = it; chosenPreset = null },
+                    enabled = controlsEnabled && minimumScale < 1f,
+                    valueRange = minimumScale..1f,
+                    modifier = Modifier.fillMaxWidth().testTag("game_render_resolution_slider")
+                        .semantics { stateDescription = "$scaleLabel · $renderSize" },
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(stringResource(R.string.settings_game_render_lower), style = MaterialTheme.typography.labelSmall)
+                    Text(scaleLabel, style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(R.string.settings_game_render_higher), style = MaterialTheme.typography.labelSmall)
+                }
+                HorizontalDivider()
+                Text(stringResource(R.string.settings_game_resolution_presets), style = MaterialTheme.typography.titleSmall)
+                GameResolutionPreset.entries.chunked(2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { preset ->
+                            val draft = presets[preset]
+                            FilterChip(
+                                selected = selectedPreset == preset && widthValid && heightValid,
+                                onClick = {
+                                    if (draft != null) {
+                                        updateFromPreview(draft.region)
+                                        scale = draft.scale
+                                        chosenPreset = preset.name
+                                        showSizeInputs = false
+                                    }
+                                },
+                                enabled = controlsEnabled && draft != null,
+                                modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                                label = { Text(stringResource(preset.title())) },
+                            )
+                        }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(enabled = settingsControlEnabled(enabled), onClick = { onSave(region) }) { Text(stringResource(R.string.common_action_save)) }
+            TextButton(
+                enabled = controlsEnabled && widthInput.toIntOrNull() == rect.width && heightInput.toIntOrNull() == rect.height,
+                onClick = { if (draft == initial && chosenPreset == null) onDismiss() else onSave(draft) },
+            ) { Text(stringResource(R.string.common_action_save)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.main_folder_dialog_cancel)) }
@@ -151,11 +311,17 @@ internal fun GameDisplayRegionDialog(
     )
 }
 
+private fun GameResolutionPreset.title(): Int = when (this) {
+    GameResolutionPreset.FULLSCREEN -> R.string.settings_game_display_reset
+    GameResolutionPreset.HD -> R.string.settings_virtual_resolution_mode_1080p
+    GameResolutionPreset.PERFORMANCE -> R.string.settings_virtual_resolution_mode_720p
+    GameResolutionPreset.CLASSIC -> R.string.settings_virtual_resolution_mode_4_3
+}
+
 @Composable
 internal fun GameDisplayRegionPreview(
     region: GameDisplayRegion,
     geometry: DeviceDisplayGeometry,
-    resolutionMode: VirtualResolutionMode = VirtualResolutionMode.FULLSCREEN_FILL,
     enabled: Boolean = true,
     onRegionChange: (GameDisplayRegion) -> Unit,
 ) {
@@ -224,13 +390,8 @@ internal fun GameDisplayRegionPreview(
                 panel.left + region.right * panel.width, panel.top + region.bottom * panel.height)
             clipPath(screenPath) {
                 drawRect(Color(0xFF030507), panel.topLeft, panel.size)
-                val viewport = VirtualResolutionPolicy.resolveViewportSize(
-                    (selected.width * 100).roundToInt(), (selected.height * 100).roundToInt(), resolutionMode)
-                val viewportRect = Rect(
-                    selected.center.x - viewport.width / 200f, selected.center.y - viewport.height / 200f,
-                    selected.center.x + viewport.width / 200f, selected.center.y + viewport.height / 200f)
-                clipRect(viewportRect.left, viewportRect.top, viewportRect.right, viewportRect.bottom) {
-                    drawGameScene(viewportRect, gameLabel)
+                clipRect(selected.left, selected.top, selected.right, selected.bottom) {
+                    drawGameScene(selected, gameLabel)
                 }
                 if (geometry.cutoutPath != null) {
                     translate(panel.left, panel.top) {

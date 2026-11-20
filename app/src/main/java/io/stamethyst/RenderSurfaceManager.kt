@@ -14,6 +14,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
+import io.stamethyst.backend.render.DisplayPixelRect
 import io.stamethyst.backend.render.DisplayRefreshRatePolicy
 import io.stamethyst.backend.render.FullscreenCanvasSize
 import io.stamethyst.backend.render.FullscreenCanvasResolution
@@ -960,7 +961,8 @@ class RenderSurfaceManager(
             rootHeight = rootHeight,
             cropInsets = cropInsets,
             virtualWidth = virtualResolution.width,
-            virtualHeight = virtualResolution.height
+            virtualHeight = virtualResolution.height,
+            ignorePixelRounding = gameDisplayRegion != null && virtualResolutionMode == VirtualResolutionMode.FULLSCREEN_FILL,
         ) ?: return
         val params = (renderView.layoutParams as? FrameLayout.LayoutParams)
             ?: FrameLayout.LayoutParams(
@@ -1326,7 +1328,8 @@ class RenderSurfaceManager(
             rootHeight: Int,
             cropInsets: RenderViewportInsets,
             virtualWidth: Int,
-            virtualHeight: Int
+            virtualHeight: Int,
+            ignorePixelRounding: Boolean = false,
         ): RenderViewportLayout? {
             if (rootWidth <= 0 || rootHeight <= 0) {
                 return null
@@ -1337,25 +1340,19 @@ class RenderSurfaceManager(
             val bottomCrop = cropInsets.bottom.coerceAtLeast(0)
             val availableWidth = (rootWidth - leftCrop - rightCrop).coerceAtLeast(1)
             val availableHeight = (rootHeight - topCrop - bottomCrop).coerceAtLeast(1)
-            val safeVirtualWidth = virtualWidth.coerceAtLeast(1)
-            val safeVirtualHeight = virtualHeight.coerceAtLeast(1)
-            val scale = minOf(
-                availableWidth.toFloat() / safeVirtualWidth,
-                availableHeight.toFloat() / safeVirtualHeight
+            val viewport = VirtualResolutionPolicy.fitViewport(
+                DisplayPixelRect(
+                    leftCrop, topCrop, leftCrop + availableWidth, topCrop + availableHeight
+                ),
+                virtualWidth, virtualHeight, ignorePixelRounding,
             )
-            val width = (safeVirtualWidth * scale).toInt().coerceAtLeast(1)
-            val height = (safeVirtualHeight * scale).toInt().coerceAtLeast(1)
-            val remainingHorizontal = (availableWidth - width).coerceAtLeast(0)
-            val remainingVertical = (availableHeight - height).coerceAtLeast(0)
-            val centeredLeftMargin = remainingHorizontal / 2
-            val centeredTopMargin = remainingVertical / 2
             return RenderViewportLayout(
-                width = width,
-                height = height,
-                leftMargin = leftCrop + centeredLeftMargin,
-                topMargin = topCrop + centeredTopMargin,
-                rightMargin = rightCrop + remainingHorizontal - centeredLeftMargin,
-                bottomMargin = bottomCrop + remainingVertical - centeredTopMargin
+                width = viewport.width,
+                height = viewport.height,
+                leftMargin = viewport.left,
+                topMargin = viewport.top,
+                rightMargin = rightCrop + (leftCrop + availableWidth - viewport.right).coerceAtLeast(0),
+                bottomMargin = bottomCrop + (topCrop + availableHeight - viewport.bottom).coerceAtLeast(0),
             )
         }
 

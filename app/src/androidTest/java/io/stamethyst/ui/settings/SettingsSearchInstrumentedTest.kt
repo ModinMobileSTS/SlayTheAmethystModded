@@ -42,6 +42,7 @@ import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.navigation.Route
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.settings.common.SettingsSearchEntries
 import io.stamethyst.ui.settings.core.SettingsLoadDomain
 import io.stamethyst.ui.settings.core.SettingsLoadState
 import io.stamethyst.ui.settings.core.SettingsScreenViewModel
@@ -100,6 +101,20 @@ class SettingsSearchInstrumentedTest {
         ).performClick()
         compose.onNode(isDialog()).assertDoesNotExist()
         compose.runOnIdle { assertEquals(BackBehavior.EXIT_TO_LAUNCHER, selected) }
+    }
+
+    @Test
+    fun displayRegionResultBelongsToPerformanceAndStillOpensTheEditor() {
+        val title = R.string.settings_game_resolution_title
+        val entry = SettingsSearchEntries.single { it.titleResId == title }
+        assertEquals(Route.SettingsPerformance, entry.route)
+        assertEquals(R.string.settings_category_performance_title, entry.categoryTitleResId)
+
+        showSettings()
+        search(R.string.settings_game_display_size_title)
+        clickResult(title)
+        compose.onNode(isDialog()).assertIsDisplayed()
+        compose.runOnIdle { assertTrue(navigations.isEmpty()) }
     }
 
     @Test
@@ -234,15 +249,18 @@ class SettingsSearchInstrumentedTest {
     }
 
     @Test
-    fun renderScaleSliderSavesWithoutNavigating() {
+    fun renderScaleSearchOpensUnifiedDialogAndOnlySavesOnConfirmation() {
         var selected: Float? = null
-        showSettings { actions ->
-            actions.copy(performance = actions.performance.copy(onRenderScaleSelected = { selected = it }))
+        showSettings(uiState = SettingsScreenViewModel.UiState(selectedRenderScale = .75f)) { actions ->
+            actions.copy(performance = actions.performance.copy(onGameResolutionSaved = { selected = it.scale }))
         }
         search(R.string.settings_render_scale_title)
-        slider().performScrollTo().performSemanticsAction(SemanticsActions.SetProgress) { it(0.75f) }
+        clickResult(R.string.settings_game_resolution_title)
+        slider().performScrollTo().performSemanticsAction(SemanticsActions.SetProgress) { it(1f) }
+        compose.runOnIdle { assertEquals(null, selected) }
+        compose.onNodeWithText(context.getString(R.string.common_action_save)).performClick()
         compose.runOnIdle {
-            assertEquals(0.75f, selected)
+            assertEquals(1f, selected)
             assertTrue(navigations.isEmpty())
         }
     }

@@ -182,6 +182,7 @@ internal fun LauncherSettingsScreenContent(
             entry = entry,
             title = stringResource(entry.titleResId),
             subtitle = entry.subtitleResId?.let { stringResource(it) },
+            aliases = entry.aliases.map { stringResource(it) },
         )
     }
     val searchSections = if (searchActive) {
@@ -197,7 +198,8 @@ internal fun LauncherSettingsScreenContent(
                     (
                         categoryMatched ||
                             item.title.contains(filterKeyword, ignoreCase = true) ||
-                            item.subtitle?.contains(filterKeyword, ignoreCase = true) == true
+                            item.subtitle?.contains(filterKeyword, ignoreCase = true) == true ||
+                            item.aliases.any { it.contains(filterKeyword, ignoreCase = true) }
                         )
             }
             if (!categoryMatched && matchingEntries.isEmpty()) {
@@ -323,6 +325,7 @@ private data class ResolvedSettingsSearchEntry(
     val entry: SettingsSearchEntry,
     val title: String,
     val subtitle: String?,
+    val aliases: List<String>,
 )
 
 private data class SettingsSearchSection(
@@ -507,7 +510,6 @@ internal fun LauncherSettingsGameScreenContent(
     onFloatingToolButtonChanged: (String, Boolean) -> Unit = { _, _ -> },
     onHapticFeedbackChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
-    onGameDisplayRegionChanged: (io.stamethyst.backend.render.GameDisplayRegion) -> Unit = {},
     onGameplayFontScaleChanged: (Float) -> Unit = {},
     onGameplayLargerUiChanged: (Boolean) -> Unit = {},
     onHideEnemyPanelWhileTargetingChanged: (Boolean) -> Unit = {},
@@ -555,7 +557,6 @@ internal fun LauncherSettingsGameScreenContent(
                 SettingsGameplayDisplaySection(
                     uiState = uiState,
                     actions = GameplayDisplaySettingsActions(
-                        onGameDisplayRegionChanged = onGameDisplayRegionChanged,
                         onGameplayFontScaleChanged = onGameplayFontScaleChanged,
                         onGameplayLargerUiChanged = onGameplayLargerUiChanged,
                         onHideEnemyPanelWhileTargetingChanged = onHideEnemyPanelWhileTargetingChanged,
@@ -573,10 +574,9 @@ internal fun LauncherSettingsPerformanceScreenContent(
     modifier: Modifier = Modifier,
     uiState: SettingsScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
-    onRenderScaleSelected: (Float) -> Unit = {},
+    onGameResolutionSaved: (io.stamethyst.backend.render.GameResolutionDraft) -> Unit = {},
     onTargetFpsSelected: (Float) -> Unit = {},
     onFramePacingModeChanged: (io.stamethyst.config.FramePacingMode) -> Unit = {},
-    onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit = {},
     onRamSaverEnabledChanged: (Boolean) -> Unit = {},
     onMtsPatchCacheEnabledChanged: (Boolean) -> Unit = {},
     onOpenMtsCacheOptimizations: () -> Unit = {},
@@ -593,10 +593,9 @@ internal fun LauncherSettingsPerformanceScreenContent(
                 SettingsPerformanceSection(
                     uiState = uiState,
                     actions = PerformanceSettingsActions(
-                        onRenderScaleSelected = onRenderScaleSelected,
+                        onGameResolutionSaved = onGameResolutionSaved,
                         onTargetFpsSelected = onTargetFpsSelected,
                         onFramePacingModeChanged = onFramePacingModeChanged,
-                        onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
                         onRamSaverEnabledChanged = onRamSaverEnabledChanged,
                         onMtsPatchCacheEnabledChanged = onMtsPatchCacheEnabledChanged,
                         onOpenMtsCacheOptimizations = onOpenMtsCacheOptimizations,

@@ -207,7 +207,6 @@ private val appearanceTitles = setOf(
 )
 
 private val displayTitles = setOf(
-    R.string.settings_game_display_size_title,
     R.string.settings_gameplay_larger_ui_enabled,
     R.string.settings_hide_enemy_panel_while_targeting,
     R.string.settings_gameplay_font_scale_title,

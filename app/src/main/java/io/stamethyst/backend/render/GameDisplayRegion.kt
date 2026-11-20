@@ -52,11 +52,42 @@ data class GameDisplayRegion(
         )
     }
 
+    /** Resize about the current center, shifting only as needed to stay on screen. */
+    fun withPixelSize(
+        displayWidth: Int,
+        displayHeight: Int,
+        width: Int,
+        height: Int,
+    ): GameDisplayRegion? {
+        if (displayWidth <= 0 || displayHeight <= 0) return null
+        val region = normalized()
+        val current = region.toPixels(displayWidth, displayHeight)
+        // An existing half-screen region on an odd-sized display can round down by one pixel.
+        if (width !in minOf(minPixelExtent(displayWidth), current.width)..displayWidth ||
+            height !in minOf(minPixelExtent(displayHeight), current.height)..displayHeight
+        ) return null
+        val left = (current.left + (current.width - width) / 2).coerceIn(0, displayWidth - width)
+        val top = (current.top + (current.height - height) / 2).coerceIn(0, displayHeight - height)
+        return GameDisplayRegion(
+            left = if (width == current.width) region.left else left.toFloat() / displayWidth,
+            top = if (height == current.height) region.top else top.toFloat() / displayHeight,
+            right = if (width == current.width) region.right else (left + width).toFloat() / displayWidth,
+            bottom = if (height == current.height) region.bottom else (top + height).toFloat() / displayHeight,
+        )
+    }
+
     fun persistedValue(): String = normalized().let { "${it.left},${it.top},${it.right},${it.bottom}" }
 
     companion object {
         val FULLSCREEN = GameDisplayRegion()
         const val MIN_EXTENT = 0.5f
+
+        fun minPixelExtent(displayExtent: Int): Int =
+            kotlin.math.ceil(displayExtent.toDouble() * MIN_EXTENT).toInt()
+
+        internal fun fromPixels(rect: DisplayPixelRect, width: Int, height: Int): GameDisplayRegion =
+            GameDisplayRegion(rect.left.toFloat() / width, rect.top.toFloat() / height,
+                rect.right.toFloat() / width, rect.bottom.toFloat() / height).normalized()
 
         fun fromPersistedValue(value: String?): GameDisplayRegion? {
             val parts = value?.split(',')?.map { it.toFloatOrNull() ?: return null } ?: return null

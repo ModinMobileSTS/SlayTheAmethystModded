@@ -75,6 +75,22 @@ class VirtualResolutionPolicyTest {
     }
 
     @Test
+    fun previewFits1080pInsideTheSelectedPixelRegionRatherThanResizingIt() {
+        val region = DisplayPixelRect(100, 100, 2300, 1000)
+        assertEquals(region, VirtualResolutionPolicy.previewViewport(region, 1f, VirtualResolutionMode.FULLSCREEN_FILL))
+        assertEquals(
+            DisplayPixelRect(400, 100, 2000, 1000),
+            VirtualResolutionPolicy.previewViewport(region, 1f, VirtualResolutionMode.RESOLUTION_1080P),
+        )
+        assertEquals(
+            DisplayPixelRect(400, 100, 2000, 1000),
+            VirtualResolutionPolicy.previewViewport(region, .5f, VirtualResolutionMode.RESOLUTION_1080P),
+        )
+        val exactArea = DisplayPixelRect(240, 0, 2160, 1080)
+        assertEquals(exactArea, VirtualResolutionPolicy.previewViewport(exactArea, 1f, VirtualResolutionMode.RESOLUTION_1080P))
+    }
+
+    @Test
     fun resolve_720p_usesFixedBaseResolution() {
         val resolution = VirtualResolutionPolicy.resolve(
             physicalWidth = 1440,

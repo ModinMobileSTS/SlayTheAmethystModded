@@ -46,14 +46,14 @@ internal val SettingsLauncherRouteSpec = SettingsRouteSpec(
 internal val SettingsGameRouteSpec = SettingsRouteSpec(
     titleResId = R.string.settings_category_game_title,
     subtitleResId = R.string.settings_category_game_subtitle,
-    iconResId = R.drawable.ic_gamepad,
+    iconResId = R.drawable.ic_settings_joystick,
 )
 
 
 internal val SettingsPerformanceRouteSpec = SettingsRouteSpec(
     titleResId = R.string.settings_category_performance_title,
     subtitleResId = R.string.settings_category_performance_subtitle,
-    iconResId = R.drawable.ic_speed,
+    iconResId = R.drawable.ic_settings_render_preview,
 )
 
 

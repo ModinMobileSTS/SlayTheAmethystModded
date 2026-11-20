@@ -113,6 +113,7 @@ object LauncherConfig {
     private const val PREF_KEY_AVOID_DISPLAY_CUTOUT = "avoid_display_cutout"
     private const val PREF_KEY_CROP_SCREEN_BOTTOM = "crop_screen_bottom"
     private const val PREF_KEY_GAME_DISPLAY_REGION = "game_display_region"
+    private const val PREF_KEY_GAME_RENDER_SCALE = "game_render_scale"
     private const val PREF_KEY_RAM_SAVER_ENABLED = "ram_saver_enabled"
     private const val PREF_KEY_MTS_PATCH_CACHE_ENABLED = "mts_patch_cache_enabled"
     private const val PREF_KEY_SWAPPY_FRAME_PACING_ENABLED = "swappy_frame_pacing_enabled"
@@ -1315,6 +1316,20 @@ object LauncherConfig {
         prefs(context).edit {
             putString(PREF_KEY_GAME_DISPLAY_REGION, region.persistedValue())
             // Once a region is explicit, no hidden automatic crop may change its boundaries.
+            putBoolean(PREF_KEY_AVOID_DISPLAY_CUTOUT, false)
+            putBoolean(PREF_KEY_CROP_SCREEN_BOTTOM, false)
+        }
+    }
+
+    fun saveGameResolution(
+        context: Context,
+        region: io.stamethyst.backend.render.GameDisplayRegion,
+        renderScale: Float,
+    ) {
+        prefs(context).edit {
+            putString(PREF_KEY_GAME_DISPLAY_REGION, region.persistedValue())
+            putString(PREF_KEY_VIRTUAL_RESOLUTION_MODE, VirtualResolutionMode.FULLSCREEN_FILL.persistedValue)
+            putFloat(PREF_KEY_GAME_RENDER_SCALE, renderScale.coerceIn(MIN_RENDER_SCALE, MAX_RENDER_SCALE))
             putBoolean(PREF_KEY_AVOID_DISPLAY_CUTOUT, false)
             putBoolean(PREF_KEY_CROP_SCREEN_BOTTOM, false)
         }
@@ -2753,6 +2768,9 @@ object LauncherConfig {
     }
 
     fun readRenderScale(context: Context): Float {
+        prefs(context).getFloat(PREF_KEY_GAME_RENDER_SCALE, Float.NaN).takeIf { it.isFinite() }?.let {
+            return it.coerceIn(MIN_RENDER_SCALE, MAX_RENDER_SCALE)
+        }
         val config = renderScaleFile(context)
         if (!config.exists()) {
             return DEFAULT_RENDER_SCALE
@@ -2772,6 +2790,7 @@ object LauncherConfig {
                 }
                 val parsed = value.toFloat()
                 when {
+                    !parsed.isFinite() -> DEFAULT_RENDER_SCALE
                     parsed < MIN_RENDER_SCALE -> MIN_RENDER_SCALE
                     parsed > MAX_RENDER_SCALE -> MAX_RENDER_SCALE
                     else -> parsed
@@ -2783,27 +2802,12 @@ object LauncherConfig {
     }
 
     @Throws(IOException::class)
-    fun saveRenderScale(context: Context, value: Float): String {
-        val config = renderScaleFile(context)
-        val parent = config.parentFile
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            throw IOException("Failed to create config directory")
-        }
-
-        val normalized = formatRenderScale(value.coerceIn(MIN_RENDER_SCALE, MAX_RENDER_SCALE))
-        FileOutputStream(config, false).use { out ->
-            out.write(normalized.toByteArray(StandardCharsets.UTF_8))
-            out.fd.sync()
-        }
-        return normalized
-    }
-
-    @Throws(IOException::class)
     fun resetRenderScale(context: Context) {
         val config = renderScaleFile(context)
         if (config.exists() && !config.delete()) {
             throw IOException("Failed to reset render scale")
         }
+        prefs(context).edit { remove(PREF_KEY_GAME_RENDER_SCALE) }
     }
 
     fun formatRenderScale(value: Float): String {

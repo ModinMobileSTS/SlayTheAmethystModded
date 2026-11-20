@@ -365,8 +365,8 @@ fun LauncherFirstRunSetupScreen(
                             FirstRunSetupStep.RENDER -> {
                                 FirstRunRenderStep(
                                     uiState = uiState,
-                                    onGameDisplayRegionChanged = { region ->
-                                        viewModel.onGameDisplayRegionChanged(activity, region)
+                                    onGameResolutionSaved = { draft ->
+                                        viewModel.onGameResolutionSaved(activity, draft)
                                     },
                                     onGameplayFontScaleChanged = { value ->
                                         viewModel.onGameplayFontScaleChanged(activity, value)
@@ -565,7 +565,7 @@ private fun FirstRunThemeColorOption(
 @Composable
 private fun FirstRunRenderStep(
     uiState: SettingsScreenViewModel.UiState,
-    onGameDisplayRegionChanged: (io.stamethyst.backend.render.GameDisplayRegion) -> Unit,
+    onGameResolutionSaved: (io.stamethyst.backend.render.GameResolutionDraft) -> Unit,
     onGameplayFontScaleChanged: (Float) -> Unit,
     onGameplayLargerUiChanged: (Boolean) -> Unit,
 ) {
@@ -580,7 +580,7 @@ private fun FirstRunRenderStep(
     SettingsSectionCard(
         title = stringResource(R.string.settings_section_render)
     ) {
-        GameDisplayRegionSetting(uiState, onGameDisplayRegionChanged)
+        GameResolutionSetting(uiState, onGameResolutionSaved)
 
         SettingsSwitchItem(
             SettingsSwitchSpec(

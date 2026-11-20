@@ -87,17 +87,15 @@ internal fun settingsSearchActions(
         onAutoSwitchLeftAfterRightClickChanged = { viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, it) },
     ),
     display = GameplayDisplaySettingsActions(
-        onGameDisplayRegionChanged = { viewModel.onGameDisplayRegionChanged(activity, it) },
         onGameplayFontScaleChanged = { viewModel.onGameplayFontScaleChanged(activity, it) },
         onGameplayLargerUiChanged = { viewModel.onGameplayLargerUiChanged(activity, it) },
         onHideEnemyPanelWhileTargetingChanged = { viewModel.onHideEnemyPanelWhileTargetingChanged(activity, it) },
         onKeepScreenOnTimeoutSelected = { viewModel.onKeepScreenOnTimeoutSelected(activity, it) },
     ),
     performance = PerformanceSettingsActions(
-        onRenderScaleSelected = { viewModel.onRenderScaleSelected(activity, it) },
+        onGameResolutionSaved = { viewModel.onGameResolutionSaved(activity, it) },
         onTargetFpsSelected = { viewModel.onTargetFpsSelected(activity, it) },
         onFramePacingModeChanged = { viewModel.onFramePacingModeChanged(activity, it) },
-        onVirtualResolutionModeChanged = { viewModel.onVirtualResolutionModeChanged(activity, it) },
         onRamSaverEnabledChanged = { viewModel.onRamSaverEnabledChanged(activity, it) },
         onMtsPatchCacheEnabledChanged = { viewModel.onMtsPatchCacheEnabledChanged(activity, it) },
         onOpenMtsCacheOptimizations = { onOpenSettingsRoute(Route.SettingsMtsCacheOptimizations) },

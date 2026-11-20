@@ -45,6 +45,35 @@ class GameDisplayRegionTest {
         assertEquals(DisplayPixelRect(0, 0, 1, 1), region.toPixels(0, 0))
     }
 
+    @Test fun pixelResizeKeepsCenterAndRoundTripsExactDimensions() {
+        val resized = GameDisplayRegion.FULLSCREEN.withPixelSize(2400, 1080, 1920, 1080)!!
+        val restored = GameDisplayRegion.fromPersistedValue(resized.persistedValue())!!
+        assertEquals(DisplayPixelRect(240, 0, 2160, 1080), restored.toPixels(2400, 1080))
+    }
+
+    @Test fun pixelResizePreservesOffsetUnlessItNeedsToShiftInsideTheScreen() {
+        val offset = GameDisplayRegion(.2f, 0f, .8f, .6f)
+        assertEquals(DisplayPixelRect(360, 0, 2040, 648),
+            offset.withPixelSize(2400, 1080, 1680, 648)!!.toPixels(2400, 1080))
+        assertEquals(DisplayPixelRect(480, 0, 1920, 1000),
+            offset.withPixelSize(2400, 1080, 1440, 1000)!!.toPixels(2400, 1080))
+    }
+
+    @Test fun pixelResizeRejectsOutOfRangeInsteadOfClampingSize() {
+        assertNull(region.withPixelSize(2400, 1080, 2401, 1080))
+        assertNull(region.withPixelSize(2400, 1080, 1920, 1081))
+        assertNull(region.withPixelSize(2400, 1080, 1199, 1080))
+        assertNull(region.withPixelSize(2400, 1080, 1920, 0))
+        assertEquals(1201, region.withPixelSize(2401, 1081, 1201, 541)!!.toPixels(2401, 1081).width)
+        assertNull(region.withPixelSize(2401, 1081, 1200, 541))
+    }
+
+    @Test fun pixelResizeCanKeepAnExistingHalfWidthThatRoundsDown() {
+        val halfWidth = GameDisplayRegion(.5f, 0f, 1f, 1f)
+        val resized = halfWidth.withPixelSize(2401, 1081, 1200, 541)!!
+        assertEquals(DisplayPixelRect(1201, 270, 2401, 811), resized.toPixels(2401, 1081))
+    }
+
     @Test fun reverseLandscapeMirrorsBothOriginAndFarEdges() {
         val original = GameDisplayRegion(.05f, .1f, .9f, .8f)
         val flipped = original.rotated180()

@@ -42,7 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
-import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.render.GameResolutionDraft
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.FramePacingMode
@@ -57,10 +57,9 @@ import kotlin.math.roundToInt
 
 
 internal data class PerformanceSettingsActions(
-    val onRenderScaleSelected: (Float) -> Unit,
+    val onGameResolutionSaved: (GameResolutionDraft) -> Unit,
     val onTargetFpsSelected: (Float) -> Unit,
     val onFramePacingModeChanged: (FramePacingMode) -> Unit,
-    val onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
     val onRamSaverEnabledChanged: (Boolean) -> Unit,
     val onMtsPatchCacheEnabledChanged: (Boolean) -> Unit,
     val onOpenMtsCacheOptimizations: () -> Unit = {},
@@ -70,7 +69,6 @@ internal data class PerformanceSettingsActions(
 
 internal data class GameplayDisplaySettingsActions(
     val onHideEnemyPanelWhileTargetingChanged: (Boolean) -> Unit = {},
-    val onGameDisplayRegionChanged: (io.stamethyst.backend.render.GameDisplayRegion) -> Unit = {},
     val onGameplayFontScaleChanged: (Float) -> Unit,
     val onGameplayLargerUiChanged: (Boolean) -> Unit,
     val onKeepScreenOnTimeoutSelected: (Int) -> Unit,
@@ -120,9 +118,6 @@ internal fun SettingsPerformanceSection(
     settingTitleResId: Int? = null,
 ) {
     val context = LocalContext.current
-    var renderScaleSliderValue by remember(uiState.selectedRenderScale) {
-        mutableFloatStateOf(uiState.selectedRenderScale)
-    }
     var targetFpsSliderValue by remember(uiState.selectedTargetFps) {
         mutableFloatStateOf(targetFpsToSliderValue(uiState.selectedTargetFps))
     }
@@ -191,36 +186,8 @@ internal fun SettingsPerformanceSection(
         )
     }
 
-    if (settingTitleResId == null || settingTitleResId == R.string.settings_render_scale_title) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                text = stringResource(R.string.settings_render_scale_title),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            SlidingTextSwap(
-                text = RenderScaleService.format(renderScaleSliderValue),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Text(
-            text = stringResource(R.string.settings_render_scale_desc),
-            style = MaterialTheme.typography.bodySmall,
-        )
-        SettingsDiscreteSlider(
-            value = renderScaleSliderValue,
-            onValueChange = { renderScaleSliderValue = it },
-            onValueChangeFinished = { actions.onRenderScaleSelected(renderScaleSliderValue) },
-            valueRange = RenderScaleService.MIN_RENDER_SCALE..RenderScaleService.MAX_RENDER_SCALE,
-            steps = ((RenderScaleService.MAX_RENDER_SCALE - RenderScaleService.MIN_RENDER_SCALE) / 0.01f)
-                .roundToInt() - 1,
-            enabled = settingsControlEnabled(!uiState.busy),
-            modifier = Modifier.fillMaxWidth()
-        )
+    if (settingTitleResId == null || settingTitleResId == R.string.settings_game_resolution_title) {
+        GameResolutionSetting(uiState, actions.onGameResolutionSaved)
     }
 
     if (settingTitleResId == null || settingTitleResId == R.string.settings_target_fps_title) {
@@ -300,10 +267,6 @@ internal fun SettingsPerformanceSection(
         }
     }
 
-    if (settingTitleResId == null || settingTitleResId == R.string.settings_virtual_resolution_mode_title) {
-        SettingsVirtualResolutionModeSetting(uiState, actions)
-    }
-
     if (settingTitleResId == null || settingTitleResId == R.string.settings_frame_pacing_mode_title) {
         SettingsChoiceDialogItem(
             SettingsChoiceSpec(
@@ -326,26 +289,6 @@ internal fun SettingsPerformanceSection(
             title = stringResource(R.string.settings_performance_overlay_enabled),
             description = stringResource(R.string.settings_performance_overlay_desc),
             onCheckedChange = actions.onGamePerformanceOverlayChanged,
-        )
-    )
-}
-
-@Composable
-internal fun SettingsVirtualResolutionModeSetting(
-    uiState: SettingsScreenViewModel.UiState,
-    actions: PerformanceSettingsActions,
-) {
-    SettingsChoiceDialogItem(
-        SettingsChoiceSpec(
-            title = stringResource(R.string.settings_virtual_resolution_mode_title),
-            valueText = virtualResolutionModeDisplayName(uiState.virtualResolutionMode),
-            enabled = !uiState.busy,
-            selectedValue = uiState.virtualResolutionMode,
-            options = VirtualResolutionMode.entries,
-            optionLabel = { mode -> virtualResolutionModeDisplayName(mode) },
-            onOptionSelected = actions.onVirtualResolutionModeChanged,
-            description = null,
-            dialogDescription = virtualResolutionModeDescription(uiState.virtualResolutionMode),
         )
     )
 }
@@ -503,10 +446,6 @@ internal fun SettingsGameplayDisplaySection(
             onCheckedChange = actions.onHideEnemyPanelWhileTargetingChanged,
         )
     )
-    if (settingTitleResId == null || settingTitleResId == R.string.settings_game_display_size_title) {
-        GameDisplayRegionSetting(uiState, actions.onGameDisplayRegionChanged)
-    }
-
     if (settingTitleResId == null || settingTitleResId == R.string.settings_gameplay_larger_ui_enabled) SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.gameplayLargerUiEnabled,
@@ -828,23 +767,6 @@ internal val FLOATING_TOOL_BUTTON_LABELS: Map<String, Int> = mapOf(
 
 
 @Composable
-private fun virtualResolutionModeDisplayName(mode: VirtualResolutionMode): String {
-    return when (mode) {
-        VirtualResolutionMode.FULLSCREEN_FILL ->
-            stringResource(R.string.settings_virtual_resolution_mode_fullscreen_fill)
-        VirtualResolutionMode.RESOLUTION_1080P ->
-            stringResource(R.string.settings_virtual_resolution_mode_1080p)
-        VirtualResolutionMode.RESOLUTION_720P ->
-            stringResource(R.string.settings_virtual_resolution_mode_720p)
-        VirtualResolutionMode.RATIO_4_3 ->
-            stringResource(R.string.settings_virtual_resolution_mode_4_3)
-        VirtualResolutionMode.RATIO_16_9 ->
-            stringResource(R.string.settings_virtual_resolution_mode_16_9)
-    }
-}
-
-
-@Composable
 private fun framePacingModeDisplayName(mode: FramePacingMode): String {
     return stringResource(
         when (mode) {
@@ -853,23 +775,6 @@ private fun framePacingModeDisplayName(mode: FramePacingMode): String {
             FramePacingMode.OFF -> R.string.settings_frame_pacing_mode_off
         }
     )
-}
-
-
-@Composable
-private fun virtualResolutionModeDescription(mode: VirtualResolutionMode): String {
-    return when (mode) {
-        VirtualResolutionMode.FULLSCREEN_FILL ->
-            stringResource(R.string.settings_virtual_resolution_mode_desc_fullscreen_fill)
-        VirtualResolutionMode.RESOLUTION_1080P ->
-            stringResource(R.string.settings_virtual_resolution_mode_desc_1080p)
-        VirtualResolutionMode.RESOLUTION_720P ->
-            stringResource(R.string.settings_virtual_resolution_mode_desc_720p)
-        VirtualResolutionMode.RATIO_4_3 ->
-            stringResource(R.string.settings_virtual_resolution_mode_desc_4_3)
-        VirtualResolutionMode.RATIO_16_9 ->
-            stringResource(R.string.settings_virtual_resolution_mode_desc_16_9)
-    }
 }
 
 

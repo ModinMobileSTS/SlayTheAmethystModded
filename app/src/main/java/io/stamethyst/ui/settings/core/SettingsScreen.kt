@@ -193,9 +193,6 @@ fun LauncherSettingsGameScreen(
         onAutoSwitchLeftAfterRightClickChanged = { enabled ->
             viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled)
         },
-        onGameDisplayRegionChanged = { region ->
-            viewModel.onGameDisplayRegionChanged(activity, region)
-        },
         onGameplayFontScaleChanged = { value ->
             viewModel.onGameplayFontScaleChanged(activity, value)
         },
@@ -229,13 +226,10 @@ fun LauncherSettingsPerformanceScreen(
         modifier = modifier,
         uiState = uiState,
         onGoBack = navigator::goBack,
-        onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
+        onGameResolutionSaved = { draft -> viewModel.onGameResolutionSaved(activity, draft) },
         onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
         onFramePacingModeChanged = { mode ->
             viewModel.onFramePacingModeChanged(activity, mode)
-        },
-        onVirtualResolutionModeChanged = { mode ->
-            viewModel.onVirtualResolutionModeChanged(activity, mode)
         },
         onRamSaverEnabledChanged = { enabled ->
             viewModel.onRamSaverEnabledChanged(activity, enabled)

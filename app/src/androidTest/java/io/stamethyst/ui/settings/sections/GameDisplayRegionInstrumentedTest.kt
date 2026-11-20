@@ -6,10 +6,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -18,6 +25,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.render.DisplayPixelRect
 import io.stamethyst.backend.render.DisplayRegionCorner
 import io.stamethyst.backend.render.GameDisplayRegion
+import io.stamethyst.backend.render.GameResolutionDraft
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.LauncherConfig
 import org.junit.Assert.assertEquals
@@ -74,30 +82,34 @@ class GameDisplayRegionInstrumentedTest {
         var saved: GameDisplayRegion? = null
         var dismissed = false
         compose.setContent {
-            MaterialTheme { GameDisplayRegionDialog(initial, geometry, VirtualResolutionMode.FULLSCREEN_FILL,
-                true, { dismissed = true }, { saved = it }) }
+            MaterialTheme { GameResolutionDialog(GameResolutionDraft(initial, 1f), geometry,
+                true, { dismissed = true }, { saved = it.region }) }
         }
-        compose.onNodeWithText(context.getString(R.string.settings_game_display_reset)).performClick()
+        compose.onNodeWithText(context.getString(R.string.settings_game_display_reset)).performScrollTo().performClick()
         compose.onNodeWithText(context.getString(R.string.main_folder_dialog_cancel)).performClick()
         compose.runOnIdle { assertTrue(dismissed); assertNull(saved) }
     }
 
     @Test fun saveCommitsTheDraftAndLegacyCroppingIsDisabled() {
-        var saved: GameDisplayRegion? = null
+        var saved: GameResolutionDraft? = null
         compose.setContent {
-            MaterialTheme { GameDisplayRegionDialog(initial, geometry, VirtualResolutionMode.FULLSCREEN_FILL,
+            MaterialTheme { GameResolutionDialog(GameResolutionDraft(initial, 1f), geometry,
                 true, {}, { saved = it }) }
         }
-        compose.onNodeWithText(context.getString(R.string.settings_game_display_reset)).performClick()
+        compose.onNodeWithText(context.getString(R.string.settings_virtual_resolution_mode_720p)).performScrollTo().performClick()
         compose.onNodeWithText(context.getString(R.string.common_action_save)).performClick()
-        compose.runOnIdle { assertEquals(GameDisplayRegion.FULLSCREEN, saved) }
+        val draft = compose.runOnIdle { requireNotNull(saved) }
         val preferences = context.getSharedPreferences("sts_launcher_prefs", 0)
         // Persistence is exercised without leaving changes in the user's test installation.
-        val keys = listOf("game_display_region", "avoid_display_cutout", "crop_screen_bottom")
+        val keys = listOf("game_display_region", "avoid_display_cutout", "crop_screen_bottom",
+            "game_render_scale", "virtual_resolution_mode")
         val original = keys.associateWith { preferences.all[it] }
         try {
-            LauncherConfig.saveGameDisplayRegion(context, initial)
-            assertEquals(initial, LauncherConfig.readGameDisplayRegion(context))
+            LauncherConfig.saveVirtualResolutionMode(context, VirtualResolutionMode.RESOLUTION_1080P)
+            LauncherConfig.saveGameResolution(context, draft.region, draft.scale)
+            assertEquals(DisplayPixelRect(240, 0, 2160, 1080), LauncherConfig.readGameDisplayRegion(context)?.toPixels(2400, 1080))
+            assertEquals(VirtualResolutionMode.FULLSCREEN_FILL, LauncherConfig.readVirtualResolutionMode(context))
+            assertEquals(720f / 1080, LauncherConfig.readRenderScale(context))
             assertFalse(LauncherConfig.isDisplayCutoutAvoidanceEnabled(context))
             assertFalse(LauncherConfig.isScreenBottomCropEnabled(context))
         } finally {
@@ -106,10 +118,55 @@ class GameDisplayRegionInstrumentedTest {
                 when (value) {
                     is String -> editor.putString(key, value)
                     is Boolean -> editor.putBoolean(key, value)
+                    is Float -> editor.putFloat(key, value)
                     else -> editor.remove(key)
                 }
             }
             editor.commit()
+        }
+    }
+
+    @Test fun pixelFieldsSaveTheExactAreaAndRejectInvalidValues() {
+        var saved: GameDisplayRegion? = null
+        compose.setContent {
+            MaterialTheme {
+                GameResolutionDialog(GameResolutionDraft(GameDisplayRegion.FULLSCREEN, 1f), geometry,
+                    true, {}, { saved = it.region })
+            }
+        }
+        compose.onNodeWithTag("game_display_resolution_toggle").performScrollTo().performClick()
+        val width = compose.onNodeWithTag("game_display_region_width").performScrollTo()
+        val height = compose.onNodeWithTag("game_display_region_height")
+        val save = compose.onNodeWithText(context.getString(R.string.common_action_save))
+        width.performTextReplacement("2401")
+        save.assertIsNotEnabled()
+        width.performTextReplacement("1920")
+        height.performTextReplacement("")
+        save.assertIsNotEnabled()
+        height.performTextReplacement("1080")
+        save.assertIsEnabled().performClick()
+        compose.runOnIdle { assertEquals(DisplayPixelRect(240, 0, 2160, 1080), saved?.toPixels(2400, 1080)) }
+    }
+
+    @Test fun presetsAndSliderKeepTheSameDisplayAreaAtDifferentRenderSizes() {
+        var saved: GameResolutionDraft? = null
+        compose.setContent {
+            MaterialTheme {
+                GameResolutionDialog(GameResolutionDraft(GameDisplayRegion.FULLSCREEN, 1f), geometry, true, {}, { saved = it })
+            }
+        }
+        val renderValue = compose.onNodeWithTag("game_render_resolution_value")
+        compose.onNodeWithText(context.getString(R.string.settings_virtual_resolution_mode_1080p)).performScrollTo().performClick()
+        renderValue.assertTextEquals("1920 × 1080")
+        compose.onNodeWithText(context.getString(R.string.settings_virtual_resolution_mode_720p)).performScrollTo().performClick()
+        renderValue.assertTextEquals("1280 × 720")
+        compose.onNodeWithTag("game_render_resolution_slider").performScrollTo()
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(.5f) }
+        renderValue.assertTextEquals("960 × 540")
+        compose.onNodeWithText(context.getString(R.string.common_action_save)).performClick()
+        compose.runOnIdle {
+            assertEquals(DisplayPixelRect(240, 0, 2160, 1080), saved?.region?.toPixels(2400, 1080))
+            assertEquals(.5f, saved?.scale)
         }
     }
 

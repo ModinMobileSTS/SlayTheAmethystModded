@@ -1,5 +1,7 @@
 package io.stamethyst.backend.render
 
+import kotlin.math.abs
+
 object VirtualResolutionPolicy {
     const val MIN_GAME_WIDTH = 800
     const val MIN_GAME_HEIGHT = 450
@@ -14,17 +16,16 @@ object VirtualResolutionPolicy {
         val viewportSize = resolveViewportSize(physicalWidth, physicalHeight, mode)
         val baseWidth = mode.fixedBaseWidth ?: viewportSize.width
         val baseHeight = mode.fixedBaseHeight ?: viewportSize.height
-        val requestedScale = renderScale.coerceIn(0.1f, 1.0f)
-        val minScaleForWidth = MIN_GAME_WIDTH.toFloat() / baseWidth.toFloat()
-        val minScaleForHeight = MIN_GAME_HEIGHT.toFloat() / baseHeight.toFloat()
-        val effectiveScale = maxOf(requestedScale, minScaleForWidth, minScaleForHeight)
-            .coerceIn(0.1f, 1.0f)
+        val effectiveScale = renderScale.takeIf(Float::isFinite)?.coerceIn(minimumScale(baseWidth, baseHeight), 1f) ?: 1f
         return VirtualResolution(
             width = (baseWidth * effectiveScale).toInt().coerceAtLeast(1),
             height = (baseHeight * effectiveScale).toInt().coerceAtLeast(1),
             effectiveScale = effectiveScale
         )
     }
+
+    internal fun minimumScale(width: Int, height: Int): Float =
+        maxOf(.1f, MIN_GAME_WIDTH.toFloat() / width, MIN_GAME_HEIGHT.toFloat() / height).coerceAtMost(1f)
 
     @JvmStatic
     fun resolveViewportSize(
@@ -49,6 +50,33 @@ object VirtualResolutionPolicy {
             width = width.coerceAtLeast(1),
             height = height.coerceAtLeast(1)
         )
+    }
+
+    internal fun fitViewport(
+        region: DisplayPixelRect,
+        virtualWidth: Int,
+        virtualHeight: Int,
+        ignorePixelRounding: Boolean = false,
+    ): DisplayPixelRect {
+        val safeWidth = virtualWidth.coerceAtLeast(1)
+        val safeHeight = virtualHeight.coerceAtLeast(1)
+        // A uniform scale rounded to integer buffer dimensions can differ by less than one
+        // source pixel per axis. Do not letterbox an explicit region for that alone.
+        if (ignorePixelRounding &&
+            abs(safeWidth.toLong() * region.height - safeHeight.toLong() * region.width) <
+                maxOf(region.width, region.height)
+        ) return region
+        val scale = minOf(region.width.toFloat() / safeWidth, region.height.toFloat() / safeHeight)
+        val width = (safeWidth * scale).toInt().coerceAtLeast(1)
+        val height = (safeHeight * scale).toInt().coerceAtLeast(1)
+        val left = region.left + (region.width - width).coerceAtLeast(0) / 2
+        val top = region.top + (region.height - height).coerceAtLeast(0) / 2
+        return DisplayPixelRect(left, top, left + width, top + height)
+    }
+
+    internal fun previewViewport(region: DisplayPixelRect, renderScale: Float, mode: VirtualResolutionMode): DisplayPixelRect {
+        val resolution = resolve(region.width, region.height, renderScale, mode)
+        return fitViewport(region, resolution.width, resolution.height)
     }
 }
 

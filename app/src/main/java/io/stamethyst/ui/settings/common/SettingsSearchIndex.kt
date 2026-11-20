@@ -9,6 +9,7 @@ internal data class SettingsSearchEntry(
     @param:StringRes val subtitleResId: Int? = null,
     @param:StringRes val categoryTitleResId: Int,
     val route: Route,
+    val aliases: List<Int> = emptyList(),
 )
 
 internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
@@ -171,12 +172,6 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsGame,
     ),
     entry(
-        titleResId = R.string.settings_game_display_size_title,
-        subtitleResId = R.string.settings_game_display_size_desc,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
         titleResId = R.string.settings_gameplay_larger_ui_enabled,
         categoryTitleResId = R.string.settings_category_game_title,
         route = Route.SettingsGame,
@@ -223,20 +218,22 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsPerformance,
     ),
     entry(
-        titleResId = R.string.settings_render_scale_title,
-        subtitleResId = R.string.settings_render_scale_desc,
-        categoryTitleResId = R.string.settings_category_performance_title,
-        route = Route.SettingsPerformance,
-    ),
-    entry(
         titleResId = R.string.settings_target_fps_title,
         categoryTitleResId = R.string.settings_category_performance_title,
         route = Route.SettingsPerformance,
     ),
-    entry(
-        titleResId = R.string.settings_virtual_resolution_mode_title,
+    SettingsSearchEntry(
+        titleResId = R.string.settings_game_resolution_title,
+        subtitleResId = R.string.settings_game_display_size_desc,
         categoryTitleResId = R.string.settings_category_performance_title,
         route = Route.SettingsPerformance,
+        aliases = listOf(
+            R.string.settings_render_scale_title,
+            R.string.settings_virtual_resolution_mode_title,
+            R.string.settings_game_display_size_title,
+            R.string.settings_game_display_resolution,
+            R.string.settings_game_render_resolution,
+        ),
     ),
     entry(
         titleResId = R.string.settings_performance_overlay_enabled,

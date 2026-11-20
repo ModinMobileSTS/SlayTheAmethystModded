@@ -2968,34 +2968,6 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    fun onRenderScaleSelected(host: Activity, value: Float) {
-        if (uiState.busy) {
-            return
-        }
-        val clampedValue = value.coerceIn(
-            RenderScaleService.MIN_RENDER_SCALE,
-            RenderScaleService.MAX_RENDER_SCALE
-        )
-        if (kotlin.math.abs(clampedValue - uiState.selectedRenderScale) < 0.0001f) {
-            return
-        }
-        val normalized = try {
-            RenderScaleService.save(host, clampedValue)
-        } catch (error: IOException) {
-            showToast(
-                host,
-                UiText.DynamicString(
-                    error.message ?: host.getString(R.string.settings_render_scale_save_failed)
-                ),
-                Toast.LENGTH_SHORT
-            )
-            return
-        }
-        val normalizedValue = normalized.toFloatOrNull() ?: clampedValue
-        uiState = uiState.copy(selectedRenderScale = normalizedValue)
-        refreshConfiguration(host)
-    }
-
     fun onImportJar() {
         if (uiState.busy) {
             return
@@ -3407,15 +3379,6 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(selectedTargetFps = targetFps)
         saveTargetFpsSelection(host, targetFps)
-        refreshConfiguration(host)
-    }
-
-    fun onVirtualResolutionModeChanged(host: Activity, mode: VirtualResolutionMode) {
-        if (uiState.busy || uiState.virtualResolutionMode == mode) {
-            return
-        }
-        uiState = uiState.copy(virtualResolutionMode = mode)
-        saveVirtualResolutionModeSelection(host, mode)
         refreshConfiguration(host)
     }
 
@@ -4157,15 +4120,17 @@ class SettingsScreenViewModel : ViewModel() {
         return saved
     }
 
-    fun onGameDisplayRegionChanged(host: Activity, region: io.stamethyst.backend.render.GameDisplayRegion) {
+    internal fun onGameResolutionSaved(host: Activity, draft: io.stamethyst.backend.render.GameResolutionDraft) {
         if (uiState.busy) return
-        val normalized = region.normalized()
+        val normalized = draft.region.normalized()
+        LauncherConfig.saveGameResolution(host, normalized, draft.scale)
         uiState = uiState.copy(
             gameDisplayRegion = normalized,
+            selectedRenderScale = draft.scale,
+            virtualResolutionMode = VirtualResolutionMode.FULLSCREEN_FILL,
             avoidDisplayCutout = false,
             cropScreenBottom = false,
         )
-        LauncherPreferences.saveGameDisplayRegion(host, normalized)
         refreshConfiguration(host)
     }
 
@@ -6406,13 +6371,6 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveKeepScreenOnTimeoutSelection(host: Activity, timeoutMinutes: Int) {
         LauncherPreferences.saveKeepScreenOnTimeoutMinutes(host, timeoutMinutes)
-    }
-
-    private fun saveVirtualResolutionModeSelection(
-        host: Activity,
-        mode: VirtualResolutionMode
-    ) {
-        LauncherPreferences.saveVirtualResolutionMode(host, mode)
     }
 
     private fun saveRenderSurfaceBackendSelection(
