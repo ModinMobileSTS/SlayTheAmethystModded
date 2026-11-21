@@ -4217,6 +4217,7 @@ fun LauncherCrashRecoveryScreen(
                         onAction = effect.onAction
                     )
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
+                is MainScreenViewModel.Effect.ShowAutoEnabledDependenciesDialog -> Unit
                 is MainScreenViewModel.Effect.ShowBlockedModDisableDialog -> Unit
                 is MainScreenViewModel.Effect.ShowBatchBlockedModDisableDialog -> Unit
                 is MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog -> Unit
@@ -4291,6 +4292,9 @@ internal fun LauncherMainRoute(
         task.status.isActiveDownload()
     }
     var effectDialog by remember { mutableStateOf<MainScreenViewModel.Effect.ShowDialog?>(null) }
+    var autoEnabledDependenciesDialog by remember {
+        mutableStateOf<MainScreenViewModel.Effect.ShowAutoEnabledDependenciesDialog?>(null)
+    }
     var blockedModDisableDialog by remember {
         mutableStateOf<MainScreenViewModel.Effect.ShowBlockedModDisableDialog?>(null)
     }
@@ -4393,6 +4397,9 @@ internal fun LauncherMainRoute(
                         onAction = effect.onAction
                     )
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
+                is MainScreenViewModel.Effect.ShowAutoEnabledDependenciesDialog -> {
+                    autoEnabledDependenciesDialog = effect
+                }
                 is MainScreenViewModel.Effect.ShowBlockedModDisableDialog -> blockedModDisableDialog = effect
                 is MainScreenViewModel.Effect.ShowBatchBlockedModDisableDialog -> {
                     batchBlockedModDisableDialog = effect
@@ -4426,6 +4433,19 @@ internal fun LauncherMainRoute(
                     Text(text = stringResource(R.string.common_action_confirm))
                 }
             }
+        )
+    }
+
+    autoEnabledDependenciesDialog?.let { dialog ->
+        AutoEnabledDependenciesDialog(
+            dialog = dialog,
+            onFinish = { undo ->
+                if (autoEnabledDependenciesDialog === dialog) {
+                    autoEnabledDependenciesDialog = null
+                    if (undo) dialog.onUndo()
+                    dialog.missingDependenciesDialog?.let { effectDialog = it }
+                }
+            },
         )
     }
 

@@ -1575,7 +1575,16 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_mod_file_name_display_removed_message">The old "Show file name" feature has been removed. Rename now writes the display name into each mod\'s ModTheSpire.json. Do you want to write installed mod file names into their manifests now?</string>
     <string name="main_mod_file_name_display_removed_apply">Use file names</string>
     <string name="main_mod_file_name_display_removed_skip">No, thanks</string>
-    <string name="main_mod_auto_enabled_dependencies">Auto-enabled prerequisites: %1$s</string>
+    <string name="main_mod_auto_enabled_dependencies_title">Prerequisite mods enabled automatically</string>
+    <string name="main_mod_auto_enabled_dependencies_single_intro">Enabling “%1$s” also enabled these prerequisites:</string>
+    <string name="main_mod_auto_enabled_dependencies_batch_intro">The selected mods enabled these prerequisites:</string>
+    <string name="main_mod_undo_dependencies_title">Disable prerequisite mods?</string>
+    <string name="main_mod_undo_dependencies_intro">Disable the following mods that were just enabled automatically?</string>
+    <string name="main_mod_undo_dependencies_single_warning">“%1$s” will stay enabled, but it may not load without its prerequisites.</string>
+    <string name="main_mod_undo_dependencies_batch_warning">The selected mods will stay enabled, but they may not load without their prerequisites.</string>
+    <string name="main_mod_undo_dependencies_cancel">Cancel</string>
+    <string name="main_mod_undo_dependencies_confirm">Disable</string>
+    <string name="main_mod_auto_enabled_dependencies_undone">Disabled the automatically enabled prerequisite mods.</string>
     <string name="main_mod_auto_enabled_associations">Auto-enabled associated mods: %1$s</string>
     <string name="main_mod_auto_disabled_associations">Auto-disabled associated mods: %1$s</string>
     <string name="main_mod_association_added">Associated %1$s with %2$s</string>
@@ -1594,6 +1603,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_missing_dependencies_single_intro">Enabled &quot;%1$s&quot;, but these prerequisites are missing:</string>
     <string name="main_missing_dependencies_batch_intro">Batch enable finished, but these prerequisites are missing:</string>
     <string name="main_missing_dependencies_footer">Import the missing prerequisites first, or the game may fail to start correctly.</string>
+    <string name="main_missing_dependencies_message" translatable="false">%1$s\n%2$s\n\n%3$s</string>
     <string name="main_batch_disable_blocked_title">Some mods could not be disabled</string>
     <string name="main_batch_disable_blocked_item">&quot;%1$s&quot; is required by %2$s</string>
     <string name="main_batch_delete_done">Deleted %1$d mods, %2$d missing or already deleted</string>

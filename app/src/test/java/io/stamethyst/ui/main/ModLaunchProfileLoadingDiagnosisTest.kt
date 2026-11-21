@@ -3,6 +3,7 @@ package io.stamethyst.ui.main
 import android.app.Activity
 import android.content.Context
 import android.content.SharedPreferences
+import io.stamethyst.R
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.OptionalModMetadataIndex
@@ -30,6 +31,106 @@ import org.json.JSONObject
 
 /** Exercises the production profile controller and refresh pipeline. */
 class ModLaunchProfileLoadingDiagnosisTest {
+    @Test
+    fun undoDisablesOnlyNewPrerequisitesIncludingTransitiveOnesAndAutosaves() = withFixture { host, controller ->
+        seedMods(host, 6, dependencies = mapOf(
+            0 to listOf("diagnosis_1", "diagnosis_2", "diagnosis_3"),
+            2 to listOf("diagnosis_4"),
+        ))
+        val alreadyEnabled = setOf(jarPath(host, 1))
+        ModManager.replaceEnabledOptionalModIds(host, alreadyEnabled)
+        controller.refresh(host, storageAccessible = true)
+        val mods = controller.snapshot().optionalMods.associateBy { it.storagePath }
+        val root = mods.getValue(jarPath(host, 0))
+        // Diagnosis 2 can be reached as an association as well as a prerequisite;
+        // Diagnosis 5 can only be reached as an association.
+        ModAssociationStore().apply {
+            associate(host, root, mods.getValue(jarPath(host, 2)))
+            associate(host, mods.getValue(jarPath(host, 2)), mods.getValue(jarPath(host, 5)))
+        }
+        controller.refresh(host, storageAccessible = true)
+
+        controller.onToggleMod(host, root, true)
+
+        val dialog = host.effects.filterIsInstance<MainScreenViewModel.Effect.ShowAutoEnabledDependenciesDialog>().single()
+        assertEquals("Diagnosis 0", dialog.rootModName)
+        assertEquals(setOf("Diagnosis 2", "Diagnosis 3", "Diagnosis 4"), dialog.dependencyNames.toSet())
+        assertEquals((0..5).map { jarPath(host, it) }.toSet(), controller.enabledSelection())
+        dialog.onUndo()
+        val retained = alreadyEnabled + setOf(jarPath(host, 0), jarPath(host, 5))
+        assertEquals(retained, controller.enabledSelection())
+        assertEquals(retained, ModManager.listEnabledOptionalModFiles(host).map { it.absolutePath }.toSet())
+        assertEquals(retained, ModLaunchProfileStore().readOnly(host).activeProfile?.enabledModKeys)
+    }
+
+    @Test
+    fun batchUndoPreservesAllExplicitSelectionsAndDoesNotSaveManualProfile() = withFixture { host, controller ->
+        seedMods(host, 3, dependencies = mapOf(0 to listOf("diagnosis_1", "diagnosis_2")))
+        controller.refresh(host, storageAccessible = true)
+        controller.setModLaunchProfileAutoSave(host, false)
+        val explicit = setOf(jarPath(host, 0), jarPath(host, 1))
+        val mods = controller.snapshot().optionalMods.associateBy { it.storagePath }
+
+        controller.setModsSelected(host, explicit.map(mods::getValue), true)
+
+        val dialog = host.effects.filterIsInstance<MainScreenViewModel.Effect.ShowAutoEnabledDependenciesDialog>().single()
+        assertEquals(null, dialog.rootModName)
+        assertEquals(listOf("Diagnosis 2"), dialog.dependencyNames)
+        dialog.onUndo()
+        assertEquals(explicit, controller.enabledSelection())
+        assertEquals(explicit, ModManager.listEnabledOptionalModFiles(host).map { it.absolutePath }.toSet())
+        assertEquals(emptySet<String>(), ModLaunchProfileStore().readOnly(host).activeProfile?.enabledModKeys)
+        assertTrue(controller.snapshot().modLaunchProfileDirty)
+    }
+
+    @Test
+    fun missingPrerequisitesRemainReportedWithoutBeingOfferedForUndo() = withFixture { host, controller ->
+        seedMods(host, 2, dependencies = mapOf(0 to listOf("diagnosis_1", "missing_library")))
+        controller.refresh(host, storageAccessible = true)
+        val root = controller.snapshot().optionalMods.single { it.storagePath == jarPath(host, 0) }
+        controller.onToggleMod(host, root, true)
+
+        val dialog = host.effects.filterIsInstance<MainScreenViewModel.Effect.ShowAutoEnabledDependenciesDialog>().single()
+        assertEquals(listOf("Diagnosis 1"), dialog.dependencyNames)
+        assertEquals(UiText.StringResource(R.string.main_missing_dependencies_title), dialog.missingDependenciesDialog?.title)
+        assertTrue((dialog.missingDependenciesDialog?.message as UiText.StringResource).args.contains("- missing_library"))
+        assertTrue(host.effects.none { it is MainScreenViewModel.Effect.ShowDialog })
+
+        host.effects.clear()
+        controller.onToggleMod(host, root, true)
+        assertTrue(host.effects.none { it is MainScreenViewModel.Effect.ShowAutoEnabledDependenciesDialog })
+        assertEquals(dialog.missingDependenciesDialog, host.effects.filterIsInstance<MainScreenViewModel.Effect.ShowDialog>().single())
+    }
+
+    @Test
+    fun failedUndoKeepsWorkingAndSavedSelectionsAndFailedEnableOffersNoUndo() = withFixture { host, controller ->
+        seedMods(host, 2, dependencies = mapOf(0 to listOf("diagnosis_1")))
+        controller.refresh(host, storageAccessible = true)
+        val root = controller.snapshot().optionalMods.single { it.storagePath == jarPath(host, 0) }
+        val config = RuntimePaths.enabledModsConfig(host)
+        assertTrue(!config.exists() || config.delete())
+        assertTrue(config.mkdir())
+
+        controller.onToggleMod(host, root, true)
+        assertEquals(emptySet<String>(), controller.enabledSelection())
+        assertTrue(host.effects.none { it is MainScreenViewModel.Effect.ShowAutoEnabledDependenciesDialog })
+
+        assertTrue(config.delete())
+        controller.onToggleMod(host, root, true)
+        val dialog = host.effects.filterIsInstance<MainScreenViewModel.Effect.ShowAutoEnabledDependenciesDialog>().single()
+        val before = controller.enabledSelection()
+        assertEquals(2, before.size)
+        assertTrue(config.delete())
+        assertTrue(config.mkdir())
+        host.effects.clear()
+
+        dialog.onUndo()
+        assertEquals(before, controller.enabledSelection())
+        assertEquals(before, ModLaunchProfileStore().readOnly(host).activeProfile?.enabledModKeys)
+        val message = host.effects.filterIsInstance<MainScreenViewModel.Effect.ShowSnackbar>().single().message
+        assertEquals(R.string.main_mod_toggle_failed, (message as UiText.StringResource).resId)
+    }
+
     @Test
     fun legacySelectionSeedsDefaultAndTogglesStillAutosave() = withFixture { host, controller ->
         seedMods(host, 2)

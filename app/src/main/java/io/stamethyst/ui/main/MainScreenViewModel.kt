@@ -411,6 +411,12 @@ class MainScreenViewModel : ViewModel() {
             val onAction: (() -> Unit)? = null
         ) : Effect
         data class ShowDialog(val title: UiText, val message: UiText) : Effect
+        data class ShowAutoEnabledDependenciesDialog(
+            val rootModName: String?,
+            val dependencyNames: List<String>,
+            val missingDependenciesDialog: ShowDialog?,
+            val onUndo: () -> Unit,
+        ) : Effect
         data class ShowBlockedModDisableDialog(
             val title: UiText,
             val message: UiText,

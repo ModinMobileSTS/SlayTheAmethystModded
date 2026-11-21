@@ -1571,7 +1571,16 @@
     <string name="main_mod_file_name_display_removed_message">原“显示文件名”功能已移除。现在重命名会把显示名称写入每个模组的 ModTheSpire.json。是否现在把已安装模组的文件名写入清单？</string>
     <string name="main_mod_file_name_display_removed_apply">调整为文件名</string>
     <string name="main_mod_file_name_display_removed_skip">不需要</string>
-    <string name="main_mod_auto_enabled_dependencies">已自动启用前置模组：%1$s</string>
+    <string name="main_mod_auto_enabled_dependencies_title">已自动启用前置模组</string>
+    <string name="main_mod_auto_enabled_dependencies_single_intro">启用「%1$s」时，自动开启了以下前置模组：</string>
+    <string name="main_mod_auto_enabled_dependencies_batch_intro">批量启用时，自动开启了以下前置模组：</string>
+    <string name="main_mod_undo_dependencies_title">关闭前置模组？</string>
+    <string name="main_mod_undo_dependencies_intro">是否关闭以下刚刚自动启用的模组？</string>
+    <string name="main_mod_undo_dependencies_single_warning">「%1$s」仍会保持开启，但缺少前置模组后可能无法正常加载。</string>
+    <string name="main_mod_undo_dependencies_batch_warning">手动选中的模组仍会保持开启，但缺少前置模组后可能无法正常加载。</string>
+    <string name="main_mod_undo_dependencies_cancel">取消</string>
+    <string name="main_mod_undo_dependencies_confirm">确认关闭</string>
+    <string name="main_mod_auto_enabled_dependencies_undone">已关闭本次自动启用的前置模组。</string>
     <string name="main_mod_auto_enabled_associations">已自动启用关联模组：%1$s</string>
     <string name="main_mod_auto_disabled_associations">已自动关闭关联模组：%1$s</string>
     <string name="main_mod_association_added">已关联「%1$s」和「%2$s」</string>
