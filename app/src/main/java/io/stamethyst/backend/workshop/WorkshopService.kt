@@ -7,7 +7,7 @@ import io.stamethyst.backend.github.withHttpOptions
 import io.stamethyst.backend.github.preparingHttpRequests
 import io.stamethyst.backend.github.cancelAllHttpCalls
 import io.stamethyst.backend.github.HttpRetrySafety
-import io.stamethyst.backend.github.OfficialRouteFailureCodes
+import io.stamethyst.backend.github.RouteRetryQueue
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore.AuthSnapshot
@@ -1331,7 +1331,7 @@ internal class WorkshopService(
                     .url(searchUrl)
                     .header("Accept-Language", steamLanguagePreference.acceptLanguageValue)
                     .header("User-Agent", USER_AGENT)
-                    .tag(OfficialRouteFailureCodes::class.java, BROWSE_OFFICIAL_ROUTE_FAILURE_CODES)
+                    .tag(RouteRetryQueue::class.java, BROWSE_ROUTE_RETRY_QUEUE)
                     .get()
                     .build()
             ).execute().use { response ->
@@ -2158,7 +2158,11 @@ internal class WorkshopService(
         private const val SUBSCRIPTION_VERIFY_DELAY_MS = 750L
         private const val HTTP_TOO_MANY_REQUESTS = 429
         private const val USER_AGENT = "SlayTheAmethyst/Workshop"
-        private val BROWSE_OFFICIAL_ROUTE_FAILURE_CODES = OfficialRouteFailureCodes(setOf(502, 503, 504))
+        private val BROWSE_ROUTE_RETRY_QUEUE = RouteRetryQueue(
+            maxRounds = 2,
+            candidateTimeoutMs = 20_000L,
+            officialFailureCodes = setOf(502, 503, 504),
+        )
         private const val COMMENT_INIT_CALL = "InitializeCommentThread"
         private val sessionIdRegex = Regex(
             """g_sessionID\s*=\s*"([^"]+)"""",

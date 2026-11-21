@@ -71,7 +71,7 @@ internal object AcceleratedRouteLogStore {
         val host = event.host
         return when (event) {
             is AcceleratedRouteEvent.RouteDiscoveryStarted ->
-                "ts=$ts event=route_discovery_started host=$host"
+                "ts=$ts event=route_discovery_started host=$host retrying=${event.retrying}"
 
             is AcceleratedRouteEvent.RouteDiscovered ->
                 "ts=$ts event=route_discovered host=$host forwardTargetCount=${event.forwardTargetCount} preferOfficial=${event.preferOfficial}"

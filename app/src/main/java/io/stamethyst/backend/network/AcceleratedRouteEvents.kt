@@ -13,7 +13,7 @@ internal sealed interface AcceleratedRouteEvent {
     /** Logical origin host being requested, for example `steamcommunity.com`. */
     val host: String
 
-    data class RouteDiscoveryStarted(override val host: String) : AcceleratedRouteEvent
+    data class RouteDiscoveryStarted(override val host: String, val retrying: Boolean = false) : AcceleratedRouteEvent
 
     data class RouteDiscovered(
         override val host: String,

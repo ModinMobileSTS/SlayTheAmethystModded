@@ -357,8 +357,17 @@ internal fun interface AcceleratedResponseValidator {
     fun validate(response: Response)
 }
 
-/** Opt-in HTTP statuses that invalidate the official route for a replayable request. */
-internal class OfficialRouteFailureCodes(val values: Set<Int>)
+/** Opt-in for a replayable request that consumes the full response body. */
+internal class RouteRetryQueue(
+    val maxRounds: Int,
+    val candidateTimeoutMs: Long,
+    val officialFailureCodes: Set<Int>,
+) {
+    init {
+        require(maxRounds > 0)
+        require(candidateTimeoutMs > 0)
+    }
+}
 
 /** Logical-origin routing, retry and redirect policy. Network IO belongs to the owning Call. */
 internal class WattRouteExecutor(
@@ -370,7 +379,8 @@ internal class WattRouteExecutor(
     private val followRedirects: Boolean = true,
     private val checkActive: () -> Unit,
     private val resolve: (WattToolkitGithubRouteResolver, String, Collection<String>?) -> WattToolkitGithubRoute?,
-    private val executeCandidate: (Request, Request, WattToolkitGithubRoute?) -> Response,
+    private val discoverQueueRoutes: (WattToolkitGithubRouteResolver, String) -> List<WattToolkitGithubRoute>,
+    private val executeCandidate: (Request, Request, WattToolkitGithubRoute?, Long?) -> Response,
 ) {
     fun execute(initialLogicalRequest: Request): Response {
         var logicalRequest = initialLogicalRequest
@@ -384,61 +394,80 @@ internal class WattRouteExecutor(
                 !(requireHttps && !logicalRequest.url.isHttps) && candidate.supports(logicalRequest.url.host)
             }
             val route = resolver?.let { resolve(it, logicalRequest.url.host, null) }
+            val retryQueue = logicalRequest.tag(RouteRetryQueue::class.java)
+                ?.takeIf { resolver != null && logicalRequest.canReplayHttpRequest() }
             var officialRequestAttempted = false
             val officialRequestExecutor: (Request) -> Response = { official ->
                 officialRequestAttempted = true
-                val response = executeCandidate(official, applyCookieHeader(official, official.url, credentialsAllowed), null)
-                val failureCodes = official.tag(OfficialRouteFailureCodes::class.java)
-                if (resolver != null && official.canReplayHttpRequest() &&
-                    failureCodes?.values?.contains(response.code) == true
-                ) {
-                    response.close()
-                    throw IOException("Official route unavailable (HTTP ${response.code})")
-                }
-                response
+                executeCandidate(
+                    official, applyCookieHeader(official, official.url, credentialsAllowed), null,
+                    retryQueue?.candidateTimeoutMs,
+                )
             }
             var effectiveRoute = route
-            var usedForwardTarget: String? = null
-            var usedOfficial = false
             // Cookies are keyed on the logical URL so they are never handed to the
             // forward target's own hostname.
             val logicalUrl = logicalRequest.url
             val cookieRequest = applyCookieHeader(logicalRequest, logicalUrl, credentialsAllowed)
-            val response = try {
-                val executed = executeWithForwardTargetFallback(
+            val executed = if (retryQueue != null && resolver != null) {
+                val candidates = routeCandidates(route, includeOfficial = true)
+                    .distinctBy(::candidateKey).toMutableList()
+                val knownKeys = candidates.mapTo(mutableSetOf(), ::candidateKey)
+                val rounds = sequence {
+                    yieldAll(candidates)
+                    checkActive()
+                    // Only discover more nodes if the preferred paths all fail. Past failures
+                    // affect preference, not eligibility for this queue.
+                    val extraRoutes = sequence {
+                        yieldAll(resolver.knownRetryQueueRoutes(logicalUrl.host))
+                        yieldAll(discoverQueueRoutes(resolver, logicalUrl.host))
+                    }
+                    for (discovered in extraRoutes) {
+                        for (candidate in routeCandidates(discovered, includeOfficial = false)) {
+                            if (knownKeys.add(candidateKey(candidate))) {
+                                candidates += candidate
+                                yield(candidate)
+                            }
+                        }
+                    }
+                    repeat(retryQueue.maxRounds - 1) { yieldAll(candidates) }
+                }
+                executeCandidateRoutes(
                     logicalRequest = logicalRequest,
                     forwardedRequest = cookieRequest,
-                    route = route,
+                    candidateRoutes = rounds,
                     failedForwardTargets = failedForwardTargets,
                     officialRequestExecutor = officialRequestExecutor,
-                    includeOfficialCandidate = !officialRequestAttempted,
+                    retryQueue = retryQueue,
                 )
-                usedForwardTarget = executed.usedForwardTarget
-                usedOfficial = executed.usedOfficial
-                executed.response
-            } catch (error: IOException) {
-                checkActive()
-                if (!logicalRequest.canReplayHttpRequest() || error is ProtocolException) throw error
-                val refreshedRoute = resolver?.let { resolve(it, logicalRequest.url.host, failedForwardTargets) }
-                    ?: throw error
-                effectiveRoute = refreshedRoute
+            } else {
                 try {
-                    val executed = executeWithForwardTargetFallback(
-                        logicalRequest = logicalRequest,
-                        forwardedRequest = cookieRequest,
-                        route = refreshedRoute,
-                        failedForwardTargets = failedForwardTargets,
-                        officialRequestExecutor = officialRequestExecutor,
-                        includeOfficialCandidate = !officialRequestAttempted,
+                    executeCandidateRoutes(
+                        logicalRequest, cookieRequest, routeCandidates(route, includeOfficial = true).asSequence(),
+                        failedForwardTargets, officialRequestExecutor,
                     )
-                    usedForwardTarget = executed.usedForwardTarget
-                    usedOfficial = executed.usedOfficial
-                    executed.response
-                } catch (refreshedError: IOException) {
-                    refreshedError.addSuppressed(error)
-                    throw refreshedError
+                } catch (error: IOException) {
+                    checkActive()
+                    if (!logicalRequest.canReplayHttpRequest() || error is ProtocolException) throw error
+                    val refreshedRoute = resolver?.let { resolve(it, logicalUrl.host, failedForwardTargets) }
+                        ?: throw error
+                    effectiveRoute = refreshedRoute
+                    try {
+                        executeCandidateRoutes(
+                            logicalRequest, cookieRequest,
+                            routeCandidates(refreshedRoute, includeOfficial = !officialRequestAttempted).asSequence(),
+                            failedForwardTargets, officialRequestExecutor,
+                        )
+                    } catch (refreshedError: IOException) {
+                        refreshedError.addSuppressed(error)
+                        throw refreshedError
+                    }
                 }
             }
+            val response = executed.response
+            val usedForwardTarget = executed.usedForwardTarget
+            val usedOfficial = usedForwardTarget == null
+            if (retryQueue != null) effectiveRoute = executed.candidateRoute
             if (usedOfficial) {
                 resolver?.recordFailedForwardTargets(
                     host = logicalRequest.url.host,
@@ -450,7 +479,7 @@ internal class WattRouteExecutor(
             try {
                 persistResponseCookies(logicalUrl, response)
                 if (
-                    resolver != null && effectiveRoute != null && usedForwardTarget != null &&
+                    retryQueue == null && resolver != null && effectiveRoute != null && usedForwardTarget != null &&
                     logicalRequest.canReplayHttpRequest() &&
                     response.isStaleForwardRouteResponse(logicalRequest.url) &&
                     failedForwardTargets.add(usedForwardTarget)
@@ -472,6 +501,7 @@ internal class WattRouteExecutor(
                     resolver.confirmSuccessfulForwardTarget(
                         host = logicalRequest.url.host,
                         successfulTarget = usedForwardTarget,
+                        confirmedRoute = executed.candidateRoute.takeIf { retryQueue != null },
                     )
                 }
                 val redirectTarget = if (followRedirects) response.redirectTarget(logicalRequest.url, effectiveRoute) else null
@@ -551,40 +581,41 @@ internal class WattRouteExecutor(
     private data class ForwardedExecution(
         val response: Response,
         val usedForwardTarget: String?,
-        val usedOfficial: Boolean,
+        val candidateRoute: WattToolkitGithubRoute?,
     )
 
-    private fun executeWithForwardTargetFallback(
+    private fun routeCandidates(
+        route: WattToolkitGithubRoute?,
+        includeOfficial: Boolean,
+    ): List<WattToolkitGithubRoute?> {
+        val forwards = route?.takeIf { it.forwardTargets.isNotEmpty() }?.copy(isOfficial = false)
+            ?.forwardTargetCandidates().orEmpty()
+        return when {
+            !includeOfficial -> forwards
+            route?.isOfficial == true -> listOf(route) + forwards
+            else -> forwards + listOf(null)
+        }
+    }
+
+    private fun candidateTarget(route: WattToolkitGithubRoute?): String? =
+        route?.takeUnless(WattToolkitGithubRoute::isOfficial)?.forwardTargets?.firstOrNull()
+
+    private fun candidateKey(route: WattToolkitGithubRoute?): String? =
+        candidateTarget(route)?.let { extractForwardHost(it) ?: it.trim().lowercase(Locale.ROOT) }
+
+    private fun executeCandidateRoutes(
         logicalRequest: Request,
         forwardedRequest: Request,
-        route: WattToolkitGithubRoute?,
+        candidateRoutes: Sequence<WattToolkitGithubRoute?>,
         failedForwardTargets: MutableSet<String>,
         officialRequestExecutor: (Request) -> Response,
-        includeOfficialCandidate: Boolean,
+        retryQueue: RouteRetryQueue? = null,
     ): ForwardedExecution {
-        val candidateRoutes = when {
-            route?.isOfficial == true -> {
-                val wattCandidates = route.copy(isOfficial = false)
-                    .forwardTargetCandidates()
-                    .filter { it.forwardTargets.isNotEmpty() }
-                if (includeOfficialCandidate) listOf(route) + wattCandidates else wattCandidates
-            }
-            route != null -> {
-                val wattCandidates = route.forwardTargetCandidates()
-                    .filter { it.forwardTargets.isNotEmpty() }
-                if (includeOfficialCandidate) wattCandidates + listOf(null) else wattCandidates
-            }
-            includeOfficialCandidate -> listOf(null)
-            else -> emptyList()
-        }
         var lastError: IOException? = null
         candidateRoutes.forEach { candidateRoute ->
-            val candidateTarget = candidateRoute
-                ?.takeUnless(WattToolkitGithubRoute::isOfficial)
-                ?.forwardTargets
-                ?.firstOrNull()
+            val candidateTarget = candidateTarget(candidateRoute)
             if (
-                candidateTarget != null &&
+                retryQueue == null && candidateTarget != null &&
                 failedForwardTargets.any { failed -> forwardTargetsEquivalent(failed, candidateTarget) }
             ) {
                 return@forEach
@@ -595,20 +626,23 @@ internal class WattRouteExecutor(
                 if (candidateRoute == null || candidateRoute.isOfficial) {
                     reportRouteEvent(logicalRequest, AcceleratedRouteEvent.OfficialAttempt(logicalHost))
                     val officialResponse = officialRequestExecutor(logicalRequest)
-                    validateCandidateResponse(logicalRequest, officialResponse)
+                    validateCandidateResponse(logicalRequest, officialResponse, retryQueue, official = true)
                     reportRouteEvent(logicalRequest, AcceleratedRouteEvent.OfficialSucceeded(logicalHost))
                     return ForwardedExecution(
                         response = officialResponse,
                         usedForwardTarget = null,
-                        usedOfficial = true,
+                        candidateRoute = candidateRoute,
                     )
                 }
                 reportRouteEvent(
                     logicalRequest,
                     AcceleratedRouteEvent.ForwardTargetAttempt(logicalHost, candidateTarget.orEmpty()),
                 )
-                val response = executeCandidate(logicalRequest, buildNetworkRequest(forwardedRequest, candidateRoute), candidateRoute)
-                validateCandidateResponse(logicalRequest, response)
+                val response = executeCandidate(
+                    logicalRequest, buildNetworkRequest(forwardedRequest, candidateRoute),
+                    candidateRoute, retryQueue?.candidateTimeoutMs,
+                )
+                validateCandidateResponse(logicalRequest, response, retryQueue, official = false)
                 reportRouteEvent(
                     logicalRequest,
                     AcceleratedRouteEvent.ForwardTargetSucceeded(logicalHost, candidateTarget.orEmpty()),
@@ -616,7 +650,7 @@ internal class WattRouteExecutor(
                 return ForwardedExecution(
                     response = response,
                     usedForwardTarget = candidateTarget,
-                    usedOfficial = false,
+                    candidateRoute = candidateRoute,
                 )
             } catch (error: IOException) {
                 checkActive()
@@ -655,12 +689,33 @@ internal class WattRouteExecutor(
         }
     }
 
-    private fun validateCandidateResponse(request: Request, response: Response) {
-        val validator = request.tag(AcceleratedResponseValidator::class.java) ?: return
+    private fun validateCandidateResponse(
+        request: Request,
+        response: Response,
+        retryQueue: RouteRetryQueue?,
+        official: Boolean,
+    ) {
         // Redirects are checked after following them, not parsed as catalogue JSON.
         if (response.isRedirect) return
         try {
-            validator.validate(response)
+            request.tag(AcceleratedResponseValidator::class.java)?.validate(response)
+            if (retryQueue != null) {
+                if (official && response.code in retryQueue.officialFailureCodes) {
+                    throw IOException("Official route unavailable (HTTP ${response.code})")
+                }
+                if (!official && response.isStaleForwardRouteResponse(request.url)) {
+                    throw IOException("HTTP ${response.code}")
+                }
+                // The market reads the whole HTML anyway. Read while the route is still
+                // retryable, so a truncated or stalled body is not recorded as a success.
+                if (response.isSuccessful) {
+                    try {
+                        response.body.source().request(Long.MAX_VALUE)
+                    } catch (error: ProtocolException) {
+                        throw IOException("Incomplete response body", error)
+                    }
+                }
+            }
         } catch (error: IOException) {
             response.close()
             throw error
@@ -1077,7 +1132,11 @@ internal class WattToolkitGithubRouteResolver(
      * Pins a forward target that just completed a real request successfully as the
      * preferred best path, then keeps searching for a better path in the background.
      */
-    fun confirmSuccessfulForwardTarget(host: String, successfulTarget: String) {
+    fun confirmSuccessfulForwardTarget(
+        host: String,
+        successfulTarget: String,
+        confirmedRoute: WattToolkitGithubRoute? = null,
+    ) {
         val normalizedHost = host.lowercase(Locale.ROOT)
         val normalizedTarget = successfulTarget.trim()
         if (!isProfileHost(normalizedHost) || normalizedTarget.isEmpty()) {
@@ -1097,8 +1156,15 @@ internal class WattToolkitGithubRouteResolver(
             recentlyFailedForwardTargets.keys
                 .filter { failed -> forwardTargetsEquivalent(failed, normalizedTarget) }
                 .forEach(recentlyFailedForwardTargets::remove)
-            val current = cachedRoute?.takeIf { it.matchesLogicalHost(normalizedHost) } ?: return
-            val preferred = preferForwardTarget(current, normalizedTarget)
+            val current = cachedRoute?.takeIf { it.matchesLogicalHost(normalizedHost) }
+            val successfulRoute = if (confirmedRoute == null) {
+                current ?: return
+            } else {
+                (current?.takeIf { route ->
+                    route.forwardTargets.any { forwardTargetsEquivalent(it, normalizedTarget) }
+                } ?: confirmedRoute).copy(isOfficial = false)
+            }
+            val preferred = preferForwardTarget(successfulRoute, normalizedTarget)
             installRouteLocked(preferred, nowProvider(), httpConfirmed = true)
         }
         scheduleBackgroundBestPathSearch(normalizedHost, force = false)
@@ -1271,6 +1337,32 @@ internal class WattToolkitGithubRouteResolver(
             )
         }
         return resolved
+    }
+
+    /** Cooldowns affect initial preference, not eligibility for a full round. */
+    fun knownRetryQueueRoutes(host: String): List<WattToolkitGithubRoute> {
+        val normalizedHost = host.lowercase(Locale.ROOT)
+        val cached = synchronized(lock) {
+            restorePersistedRouteLocked()
+            cachedRoute?.takeIf { it.matchesLogicalHost(normalizedHost) }
+        }
+        // Keep the bundled rule's TLS metadata rather than folding it into a Watt rule.
+        return listOfNotNull(cached, bundledHopRouteForHost(normalizedHost))
+    }
+
+    fun discoverRetryQueueRoutes(host: String): List<WattToolkitGithubRoute> {
+        val normalizedHost = host.lowercase(Locale.ROOT)
+        AcceleratedRouteEvents.emit(AcceleratedRouteEvent.RouteDiscoveryStarted(normalizedHost, retrying = true))
+        val routes = runCatching { fetchSupportedRoutes(normalizedHost) }.getOrDefault(emptyList())
+            .mapNotNull { it.restrictForwardTargets() }
+        if (routes.isNotEmpty()) {
+            AcceleratedRouteEvents.emit(
+                AcceleratedRouteEvent.RouteDiscovered(normalizedHost, routes.sumOf { it.forwardTargets.size }, false),
+            )
+        } else {
+            AcceleratedRouteEvents.emit(AcceleratedRouteEvent.RouteDiscoveryFailed(normalizedHost))
+        }
+        return routes
     }
 
     private fun officialRouteForHost(host: String): WattToolkitGithubRoute =
@@ -1561,6 +1653,34 @@ internal class WattToolkitGithubRouteResolver(
     }
 
     private fun fetchSupportedRoute(): WattToolkitGithubRoute {
+        val project = matchingProjects(requestWattProjectGroups()).firstOrNull()
+            ?: throw IOException(
+                "Watt Toolkit route was not found for hosts=${normalizedSupportedHosts.joinToString(";")}",
+            )
+        if (project.proxyType !in routeProfile.supportedProxyTypes) {
+            throw IOException(
+                "Unsupported Watt Toolkit route type for hosts=${project.logicalHosts.joinToString(";")}: ${project.proxyType}",
+            )
+        }
+        return project.toRoute()
+    }
+
+    private fun fetchSupportedRoutes(host: String): List<WattToolkitGithubRoute> =
+        matchingProjects(requestWattProjectGroups())
+            .filter { it.proxyType in routeProfile.supportedProxyTypes }
+            .map { it.toRoute() }
+            .filter { it.matchesLogicalHost(host) && it.forwardTargets.isNotEmpty() }
+            .toList()
+
+    private fun MatchedWattProject.toRoute() = WattToolkitGithubRoute(
+        logicalHosts = logicalHosts,
+        forwardTargets = forwardTargets,
+        ignoreSslCertVerification = ignoreSslCertVerification,
+        fakeServerName = fakeServerName,
+        logicalHostSuffixes = normalizedSupportedHostSuffixes,
+    )
+
+    private fun requestWattProjectGroups(): String {
         if (requireHttps && !projectGroupsUrl.isHttps) {
             throw ProtocolException("HTTPS is required for Watt Toolkit route discovery: $projectGroupsUrl")
         }
@@ -1574,45 +1694,21 @@ internal class WattToolkitGithubRouteResolver(
             if (!response.isSuccessful) {
                 throw IOException("Watt Toolkit route request failed: ${response.code}")
             }
-            val payload = response.body.string()
-            val matchedProject = findMatchingProject(payload)
-                ?: throw IOException(
-                    "Watt Toolkit route was not found for hosts=${normalizedSupportedHosts.joinToString(";")}",
-                )
-            if (matchedProject.proxyType !in routeProfile.supportedProxyTypes) {
-                throw IOException(
-                    "Unsupported Watt Toolkit route type for hosts=${matchedProject.logicalHosts.joinToString(";")}: ${matchedProject.proxyType}",
-                )
-            }
-            WattToolkitGithubRoute(
-                logicalHosts = matchedProject.logicalHosts,
-                forwardTargets = matchedProject.forwardTargets,
-                ignoreSslCertVerification = matchedProject.ignoreSslCertVerification,
-                fakeServerName = matchedProject.fakeServerName,
-                logicalHostSuffixes = normalizedSupportedHostSuffixes,
-            )
+            response.body.string()
         }
     }
 
-    private fun findMatchingProject(payload: String): MatchedWattProject? {
-        val root = runCatching { JSONObject(payload) }.getOrNull() ?: return null
-        val groups = root.optJSONArray(WATT_GROUPS_KEY) ?: return null
-        return findMatchingProject(groups)
-    }
-
-    private fun findMatchingProject(groups: JSONArray): MatchedWattProject? {
+    private fun matchingProjects(payload: String): Sequence<MatchedWattProject> = sequence {
+        val root = runCatching { JSONObject(payload) }.getOrNull() ?: return@sequence
+        val groups = root.optJSONArray(WATT_GROUPS_KEY) ?: return@sequence
         for (groupIndex in 0 until groups.length()) {
             val group = groups.optJSONObject(groupIndex) ?: continue
             val items = group.optJSONArray(WATT_ITEMS_KEY) ?: continue
-            val matched = findMatchingProjectInItems(items)
-            if (matched != null) {
-                return matched
-            }
+            yieldAll(matchingProjectsInItems(items))
         }
-        return null
     }
 
-    private fun findMatchingProjectInItems(items: JSONArray): MatchedWattProject? {
+    private fun matchingProjectsInItems(items: JSONArray): Sequence<MatchedWattProject> = sequence {
         for (itemIndex in 0 until items.length()) {
             val item = items.optJSONObject(itemIndex) ?: continue
             val configuredHosts = parseHosts(
@@ -1628,21 +1724,19 @@ internal class WattToolkitGithubRouteResolver(
                 logicalHosts.isNotEmpty() &&
                 (routeProfile.allowUncheckedRoutes || item.optBoolean(WATT_CHECKED_KEY, true))
             ) {
-                return MatchedWattProject(
-                    logicalHosts = logicalHosts,
-                    forwardTargets = parseForwardTargets(item.optString(WATT_FORWARD_DOMAIN_NAMES_KEY)),
-                    proxyType = item.optInt(WATT_PROXY_TYPE_KEY, -1),
-                    ignoreSslCertVerification = item.optBoolean(WATT_IGNORE_SSL_CERT_KEY),
-                    fakeServerName = item.optString(WATT_FAKE_SERVER_NAME_KEY).trim(),
+                yield(
+                    MatchedWattProject(
+                        logicalHosts = logicalHosts,
+                        forwardTargets = parseForwardTargets(item.optString(WATT_FORWARD_DOMAIN_NAMES_KEY)),
+                        proxyType = item.optInt(WATT_PROXY_TYPE_KEY, -1),
+                        ignoreSslCertVerification = item.optBoolean(WATT_IGNORE_SSL_CERT_KEY),
+                        fakeServerName = item.optString(WATT_FAKE_SERVER_NAME_KEY).trim(),
+                    ),
                 )
             }
             val nestedItems = item.optJSONArray(WATT_ITEMS_KEY) ?: continue
-            val nestedMatched = findMatchingProjectInItems(nestedItems)
-            if (nestedMatched != null) {
-                return nestedMatched
-            }
+            yieldAll(matchingProjectsInItems(nestedItems))
         }
-        return null
     }
 
     private data class MatchedWattProject(

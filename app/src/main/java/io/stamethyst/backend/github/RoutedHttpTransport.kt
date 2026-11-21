@@ -251,9 +251,11 @@ class RoutedHttpTransport internal constructor(
                     if (failed == null) resolver.resolveRouteForHost(host)
                     else resolver.refreshRouteForHost(host, failed)
                 } },
-                executeCandidate = { logical, network, route ->
+                discoverQueueRoutes = { resolver, host -> discover { resolver.discoverRetryQueueRoutes(host) } },
+                executeCandidate = { logical, network, route, candidateTimeoutMs ->
                     checkActive()
                     val call = candidateClient(route, logical.url.host).newCall(network)
+                    if (candidateTimeoutMs != null) call.timeout().timeout(candidateTimeoutMs, TimeUnit.MILLISECONDS)
                     original.tag(HttpRequestControl::class.java)?.register(call)
                     original.tag(SteamCdnRequestControl::class.java)?.register(call)
                     synchronized(lock) {

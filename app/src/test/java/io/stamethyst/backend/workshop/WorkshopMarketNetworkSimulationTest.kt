@@ -11,6 +11,8 @@ import io.stamethyst.backend.github.WattToolkitForwardTargetProbe
 import io.stamethyst.backend.github.WattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitGithubRouteStore
+import io.stamethyst.backend.network.AcceleratedRouteEvent
+import io.stamethyst.backend.network.AcceleratedRouteEvents
 import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.backend.steamcloud.SteamCommunityWattToolkitRouteProfile
 import java.io.File
@@ -154,7 +156,7 @@ class WorkshopMarketNetworkSimulationTest {
     }
 
     @Test
-    fun firstNodeRejectsWorkshopBrowse_failsOverAfterRouteRefresh() = fixture().use { fixture ->
+    fun firstNodeRejectsWorkshopBrowse_triesNextKnownNodeWithoutDiscovery() = fixture().use { fixture ->
         val rejecting = fixture.node {
             MockResponse.Builder()
                 .code(403)
@@ -169,7 +171,7 @@ class WorkshopMarketNetworkSimulationTest {
         assertEquals(listOf(SIMULATED_MOD_TITLE), result.items.map { it.title })
         assertEquals(1, rejecting.requestCount())
         assertEquals(1, healthy.requestCount())
-        assertTrue("a rejected hop must be replaced by route refresh", fixture.routeRequestCount() >= 2)
+        assertEquals(1, fixture.routeRequestCount())
         assertEquals(0, fixture.officialRequestCount())
     }
 
@@ -256,13 +258,14 @@ class WorkshopMarketNetworkSimulationTest {
         routeResponse = { MockResponse.Builder().code(500).build() },
     ).use { fixture ->
         fixture.officialServer.enqueue(MockResponse.Builder().code(503).build())
+        fixture.officialServer.enqueue(MockResponse.Builder().code(503).build())
 
         val startedAtNs = System.nanoTime()
         val error = runCatching { fixture.browse() }.exceptionOrNull()
         val elapsedMs = (System.nanoTime() - startedAtNs) / 1_000_000L
 
         assertNotNull("all routes down must fail instead of returning a fake market", error)
-        assertEquals(1, fixture.officialRequestCount())
+        assertEquals(2, fixture.officialRequestCount())
         assertTrue("failure should stay bounded, took ${elapsedMs}ms", elapsedMs < 5_000L)
     }
 
@@ -281,6 +284,7 @@ class WorkshopMarketNetworkSimulationTest {
             val healthy = fixture.node { okMarket() }
             fixture.routeTargets = listOf(healthy.target)
             // The first attempt also loses the official origin, as during a real outage.
+            fixture.officialServer.enqueue(MockResponse.Builder().code(503).build())
             fixture.officialServer.enqueue(MockResponse.Builder().code(503).build())
 
             val firstAttempt = runCatching { fixture.browse() }
@@ -465,7 +469,7 @@ class WorkshopMarketNetworkSimulationTest {
                 assertEquals("HTTP $code must recover in the same browse", 1, fixture.browse().items.size)
                 assertEquals(1, fixture.browse().items.size)
 
-                assertEquals(1, bundled.requestCount())
+                assertEquals(2, bundled.requestCount())
                 assertEquals(2, fixture.officialRequestCount())
                 assertEquals(2, alternate.requestCount())
                 assertEquals(1, fixture.routeRequestCount())
@@ -512,6 +516,121 @@ class WorkshopMarketNetworkSimulationTest {
         assertEquals(1, fixture.officialRequestCount())
         assertEquals(0, bundled.requestCount())
         assertEquals(0, fixture.routeRequestCount())
+    }
+
+    @Test
+    fun recoveredBundledHopIsTriedWhenOfficialFailsDuringCooldown() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val available = AtomicBoolean(false)
+        val bundled = fixture.node { if (available.get()) okMarket() else resetConnection() }
+        fixture.bundledHopTarget = bundled.target
+        fixture.routeTargets = listOf(bundled.target)
+        fixture.officialServer.enqueue(okMarket())
+        assertEquals(1, fixture.browse().items.size)
+
+        available.set(true)
+        fixture.officialServer.enqueue(MockResponse.Builder().code(503).build())
+
+        assertEquals(listOf("official", bundled.target), recordAttempts { assertEquals(1, fixture.browse().items.size) })
+        assertEquals(2, bundled.requestCount())
+        assertEquals(2, fixture.officialRequestCount())
+        assertEquals(0, fixture.routeRequestCount())
+    }
+
+    @Test
+    fun multipleWattRules_allMatchingNodesEnterQueue() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+        routeResponse = {
+            MockResponse.Builder().code(200).body(routePayload(routeTargets.map { listOf(it) })).build()
+        },
+    ).use { fixture ->
+        val bundled = fixture.node { resetConnection() }
+        val firstWatt = fixture.node { MockResponse.Builder().code(503).build() }
+        val secondWatt = fixture.node { okMarket() }
+        fixture.bundledHopTarget = bundled.target
+        fixture.routeTargets = listOf(firstWatt.target, secondWatt.target)
+        fixture.officialServer.enqueue(MockResponse.Builder().code(503).build())
+
+        val attempts = recordAttempts { assertEquals(1, fixture.browseWithProgress().items.size) }
+
+        assertEquals(listOf(bundled.target, "official", firstWatt.target, secondWatt.target), attempts)
+        assertEquals(
+            WorkshopLoadPhase.FailingOver,
+            fixture.phases().dropWhile { it != WorkshopLoadPhase.FallingBack }
+                .dropWhile { it == WorkshopLoadPhase.FallingBack }.firstOrNull(),
+        )
+    }
+
+    @Test
+    fun afterEveryPathFails_restartsAtQueueHeadAndStopsAtFirstSuccess() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val firstAttempt = AtomicBoolean(true)
+        val bundled = fixture.node { if (firstAttempt.getAndSet(false)) resetConnection() else okMarket() }
+        val alternate = fixture.node { MockResponse.Builder().code(503).build() }
+        fixture.bundledHopTarget = bundled.target
+        fixture.routeTargets = listOf(bundled.target, alternate.target)
+        fixture.officialServer.enqueue(MockResponse.Builder().code(503).build())
+
+        val attempts = recordAttempts {
+            assertEquals(listOf(SIMULATED_MOD_TITLE), fixture.browse().items.map { it.title })
+        }
+
+        assertEquals(listOf(bundled.target, "official", alternate.target, bundled.target), attempts)
+    }
+
+    @Test
+    fun allNodesFail_stopsAfterTwoIdenticalRounds() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val bundled = fixture.node { resetConnection() }
+        val alternate = fixture.node { MockResponse.Builder().code(503).build() }
+        fixture.bundledHopTarget = bundled.target
+        fixture.routeTargets = listOf(bundled.target, alternate.target)
+        repeat(2) { fixture.officialServer.enqueue(MockResponse.Builder().code(503).build()) }
+
+        val attempts = recordAttempts { assertTrue(runCatching { fixture.browse() }.isFailure) }
+
+        assertEquals(List(2) { listOf(bundled.target, "official", alternate.target) }.flatten(), attempts)
+        assertEquals(1, fixture.routeRequestCount())
+    }
+
+    @Test
+    fun truncatedOfficialPage_triesNextQueueCandidate() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val bundled = fixture.node { resetConnection() }
+        val alternate = fixture.node { okMarket() }
+        fixture.bundledHopTarget = bundled.target
+        fixture.routeTargets = listOf(alternate.target)
+        fixture.officialServer.enqueue(
+            MockResponse.Builder().code(200).body(marketHtml()).onResponseBody(SocketEffect.CloseSocket()).build(),
+        )
+
+        val attempts = recordAttempts { assertEquals(1, fixture.browse().items.size) }
+
+        assertEquals(listOf(bundled.target, "official", alternate.target), attempts)
+    }
+
+    private fun recordAttempts(block: () -> Unit): List<String> {
+        val attempts = mutableListOf<String>()
+        val listener: (AcceleratedRouteEvent) -> Unit = { event ->
+            if (event.host == "steamcommunity.com") {
+                when (event) {
+                    is AcceleratedRouteEvent.ForwardTargetAttempt -> attempts += event.target
+                    is AcceleratedRouteEvent.OfficialAttempt -> attempts += "official"
+                    else -> Unit
+                }
+            }
+        }
+        AcceleratedRouteEvents.addListener(listener)
+        try {
+            block()
+        } finally {
+            AcceleratedRouteEvents.removeListener(listener)
+        }
+        return attempts
     }
 
     private fun fixture(
@@ -702,19 +821,19 @@ class WorkshopMarketNetworkSimulationTest {
             return client
         }
 
-        fun routePayload(): String = """
+        fun routePayload(rules: List<List<String>> = listOf(routeTargets)): String = """
             {
               "🦓": [
                 {
                   "Items": [
-                    {
+                    ${rules.joinToString(",") { targets -> """{
                       "MatchDomainNames": "steamcommunity.com;www.steamcommunity.com",
                       "ListenDomainNames": "steamcommunity.com;www.steamcommunity.com",
-                      "ForwardDomainNames": "${routeTargets.joinToString(";")}",
+                      "ForwardDomainNames": "${targets.joinToString(";")}",
                       "ProxyType": 0,
                       "IgnoreSSLCertVerification": true,
                       "Checked": true
-                    }
+                    }""" }}
                   ]
                 }
               ]

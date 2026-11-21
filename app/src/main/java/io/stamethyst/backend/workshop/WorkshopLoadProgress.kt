@@ -165,7 +165,10 @@ internal object WorkshopLoadProgressReporter {
         }
         when (event) {
             is AcceleratedRouteEvent.RouteDiscoveryStarted ->
-                report(sessionId, WorkshopLoadPhase.ResolvingRoute)
+                report(
+                    sessionId,
+                    if (event.retrying) WorkshopLoadPhase.FailingOver else WorkshopLoadPhase.ResolvingRoute,
+                )
 
             is AcceleratedRouteEvent.RouteDiscovered ->
                 report(
