@@ -46,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -58,6 +59,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.contentDescription
@@ -71,6 +74,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.chrisbanes.haze.HazeState
 import io.stamethyst.R
+import io.stamethyst.backend.llm.ASK_USER
+import io.stamethyst.backend.llm.AgentQuestionRequest
 import io.stamethyst.backend.llm.LlmReasoningEffort
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.FrostedGlassChrome
@@ -79,6 +84,7 @@ import io.stamethyst.ui.icon.Close
 import io.stamethyst.ui.icon.KeyboardArrowUp
 import io.stamethyst.ui.icon.Pending
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -145,7 +151,29 @@ internal fun AiChatComposer(
     allowQueue: Boolean = true,
     modifier: Modifier = Modifier,
     hazeSourceKey: Any? = null,
+    pendingQuestion: AgentQuestionRequest? = null,
+    onQuestionReply: (String, List<List<String>>) -> Boolean = { _, _ -> false },
+    onQuestionDismiss: (String) -> Boolean = { false },
 ) {
+    if (pendingQuestion != null) {
+        val focus = LocalFocusManager.current
+        val keyboard = LocalSoftwareKeyboardController.current
+        LaunchedEffect(pendingQuestion.id) {
+            focus.clearFocus()
+            keyboard?.hide()
+        }
+        Box(
+            modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.widthIn(max = 760.dp).fillMaxWidth().onSizeChanged { onComposerHeightChanged(it.height) }) {
+                AiQuestionDock(pendingQuestion, draft,
+                    onReply = { onQuestionReply(pendingQuestion.id, it) },
+                    onDismiss = { onQuestionDismiss(pendingQuestion.id) })
+            }
+        }
+        return
+    }
     var modelMenu by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     Box(
@@ -332,6 +360,10 @@ internal fun AiToolCallRow(tool: AiToolCall, streaming: Boolean) {
     val colors = MaterialTheme.colorScheme
     val argumentPreview by produceState("", tool.name, tool.arguments) {
         value = withContext(Dispatchers.Default) {
+            if (tool.name == ASK_USER) return@withContext runCatching {
+                val question = Json.parseToJsonElement(tool.arguments).jsonObject.getValue("questions").jsonArray
+                question.first().jsonObject.getValue("question").jsonPrimitive.content.take(512)
+            }.getOrDefault("")
             val previewField = when (tool.name) {
                 "search_workshop" -> "query"
                 "read_workshop", "cite_workshop" -> "id"
@@ -347,12 +379,14 @@ internal fun AiToolCallRow(tool: AiToolCall, streaming: Boolean) {
     val status = stringResource(
         when {
             tool.failed -> R.string.ai_mod_editor_tool_failed
+            tool.name == ASK_USER && tool.result != null -> R.string.ai_question_answered
             tool.result != null -> R.string.ai_mod_editor_tool_completed
             streaming -> R.string.ai_mod_editor_tool_running
             else -> R.string.ai_mod_editor_tool_stopped
         },
     )
     val title = when (tool.name) {
+        ASK_USER -> stringResource(R.string.ai_question_title)
         "read_workspace_file" -> stringResource(R.string.ai_mod_editor_read_file)
         "search_workshop" -> stringResource(R.string.market_ai_search_tool)
         "read_workshop" -> stringResource(R.string.market_ai_read_tool)
@@ -380,7 +414,7 @@ internal fun AiToolCallRow(tool: AiToolCall, streaming: Boolean) {
             }
             Text(title, modifier = Modifier.widthIn(max = 160.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
             Text(argumentPreview, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-            if (tool.failed || (tool.result == null && !streaming)) {
+            if (tool.failed || (tool.result == null && !streaming) || (tool.name == ASK_USER && tool.result != null)) {
                 Text(status, style = MaterialTheme.typography.labelSmall, color = if (tool.failed) colors.error else colors.onSurfaceVariant)
             }
             Icon(Icons.KeyboardArrowUp, null, Modifier.size(14.dp).rotate(if (expanded) 0f else 180f), tint = colors.onSurfaceVariant)
@@ -394,7 +428,7 @@ internal fun AiToolCallRow(tool: AiToolCall, streaming: Boolean) {
                 val chunks by produceState<List<String>>(emptyList(), tool.name, tool.arguments, tool.result) {
                     value = withContext(Dispatchers.Default) {
                         val arguments = when (tool.name) {
-                            "search_workshop", "read_workshop", "cite_workshop" -> tool.arguments
+                            ASK_USER, "search_workshop", "read_workshop", "cite_workshop" -> tool.arguments
                             else -> withoutPatchId(tool.arguments)
                         }
                         splitAiMarkdown(arguments, preserveFences = false) +

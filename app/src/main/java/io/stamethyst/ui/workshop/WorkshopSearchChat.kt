@@ -87,6 +87,8 @@ internal fun WorkshopSearchChat(
 ) {
     val context = LocalContext.current
     val chat = sessions.current
+    val userQuestions = chat.userQuestions
+    val pendingQuestion = pendingAgentQuestion(userQuestions)
     val keyboard = LocalSoftwareKeyboardController.current
     val settings by produceState<LlmSettings?>(null, active, context) {
         if (active) value = withContext(Dispatchers.IO) { LlmSettingsRepository(context).get() }
@@ -168,6 +170,9 @@ internal fun WorkshopSearchChat(
             modifier = Modifier.align(Alignment.BottomCenter).then(composerModifier)
                 .onSizeChanged { bottomInset = with(density) { it.height.toDp() } }.navigationBarsPadding().imePadding(),
             draft = chat.draft, onDraftChange = { chat.draft = it.take(4000) },
+            pendingQuestion = pendingQuestion,
+            onQuestionReply = { id, answers -> userQuestions?.reply(id, answers) == true },
+            onQuestionDismiss = { id -> userQuestions?.dismiss(id) == true },
             placeholder = stringResource(R.string.market_ai_hint), draftEnabled = true,
             attachments = emptyList(), onRemoveAttachment = {}, onAttach = null,
             configured = config?.isConfigured() == true, busy = chat.busy, allowQueue = false,

@@ -1,0 +1,17 @@
+<resources>
+    <string name="ai_question_title">Agent 提問</string>
+    <string name="ai_question_waiting">等待你的回答</string>
+    <string name="ai_question_single">單選</string>
+    <string name="ai_question_multiple">多選</string>
+    <string name="ai_question_progress">%1$d / %2$d</string>
+    <string name="ai_question_custom">自訂回答</string>
+    <string name="ai_question_custom_hint">輸入你的回答</string>
+    <string name="ai_question_draft_saved">暫存草稿</string>
+    <string name="ai_question_previous">上一題</string>
+    <string name="ai_question_next">下一題</string>
+    <string name="ai_question_submit">提交回答</string>
+    <string name="ai_question_answered">回答已提交</string>
+    <string name="ai_question_skip">略過提問</string>
+    <string name="ai_question_dismissed">已略過提問，Agent 目前步驟已結束。</string>
+    <string name="ai_question_tool_description">向使用者確認需求或詢問選擇，並等待回答。</string>
+</resources>

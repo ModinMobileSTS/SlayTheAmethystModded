@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.data.message.ToolExecutionResultMessage
 import dev.langchain4j.model.chat.ChatModel
 import dev.langchain4j.model.chat.StreamingChatModel
 import dev.langchain4j.model.chat.request.ChatRequest
@@ -14,6 +15,7 @@ import io.stamethyst.backend.llm.*
 import java.io.File
 import java.lang.reflect.Proxy
 import java.util.concurrent.CancellationException
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -24,6 +26,46 @@ class AiAgentRuntimeIntegrationTest {
     @get:Rule val temporary = TemporaryFolder(
         File(if (File("src/main").isDirectory) "../agent-tmp" else "agent-tmp").apply { mkdirs() },
     )
+
+    @Test fun executorWaitsForAnAnswerAndPersistsItAsAResultInTheSameTurn() = AskUserToolTest.withWorker { worker ->
+        val context = context(temporary.newFolder())
+        LlmSettingsRepository(context).set(LlmSettings(apiKey = "test", baseUrl = "https://local.invalid/v1", modelName = "test"))
+        AgentRequestControl().use { control ->
+            val turns = java.util.concurrent.atomic.AtomicInteger()
+            val checkpoints = mutableListOf<AgentContextState>()
+            val model = object : ChatModel {
+                override fun doChat(request: ChatRequest): ChatResponse {
+                    assertTrue(request.parameters().toolSpecifications().any { it.name() == ASK_USER })
+                    val reply = when (turns.incrementAndGet()) {
+                        1 -> AiMessage.from(AskUserToolTest.askUserCall())
+                        2 -> {
+                            val result = request.messages().filterIsInstance<ToolExecutionResultMessage>().single()
+                            assertEquals("q1", result.id())
+                            assertEquals("""{"answers":[["A"],["B","custom"]]}""", result.text())
+                            AiMessage.from("Thanks, continuing.")
+                        }
+                        else -> error("Unexpected extra model turn")
+                    }
+                    return ChatResponse.builder().aiMessage(reply).build()
+                }
+            }
+            val executor = AiModAgentExecutor(context, File(context.filesDir, "parent.jar").path, "Parent", "parent",
+                LlmReasoningEffort.OFF, requestControl = control, modelFactory = { model }, streamingModelFactory = { null },
+                onContext = { checkpoints += it })
+            val task = worker.submit<AiAgentExecutionResult> {
+                executor.execute(AiEditorSession("question", messages = listOf(
+                    AiEditorMessage(1, true, "Let's adjust the mod"), AiEditorMessage(2, false, ""),
+                )), 2)
+            }
+            val prompt = AskUserToolTest.awaitQuestion(control)
+            assertEquals(1, turns.get())
+            assertTrue(control.userQuestions.reply(prompt.id, listOf(listOf("A"), listOf("B", "custom"))))
+            assertEquals("Thanks, continuing.", task.get(3, TimeUnit.SECONDS).text)
+            val saved = checkpoints.last().messages.single { it.role == "tool" }
+            assertEquals("q1", saved.callId)
+            assertEquals("""{"answers":[["A"],["B","custom"]]}""", saved.text)
+        }
+    }
 
     @Test fun executorSwitchesMainAndOffSummaryTogetherWithEachModelsFullBudget() {
         listOf(false, true).forEach { useStreaming ->

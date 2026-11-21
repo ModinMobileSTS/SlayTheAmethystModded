@@ -29,6 +29,7 @@ internal fun agentToolIcon(name: String): ImageVector = when (name) {
             "validate_agent_patch_mod", "cite_workshop" -> R.drawable.ic_check_circle
             "smoke_test_agent_patch_mod" -> R.drawable.ic_play_arrow
             "read_agent_skill" -> R.drawable.ic_settings_tutorial
+            io.stamethyst.backend.llm.ASK_USER -> R.drawable.ic_settings_tutorial
             else -> R.drawable.ic_build
         },
     )

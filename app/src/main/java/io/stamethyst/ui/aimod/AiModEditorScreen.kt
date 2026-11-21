@@ -1231,8 +1231,16 @@ fun LauncherAiModEditorScreen(
         }
         }
         val outputSpeeds by AiAgentExecutionService.outputSpeeds.collectAsState()
+        val questionOwner by AiAgentExecutionService.questionOwner.collectAsState()
+        val userQuestions = questionOwner?.takeIf {
+            it.modId == modId && it.conversationId == viewModel.currentSessionId && !viewModel.switchingConversation
+        }?.questions
+        val pendingQuestion = pendingAgentQuestion(userQuestions)
         AiChatComposer(
             modifier = Modifier.align(Alignment.BottomCenter),
+            pendingQuestion = pendingQuestion,
+            onQuestionReply = { id, answers -> userQuestions?.reply(id, answers) == true },
+            onQuestionDismiss = { id -> userQuestions?.dismiss(id) == true },
             hazeState = composerHazeState,
             onComposerHeightChanged = { height ->
                 if (composerHeightPx != height) composerHeightPx = height

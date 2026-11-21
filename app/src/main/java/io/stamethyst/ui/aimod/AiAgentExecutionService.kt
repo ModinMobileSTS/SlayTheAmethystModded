@@ -19,6 +19,8 @@ import io.stamethyst.LauncherActivity
 import io.stamethyst.R
 import io.stamethyst.backend.llm.AgentToolExecutionEvent
 import io.stamethyst.backend.llm.AgentExecutionStep
+import io.stamethyst.backend.llm.AgentQuestionDismissed
+import io.stamethyst.backend.llm.AgentUserQuestions
 import io.stamethyst.backend.llm.AgentStepKind
 import io.stamethyst.backend.llm.AgentStepStatus
 import io.stamethyst.backend.llm.agentErrorStep
@@ -93,6 +95,12 @@ internal fun applyToolExecutionEvent(
     })
 }
 
+internal data class EditorQuestionOwner(
+    val modId: String,
+    val conversationId: String,
+    val questions: AgentUserQuestions,
+)
+
 class AiAgentExecutionService : Service() {
     companion object {
         const val ACTION_RUN = "io.stamethyst.action.AI_AGENT_RUN"
@@ -116,6 +124,8 @@ class AiAgentExecutionService : Service() {
         private val runningJobs = AiAgentRunningJobs()
         private val mutableOutputSpeeds = kotlinx.coroutines.flow.MutableStateFlow<Map<Pair<String, String>, Double>>(emptyMap())
         internal val outputSpeeds: kotlinx.coroutines.flow.StateFlow<Map<Pair<String, String>, Double>> = mutableOutputSpeeds
+        private val mutableQuestionOwner = kotlinx.coroutines.flow.MutableStateFlow<EditorQuestionOwner?>(null)
+        internal val questionOwner: kotlinx.coroutines.flow.StateFlow<EditorQuestionOwner?> = mutableQuestionOwner
         internal val isRunning = runningJobs.isRunning
         internal val activeEditorRoute = runningJobs.activeEditorRoute
 
@@ -251,6 +261,8 @@ class AiAgentExecutionService : Service() {
         updateNotification("正在执行 AI 任务")
         val requestControl = io.stamethyst.backend.llm.AgentRequestControl()
         workerRequestControl = requestControl
+        val questionOwner = EditorQuestionOwner(job.modId, job.conversationId, requestControl.userQuestions)
+        mutableQuestionOwner.value = questionOwner
         workerThread = thread(start = false, name = "STS-AiAgent-$jobId") {
             try {
                 runJob(job, jobStore, startId, requestControl)
@@ -259,6 +271,7 @@ class AiAgentExecutionService : Service() {
                 finishWorker(job.jobId, startId)
             } finally {
                 requestControl.close()
+                mutableQuestionOwner.compareAndSet(questionOwner, null)
             }
         }
         workerThread?.start()
@@ -350,6 +363,17 @@ class AiAgentExecutionService : Service() {
                 checkNotNull(conversationStore.selectWorkspace(job.conversationId, id, fromTool = true))
             },
             requestControl = requestControl,
+            onQuestionWaiting = {
+                updateNotification(getString(R.string.ai_question_waiting))
+                releaseWakeLock()
+            },
+            onQuestionAnswered = {
+                synchronized(wakeLockLock) {
+                    checkActive()
+                    acquireWakeLock()
+                }
+                updateNotification("AI 正在处理 ${job.modName}")
+            },
             context = applicationContext,
             storagePath = job.storagePath,
             modName = job.modName,
@@ -491,7 +515,8 @@ class AiAgentExecutionService : Service() {
                 return
             }
             if (cancellationRequested || interrupted || error is InterruptedException || error is java.util.concurrent.CancellationException) {
-                markCancelled(job, jobStore, activeAssistantMessageId)
+                markCancelled(job, jobStore, activeAssistantMessageId,
+                    dismissed = error is AgentQuestionDismissed)
             } else {
                 val message = describeError(error)
                 markFailed(job, jobStore, message, activeAssistantMessageId)
@@ -590,8 +615,9 @@ class AiAgentExecutionService : Service() {
         job: AiAgentJobRecord,
         jobStore: AiAgentJobStore,
         assistantMessageId: Long = job.assistantMessageId,
+        dismissed: Boolean = false,
     ) {
-        val message = getString(R.string.ai_mod_editor_error_stopped)
+        val message = getString(if (dismissed) R.string.ai_question_dismissed else R.string.ai_mod_editor_error_stopped)
         val conversationStore = conversationStore(job.modId)
         updateAssistant(job, conversationStore, assistantMessageId, includeExecutionSteps = true) {
             it.withExecutionProblem(message, AgentStepStatus.CANCELLED).copy(streaming = false, failed = true, retryMessage = "", errorMessage = message)
@@ -630,7 +656,7 @@ class AiAgentExecutionService : Service() {
     }
 
     /**
-     * Holds a partial wake lock for the whole run.
+     * Holds a partial wake lock during active execution, not while waiting for the user.
      *
      * The agent is a foreground service, which keeps the process alive but not the CPU: with the
      * screen off the device can still enter Doze, which suspends the network and freezes the
@@ -672,7 +698,7 @@ class AiAgentExecutionService : Service() {
      * is the mode that keeps a long-lived connection usable; `WIFI_MODE_FULL` defers to the
      * regular power-save policy and does not fix this.
      *
-     * The lock is held for the whole run and released with the wake lock, but it is not renewed
+     * The lock is held during active execution and released with the wake lock, but it is not renewed
      * separately: Android releases it when the acquiring process dies, so a crash cannot leak it.
      */
     @Suppress("DEPRECATION")

@@ -47,6 +47,11 @@ class AgentToolScheduler(
             checkActive()
         }
         try {
+            if (requests.size > 1 && requests.any { it.name() == ASK_USER } && registry.hasAskUser()) {
+                // Do not run sibling calls (including writes) before the user has answered.
+                requests.forEach { onResult(it, registry.rejectMixedQuestionBatch(it, checkBatchActive)) }
+                return
+            }
             if (requests.size > 1 && requests.any { it.name() == SWITCH_WORKSPACE || it.name() == "create_agent_patch_workspace" }) {
                 // Reject the whole batch, including a write before or after the switch.
                 requests.forEach { onResult(it, registry.rejectMixedWorkspaceBatch(it, checkBatchActive)) }

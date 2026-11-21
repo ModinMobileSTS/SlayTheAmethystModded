@@ -1,0 +1,17 @@
+<resources>
+    <string name="ai_question_title">Agent question</string>
+    <string name="ai_question_waiting">Waiting for your answer</string>
+    <string name="ai_question_single">Single choice</string>
+    <string name="ai_question_multiple">Multiple choice</string>
+    <string name="ai_question_progress">%1$d / %2$d</string>
+    <string name="ai_question_custom">Type your own answer</string>
+    <string name="ai_question_custom_hint">Your answer</string>
+    <string name="ai_question_draft_saved">Draft on hold</string>
+    <string name="ai_question_previous">Previous</string>
+    <string name="ai_question_next">Next</string>
+    <string name="ai_question_submit">Submit answer</string>
+    <string name="ai_question_answered">Answer submitted</string>
+    <string name="ai_question_skip">Skip question</string>
+    <string name="ai_question_dismissed">Question skipped. The current Agent step ended.</string>
+    <string name="ai_question_tool_description">Ask for clarification or a decision and wait for the answer.</string>
+</resources>

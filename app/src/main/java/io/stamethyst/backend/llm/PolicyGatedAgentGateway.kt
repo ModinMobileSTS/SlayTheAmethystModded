@@ -325,6 +325,11 @@ class AgentToolRegistry(
     internal fun rejectMixedWorkspaceBatch(request: ToolExecutionRequest, checkCancelled: () -> Unit) =
         dispatch(request, checkCancelled, "workspace_switch_must_be_alone")
 
+    internal fun rejectMixedQuestionBatch(request: ToolExecutionRequest, checkCancelled: () -> Unit) =
+        dispatch(request, checkCancelled, "ask_user_must_be_alone")
+
+    internal fun hasAskUser() = specifications.any { it.name() == ASK_USER }
+
     fun execute(request: ToolExecutionRequest, checkCancelled: () -> Unit = {}): AgentToolOutput =
         dispatch(request, checkCancelled, null)
 

@@ -180,7 +180,8 @@ data class AgentContextState(
                     role = "tool",
                     callId = call.id,
                     toolName = call.name,
-                    text = "Execution was interrupted. The outcome is unknown. Inspect files/state before retrying; do not assume failure or success.",
+                    text = if (call.name == ASK_USER) "No user answer was recorded. Do not assume a choice."
+                    else "Execution was interrupted. The outcome is unknown. Inspect files/state before retrying; do not assume failure or success.",
                 )
             }
         }

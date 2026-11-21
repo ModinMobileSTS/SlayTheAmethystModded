@@ -52,6 +52,7 @@ internal fun formatAiCacheRate(rate: Double?): String = rate?.let {
  * fall back to the generic "no description" string.
  */
 internal fun agentToolDescriptionRes(name: String): Int = when (name) {
+    io.stamethyst.backend.llm.ASK_USER -> R.string.ai_question_tool_description
     "switch_agent_workspace" -> R.string.ai_workspace_select
     "list_agent_workspace" -> R.string.ai_mod_editor_tool_desc_list_agent_workspace
     "read_agent_workspace_file" -> R.string.ai_mod_editor_tool_desc_read_agent_workspace_file

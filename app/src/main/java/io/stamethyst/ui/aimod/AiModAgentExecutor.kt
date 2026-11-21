@@ -1,6 +1,7 @@
 package io.stamethyst.ui.aimod
 
 import android.content.Context
+import io.stamethyst.backend.llm.ASK_USER
 import io.stamethyst.backend.llm.AgentApiClassDecompileTool
 import io.stamethyst.backend.llm.AgentApiDescribeTool
 import io.stamethyst.backend.llm.AgentApiSearchTool
@@ -43,6 +44,7 @@ import io.stamethyst.backend.llm.AgentWorkspaceGrepTool
 import io.stamethyst.backend.llm.AgentWorkspaceListTool
 import io.stamethyst.backend.llm.AgentWorkspaceWriteTool
 import io.stamethyst.backend.llm.AgentWorkspaceSelectionTool
+import io.stamethyst.backend.llm.AskUserTool
 import io.stamethyst.backend.llm.BoundRevisionTool
 import io.stamethyst.backend.mods.AgentWorkspaceCatalog
 import kotlinx.serialization.json.*
@@ -82,6 +84,8 @@ internal class AiModAgentExecutor(
     private val modelFactory: (OpenAiCompatibleModelConfig) -> dev.langchain4j.model.chat.ChatModel = AgentChatModelFactory::create,
     private val streamingModelFactory: (OpenAiCompatibleModelConfig) -> dev.langchain4j.model.chat.StreamingChatModel? = AgentChatModelFactory::createStreaming,
     private val persistSelection: (String?) -> Unit = {},
+    private val onQuestionWaiting: () -> Unit = {},
+    private val onQuestionAnswered: () -> Unit = {},
 ) {
     private val settingsRepository = io.stamethyst.backend.llm.LlmSettingsRepository(context)
     private val workspaceAccessRoot = RuntimePaths.agentModWorkspaceRoot(
@@ -155,7 +159,8 @@ internal class AiModAgentExecutor(
         activePatchWorkspace = binding.id?.takeUnless { binding.origin == "missing" }?.let(::resolveExistingPatchWorkspace)
         val saved = session.modelContext(assistantMessageId).copy(activePatchId = activePatchWorkspace?.patchId)
         val registry = AgentToolRegistry(
-                tools = createAgentTools(),
+                tools = createAgentTools() + AskUserTool(control.userQuestions,
+                    { checkCancelled(); control.checkActive() }, onQuestionWaiting, onQuestionAnswered),
                 policyGate = agentToolPolicyGate,
                 onToolExecution = onToolExecution,
         )
@@ -410,7 +415,9 @@ internal class AiModAgentExecutor(
 
     fun availableTools(): List<AiToolInfo> = createAgentTools()
         .filter(agentToolPolicyGate::allows)
-        .map { AiToolInfo(it.specification.name(), agentToolDescriptionRes(it.specification.name())) }
+        .map { it.specification.name() }
+        .plus(ASK_USER)
+        .map { AiToolInfo(it, agentToolDescriptionRes(it)) }
 
     private fun resolveExistingPatchWorkspace(patchId: String): AgentPatchWorkspace? =
         AgentWorkspaceCatalog.entry(workspaceAccessRoot, patchId)?.let {
@@ -421,6 +428,7 @@ internal class AiModAgentExecutor(
 /** Shared instructions precede Mod/device-specific data so different editors share a long prefix. */
 internal fun buildAiEditorSystemPrompt(modName: String, modId: String): String = """
         You are a safe mod editing assistant inside a mobile launcher.
+        When a missing requirement or preference materially changes what you should build, call ask_user alone in the user's language and wait for their answer before making dependent changes. Do not guess their choice or ask for secrets.
         One conversation binds one writable patch workspace at a time. /source/ and /tool_output/ are read-only; /patch_source/<patch_id>/ paths always refer to that exact revision. Unqualified relative file paths like src/A.java use the bound patch. Call switch_agent_workspace with no arguments to list drafts and packaged revisions, then with patch_id to bind an existing revision. Call it alone, wait for confirmation, then edit, compile or package. Never guess IDs or use device paths. Read-only inspection needs no binding.
         Independent read/search/inspect tool calls may be issued together in one response; the launcher runs parallel-safe tools concurrently. Workspace changes, decompilation, compilation, packaging, activation, deletion, and smoke tests run exclusively in call order. If a call needs an earlier tool's output, wait for that output before choosing its arguments.
         Use workspace tools for listing and reading the patch workspace. source/ is a read-only, on-demand cache; it is not a full extraction of the parent JAR and must never be written or deleted through workspace tools. Use list_agent_mod_entries to discover JAR paths, inspect_agent_class for bytecode metadata, decompile_agent_class for one parent or installed-mod class, decompile_agent_api_class for game/BaseMod/StSLib/dependency classes (pass several names at once; large classes return a member index plus a skeleton, and 'member' reads one body), and read_agent_mod_resource for one resource. patch_source/ is the agent-owned patch tree and is the only directory writable or deletable through workspace tools.

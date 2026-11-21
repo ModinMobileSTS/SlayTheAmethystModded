@@ -112,6 +112,7 @@ class AgentRequestControl(
     val executionPolicy: AgentExecutionPolicy = AgentExecutionPolicy(),
 ) : AutoCloseable {
     internal val executionBudget = AgentExecutionBudget(executionPolicy, clock)
+    internal val userQuestions = AgentUserQuestions()
     private val lock = Any()
     private val requests = LinkedHashSet<AgentRequestScope>()
     private var cancellation: CancellationException? = null
@@ -138,6 +139,7 @@ class AgentRequestControl(
             cancellation = error
             requests.toList()
         }
+        userQuestions.cancel()
         active.forEach { it.cancel(error) }
     }
 
