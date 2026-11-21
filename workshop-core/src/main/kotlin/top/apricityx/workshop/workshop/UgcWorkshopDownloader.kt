@@ -16,6 +16,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -25,6 +27,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipInputStream
 
 class UgcWorkshopDownloader(
@@ -152,11 +155,31 @@ class UgcWorkshopDownloader(
             emit(DownloadEvent.StateChanged(DownloadState.Downloading))
             val chunks = preparedManifest.uniqueChunks()
             val totalBytes = chunks.sumOf { it.uncompressedLength.toLong() }
-            val totalFiles = preparedManifest.files.count {
+            val outputFiles = preparedManifest.files.filter {
                 it.linkTarget.isNullOrBlank() && !preparedManifest.requiresDirectory(it)
             }
+            val totalFiles = outputFiles.size
+            val writeTotal = totalBytes + outputFiles.sumOf { it.size }
             log("Manifest ${preparedManifest.manifestId} contains ${preparedManifest.files.size} files and ${chunks.size} unique chunks")
-            emit(
+            val received = AtomicLong()
+            val diskWrites = AtomicLong()
+            val reportLock = Mutex()
+            var lastWritten = 0L
+            var lastChunk = 0
+            val report: suspend (DownloadEvent) -> Unit = { event ->
+                if (event is DownloadEvent.Progress) {
+                    // Concurrent workers can finish updating counters in a different order
+                    // than they send events. Emit a monotonic snapshot, not a stale delta.
+                    reportLock.withLock {
+                        lastWritten = maxOf(lastWritten, event.writtenBytes)
+                        lastChunk = maxOf(lastChunk, event.completedChunks ?: 0)
+                        emit(event.copy(writtenBytes = lastWritten, completedChunks = lastChunk,
+                            receivedBytes = received.get(), diskWriteBytes = diskWrites.get(),
+                            writeProgressBytes = maxOf(lastWritten, event.writeProgressBytes), writeTotalBytes = writeTotal))
+                    }
+                } else emit(event)
+            }
+            report(
                 DownloadEvent.Progress(
                     writtenBytes = 0L,
                     totalBytes = totalBytes,
@@ -180,7 +203,9 @@ class UgcWorkshopDownloader(
                 stageDir = stageDir,
                 depotKey = depotKey,
                 totalFiles = totalFiles,
-                emit = emit,
+                received = received,
+                diskWrites = diskWrites,
+                emit = report,
                 log = log,
             )
 
@@ -191,7 +216,8 @@ class UgcWorkshopDownloader(
                 totalBytes = totalBytes,
                 totalChunks = chunks.size,
                 totalFiles = totalFiles,
-                emit = emit,
+                diskWrites = diskWrites,
+                emit = report,
                 log = log,
             )
         }
@@ -263,6 +289,8 @@ class UgcWorkshopDownloader(
         stageDir: File,
         depotKey: ByteArray?,
         totalFiles: Int,
+        received: AtomicLong,
+        diskWrites: AtomicLong,
         emit: suspend (DownloadEvent) -> Unit,
         log: suspend (String) -> Unit,
     ) = coroutineScope {
@@ -292,9 +320,11 @@ class UgcWorkshopDownloader(
                         chunk = chunk,
                         depotKey = depotKey,
                         serverStartOffset = chunkIndex,
+                        received = received,
                         log = log,
                     )
                     writeAtomically(stageFile, processed)
+                    diskWrites.addAndGet(processed.size.toLong())
                     emit(
                         DownloadEvent.Progress(
                             writtenBytes = downloaded.addAndGet(processed.size.toLong()),
@@ -353,6 +383,7 @@ class UgcWorkshopDownloader(
         chunk: ManifestChunk,
         depotKey: ByteArray?,
         serverStartOffset: Int = 0,
+        received: AtomicLong,
         log: suspend (String) -> Unit,
     ): ByteArray {
         var lastError: Throwable? = null
@@ -375,6 +406,7 @@ class UgcWorkshopDownloader(
                         cdnTransport = cdnTransport,
                         cdnAuthTokenCache = cdnAuthTokenCache,
                     )
+                    received.addAndGet(raw.size.toLong())
                     return ChunkProcessor.process(raw, chunk, depotKey)
                 } catch (error: Throwable) {
                     if (error is CancellationException || error is InterruptedException) throw error
@@ -403,10 +435,17 @@ class UgcWorkshopDownloader(
         totalBytes: Long,
         totalChunks: Int,
         totalFiles: Int,
+        diskWrites: AtomicLong,
         emit: suspend (DownloadEvent) -> Unit,
         log: suspend (String) -> Unit,
     ) {
         var completedFiles = 0
+        var assembledBytes = 0L
+        var lastReport = System.nanoTime()
+        suspend fun reportAssembly() = emit(DownloadEvent.Progress(
+            totalBytes, totalBytes, totalChunks, totalChunks, completedFiles, totalFiles,
+            writeProgressBytes = totalBytes + assembledBytes,
+        ))
         manifest.files.forEach { file ->
             currentCoroutineContext().ensureActive()
             if (!file.linkTarget.isNullOrBlank()) {
@@ -429,6 +468,7 @@ class UgcWorkshopDownloader(
                 .takeIf { it.exists() && it.length() == file.size }
                 ?.let { WorkshopFileIntegrityVerifier.assess(it, file) }
             val reuse = existingValidation != null && existingValidation !is AssembledFileValidation.Invalid
+            val beforeFile = assembledBytes
             if (existingValidation is AssembledFileValidation.ChunkVerifiedHashMismatch) {
                 log(
                     "Reusing ${file.path} despite SHA-1 mismatch because all chunk ranges validated " +
@@ -451,6 +491,13 @@ class UgcWorkshopDownloader(
                                     break
                                 }
                                 output.write(buffer, 0, read)
+                                diskWrites.addAndGet(read.toLong())
+                                assembledBytes += read
+                                val now = System.nanoTime()
+                                if (now - lastReport >= 500_000_000L) {
+                                    reportAssembly()
+                                    lastReport = now
+                                }
                             }
                         }
                     }
@@ -487,16 +534,9 @@ class UgcWorkshopDownloader(
                 ),
             )
             completedFiles += 1
-            emit(
-                DownloadEvent.Progress(
-                    writtenBytes = totalBytes,
-                    totalBytes = totalBytes,
-                    completedChunks = totalChunks,
-                    totalChunks = totalChunks,
-                    completedFiles = completedFiles,
-                    totalFiles = totalFiles,
-                ),
-            )
+            // A verified existing file satisfies the plan without increasing disk I/O.
+            assembledBytes = beforeFile + file.size
+            reportAssembly()
         }
     }
 

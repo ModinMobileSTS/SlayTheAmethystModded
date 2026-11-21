@@ -40,6 +40,10 @@ internal class SteamPipeWorkshopContentDownloader(
                 is DownloadEvent.Progress -> WorkshopDownloadEvent.Progress(
                     WorkshopDownloadProgress(
                         writtenBytes = event.writtenBytes,
+                        receivedBytes = event.receivedBytes,
+                        diskWriteBytes = event.diskWriteBytes,
+                        writeProgressBytes = event.writeProgressBytes,
+                        writeTotalBytes = event.writeTotalBytes,
                         totalBytes = event.totalBytes,
                         completedChunks = event.completedChunks,
                         totalChunks = event.totalChunks,

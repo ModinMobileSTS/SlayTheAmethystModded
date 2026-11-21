@@ -53,6 +53,27 @@ class WorkshopDownloadTaskStoreInstrumentedTest {
         }
     }
 
+    @Test
+    fun promotingQueuedTaskPreservesRunningTransferAndUsesRealClaimOrder() {
+        val store = WorkshopDownloadTaskStore(ApplicationProvider.getApplicationContext())
+        val original = store.list()
+        try {
+            val running = task(1uL, WorkshopDownloadTaskStatus.Downloading).copy(receivedBytes = 17L, diskWriteBytes = 32L,
+                writeProgressBytes = 48L, writeTotalBytes = 128L)
+            store.save(listOf(running, task(2uL, WorkshopDownloadTaskStatus.Queued), task(3uL, WorkshopDownloadTaskStatus.Queued)))
+            store.moveQueuedTaskToFront(3uL)
+            store.moveQueuedTaskToFront(1uL)
+            assertEquals(listOf(3uL), store.claimNextQueuedTasks(1).map { it.publishedFileId })
+            assertEquals(17L, store.find(1uL)?.receivedBytes)
+            assertEquals(32L, store.find(1uL)?.diskWriteBytes)
+            assertEquals(48L, store.find(1uL)?.writeProgressBytes)
+            assertEquals(128L, store.find(1uL)?.writeTotalBytes)
+            assertEquals(running.updatedAtMillis, store.find(1uL)?.updatedAtMillis)
+        } finally {
+            store.save(original)
+        }
+    }
+
     private fun task(
         publishedFileId: ULong,
         status: WorkshopDownloadTaskStatus,

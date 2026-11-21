@@ -52,6 +52,10 @@ class WorkshopDownloadProcessService : Service() {
         const val EXTRA_MESSAGE = "io.stamethyst.extra.MESSAGE"
         const val EXTRA_TASK_STATUS = "io.stamethyst.extra.TASK_STATUS"
         const val EXTRA_WRITTEN_BYTES = "io.stamethyst.extra.WRITTEN_BYTES"
+        const val EXTRA_RECEIVED_BYTES = "io.stamethyst.extra.RECEIVED_BYTES"
+        const val EXTRA_DISK_WRITE_BYTES = "io.stamethyst.extra.DISK_WRITE_BYTES"
+        const val EXTRA_WRITE_PROGRESS_BYTES = "io.stamethyst.extra.WRITE_PROGRESS_BYTES"
+        const val EXTRA_WRITE_TOTAL_BYTES = "io.stamethyst.extra.WRITE_TOTAL_BYTES"
         const val EXTRA_TOTAL_BYTES = "io.stamethyst.extra.TOTAL_BYTES"
         const val EXTRA_PROGRESS_PERCENT = "io.stamethyst.extra.PROGRESS_PERCENT"
         const val EXTRA_COMPLETED_FILES = "io.stamethyst.extra.COMPLETED_FILES"
@@ -477,6 +481,10 @@ class WorkshopDownloadProcessService : Service() {
                     updatedAtMillis = System.currentTimeMillis(),
                     progressPercent = if (preservePartialDownload) it.progressPercent else null,
                     downloadedBytes = if (preservePartialDownload) it.downloadedBytes else 0L,
+                    receivedBytes = null,
+                    diskWriteBytes = null,
+                    writeProgressBytes = null,
+                    writeTotalBytes = null,
                     completedFiles = if (preservePartialDownload) it.completedFiles else null,
                     completedChunks = if (preservePartialDownload) it.completedChunks else null,
                     errorClass = "",
@@ -551,7 +559,11 @@ class WorkshopDownloadProcessService : Service() {
                                     status = WorkshopDownloadTaskStatus.Downloading,
                                     message = "正在下载",
                                     progressPercent = progressPercent,
-                                    downloadedBytes = event.progress.writtenBytes,
+                                     downloadedBytes = event.progress.writtenBytes,
+                                     receivedBytes = event.progress.receivedBytes,
+                                     diskWriteBytes = event.progress.diskWriteBytes,
+                                     writeProgressBytes = event.progress.writeProgressBytes,
+                                     writeTotalBytes = event.progress.writeTotalBytes,
                                     totalBytes = event.progress.totalBytes ?: it.totalBytes,
                                     completedFiles = event.progress.completedFiles ?: it.completedFiles,
                                     totalFiles = event.progress.totalFiles ?: it.totalFiles,
@@ -1064,6 +1076,10 @@ class WorkshopDownloadProcessService : Service() {
                 if (taskStatus != null) putString(EXTRA_TASK_STATUS, taskStatus)
                 progress?.let { current ->
                     putLong(EXTRA_WRITTEN_BYTES, current.writtenBytes)
+                    current.receivedBytes?.let { putLong(EXTRA_RECEIVED_BYTES, it) }
+                    current.diskWriteBytes?.let { putLong(EXTRA_DISK_WRITE_BYTES, it) }
+                    putLong(EXTRA_WRITE_PROGRESS_BYTES, current.writeProgressBytes)
+                    current.writeTotalBytes?.let { putLong(EXTRA_WRITE_TOTAL_BYTES, it) }
                     current.totalBytes?.let { putLong(EXTRA_TOTAL_BYTES, it) }
                     current.completedFiles?.let { putInt(EXTRA_COMPLETED_FILES, it) }
                     current.totalFiles?.let { putInt(EXTRA_TOTAL_FILES, it) }

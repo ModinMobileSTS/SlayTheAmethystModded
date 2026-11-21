@@ -8,7 +8,6 @@ import io.stamethyst.backend.github.preparingHttpRequests
 import io.stamethyst.backend.github.cancelAllHttpCalls
 import io.stamethyst.backend.github.HttpRetrySafety
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
-import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore.AuthSnapshot
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -1162,6 +1161,8 @@ internal class WorkshopService(
                                         WorkshopDownloadEvent.Progress(
                                             WorkshopDownloadProgress(
                                                 writtenBytes = writtenBytes,
+                                                receivedBytes = writtenBytes,
+                                                diskWriteBytes = writtenBytes,
                                                 totalBytes = totalBytes,
                                                 completedFiles = 0,
                                                 totalFiles = 1,
@@ -1174,6 +1175,11 @@ internal class WorkshopService(
                     }
                     if (outputFile.exists() && !outputFile.delete()) throw IOException("Failed to replace existing workshop file")
                     if (!tempFile.renameTo(outputFile)) throw IOException("Failed to finalize workshop download")
+                    val size = outputFile.length()
+                    emit(WorkshopDownloadEvent.Progress(WorkshopDownloadProgress(
+                        writtenBytes = size, totalBytes = size, completedFiles = 1, totalFiles = 1,
+                        receivedBytes = size, diskWriteBytes = size,
+                    )))
                 } catch (throwable: Throwable) {
                     tempFile.delete()
                     throw throwable
@@ -1214,7 +1220,6 @@ internal class WorkshopService(
     private fun readSteamAccountSession(
         identity: WorkshopSteamClientIdentity = WorkshopSteamClientIdentity(context),
     ): SteamAccountSession? {
-        if (SteamAuthenticationCircuitBreaker.isOpen()) return null
         return SteamCloudAuthStore.readCmAuthMaterial(context)?.let { auth ->
             val steamId = auth.steamId64.toLongOrNull() ?: 0L
             if (steamId > 0L) {

@@ -1,0 +1,14 @@
+<resources>
+    <string name="transfer_network">Network</string>
+    <string name="transfer_peak">Peak</string>
+    <string name="transfer_disk">Disk writes</string>
+    <string name="transfer_data">Downloaded</string>
+    <string name="transfer_files">Files written</string>
+    <string name="transfer_technical">Technical details and logs</string>
+    <string name="transfer_eta">Time remaining: %1$s</string>
+    <string name="transfer_queue">Up next</string>
+    <string name="transfer_next">Next</string>
+    <string name="transfer_prioritize">Move to front of queue</string>
+    <string name="transfer_attention">Needs attention</string>
+    <string name="transfer_history">History</string>
+</resources>

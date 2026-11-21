@@ -36,6 +36,12 @@ sealed interface DownloadEvent {
         val totalChunks: Int? = null,
         val completedFiles: Int? = null,
         val totalFiles: Int? = null,
+        /** Payload received / bytes written this attempt; unlike writtenBytes, excludes reused data. */
+        val receivedBytes: Long? = null,
+        val diskWriteBytes: Long? = null,
+        /** Logical write work (including reused data), distinct from physical I/O for speed. */
+        val writeProgressBytes: Long = writtenBytes,
+        val writeTotalBytes: Long? = totalBytes,
     ) : DownloadEvent
     data class FileCompleted(val file: DownloadedFileInfo) : DownloadEvent
     data class Completed(val files: List<DownloadedFileInfo>) : DownloadEvent

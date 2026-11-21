@@ -27,7 +27,9 @@ class DirectWorkshopDownloader(
                 log("Reusing completed direct download ${outputFile.name}")
                 emit(
                     DownloadEvent.Progress(
-                        writtenBytes = outputFile.length(),
+                         writtenBytes = outputFile.length(),
+                         receivedBytes = 0,
+                         diskWriteBytes = 0,
                         totalBytes = item.size,
                         completedFiles = 1,
                         totalFiles = 1,
@@ -46,6 +48,7 @@ class DirectWorkshopDownloader(
 
         log("Starting direct file_url download: ${item.fileUrl}")
         var lastError: Throwable? = null
+        var transferred = 0L
 
         for (attempt in 1..MAX_DIRECT_DOWNLOAD_ATTEMPTS) {
             val existingBytes = partialFile.takeIf(File::exists)?.length() ?: 0L
@@ -84,7 +87,9 @@ class DirectWorkshopDownloader(
                     if (append) {
                         emit(
                             DownloadEvent.Progress(
-                                writtenBytes = existingBytes,
+                                 writtenBytes = existingBytes,
+                                 receivedBytes = transferred,
+                                 diskWriteBytes = transferred,
                                 totalBytes = totalBytes,
                                 completedFiles = 0,
                                 totalFiles = 1,
@@ -105,10 +110,13 @@ class DirectWorkshopDownloader(
                                     break
                                 }
                                 output.write(buffer, 0, read)
-                                written += read
+                                 written += read
+                                 transferred += read
                                 emit(
                                     DownloadEvent.Progress(
-                                        writtenBytes = written,
+                                         writtenBytes = written,
+                                         receivedBytes = transferred,
+                                         diskWriteBytes = transferred,
                                         totalBytes = totalBytes,
                                         completedFiles = 0,
                                         totalFiles = 1,

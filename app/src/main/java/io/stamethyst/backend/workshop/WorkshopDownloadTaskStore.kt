@@ -47,6 +47,10 @@ data class WorkshopDownloadTaskRecord(
     val preservePartialDownload: Boolean = false,
     /** Explicit patch upgrades always import the downloaded jar, regardless of the global preference. */
     val forceAutoImport: Boolean = false,
+    val receivedBytes: Long? = null,
+    val diskWriteBytes: Long? = null,
+    val writeProgressBytes: Long? = null,
+    val writeTotalBytes: Long? = null,
 )
 
 class WorkshopDownloadTaskStore(context: Context) {
@@ -137,6 +141,16 @@ class WorkshopDownloadTaskStore(context: Context) {
     fun nextQueuedTask(): WorkshopDownloadTaskRecord? = withStoreLock { loadUnlocked()
         .filter { it.status == WorkshopDownloadTaskStatus.Queued }
         .minByOrNull { it.updatedAtMillis } }
+
+    /** Recheck under the same lock as claiming; never preempt a running worker. */
+    fun moveQueuedTaskToFront(id: ULong) = withStoreLock {
+        val tasks = loadUnlocked().toMutableList()
+        val index = tasks.indexOfFirst { it.publishedFileId == id && it.status == WorkshopDownloadTaskStatus.Queued }
+        if (index < 0) return@withStoreLock
+        val first = tasks.filter { it.status == WorkshopDownloadTaskStatus.Queued }.minOf { it.updatedAtMillis }
+        tasks[index] = tasks[index].copy(updatedAtMillis = first - 1L)
+        saveUnlocked(tasks)
+    }
 
     fun claimNextQueuedTasks(limit: Int): List<WorkshopDownloadTaskRecord> = withStoreLock {
         if (limit <= 0) return@withStoreLock emptyList()
@@ -463,6 +477,10 @@ private fun WorkshopDownloadTaskRecord.toJson(): JSONObject = JSONObject()
     .put("fileSizeBytes", fileSizeBytes)
     .put("progressPercent", progressPercent ?: JSONObject.NULL)
     .put("downloadedBytes", downloadedBytes)
+    .put("receivedBytes", receivedBytes ?: JSONObject.NULL)
+    .put("diskWriteBytes", diskWriteBytes ?: JSONObject.NULL)
+    .put("writeProgressBytes", writeProgressBytes ?: JSONObject.NULL)
+    .put("writeTotalBytes", writeTotalBytes ?: JSONObject.NULL)
     .put("totalBytes", totalBytes ?: JSONObject.NULL)
     .put("completedFiles", completedFiles ?: JSONObject.NULL)
     .put("totalFiles", totalFiles ?: JSONObject.NULL)
@@ -521,6 +539,10 @@ private fun JSONObject.toTask(
         fileSizeBytes = summary.fileSizeBytes,
         progressPercent = optionalInt("progressPercent"),
         downloadedBytes = optLong("downloadedBytes"),
+        receivedBytes = optionalLong("receivedBytes"),
+        diskWriteBytes = optionalLong("diskWriteBytes"),
+        writeProgressBytes = optionalLong("writeProgressBytes"),
+        writeTotalBytes = optionalLong("writeTotalBytes"),
         totalBytes = optionalLong("totalBytes"),
         completedFiles = optionalInt("completedFiles"),
         totalFiles = optionalInt("totalFiles"),

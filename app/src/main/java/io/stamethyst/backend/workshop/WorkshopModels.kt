@@ -231,6 +231,10 @@ data class WorkshopDownloadProgress(
     val totalChunks: Int? = null,
     val completedFiles: Int? = null,
     val totalFiles: Int? = null,
+    val receivedBytes: Long? = null,
+    val diskWriteBytes: Long? = null,
+    val writeProgressBytes: Long = writtenBytes,
+    val writeTotalBytes: Long? = totalBytes,
 )
 
 data class WorkshopInstalledModRecord(

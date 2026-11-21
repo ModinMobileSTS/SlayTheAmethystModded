@@ -1,0 +1,14 @@
+<resources>
+    <string name="transfer_network">网络速度</string>
+    <string name="transfer_peak">网络峰值</string>
+    <string name="transfer_disk">磁盘写入</string>
+    <string name="transfer_data">下载数据</string>
+    <string name="transfer_files">写入文件</string>
+    <string name="transfer_technical">技术信息与日志</string>
+    <string name="transfer_eta">预计剩余 %1$s</string>
+    <string name="transfer_queue">接下来</string>
+    <string name="transfer_next">下一项</string>
+    <string name="transfer_prioritize">移到队首</string>
+    <string name="transfer_attention">待处理</string>
+    <string name="transfer_history">历史记录</string>
+</resources>

@@ -167,6 +167,10 @@ internal object WorkshopDownloadCenterStore {
         store?.remove(publishedFileId)
     }
 
+    fun moveQueuedTaskToFront(publishedFileId: ULong) {
+        store?.moveQueuedTaskToFront(publishedFileId)
+    }
+
     fun find(publishedFileId: ULong): WorkshopDownloadTaskUi? = tasks.firstOrNull { it.publishedFileId == publishedFileId }
 
     fun hasRunningTask(): Boolean = tasks.any { it.status.isRunningDownload() }
@@ -347,6 +351,11 @@ internal data class WorkshopDownloadTaskUi(
     val errorStackTrace: String = "",
     val downloadLog: String = "",
     val preservePartialDownload: Boolean = false,
+    val receivedBytes: Long? = null,
+    val diskWriteBytes: Long? = null,
+    val writeProgressBytes: Long? = null,
+    val writeTotalBytes: Long? = null,
+    val forceAutoImport: Boolean = false,
 )
 
 private fun WorkshopDownloadTaskRecord.toUi(context: Context?): WorkshopDownloadTaskUi {
@@ -377,6 +386,11 @@ private fun WorkshopDownloadTaskRecord.toUi(context: Context?): WorkshopDownload
         fileSizeBytes = fileSizeBytes,
         progressPercent = progressPercent,
         downloadedBytes = downloadedBytes,
+        receivedBytes = receivedBytes,
+        diskWriteBytes = diskWriteBytes,
+        writeProgressBytes = writeProgressBytes,
+        writeTotalBytes = writeTotalBytes,
+        forceAutoImport = forceAutoImport,
         totalBytes = totalBytes,
         completedFiles = completedFiles,
         totalFiles = totalFiles,
@@ -403,6 +417,11 @@ internal fun WorkshopDownloadTaskUi.toRecord(): WorkshopDownloadTaskRecord = Wor
     fileSizeBytes = fileSizeBytes,
     progressPercent = progressPercent,
     downloadedBytes = downloadedBytes,
+    receivedBytes = receivedBytes,
+    diskWriteBytes = diskWriteBytes,
+    writeProgressBytes = writeProgressBytes,
+    writeTotalBytes = writeTotalBytes,
+    forceAutoImport = forceAutoImport,
     totalBytes = totalBytes,
     completedFiles = completedFiles,
     totalFiles = totalFiles,

@@ -1,0 +1,14 @@
+<resources>
+    <string name="transfer_network">網路速度</string>
+    <string name="transfer_peak">網路峰值</string>
+    <string name="transfer_disk">磁碟寫入</string>
+    <string name="transfer_data">下載資料</string>
+    <string name="transfer_files">寫入檔案</string>
+    <string name="transfer_technical">技術資訊與紀錄</string>
+    <string name="transfer_eta">預計剩餘 %1$s</string>
+    <string name="transfer_queue">接下來</string>
+    <string name="transfer_next">下一項</string>
+    <string name="transfer_prioritize">移到佇列最前方</string>
+    <string name="transfer_attention">待處理</string>
+    <string name="transfer_history">歷史紀錄</string>
+</resources>
