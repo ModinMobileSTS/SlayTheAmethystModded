@@ -451,7 +451,7 @@ internal class WorkshopViewModel : ViewModel() {
                     items = merged,
                     nextPage = page + 1,
                     hasMorePages = result.hasNextPage,
-                    errorMessage = if (merged.isEmpty()) context.getString(R.string.workshop_error_no_entries_found) else null,
+                    errorMessage = null,
                 )
                 enrichBrowseItemsInBackground(currentService, requestGeneration, merged)
                 Log.i(
