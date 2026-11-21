@@ -2,16 +2,19 @@ package top.apricityx.workshop.steam.protocol
 
 import java.io.File
 import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
 import kotlin.math.ceil
 import kotlin.random.Random
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
@@ -146,6 +149,55 @@ class SteamCmNetworkSimulationTest {
         assertEquals(0, fixture.active)
     }
 
+    @Test fun lostReplyNeverReplaysCloudWritesButReadsRecover() = runTest {
+        val writes = listOf("BeginAppUploadBatch", "BeginHTTPUpload", "CommitHTTPUpload", "ClientDeleteFile",
+            "CompleteAppUploadBatchBlocking")
+        for (rpc in writes + listOf("GetAppFileChangelist", "ClientFileDownload")) {
+            for (disconnect in listOf(true, false)) {
+                val fixture = Network(this, List(20) { Link() }, 7)
+                val method = "Cloud.$rpc#1"
+                val received = mutableListOf<Long>()
+                fixture.onServiceCall = { socket, packet ->
+                    assertEquals(method, packet.header.targetJobName)
+                    received += packet.header.jobidSource
+                    if (received.size == 1) {
+                        if (disconnect) socket.disconnect() // Otherwise keep socket open, swallow the reply.
+                    } else socket.listener.onMessage(socket, SteamPacketCodec.encode(
+                        SteamPacketCodec.emsgServiceMethodResponse,
+                        CMsgProtoBufHeader.newBuilder().setJobidTarget(received.last()).setEresult(1).build(),
+                        CMsgProtoBufHeader.getDefaultInstance()).toByteString())
+                }
+                OkHttpSteamCmSession(webSocketFactory = fixture).use { session ->
+                    session.connectWithRefreshToken(servers, account)
+                    val error = runCatching { session.callServiceMethod(method,
+                        CMsgProtoBufHeader.getDefaultInstance(), CMsgProtoBufHeader.parser()) }.exceptionOrNull()
+                    if (rpc in writes) {
+                        assertEquals("$method, disconnect=$disconnect", 1, received.size)
+                        if (disconnect) assertTrue(error is SocketException) else assertTrue(error is SocketTimeoutException)
+                    } else {
+                        assertNull(error)
+                        assertEquals(2, received.distinct().size)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun callerDeadlineTerminatesReadWithoutReconnectOrCredentialFailure() = runTest {
+        val fixture = Network(this, List(20) { Link() }, 7)
+        var received = 0
+        fixture.onServiceCall = { _, _ -> received++ }
+        OkHttpSteamCmSession(webSocketFactory = fixture,
+            onAccountLogonFailure = { _, _ -> fail("Caller cancelled, no credential rejection") }).use { session ->
+            session.connectWithRefreshToken(servers, account)
+            val error = runCatching { withTimeout(5) { session.callServiceMethod("Cloud.GetAppFileChangelist#1",
+                CMsgProtoBufHeader.getDefaultInstance(), CMsgProtoBufHeader.parser()) } }.exceptionOrNull()
+            assertTrue(error is TimeoutCancellationException)
+            assertEquals(1, received)
+            assertEquals(1, fixture.logons)
+        }
+    }
+
     private inner class Network(
         private val scope: TestScope,
         private val links: List<Link>,
@@ -158,6 +210,7 @@ class SteamCmNetworkSimulationTest {
         var logons = 0
         var activeLogons = 0
         var peakLogons = 0
+        var onServiceCall: (Socket, SteamPacket) -> Unit = { _, _ -> }
         private var lostReply = false
         private val attempts = mutableMapOf<String, Int>()
         override fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket {
@@ -193,6 +246,9 @@ class SteamCmNetworkSimulationTest {
             override fun send(text: String) = false
             override fun send(bytes: ByteString): Boolean {
                 if (cancelled) return false
+                if (SteamPacketCodec.peekBaseMessageId(bytes.toByteArray()) == SteamPacketCodec.emsgServiceMethodCallFromClient) {
+                    onServiceCall(this, SteamPacketCodec.decode(bytes.toByteArray()))
+                }
                 if (SteamPacketCodec.peekBaseMessageId(bytes.toByteArray()) == SteamPacketCodec.emsgClientLogon) {
                     logons++
                     activeLogons++

@@ -1,5 +1,6 @@
 package top.apricityx.workshop.steam.protocol
 
+import java.net.InetAddress
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLHandshakeException
@@ -58,15 +59,18 @@ class SteamCmTransportFaultTest {
         val serverCertificates = HandshakeCertificates.Builder().heldCertificate(certificate).build()
         MockWebServer().use { server ->
             server.useHttps(serverCertificates.sslSocketFactory())
-            server.start()
-            val client = OkHttpClient.Builder().build() // No test CA added: must reject self-signed certificate.
+            // A second localhost address can fail with ECONNREFUSED and hide the TLS rejection.
+            val loopback = InetAddress.getByAddress("localhost", byteArrayOf(127, 0, 0, 1))
+            server.start(loopback, 0)
+            val client = OkHttpClient.Builder().dns(Dns { listOf(loopback) }).build() // No test CA.
             withClient(client) {
                 val selector = SteamCmServerSelector(SteamWebSocketFactory(client::newWebSocket))
                 OkHttpSteamCmSession(client, serverSelector = selector).use { session ->
                     val node = CmServer("localhost:${server.port}", "websockets", server.url("/cmsocket/").toString())
                     val error = runCatching { withTimeout(5_000) { session.connect(listOf(node)) } }.exceptionOrNull()
                     assertTrue("TLS rejection must not become success: $error", error is SteamProtocolException)
-                    assertTrue(generateSequence(error) { it.cause }.any { it is SSLHandshakeException })
+                    val causes = generateSequence(error) { it.cause }.toList()
+                    assertTrue("Expected a TLS handshake rejection, got $causes", causes.any { it is SSLHandshakeException })
                     assertNull(session.currentSession.value)
                     assertEquals(0, server.requestCount)
                 }

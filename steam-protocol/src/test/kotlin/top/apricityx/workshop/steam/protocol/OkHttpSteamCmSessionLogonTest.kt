@@ -109,7 +109,9 @@ class OkHttpSteamCmSessionLogonTest {
             webSocketFactory = factory, serverSelector = selector,
             onAccountLogonFailure = { _, _ -> notices++ },
         ).use { session ->
-            assertTrue(runCatching { session.connectWithRefreshToken(servers, account) }.exceptionOrNull() is TimeoutCancellationException)
+            val failure = runCatching { session.connectWithRefreshToken(servers, account) }.exceptionOrNull()
+            assertTrue(failure is SteamProtocolException && failure.isCmLogonFailure)
+            assertTrue(failure?.cause is java.net.SocketTimeoutException)
             assertEquals(1, factory.logons)
             assertTrue(factory.sockets.single().cancelled)
             assertNull(session.currentSession.value)

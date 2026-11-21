@@ -23,7 +23,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.coroutineScope
@@ -36,7 +35,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
@@ -189,7 +187,7 @@ class OkHttpSteamCmSession(
         buildBody: () -> CMsgClientLogon,
         headerSteamId: Long,
     ): SessionContext = try {
-        withTimeout(serverSelector?.selectionAndLogonTimeoutMs ?: 180_000L) {
+        withCmDeadline(serverSelector?.selectionAndLogonTimeoutMs ?: 180_000L, "CM logon") {
             logonSelectedServers(servers, requestLabel, buildBody, headerSteamId)
         }
     } catch (error: Exception) {
@@ -225,7 +223,7 @@ class OkHttpSteamCmSession(
                 closeTransport()
                 // A local request timeout can use another CM; cancellation of the caller cannot.
                 currentCoroutineContext().ensureActive()
-                if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                if (error is CancellationException) throw error
                 val recoverable = if (error is SteamAuthenticationException) error.resultCode == 20
                     else isRecoverableConnectionFailure(error)
                 if (!recoverable) throw error
@@ -250,7 +248,7 @@ class OkHttpSteamCmSession(
             return
         }
         try {
-            withTimeout(serverSelector?.selectionAndLogonTimeoutMs ?: 180_000L) {
+            withCmDeadline(serverSelector?.selectionAndLogonTimeoutMs ?: 180_000L, "CM connect") {
                 ensureSelectedConnected(servers)
             }
         } catch (error: Exception) {
@@ -272,7 +270,7 @@ class OkHttpSteamCmSession(
             } catch (error: Exception) {
                 closeTransport()
                 currentCoroutineContext().ensureActive()
-                if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                if (error is CancellationException) throw error
                 serverSelector?.failed(selectionScope, server)
                 lastError = error
             }
@@ -295,7 +293,7 @@ class OkHttpSteamCmSession(
             } catch (error: Exception) {
                 closeTransport()
                 currentCoroutineContext().ensureActive()
-                if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                if (error is CancellationException) throw error
                 selector.failed(selectionScope, preferred)
                 false
             }
@@ -396,7 +394,7 @@ class OkHttpSteamCmSession(
             if (transportGeneration.get() != generation || deferred.isCompleted && currentServer == null) socket.cancel()
             else webSocket = socket
         }
-        withTimeout(serverSelector?.probeTimeoutMs ?: REQUEST_TIMEOUT_MS) { deferred.await() }
+        withCmDeadline(serverSelector?.probeTimeoutMs ?: REQUEST_TIMEOUT_MS, "CM websocket") { deferred.await() }
     }
 
     private fun sendHello() {
@@ -435,7 +433,7 @@ class OkHttpSteamCmSession(
                 throw error
             }
         }
-        return withTimeout(REQUEST_TIMEOUT_MS) { logon.await() }
+        return withCmDeadline(REQUEST_TIMEOUT_MS, "ClientLogon") { logon.await() }
     }
 
     private fun handleIncomingPacket(rawPacket: ByteArray) {
@@ -546,7 +544,7 @@ class OkHttpSteamCmSession(
         methodName: String,
         request: MessageLite,
         parser: Parser<T>,
-    ): T = retryRecoverableRequest {
+    ): T = retryRecoverableRequest { preventReplay ->
         if (webSocket == null) {
             throw SteamProtocolException("Steam CM session is not connected")
         }
@@ -579,16 +577,16 @@ class OkHttpSteamCmSession(
             body = request,
         )
 
-        if (webSocket?.send(packet.toByteString()) != true) {
-            pendingRequests.remove(sourceJobId)
-            throw SteamProtocolException("Failed to send Steam service request: $methodName")
-        }
-
         try {
-            withTimeout(REQUEST_TIMEOUT_MS) { response.await() }
-        } catch (error: Throwable) {
+            // Cloud writes have no client idempotency key. Once send is entered, neither a
+            // disconnect nor a missing reply proves Steam did not execute this job.
+            if (methodName.startsWith("Cloud.") && methodName !in replayableCloudReads) preventReplay()
+            if (webSocket?.send(packet.toByteString()) != true) {
+                throw SteamProtocolException("Failed to send Steam service request: $methodName")
+            }
+            withCmDeadline(REQUEST_TIMEOUT_MS, methodName) { response.await() }
+        } finally {
             pendingRequests.remove(sourceJobId)
-            throw error
         }
     }
 
@@ -632,7 +630,7 @@ class OkHttpSteamCmSession(
             throw SteamProtocolException("Failed to send EMsg.$emsg")
         }
         try {
-            withTimeout(REQUEST_TIMEOUT_MS) { response.await() }
+            withCmDeadline(REQUEST_TIMEOUT_MS, "EMsg.$emsg") { response.await() }
         } catch (error: Throwable) {
             pendingRequests.remove(sourceJobId)
             throw error
@@ -706,7 +704,7 @@ class OkHttpSteamCmSession(
             throw SteamProtocolException("Failed to request depot decryption key for depot=$depotId")
         }
 
-        val body = withTimeout(REQUEST_TIMEOUT_MS) { response.await() }
+        val body = withCmDeadline(REQUEST_TIMEOUT_MS, "ClientGetDepotDecryptionKey") { response.await() }
         if (body.eresult != 1) {
             throw SteamProtocolException(
                 "Steam depot key request failed for depot=$depotId app=$appId with EResult=${body.eresult}",
@@ -760,7 +758,7 @@ class OkHttpSteamCmSession(
             throw SteamProtocolException("Failed to request Steam app product info for app=$appId")
         }
 
-        val body = withTimeout(REQUEST_TIMEOUT_MS) { response.await() }
+        val body = withCmDeadline(REQUEST_TIMEOUT_MS, "ClientPICSProductInfo") { response.await() }
         if (body.unknownAppidsList.any { it.toUInt() == appId }) {
             throw SteamProtocolException("Steam product info returned unknown app=$appId")
         }
@@ -893,15 +891,17 @@ class OkHttpSteamCmSession(
         }
     }
 
-    private suspend fun <T> retryRecoverableRequest(block: suspend () -> T): T {
+    private suspend fun <T> retryRecoverableRequest(block: suspend (preventReplay: () -> Unit) -> T): T {
         var shouldRetry = true
         while (true) {
+            currentCoroutineContext().ensureActive()
             checkOpen()
             (reconnectPlan as? ReconnectPlan.RefreshToken)?.let { checkAccount(it.account) }
             val generation = transportGeneration.get()
             try {
-                return block()
+                return block { shouldRetry = false }
             } catch (error: Throwable) {
+                currentCoroutineContext().ensureActive()
                 if (!shouldRetry || !isRecoverableConnectionFailure(error)) {
                     throw error
                 }
@@ -922,7 +922,6 @@ class OkHttpSteamCmSession(
         when (error) {
             is SteamServiceMethodException -> false
             is SteamAuthenticationException -> false
-            is TimeoutCancellationException -> true
             is IOException -> true
             is SteamProtocolException -> true
             else -> false
@@ -999,6 +998,12 @@ class OkHttpSteamCmSession(
     }
 
 }
+
+private val replayableCloudReads = setOf("Cloud.GetAppFileChangelist#1", "Cloud.ClientFileDownload#1")
+
+// withTimeoutOrNull consumes only this deadline. Parent cancellation is propagated unchanged.
+private suspend fun <T : Any> withCmDeadline(ms: Long, operation: String, block: suspend () -> T): T =
+    withTimeoutOrNull(ms) { block() } ?: throw java.net.SocketTimeoutException("Timed out waiting for $operation")
 
 private fun <T> CompletableDeferred<T>.completeIfNeeded(value: T) {
     if (!isCompleted) {
