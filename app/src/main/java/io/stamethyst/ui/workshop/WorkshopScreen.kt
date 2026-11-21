@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -121,7 +120,6 @@ import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.backend.workshop.WorkshopModCategory
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.backend.workshop.isActiveDownload
-import io.stamethyst.ui.AppSearchBar
 import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.LauncherBannerTitleRow
 import io.stamethyst.ui.launcherBannerExpandedHeight
@@ -329,6 +327,7 @@ internal fun WorkshopScreen(
                             sort = sort,
                             timeFilter = timeFilter,
                             category = category,
+                            searchHistoryEnabled = active,
                             onQueryChange = { query = it },
                             onSearch = ::searchWithPopularAllTime,
                             onOpenDetailsById = { publishedFileId ->
@@ -504,6 +503,8 @@ internal fun WorkshopScreen(
                             sort = sort,
                             timeFilter = timeFilter,
                             category = category,
+                            searchHistoryEnabled = active && !aiMode &&
+                                LocalLauncherBannerCollapseFraction.current == 0f,
                             onQueryChange = { query = it },
                             onSearch = ::searchWithPopularAllTime,
                             onOpenDetailsById = { publishedFileId ->
@@ -846,53 +847,32 @@ private fun SearchPanel(
     sort: WorkshopBrowseSort,
     timeFilter: WorkshopBrowseTimeFilter,
     category: WorkshopModCategory,
+    searchHistoryEnabled: Boolean,
     onQueryChange: (String) -> Unit,
     onSearch: (String) -> Unit,
     onOpenDetailsById: (ULong) -> Unit,
     onSortChange: (WorkshopBrowseSort) -> Unit,
     onTimeFilterChange: (WorkshopBrowseTimeFilter) -> Unit,
     onCategoryChange: (WorkshopModCategory) -> Unit,
-    onSearchHistoryExpandedChange: (Boolean) -> Unit = {},
     contained: Boolean = true,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val density = LocalDensity.current
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var timeMenuExpanded by remember { mutableStateOf(false) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
     var openDetailsByIdDialogVisible by rememberSaveable { mutableStateOf(false) }
     var openDetailsByIdText by rememberSaveable { mutableStateOf("") }
     var openDetailsByIdError by rememberSaveable { mutableStateOf<String?>(null) }
-    var searchHistoryExpanded by remember { mutableStateOf(false) }
-    var wasSearchKeyboardVisible by remember { mutableStateOf(false) }
     val context = LocalContext.current.applicationContext
     var searchHistory by remember(context) {
         mutableStateOf(SearchHistoryStore.loadWorkshopSearchHistory(context))
     }
     val invalidWorkshopIdMessage = stringResource(R.string.workshop_download_by_id_invalid)
-    val searchKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
-    fun setSearchHistoryExpanded(expanded: Boolean) {
-        if (searchHistoryExpanded != expanded) {
-            searchHistoryExpanded = expanded
-            onSearchHistoryExpandedChange(expanded)
-        }
-    }
-    LaunchedEffect(searchKeyboardVisible) {
-        if (
-            wasSearchKeyboardVisible &&
-            !searchKeyboardVisible &&
-            searchHistoryExpanded
-        ) {
-            focusManager.clearFocus(force = true)
-            setSearchHistoryExpanded(false)
-        }
-        wasSearchKeyboardVisible = searchKeyboardVisible
-    }
     fun submitSearch(searchQuery: String = query) {
         val normalizedQuery = searchQuery.trim()
         keyboardController?.hide()
-        setSearchHistoryExpanded(false)
+        focusManager.clearFocus()
         if (normalizedQuery.isNotEmpty()) {
             searchHistory = SearchHistoryStore.recordWorkshopSearch(context, normalizedQuery)
         }
@@ -929,10 +909,9 @@ private fun SearchPanel(
                 timeMenuExpanded = timeMenuExpanded,
                 categoryMenuExpanded = categoryMenuExpanded,
                 searchHistory = searchHistory,
-                searchHistoryExpanded = searchHistoryExpanded,
+                searchHistoryEnabled = searchHistoryEnabled,
                 onQueryChange = onQueryChange,
                 onSearch = ::submitSearch,
-                onSearchHistoryExpandedChange = ::setSearchHistoryExpanded,
                 onSearchHistorySelected = { selected ->
                     onQueryChange(selected)
                     submitSearch(selected)
@@ -959,10 +938,9 @@ private fun SearchPanel(
             timeMenuExpanded = timeMenuExpanded,
             categoryMenuExpanded = categoryMenuExpanded,
             searchHistory = searchHistory,
-            searchHistoryExpanded = searchHistoryExpanded,
+            searchHistoryEnabled = searchHistoryEnabled,
             onQueryChange = onQueryChange,
             onSearch = ::submitSearch,
-            onSearchHistoryExpandedChange = ::setSearchHistoryExpanded,
             onSearchHistorySelected = { selected ->
                 onQueryChange(selected)
                 submitSearch(selected)
@@ -1007,10 +985,9 @@ private fun SearchPanelContent(
     timeMenuExpanded: Boolean,
     categoryMenuExpanded: Boolean,
     searchHistory: List<String>,
-    searchHistoryExpanded: Boolean,
+    searchHistoryEnabled: Boolean,
     onQueryChange: (String) -> Unit,
     onSearch: (String) -> Unit,
-    onSearchHistoryExpandedChange: (Boolean) -> Unit,
     onSearchHistorySelected: (String) -> Unit,
     onSearchHistoryDeleted: (String) -> Unit,
     onOpenDetailsByIdClick: () -> Unit,
@@ -1025,17 +1002,14 @@ private fun SearchPanelContent(
         modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        AppSearchBar(
+        WorkshopSearchBar(
             query = query,
             onQueryChange = onQueryChange,
             onSearch = onSearch,
-            expanded = searchHistoryExpanded,
-            onExpandedChange = onSearchHistoryExpandedChange,
             history = searchHistory,
             onHistorySelected = onSearchHistorySelected,
             onHistoryDeleted = onSearchHistoryDeleted,
-            placeholder = stringResource(R.string.workshop_search_placeholder),
-            modifier = Modifier.fillMaxWidth(),
+            historyEnabled = searchHistoryEnabled,
         )
         val filterButtonContentPadding = PaddingValues(horizontal = 8.dp)
         Row(
