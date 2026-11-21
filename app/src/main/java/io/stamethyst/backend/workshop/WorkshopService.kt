@@ -8,7 +8,6 @@ import io.stamethyst.backend.github.preparingHttpRequests
 import io.stamethyst.backend.github.cancelAllHttpCalls
 import io.stamethyst.backend.github.HttpRetrySafety
 import io.stamethyst.backend.github.RouteQueueExhaustedException
-import io.stamethyst.backend.github.RouteRetryQueue
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore.AuthSnapshot
@@ -2172,17 +2171,9 @@ internal class WorkshopService(
         private const val SUBSCRIPTION_VERIFY_DELAY_MS = 750L
         private const val HTTP_TOO_MANY_REQUESTS = 429
         private const val USER_AGENT = "SlayTheAmethyst/Workshop"
-        private val WORKSHOP_READ_ROUTE_QUEUE = RouteRetryQueue(
-            maxRounds = 2,
-            candidateTimeoutMs = 20_000L,
-            gatewayFailureCodes = setOf(502, 503, 504),
-        )
         // Preserve the background client's 8s total budget but let it reach the next
         // candidate even if the first one does not return any headers.
         private val BROWSE_METADATA_ROUTE_QUEUE = WORKSHOP_READ_ROUTE_QUEUE.copy(candidateTimeoutMs = 3_000L)
-        private fun Request.Builder.withWorkshopReadRouteQueue(
-            queue: RouteRetryQueue = WORKSHOP_READ_ROUTE_QUEUE,
-        ): Request.Builder = tag(RouteRetryQueue::class.java, queue)
         private const val COMMENT_INIT_CALL = "InitializeCommentThread"
         private val sessionIdRegex = Regex(
             """g_sessionID\s*=\s*"([^"]+)"""",

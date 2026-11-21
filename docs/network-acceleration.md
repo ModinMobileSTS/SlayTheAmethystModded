@@ -109,6 +109,20 @@ Steam HTTP callers use the same executor, including workshop details and CDN
 downloads. CM WebSockets retain a separate explicit factory; the HTTP transport
 does not attempt to implement WebSocket upgrades.
 
+Workshop discussion lists accept canonical redirects only to the same file's
+discussion page. A redirect to the Workshop home page or another file rejects
+that route before the URL changes, so the bounded Workshop read queue retries
+the discussion request on the official origin or another Watt node.
+
+Opening an individual Workshop topic uses the canonical `/workshop/filedetails/discussion/`
+address. With Workshop acceleration enabled, the first attempt uses the ordinary Steam
+Community hop with IPv4 addresses from DNSPod HTTPS DNS, retaining Steam's logical `Host`
+and requiring a valid certificate for the hop's TLS name. The new attempt does not send or
+persist Steam cookies. If DNS or the hop fails validation, existing routes remain available;
+`429` on a topic request ends the call without replay. A redirect must keep the same mod and
+topic ID. This does not add the Watt IPv4 Beta relay, change list/reply routing, or guarantee
+an upstream free of rate limits.
+
 ## Regression tests
 
 `RoutedHttpTransportTest` covers ordinary cancellation, deadline/body handling,

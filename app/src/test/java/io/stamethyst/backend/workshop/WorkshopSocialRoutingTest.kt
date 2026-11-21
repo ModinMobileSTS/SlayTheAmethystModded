@@ -11,12 +11,16 @@ import io.stamethyst.backend.github.WattToolkitGithubRouteStore
 import io.stamethyst.backend.github.withWattRouting
 import io.stamethyst.backend.network.AccelerationStrategy
 import io.stamethyst.backend.steamcloud.SteamCommunityWattToolkitRouteProfile
+import java.io.IOException
+import java.net.InetAddress
+import java.net.ProtocolException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -108,6 +112,48 @@ class WorkshopSocialRoutingTest {
         assertEquals("/workshop/filedetails/discussions/${f.FILE_ID}/", server.takeRequest().url.encodedPath)
     }
 
+    @Test fun workshopHomeRedirectRetriesOriginalForumOnDiscoveredAccelerationRoute() = runBlocking {
+        MockWebServer().use { backup ->
+            backup.start()
+            val target = backup.url("/").newBuilder().host("127.0.0.1").build()
+            server.enqueue(MockResponse.Builder().code(302)
+                .addHeader("Location", "https://steamcommunity.com/workshop/").build())
+            server.enqueue(MockResponse.Builder().body("""
+                {"🦓":[{"Items":[{"MatchDomainNames":"steamcommunity.com",
+                    "ForwardDomainNames":"$target","ProxyType":0,"Checked":true}]}]}
+            """.trimIndent()).build())
+            backup.enqueue(MockResponse.Builder().body(f.forumPage()).build())
+            val social = service(
+                officialPayload = null,
+                routeDiscoveryUrl = server.url("/accelerator/projectgroups"),
+            )
+
+            val result = social.discussions(f.FILE_ID.toULong(), language)
+
+            val path = "/sharedfiles/filedetails/discussions/${f.FILE_ID}"
+            assertEquals(f.TOPIC_ID, result.topics.single().id)
+            assertEquals(path, officialRequests.single().url.encodedPath)
+            assertEquals(2, server.requestCount)
+            assertEquals(path, server.takeRequest().url.encodedPath)
+            assertEquals("/accelerator/projectgroups", server.takeRequest().url.encodedPath)
+            assertEquals(1, backup.requestCount)
+            val request = backup.takeRequest()
+            assertEquals(path, request.url.encodedPath)
+            assertEquals(language.requestValue, request.url.queryParameter("l"))
+        }
+    }
+
+    @Test fun redirectToDifferentFileRetriesOriginalForumOnOfficialRoute() = runBlocking {
+        server.enqueue(MockResponse.Builder().code(302)
+            .addHeader("Location", "/workshop/filedetails/discussions/42/").build())
+
+        val result = service(f.forumPage()).discussions(f.FILE_ID.toULong(), language)
+
+        assertEquals(f.TOPIC_ID, result.topics.single().id)
+        assertEquals("/sharedfiles/filedetails/discussions/${f.FILE_ID}", officialRequests.single().url.encodedPath)
+        assertEquals(1, server.requestCount)
+    }
+
     @Test fun malformedMirrorHtmlFallsBackBeforeBeingRecordedAsSuccessful() = runBlocking {
         server.enqueue(MockResponse.Builder().body("<html>Sign in to Steam</html>").build())
         val result = service(f.forumPage()).discussions(f.FILE_ID.toULong(), language)
@@ -138,15 +184,80 @@ class WorkshopSocialRoutingTest {
         assertEquals(mirrorRequest.body!!.utf8(), buffer.readUtf8())
     }
 
-    private fun service(officialPayload: String, enabledProvider: () -> Boolean = { true }): WorkshopSocialService {
-        val target = server.url("/").toString()
+    @Test fun canonicalTopicUsesPreferredIpv4BeforeOrdinaryRoutes() = runBlocking {
+        var attemptedPath = ""
+        server.enqueue(MockResponse.Builder().body(f.topicPage()).build())
+        val social = service(null, preferredRoute = {
+            attemptedPath = it.url.encodedPath
+            preferredTopicRoute()
+        })
+        val legacy = f.topic.copy(url = f.topic.url.replace("/workshop/", "/sharedfiles/"))
+        val details = social.discussionDetails(f.FILE_ID.toULong(), legacy, language)
+        val request = server.takeRequest()
+        assertEquals(f.TOPIC_ID, details.topic.id)
+        assertEquals("/workshop/filedetails/discussion/${f.FILE_ID}/${f.TOPIC_ID}/", attemptedPath)
+        assertEquals(attemptedPath, request.url.encodedPath)
+        assertEquals("steamcommunity.com", request.headers["Host"])
+        assertEquals(null, request.headers["Cookie"])
+        assertEquals(0, officialRequests.size)
+    }
+
+    @Test fun topicRateLimitDoesNotSwitchOrRetryRoutes() = runBlocking {
+        server.enqueue(MockResponse.Builder().code(429).addHeader("Retry-After", "60").build())
+        val social = service(f.topicPage(), preferredRoute = { preferredTopicRoute() })
+
+        val error = runCatching { social.discussionDetails(f.FILE_ID.toULong(), f.topic, language) }.exceptionOrNull()
+
+        assertTrue(error is ProtocolException && error.message.orEmpty().contains("429"))
+        assertEquals(1, server.requestCount)
+        assertTrue(officialRequests.isEmpty())
+    }
+
+    @Test fun topicRedirectToDifferentPostFallsBackOnTheOriginalTopic() = runBlocking {
+        server.enqueue(MockResponse.Builder().code(302)
+            .addHeader("Location", "/workshop/filedetails/discussion/${f.FILE_ID}/42/").build())
+        server.enqueue(MockResponse.Builder().body(f.topicPage()).build())
+        val social = service(f.topicPage(), preferredRoute = { preferredTopicRoute() })
+
+        assertEquals(f.TOPIC_ID, social.discussionDetails(f.FILE_ID.toULong(), f.topic, language).topic.id)
+        assertEquals(2, server.requestCount)
+        val requests = List(2) { server.takeRequest() }
+        assertEquals(1, requests.map { it.url.encodedPath }.distinct().size)
+        assertTrue(officialRequests.isEmpty())
+    }
+
+    @Test fun accelerationDisabledDoesNotResolvePreferredTopicRoute() = runBlocking {
+        val social = service(f.topicPage(), enabledProvider = { false }, preferredRoute = {
+            error("DoH must not be consulted with acceleration disabled")
+        })
+        assertEquals(f.TOPIC_ID, social.discussionDetails(f.FILE_ID.toULong(), f.topic, language).topic.id)
+        assertEquals(1, officialRequests.size)
+        assertEquals(0, server.requestCount)
+    }
+
+    private fun preferredTopicRoute(): WattToolkitGithubRoute = WattToolkitGithubRoute(
+        logicalHosts = setOf("steamcommunity.com"),
+        forwardTargets = listOf(server.url("/").newBuilder().host("unresolvable.invalid").build().toString()),
+        resolvedForwardAddresses = listOf(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))),
+    )
+
+    private fun service(
+        officialPayload: String?,
+        enabledProvider: () -> Boolean = { true },
+        routeDiscoveryUrl: HttpUrl = server.url("/unused-discovery"),
+        preferredRoute: (Request) -> WattToolkitGithubRoute? = { null },
+    ): WorkshopSocialService {
+        val target = server.url("/").newBuilder().host("localhost").build().toString()
         val route = WattToolkitGithubRoute(setOf("steamcommunity.com"), listOf(target))
+        val direct = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build().also(clients::add)
         val resolver = WattToolkitGithubRouteResolver(
             routeProfile = SteamCommunityWattToolkitRouteProfile.copy(
                 bootstrapForwardTargets = listOf(target),
                 // Only replace the physical hop; use production Steam community host matching.
                 bootstrapFakeServerName = "",
             ),
+            client = direct,
+            projectGroupsUrl = routeDiscoveryUrl,
             routeStore = object : WattToolkitGithubRouteStore {
                 override fun load(): PersistedWattToolkitGithubRoute? = null
                 override fun save(route: PersistedWattToolkitGithubRoute) = Unit
@@ -156,14 +267,15 @@ class WorkshopSocialRoutingTest {
             bootstrapRouteProvider = { route },
             accelerationStrategyProvider = { AccelerationStrategy.RMBGAME_FIRST },
         )
-        val direct = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build().also(clients::add)
         val official = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).addInterceptor { chain ->
             officialRequests += chain.request()
+            if (officialPayload == null) throw IOException("Official route unavailable")
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK")
                 .body(officialPayload.toResponseBody()).build()
         }.build().also(clients::add)
         val transport = official.withWattRouting(
-            ExperimentalGithubDirectAccessRuntime(listOf(resolver), direct.hostnameVerifier, direct),
+            ExperimentalGithubDirectAccessRuntime(listOf(resolver), direct.hostnameVerifier, direct,
+                preferredPublicRoute = preferredRoute),
             enabledProvider = enabledProvider,
         )
         val context = object : ContextWrapper(Application()) {

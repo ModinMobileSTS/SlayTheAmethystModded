@@ -444,7 +444,7 @@ internal fun createSteamCloudWattToolkitRuntime(
     requireHttps = true,
     allowInsecureUrl = ::allowsSteamContentCdnHttp,
     accelerationStrategyProvider = accelerationStrategyProvider,
-)
+).copy(preferredPublicRoute = WorkshopTopicIpv4Route()::resolve)
 
 private const val STEAM_CLOUD_DIRECT_ACCESS_CONNECT_TIMEOUT_MS = 8_000L
 private const val STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS = 60_000L

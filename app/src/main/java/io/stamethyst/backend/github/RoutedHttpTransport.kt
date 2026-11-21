@@ -2,6 +2,7 @@ package io.stamethyst.backend.github
 
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.net.Proxy
 import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutionException
@@ -14,6 +15,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.ConnectionPool
 import okhttp3.CookieJar
+import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -101,7 +103,10 @@ class RoutedHttpTransport internal constructor(
     private fun buildRouteClient(route: WattToolkitGithubRoute): OkHttpClient {
         // A frozen DNS table and a separate pool prevent equal fake SNI names on different
         // nodes (Steam store/community in particular) from sharing addresses or connections.
-        val baseDns = runtime.directHttpClient.dns.let { if (it is WattToolkitForwardDns) it.delegate else it }
+        val defaultDns = runtime.directHttpClient.dns.let { if (it is WattToolkitForwardDns) it.delegate else it }
+        val baseDns = if (route.resolvedForwardAddresses.isEmpty()) defaultDns else Dns { host ->
+            if (host in route.forwardHosts) route.resolvedForwardAddresses else defaultDns.lookup(host)
+        }
         val dns = WattToolkitForwardDns(baseDns).apply { register(route) }
         return runtime.directHttpClient.newBuilder()
             .connectTimeout(client.connectTimeoutMillis.toLong(), TimeUnit.MILLISECONDS)
@@ -118,6 +123,7 @@ class RoutedHttpTransport internal constructor(
                 ),
             )
             .apply {
+                if (route.resolvedForwardAddresses.isNotEmpty()) proxy(Proxy.NO_PROXY)
                 if (route.ignoreSslCertVerification) {
                     trustWattToolkitForwardCertificates(route::shouldBypassHostnameVerification)
                 }
@@ -252,6 +258,7 @@ class RoutedHttpTransport internal constructor(
                     else resolver.refreshRouteForHost(host, failed)
                 } },
                 discoverQueueRoutes = { resolver, host -> discover { resolver.discoverRetryQueueRoutes(host) } },
+                resolvePreferredPublicRoute = { request -> discover { runtime.preferredPublicRoute(request) } },
                 executeCandidate = { logical, network, route, candidateTimeoutMs ->
                     checkActive()
                     val call = candidateClient(route, logical.url.host).newCall(network)

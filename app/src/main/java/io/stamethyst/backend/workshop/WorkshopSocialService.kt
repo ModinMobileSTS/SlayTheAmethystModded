@@ -1,8 +1,10 @@
 package io.stamethyst.backend.workshop
 
 import android.util.Log
+import io.stamethyst.backend.github.AcceleratedRedirectPolicy
 import io.stamethyst.backend.github.AcceleratedResponseValidator
 import io.stamethyst.backend.github.HttpRetrySafety
+import io.stamethyst.backend.github.PublicWorkshopTopicRead
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -48,7 +50,17 @@ internal class WorkshopSocialService(
         if (page == 1) {
             val url = "https://steamcommunity.com/sharedfiles/filedetails/discussions/$publishedFileId".toHttpUrl()
                 .newBuilder().addQueryParameter("l", language.requestValue).build()
-            fetch(url, language) { WorkshopSocialParser.discussionPage(it, publishedFileId) }
+            val sameForum = AcceleratedRedirectPolicy { target ->
+                target.isHttps && target.port == url.port &&
+                    target.host == url.host && target.username.isEmpty() && target.password.isEmpty() &&
+                    when (target.encodedPath.removeSuffix("/")) {
+                        url.encodedPath, "/workshop/filedetails/discussions/$publishedFileId" -> true
+                        else -> false
+                    }
+            }
+            fetch(url, language, discussionRedirectPolicy = sameForum) {
+                WorkshopSocialParser.discussionPage(it, publishedFileId)
+            }
         } else {
             val first = previous ?: error("Steam forum context was missing")
             require(first.publishedFileId == publishedFileId && first.forum.feature == publishedFileId.toString())
@@ -67,9 +79,18 @@ internal class WorkshopSocialService(
         topic: WorkshopDiscussionSummary,
         language: SteamLanguagePreference,
     ): WorkshopDiscussionDetails = withContext(Dispatchers.IO) {
-        val raw = WorkshopSocialParser.topicUrl(topic.url, publishedFileId, topic.id) ?: error("Invalid Steam discussion URL")
-        val url = raw.toHttpUrl().newBuilder().addQueryParameter("l", language.requestValue).build()
-        fetch(url, language) { WorkshopSocialParser.discussionDetails(it, publishedFileId, topic) }
+        WorkshopSocialParser.topicUrl(topic.url, publishedFileId, topic.id) ?: error("Invalid Steam discussion URL")
+        val topicPath = "filedetails/discussion/$publishedFileId/${topic.id}"
+        val url = "https://steamcommunity.com/workshop/$topicPath/".toHttpUrl().newBuilder()
+            .addQueryParameter("l", language.requestValue).build()
+        val sameTopic = AcceleratedRedirectPolicy { target ->
+            target.isHttps && target.port == url.port && target.host == url.host &&
+                target.username.isEmpty() && target.password.isEmpty() &&
+                target.encodedPath.removeSuffix("/") in setOf("/workshop/$topicPath", "/sharedfiles/$topicPath")
+        }
+        fetch(url, language, discussionRedirectPolicy = sameTopic, publicTopicRead = true) {
+            WorkshopSocialParser.discussionDetails(it, publishedFileId, topic)
+        }
     }
 
     suspend fun replies(
@@ -97,6 +118,8 @@ internal class WorkshopSocialService(
         url: HttpUrl,
         language: SteamLanguagePreference,
         body: FormBody? = null,
+        discussionRedirectPolicy: AcceleratedRedirectPolicy? = null,
+        publicTopicRead: Boolean = false,
         parse: (String) -> T,
     ): T {
         val request = Request.Builder().url(url)
@@ -115,6 +138,11 @@ internal class WorkshopSocialService(
             .header("Accept-Language", language.acceptLanguageValue)
             .header("User-Agent", "Mozilla/5.0 SlayTheAmethyst-Workshop")
             .apply {
+                if (discussionRedirectPolicy != null) {
+                    tag(AcceleratedRedirectPolicy::class.java, discussionRedirectPolicy)
+                    if (!publicTopicRead) withWorkshopReadRouteQueue()
+                }
+                if (publicTopicRead) tag(PublicWorkshopTopicRead::class.java, PublicWorkshopTopicRead)
                 if (body != null) post(body)
                 if (url.encodedPath.contains("/render/")) header("X-Requested-With", "XMLHttpRequest")
             }.build()

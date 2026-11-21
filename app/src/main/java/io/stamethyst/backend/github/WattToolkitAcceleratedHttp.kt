@@ -135,7 +135,11 @@ internal data class ExperimentalGithubDirectAccessRuntime(
     val forwardDns: WattToolkitForwardDns? = null,
     val requireHttps: Boolean = false,
     val forwardHostnameVerifier: HostnameVerifier = hostnameVerifier,
+    val preferredPublicRoute: (Request) -> WattToolkitGithubRoute? = { null },
 )
+
+/** Request-level opt in; do not replay a rate-limited public read across routes. */
+internal object PublicWorkshopTopicRead
 
 internal object WattToolkitAcceleratedHttp {
     private val runtimeCache = ConcurrentHashMap<String, ExperimentalGithubDirectAccessRuntime>()
@@ -357,6 +361,11 @@ internal fun interface AcceleratedResponseValidator {
     fun validate(response: Response)
 }
 
+internal fun interface AcceleratedRedirectPolicy {
+    /** Whether this resolved logical URL still addresses the requested resource. */
+    fun allows(target: HttpUrl): Boolean
+}
+
 /** Logical-origin routing, retry and redirect policy. Network IO belongs to the owning Call. */
 internal class WattRouteExecutor(
     private val routeResolvers: List<WattToolkitGithubRouteResolver>,
@@ -369,11 +378,13 @@ internal class WattRouteExecutor(
     private val resolve: (WattToolkitGithubRouteResolver, String, Collection<String>?) -> WattToolkitGithubRoute?,
     private val discoverQueueRoutes: (WattToolkitGithubRouteResolver, String) -> List<WattToolkitGithubRoute>,
     private val executeCandidate: (Request, Request, WattToolkitGithubRoute?, Long?) -> Response,
+    private val resolvePreferredPublicRoute: (Request) -> WattToolkitGithubRoute? = { null },
 ) {
     fun execute(initialLogicalRequest: Request): Response {
         var logicalRequest = initialLogicalRequest
         var followUpCount = 0
         var credentialsAllowed = true
+        var triedPreferredPublicRoute = false
         val failedForwardTargets = LinkedHashSet<String>()
         while (true) {
             checkActive()
@@ -381,7 +392,36 @@ internal class WattRouteExecutor(
             val resolver = routeResolvers.firstOrNull { candidate ->
                 !(requireHttps && !logicalRequest.url.isHttps) && candidate.supports(logicalRequest.url.host)
             }
-            val route = resolver?.let { resolve(it, logicalRequest.url.host, null) }
+            val preferred = if (
+                !triedPreferredPublicRoute && resolver != null &&
+                logicalRequest.tag(PublicWorkshopTopicRead::class.java) != null
+            ) {
+                triedPreferredPublicRoute = true
+                try {
+                    resolvePreferredPublicRoute(logicalRequest)?.let { candidate ->
+                        // This path was verified as a guest. Keep the Steam session on the
+                        // existing routes, and leave their route health independent.
+                        val preferredRequest = logicalRequest.newBuilder().removeSensitiveCredentialHeaders().build()
+                        reportRouteEvent(logicalRequest, AcceleratedRouteEvent.ForwardTargetAttempt(
+                            logicalRequest.url.host, candidateTarget(candidate).orEmpty(),
+                        ))
+                        val response = executeCandidate(
+                            preferredRequest, buildNetworkRequest(preferredRequest, candidate),
+                            candidate, PREFERRED_PUBLIC_ROUTE_TIMEOUT_MS,
+                        )
+                        validateCandidateResponse(preferredRequest, response, null, candidate)
+                        reportRouteEvent(logicalRequest, AcceleratedRouteEvent.ForwardTargetSucceeded(
+                            logicalRequest.url.host, candidateTarget(candidate).orEmpty(),
+                        ))
+                        ForwardedExecution(response, candidateTarget(candidate), candidate)
+                    }
+                } catch (error: IOException) {
+                    checkActive()
+                    if (error is ProtocolException) throw error
+                    null
+                }
+            } else null
+            val route = if (preferred == null) resolver?.let { resolve(it, logicalRequest.url.host, null) } else null
             val retryQueue = logicalRequest.tag(RouteRetryQueue::class.java)
                 ?.takeIf { resolver != null && logicalRequest.canReplayHttpRequest() }
             var officialRequestAttempted = false
@@ -392,12 +432,12 @@ internal class WattRouteExecutor(
                     retryQueue?.candidateTimeoutMs,
                 )
             }
-            var effectiveRoute = route
+            var effectiveRoute = preferred?.candidateRoute ?: route
             // Cookies are keyed on the logical URL so they are never handed to the
             // forward target's own hostname.
             val logicalUrl = logicalRequest.url
             val cookieRequest = applyCookieHeader(logicalRequest, logicalUrl, credentialsAllowed)
-            val executed = if (retryQueue != null && resolver != null) {
+            val executed = preferred ?: if (retryQueue != null && resolver != null) {
                 val rounds = retryQueue.attempts(routeCandidates(route, includeOfficial = true), key = ::candidateKey, additional = {
                     checkActive()
                     // Past failures affect preference, not eligibility for this queue.
@@ -451,7 +491,7 @@ internal class WattRouteExecutor(
             }
             var responseTransferred = false
             try {
-                persistResponseCookies(logicalUrl, response)
+                if (preferred == null) persistResponseCookies(logicalUrl, response)
                 if (
                     retryQueue == null && resolver != null && effectiveRoute != null && usedForwardTarget != null &&
                     logicalRequest.canReplayHttpRequest() &&
@@ -520,6 +560,10 @@ internal class WattRouteExecutor(
         if (requireHttps && !url.isHttps && !allowInsecureUrl(url)) {
             throw ProtocolException("HTTPS is required for accelerated request: $url")
         }
+    }
+
+    private companion object {
+        const val PREFERRED_PUBLIC_ROUTE_TIMEOUT_MS = 15_000L
     }
 
     /** Read cookies against the logical origin, never a route's TLS hostname. */
@@ -600,7 +644,7 @@ internal class WattRouteExecutor(
                 if (candidateRoute == null || candidateRoute.isOfficial) {
                     reportRouteEvent(logicalRequest, AcceleratedRouteEvent.OfficialAttempt(logicalHost))
                     val officialResponse = officialRequestExecutor(logicalRequest)
-                    validateCandidateResponse(logicalRequest, officialResponse, retryQueue, official = true)
+                    validateCandidateResponse(logicalRequest, officialResponse, retryQueue, candidateRoute)
                     reportRouteEvent(logicalRequest, AcceleratedRouteEvent.OfficialSucceeded(logicalHost))
                     return ForwardedExecution(
                         response = officialResponse,
@@ -616,7 +660,7 @@ internal class WattRouteExecutor(
                     logicalRequest, buildNetworkRequest(forwardedRequest, candidateRoute),
                     candidateRoute, retryQueue?.candidateTimeoutMs,
                 )
-                validateCandidateResponse(logicalRequest, response, retryQueue, official = false)
+                validateCandidateResponse(logicalRequest, response, retryQueue, candidateRoute)
                 reportRouteEvent(
                     logicalRequest,
                     AcceleratedRouteEvent.ForwardTargetSucceeded(logicalHost, candidateTarget.orEmpty()),
@@ -668,13 +712,28 @@ internal class WattRouteExecutor(
         request: Request,
         response: Response,
         retryQueue: RouteRetryQueue?,
-        official: Boolean,
+        candidateRoute: WattToolkitGithubRoute?,
     ) {
-        // Redirects are checked after following them, not parsed as catalogue JSON.
-        if (response.isRedirect) return
         try {
+            if (response.code == 429 && request.tag(PublicWorkshopTopicRead::class.java) != null) {
+                // A rate limit is not a broken edge. Stop this logical call without warming up
+                // discovery or sending the same request to additional IPs.
+                throw ProtocolException("Steam community rate limited this request (HTTP 429)")
+            }
+            // Validate an opt-in redirect before changing the logical request URL, so a
+            // candidate that redirects away from the resource can still be retried.
+            if (response.isRedirect) {
+                request.tag(AcceleratedRedirectPolicy::class.java)?.let { policy ->
+                    val target = response.redirectTarget(request.url, candidateRoute)
+                    if (target == null || !policy.allows(target)) {
+                        throw IOException("Unexpected redirect for requested resource (HTTP ${response.code})")
+                    }
+                }
+                return
+            }
             request.tag(AcceleratedResponseValidator::class.java)?.validate(response)
             if (retryQueue != null) {
+                val official = candidateRoute == null || candidateRoute.isOfficial
                 if (response.code in retryQueue.gatewayFailureCodes) {
                     val route = if (official) "Official route" else "Forward route"
                     throw IOException("$route unavailable (HTTP ${response.code})")
@@ -1843,6 +1902,7 @@ internal data class WattToolkitGithubRoute(
      * route already forwards the entire domain family.
      */
     val logicalHostSuffixes: Set<String> = emptySet(),
+    val resolvedForwardAddresses: List<InetAddress> = emptyList(),
 ) {
     val forwardHosts: Set<String> = forwardTargets.mapNotNull(::extractForwardHost).toSet()
     val networkHosts: Set<String> = buildSet {
