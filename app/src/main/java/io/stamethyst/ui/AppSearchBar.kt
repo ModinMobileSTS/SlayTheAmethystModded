@@ -29,6 +29,7 @@ internal fun AppSearchBar(
     modifier: Modifier = Modifier,
     searchActionLabel: String = stringResource(R.string.workshop_search_action),
     shape: Shape = SearchBarDefaults.dockedShape,
+    inputFieldModifier: Modifier = Modifier,
 ) {
     DockedSearchBar(
         modifier = modifier
@@ -44,6 +45,7 @@ internal fun AppSearchBar(
                 onSearch = onSearch,
                 expanded = expanded,
                 onExpandedChange = onExpandedChange,
+                modifier = inputFieldModifier,
                 placeholder = { Text(placeholder) },
                 trailingIcon = {
                     TextButton(onClick = { onSearch(query) }) {

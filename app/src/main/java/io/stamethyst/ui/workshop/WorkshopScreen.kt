@@ -213,11 +213,12 @@ internal fun WorkshopScreen(
         animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
         label = "workshopHeaderProgressHeight",
     )
-    // Measure full-sized endpoints, not the intermediate glass height: otherwise the whole
-    // list and transcript relayout on every frame while their header is retracting.
+    // The history expands inside the glass overlay. Only the collapsed search controls reserve
+    // space in the result list; do not feed the animated height of the whole banner back into it.
     var titleHeight by remember { mutableStateOf(102.dp) }
-    var controlsHeight by remember { mutableStateOf(148.dp) }
-    val headerMeasuredHeight = if (showSearchTabs) titleHeight + controlsHeight + headerProgressHeight
+    val searchControlsHeight = remember { WorkshopSearchControlsHeight() }
+    val headerMeasuredHeight = if (useFloatingHeader && state.listMode == WorkshopListMode.Browse)
+        titleHeight + searchControlsHeight.collapsedHeight(density) + headerProgressHeight
         else launcherBannerExpandedHeight(headerPlaceholderHeight)
     val headerContentTopInset = headerMeasuredHeight + 16.dp
     val refreshIndicatorTopInset = headerMeasuredHeight + 8.dp
@@ -327,7 +328,6 @@ internal fun WorkshopScreen(
                             sort = sort,
                             timeFilter = timeFilter,
                             category = category,
-                            searchHistoryEnabled = active,
                             onQueryChange = { query = it },
                             onSearch = ::searchWithPopularAllTime,
                             onOpenDetailsById = { publishedFileId ->
@@ -471,12 +471,12 @@ internal fun WorkshopScreen(
                 hazeState = headerHazeState,
                 shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
                 contentPadding = PaddingValues(0.dp),
-                expandedContentTopPadding = if (showSearchTabs) 0.dp else 14.dp,
+                expandedContentTopPadding = if (showSearchTabs) 0.dp else WorkshopSearchControlsTop,
                 pinnedContent = {
                     val expanded = LocalLauncherBannerCollapseFraction.current == 0f
-                    Box(if (showSearchTabs) Modifier.onSizeChanged {
+                    Box(Modifier.onSizeChanged {
                         if (expanded) titleHeight = with(density) { it.height.toDp() }
-                    } else Modifier) {
+                    }) {
                         WorkshopHeaderPinnedContent(
                             showBackButton = showBackButton,
                             activeDownloadTaskCount = activeDownloadTaskCount,
@@ -495,16 +495,14 @@ internal fun WorkshopScreen(
                     {
                         SearchPanel(
                             modifier = Modifier.then(if (showSearchTabs) Modifier.workshopModeHeader(modeMotion, !aiMode)
-                                .onSizeChanged { controlsHeight = with(density) { it.height.toDp() } }
-                                .padding(top = 14.dp) else Modifier)
-                                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                                .padding(top = WorkshopSearchControlsTop) else Modifier)
+                                .padding(start = 16.dp, end = 16.dp, bottom = WorkshopSearchControlsBottom),
                             query = query,
                             loading = state.browseLoading,
                             sort = sort,
                             timeFilter = timeFilter,
                             category = category,
-                            searchHistoryEnabled = active && !aiMode &&
-                                LocalLauncherBannerCollapseFraction.current == 0f,
+                            searchControlsHeight = searchControlsHeight,
                             onQueryChange = { query = it },
                             onSearch = ::searchWithPopularAllTime,
                             onOpenDetailsById = { publishedFileId ->
@@ -847,7 +845,6 @@ private fun SearchPanel(
     sort: WorkshopBrowseSort,
     timeFilter: WorkshopBrowseTimeFilter,
     category: WorkshopModCategory,
-    searchHistoryEnabled: Boolean,
     onQueryChange: (String) -> Unit,
     onSearch: (String) -> Unit,
     onOpenDetailsById: (ULong) -> Unit,
@@ -855,9 +852,9 @@ private fun SearchPanel(
     onTimeFilterChange: (WorkshopBrowseTimeFilter) -> Unit,
     onCategoryChange: (WorkshopModCategory) -> Unit,
     contained: Boolean = true,
+    searchControlsHeight: WorkshopSearchControlsHeight? = null,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var timeMenuExpanded by remember { mutableStateOf(false) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
@@ -872,7 +869,6 @@ private fun SearchPanel(
     fun submitSearch(searchQuery: String = query) {
         val normalizedQuery = searchQuery.trim()
         keyboardController?.hide()
-        focusManager.clearFocus()
         if (normalizedQuery.isNotEmpty()) {
             searchHistory = SearchHistoryStore.recordWorkshopSearch(context, normalizedQuery)
         }
@@ -909,7 +905,7 @@ private fun SearchPanel(
                 timeMenuExpanded = timeMenuExpanded,
                 categoryMenuExpanded = categoryMenuExpanded,
                 searchHistory = searchHistory,
-                searchHistoryEnabled = searchHistoryEnabled,
+                searchControlsHeight = searchControlsHeight,
                 onQueryChange = onQueryChange,
                 onSearch = ::submitSearch,
                 onSearchHistorySelected = { selected ->
@@ -938,7 +934,7 @@ private fun SearchPanel(
             timeMenuExpanded = timeMenuExpanded,
             categoryMenuExpanded = categoryMenuExpanded,
             searchHistory = searchHistory,
-            searchHistoryEnabled = searchHistoryEnabled,
+            searchControlsHeight = searchControlsHeight,
             onQueryChange = onQueryChange,
             onSearch = ::submitSearch,
             onSearchHistorySelected = { selected ->
@@ -985,7 +981,7 @@ private fun SearchPanelContent(
     timeMenuExpanded: Boolean,
     categoryMenuExpanded: Boolean,
     searchHistory: List<String>,
-    searchHistoryEnabled: Boolean,
+    searchControlsHeight: WorkshopSearchControlsHeight?,
     onQueryChange: (String) -> Unit,
     onSearch: (String) -> Unit,
     onSearchHistorySelected: (String) -> Unit,
@@ -1000,7 +996,7 @@ private fun SearchPanelContent(
 ) {
     Column(
         modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(WorkshopSearchControlsSpacing),
     ) {
         WorkshopSearchBar(
             query = query,
@@ -1009,11 +1005,11 @@ private fun SearchPanelContent(
             history = searchHistory,
             onHistorySelected = onSearchHistorySelected,
             onHistoryDeleted = onSearchHistoryDeleted,
-            historyEnabled = searchHistoryEnabled,
+            inputFieldModifier = searchControlsHeight?.inputModifier ?: Modifier,
         )
         val filterButtonContentPadding = PaddingValues(horizontal = 8.dp)
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().then(searchControlsHeight?.filtersModifier ?: Modifier),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
