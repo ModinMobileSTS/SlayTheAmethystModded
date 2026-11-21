@@ -345,6 +345,10 @@ class AiAgentExecutionService : Service() {
             renewWakeLockIfDue(android.os.SystemClock.elapsedRealtime())
         }
         val executor = AiModAgentExecutor(
+            persistSelection = { id ->
+                checkActive()
+                checkNotNull(conversationStore.selectWorkspace(job.conversationId, id, fromTool = true))
+            },
             requestControl = requestControl,
             context = applicationContext,
             storagePath = job.storagePath,

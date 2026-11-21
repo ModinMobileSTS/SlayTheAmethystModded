@@ -227,6 +227,22 @@ class AgentWorkspaceVirtualPathsTest {
         assertEquals(virtual, result(AgentWorkspaceFileTool(workspace.root).execute(args(virtual))).text("path"))
     }
 
+    @Test fun boundExistingDraftCompilesAndFirstPackagesInPlace() {
+        val (context, jar, original) = fixture()
+        val reopened = AgentPatchModManager.resolvePatchWorkspace(context, "parent", original.patchId, jar)!!
+        val writer = AgentWorkspaceWriteTool(original.root, binding = { reopened.patchId })
+        val path = result(writer.execute("""{"path":"src/demo/Addition.java","content":"package demo; public interface Addition {}"}""")).text("path")
+        assertEquals("/patch_source/${original.patchId}/src/demo/Addition.java", path)
+        val rt = File(RuntimePaths.runtimeRoot(context), "lib/rt.jar").apply { parentFile!!.mkdirs() }
+        zip(rt, mapOf("java/lang/Object.class" to classBytes("java/lang/Object", null)))
+        val compile = BoundRevisionTool(AgentPatchModCompileTool(context, jar, { reopened })) { reopened.patchId }
+        val compiled = result(compile.execute("{}"))
+        assertEquals(compiled.toString(), "compiled", compiled.text("status"))
+        val pack = BoundRevisionTool(AgentPatchModPackageTool(context, jar) { reopened }) { reopened.patchId }
+        assertEquals(original.patchId, result(pack.execute("{}")).text("patch_id"))
+        assertEquals(listOf(original.patchId), original.patchRoot.parentFile!!.list()!!.toList())
+    }
+
     private fun fixture(): Triple<ContextWrapper, File, AgentPatchWorkspace> {
         val root = temporary.newFolder()
         val context = object : ContextWrapper(Application()) {

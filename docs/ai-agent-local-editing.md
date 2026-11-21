@@ -8,7 +8,7 @@
 
 参数：
 
-- `path`：以模组工作区为固定 `/` 的虚拟路径，例如 `/patch_source/patch-123/src/demo/Patch.java`。兼容省略前导 `/`，但不相对于活动 patch 解析。
+- `path`：完整虚拟路径（如 `/patch_source/patch-123/src/demo/Patch.java`）始终指向原补丁；`src/demo/Patch.java` 等普通相对路径指向本会话绑定的工作区。`source/`、`patch_source/`、`tool_output/` 开头的旧路径仍按虚拟根解析。未绑定时不可写入。
 - `old_text`：必须非空、按字面精确匹配且只出现一次（重叠匹配也算多匹配）。
 - `new_text`：替换文本；空字符串表示删除这一段。
 - `expected_sha256`：可选的完整文件版本哈希，推荐传入最近 read/edit 返回的 `sha256`；冲突不写入。
@@ -45,7 +45,7 @@
 ```
 
 - list/read/glob/grep/write/edit/delete 的返回路径、骨架生成的 `path`、反编译缓存的 `source_path`、创建/列举 patch 的 `patch_workspace_path` 统一为虚拟绝对路径，可以原样跨工具传递。
-- 不提供 `cd`，活动 patch 只影响默认编译/打包目标，不影响路径寻址。`src/A.java` 不会猜测为当前 patch 下的源码。glob pattern（包括带 `path` scope 时）仍从虚拟根匹配；支持可选前导 `/`。
+- 聊天栏文件夹或独立调用 `switch_agent_workspace(patch_id)` 选择当前会话的补丁；只读问答不必绑定。`src/A.java` 在已绑定的补丁内解析，旧的完整路径始终指向原处，跨补丁写入会报错。glob pattern（包括带 `path` scope 时）仍从虚拟根匹配；支持可选前导 `/`。
 - 创建工作区和准备 source 的 `workspace_root` 为 `/`，不向模型输出设备物理根路径。package/update 返回 `jar_name` 和 `patch_workspace_path`，不再返回不可由工作区工具访问的物理 `jar_path`。实际 JAR 存储与加载位置不变。
 - 编译诊断中的物理工作区前缀替换为 `/`，preflight 的补丁相对 `.class` 位置扩展为完整虚拟路径；不改写被读取的源码内容。
 - 会话、凭据、metadata 和其他内部目录不属于公开视图；显式读取与遍历都不暴露它们。`/source/` 和 `/tool_output/` 只读；根目录、`/patch_source/` 及单个 patch 根不能通过通用 delete 删除，整个 revision 应使用 `delete_agent_patch_mod`。

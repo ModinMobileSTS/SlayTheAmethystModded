@@ -6,19 +6,26 @@ import java.io.File
 import java.nio.file.Files
 
 /** A fixed, public namespace; never interpret an agent path as an Android filesystem path. */
-internal class AgentWorkspacePaths(root: File) {
+internal class AgentWorkspacePaths(root: File, private val binding: (() -> String?)? = null) {
     private val physicalRoots = listOf(root.absoluteFile.toPath().normalize(), root.canonicalFile.toPath()).distinct()
     private val diagnosticRoots = (listOf(root.absolutePath) + physicalRoots.map { it.toString() }).distinct()
     private val root = root.canonicalFile
     private val mounts = setOf("source", "patch_source", "tool_output")
 
     fun resolve(path: String, writable: Boolean = false, deleting: Boolean = false): File {
-        val segments = normalize(path)
+        val active = binding?.invoke()
+        // Historical explicit mount paths keep their original meaning. Never redirect A to B.
+        val relative = !path.startsWith("/") && path.substringBefore('/') !in mounts
+        val segments = if (binding != null && relative && active != null) {
+            listOf("patch_source", active) + normalize(path)
+        } else normalize(path)
         val virtual = "/" + segments.joinToString("/")
         if (segments.isNotEmpty() && segments.first() !in mounts) {
-            fail("path_not_exposed", virtual, "Paths start at /. Use /source/, /patch_source/<patch_id>/ or /tool_output/; there is no current patch directory.")
+            fail("path_not_exposed", virtual, "Use /source/, /patch_source/<patch_id>/ or /tool_output/. For patch-relative paths first select a workspace.")
         }
         if (writable) {
+            if (binding != null && active == null)
+                fail("workspace_not_selected", virtual, "Select an existing workspace with switch_agent_workspace, or create one.")
             if (segments.firstOrNull() == "source" || segments.firstOrNull() == "tool_output") {
                 fail("read_only_path", virtual, "This tree is read-only. Write patch files under /patch_source/<patch_id>/ instead.")
             }
@@ -26,6 +33,8 @@ internal class AgentWorkspacePaths(root: File) {
                 fail(if (deleting) "protected_patch_directory" else "incomplete_patch_path", virtual,
                     "Use /patch_source/<patch_id>/<file or subdirectory>. Use delete_agent_patch_mod to remove an entire patch revision.")
             }
+            if (binding != null && segments[1] != active)
+                fail("workspace_mismatch", virtual, "Only /patch_source/$active/ is writable. Switch workspaces first.")
         }
         val lexical = File(root, segments.joinToString("/"))
         val candidate = try { lexical.canonicalFile } catch (_: Exception) {
@@ -47,6 +56,8 @@ internal class AgentWorkspacePaths(root: File) {
                 if (actual.nameCount < 2 || !actual.getName(0).toString().startsWith("patch-")) {
                     fail("unsafe_symlink", virtual, "The resolved path is not a file or subdirectory inside a patch revision.")
                 }
+                if (binding != null && actual.getName(0).toString() != active)
+                    fail("workspace_mismatch", virtual, "Resolved path leaves the selected patch.")
             }
         }
         return candidate

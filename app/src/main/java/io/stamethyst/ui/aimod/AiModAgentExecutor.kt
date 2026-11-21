@@ -42,6 +42,10 @@ import io.stamethyst.backend.llm.AgentWorkspaceGlobTool
 import io.stamethyst.backend.llm.AgentWorkspaceGrepTool
 import io.stamethyst.backend.llm.AgentWorkspaceListTool
 import io.stamethyst.backend.llm.AgentWorkspaceWriteTool
+import io.stamethyst.backend.llm.AgentWorkspaceSelectionTool
+import io.stamethyst.backend.llm.BoundRevisionTool
+import io.stamethyst.backend.mods.AgentWorkspaceCatalog
+import kotlinx.serialization.json.*
 import io.stamethyst.backend.llm.LlmReasoningEffort
 import io.stamethyst.backend.llm.OpenAiCompatibleModelConfig
 import io.stamethyst.backend.llm.PolicyGatedAgentGateway
@@ -77,6 +81,7 @@ internal class AiModAgentExecutor(
     private val requestControl: AgentRequestControl? = null,
     private val modelFactory: (OpenAiCompatibleModelConfig) -> dev.langchain4j.model.chat.ChatModel = AgentChatModelFactory::create,
     private val streamingModelFactory: (OpenAiCompatibleModelConfig) -> dev.langchain4j.model.chat.StreamingChatModel? = AgentChatModelFactory::createStreaming,
+    private val persistSelection: (String?) -> Unit = {},
 ) {
     private val settingsRepository = io.stamethyst.backend.llm.LlmSettingsRepository(context)
     private val workspaceAccessRoot = RuntimePaths.agentModWorkspaceRoot(
@@ -146,8 +151,9 @@ internal class AiModAgentExecutor(
         }
         // Compaction needs visible factual text. Reasoning tokens can consume the summary
         // output budget and leave the provider with an empty or truncated answer.
-        val saved = session.modelContext(assistantMessageId)
-        activePatchWorkspace = saved.activePatchId?.let(::resolveExistingPatchWorkspace)
+        val binding = session.workspaceBinding ?: inferWorkspaceBinding(session) { AgentWorkspaceCatalog.entry(workspaceAccessRoot, it)?.name }
+        activePatchWorkspace = binding.id?.takeUnless { binding.origin == "missing" }?.let(::resolveExistingPatchWorkspace)
+        val saved = session.modelContext(assistantMessageId).copy(activePatchId = activePatchWorkspace?.patchId)
         val registry = AgentToolRegistry(
                 tools = createAgentTools(),
                 policyGate = agentToolPolicyGate,
@@ -276,11 +282,33 @@ internal class AiModAgentExecutor(
         AgentModReadTargets(modId, File(storagePath)) { installedMods }
     }
 
+    private fun bind(workspace: AgentPatchWorkspace?) {
+        persistSelection(workspace?.patchId)
+        activePatchWorkspace = workspace
+        contextManager?.setActivePatch(workspace?.patchId)
+    }
+
+    private fun currentWorkspaceId(): String? = activePatchWorkspace?.takeIf {
+        it.patchRoot.isDirectory && it.patchRoot.canonicalFile ==
+            File(it.root.canonicalFile, "patch_source/${it.patchId}")
+    }?.patchId
+
     private fun createAgentTools(): List<AgentTool> = listOf(
-        AgentWorkspaceListTool(workspaceAccessRoot),
-        AgentWorkspaceFileTool(workspaceAccessRoot),
-        AgentWorkspaceGlobTool(workspaceAccessRoot),
-        AgentWorkspaceGrepTool(workspaceAccessRoot),
+        AgentWorkspaceSelectionTool(choices = {
+            val packaged = AgentPatchModManager.listPackaged(context, modId).mapTo(HashSet()) { it.patchId }
+            buildJsonObject {
+                put("current_patch_id", currentWorkspaceId())
+                put("workspaces", buildJsonArray {
+                    AgentWorkspaceCatalog.list(workspaceAccessRoot).forEach { entry ->
+                        add(buildJsonObject { put("patch_id", entry.id); put("name", entry.name); put("packaged", entry.id in packaged) })
+                    }
+                })
+            }
+        }, select = { id -> resolveExistingPatchWorkspace(id)?.also(::bind) != null }),
+        AgentWorkspaceListTool(workspaceAccessRoot, binding = ::currentWorkspaceId),
+        AgentWorkspaceFileTool(workspaceAccessRoot, binding = ::currentWorkspaceId),
+        AgentWorkspaceGlobTool(workspaceAccessRoot, binding = ::currentWorkspaceId),
+        AgentWorkspaceGrepTool(workspaceAccessRoot, binding = ::currentWorkspaceId),
         AgentSkillTool(context),
         AgentApiSearchTool(context, File(storagePath)),
         AgentApiDescribeTool(context, File(storagePath)),
@@ -288,14 +316,11 @@ internal class AiModAgentExecutor(
             context = context,
             parentModId = modId,
             sourceJar = File(storagePath),
-            onCreated = {
-                activePatchWorkspace = it
-                contextManager?.setActivePatch(it.patchId)
-            },
+            onCreated = ::bind,
         ),
-        AgentWorkspaceWriteTool(workspaceAccessRoot),
-        AgentWorkspaceEditTool(workspaceAccessRoot),
-        AgentWorkspaceDeleteTool(workspaceAccessRoot),
+        AgentWorkspaceWriteTool(workspaceAccessRoot, binding = ::currentWorkspaceId),
+        AgentWorkspaceEditTool(workspaceAccessRoot, binding = ::currentWorkspaceId),
+        AgentWorkspaceDeleteTool(workspaceAccessRoot, binding = ::currentWorkspaceId),
         AgentModSourceDecompileTool(
             context = context,
             parentModId = modId,
@@ -367,22 +392,36 @@ internal class AiModAgentExecutor(
         AgentPatchModDeleteTool(
             context = context,
             parentModId = modId,
-            onDeleted = { LauncherNavigationRequestBus.requestModsRefresh() },
+            onDeleted = { bind(null); LauncherNavigationRequestBus.requestModsRefresh() },
         ),
-    )
+    ).map { tool ->
+        if (tool.safety in setOf(AgentToolSafety.PATCH_COMPILE, AgentToolSafety.PATCH_PACKAGE,
+                AgentToolSafety.PATCH_ENABLE, AgentToolSafety.PATCH_DELETE, AgentToolSafety.PATCH_SMOKE_TEST) ||
+            tool is AgentPatchSkeletonTool) {
+            val treeCheck: (() -> Boolean)? = if (tool.safety == AgentToolSafety.PATCH_COMPILE ||
+                tool.safety == AgentToolSafety.PATCH_PACKAGE) ({
+                activePatchWorkspace?.patchRoot?.let { dir ->
+                    java.nio.file.Files.walk(dir.toPath()).use { entries -> entries.noneMatch(java.nio.file.Files::isSymbolicLink) }
+                } == true
+            }) else null
+            BoundRevisionTool(tool, treeCheck, ::currentWorkspaceId)
+        } else tool
+    }
 
     fun availableTools(): List<AiToolInfo> = createAgentTools()
         .filter(agentToolPolicyGate::allows)
         .map { AiToolInfo(it.specification.name(), agentToolDescriptionRes(it.specification.name())) }
 
     private fun resolveExistingPatchWorkspace(patchId: String): AgentPatchWorkspace? =
-        AgentPatchModManager.resolvePatchWorkspace(context, modId, patchId, File(storagePath))
+        AgentWorkspaceCatalog.entry(workspaceAccessRoot, patchId)?.let {
+            AgentPatchModManager.resolvePatchWorkspace(context, modId, patchId, File(storagePath))
+        }
 }
 
 /** Shared instructions precede Mod/device-specific data so different editors share a long prefix. */
 internal fun buildAiEditorSystemPrompt(modName: String, modId: String): String = """
         You are a safe mod editing assistant inside a mobile launcher.
-        All workspace tools share a fixed virtual filesystem root /. It belongs to the selected parent mod and contains multiple patch revisions. /source/ and /tool_output/ are read-only; only files and subdirectories inside /patch_source/<patch_id>/ are writable. Launcher state, conversations and device files are not exposed. Every returned workspace path starts with / and can be passed unchanged to another workspace tool. Relative inputs also start at /; there is no cd and the active patch never changes path resolution. Never use Android/device absolute paths, and never shorten /patch_source/<patch_id>/src/A.java to src/A.java. Use the exact paths returned by tools; do not guess a patch ID.
+        One conversation binds one writable patch workspace at a time. /source/ and /tool_output/ are read-only; /patch_source/<patch_id>/ paths always refer to that exact revision. Unqualified relative file paths like src/A.java use the bound patch. Call switch_agent_workspace with no arguments to list drafts and packaged revisions, then with patch_id to bind an existing revision. Call it alone, wait for confirmation, then edit, compile or package. Never guess IDs or use device paths. Read-only inspection needs no binding.
         Independent read/search/inspect tool calls may be issued together in one response; the launcher runs parallel-safe tools concurrently. Workspace changes, decompilation, compilation, packaging, activation, deletion, and smoke tests run exclusively in call order. If a call needs an earlier tool's output, wait for that output before choosing its arguments.
         Use workspace tools for listing and reading the patch workspace. source/ is a read-only, on-demand cache; it is not a full extraction of the parent JAR and must never be written or deleted through workspace tools. Use list_agent_mod_entries to discover JAR paths, inspect_agent_class for bytecode metadata, decompile_agent_class for one parent or installed-mod class, decompile_agent_api_class for game/BaseMod/StSLib/dependency classes (pass several names at once; large classes return a member index plus a skeleton, and 'member' reads one body), and read_agent_mod_resource for one resource. patch_source/ is the agent-owned patch tree and is the only directory writable or deletable through workspace tools.
         To find something in the workspace, locate it before reading: use grep_agent_workspace to search file contents by regular expression and glob_agent_workspace to find files by pattern like '**/*.java'. Fall back to list_agent_workspace only when you do not know what to look for; it is capped and lists paths only.
@@ -396,7 +435,7 @@ internal fun buildAiEditorSystemPrompt(modName: String, modId: String): String =
         Prefer edit_agent_workspace_file for small changes to existing text files under the current patch_workspace_path. It replaces exactly one literal old_text with new_text; include enough context to make the match unique. Pass the sha256 from the latest read or edit as expected_sha256 to catch conflicts. Normal text reads include line-number prefixes that are not file content; use encoding=utf8_chars when you need exact text and line endings. On conflict, read the current file and rebuild the edit. Use write_agent_workspace_file for new files, binary files or intentional full replacements, and delete_agent_workspace_file to remove files or directories there with recursive=true when needed. Do not attempt to modify source/ or another patch mod's directory.
         The launcher creates ModTheSpire.json and agent-patch.json in the current patch_source/<patch_id>/ directory. Keep the patch mod's modid and parent dependency intact.
         ModTheSpire resolves dependencies case-sensitively: copy the exact 'modid' text from source/ModTheSpire.json when listing the parent or any dependency, and never change its casing.
-        For a new patch with no suitable existing workspace, call create_agent_patch_workspace first. For any change to an existing patch, inspect or list the existing revisions and continue directly in that revision's patch_source/<patch_id>/ tree; do not create another workspace. After changing an already packaged revision, compile it with its patch_id and call update_agent_patch_mod so the same revision is replaced.
+        For a new patch with no suitable existing workspace, call create_agent_patch_workspace first; it binds the new workspace. To continue an existing draft or packaged patch, first bind it with switch_agent_workspace if it is not current; do not create another workspace. After compiling, use package_agent_patch_mod for a draft, or update_agent_patch_mod for an already packaged revision. Explicit patch_id arguments must match the binding.
         Reuse reliable skill, API, source and target evidence already in context for the current installed versions. Tool guidance to read or inspect before writing requires evidence, not repeated calls: query only when evidence is missing, incomplete, stale, or the relevant target/dependency changed. A follow-up source edit alone does not invalidate installed API or target evidence.
         When the bundled reference is not already available for the current version, read it with read_agent_skill (skill name: basemod-and-stslib) before writing Java against the game, BaseMod, or StSLib. It covers the registration lifecycle and ordering, where each content type is registered, hook names, StSLib keywords, and the mistakes that crash the game when it loads.
         Do not guess an API signature or vanilla method behavior. If current-version evidence is missing, find an unknown type with search_agent_api, confirm the needed overload with describe_agent_api_class, and when behavior matters call decompile_agent_api_class to read the installed game/BaseMod source. Batch independent classes into one call; when a class exceeds the inline cap, read the member index and request the one body you need instead of re-decompiling the class.
@@ -408,12 +447,12 @@ internal fun buildAiEditorSystemPrompt(modName: String, modId: String): String =
         After a successful compile, call package_agent_patch_mod for a new patch or update_agent_patch_mod for an existing revision directly. Both run final bytecode preflight and return diagnostics, including warnings; an independent validate_agent_patch_mod call is optional for standalone diagnostics, not a routine prerequisite. Resolve preflight failures before retrying. If preflight warns that a target lacks an explicit parameter signature, regenerate the affected class with generate_agent_patch_skeleton using the inspected overload, recompile, and update the patch before runtime testing or enabling it.
         When the patch mod is complete, package it with a useful name, semantic version, and description.
         Patch mod names and descriptions must be in Chinese, preserving proper mod names when needed. Keep names short and specific to the main feature or fix; avoid generic names such as 'AI补丁', '测试补丁', or '优化补丁' and do not include the version number. Keep descriptions brief, stating the problem or request addressed and concrete implemented changes without plans or unverified claims. Before packaging or updating, compare the description with the actual patch contents and correct it if they differ. Reuse the existing name unless the patch's purpose changed.
-        To change a patch mod you already packaged, call list_agent_patch_mods to get its patch_id, edit the files under patch_source/<patch_id>/, call compile_agent_patch_source with that patch_id, then call update_agent_patch_mod with the patch_id and a new version. This replaces the same revision and keeps its enabled state; do not create a duplicate patch mod for an update.
+        To change a packaged patch, bind its workspace, edit and compile there, then call update_agent_patch_mod with its patch_id and a new version. This replaces the same revision and keeps its enabled state.
         Packaged patch mods are stored under agent_mods and are loaded by the launcher directly; there is no separate install step.
         After packaging, call smoke_test_agent_patch_mod to launch the game with the patch, the parent mod, the parent mod's prerequisites, and the built-in mods. It succeeds only when the game reaches the main menu; on failure it returns the boot events and log excerpt. If it fails, fix the patch, recompile, update the patch mod, and run it again.
         Call list_installed_mods to see which mods are installed. When the patch is meant to interact with another optional mod, pass its mod_id in smoke_test_agent_patch_mod's mod_ids so the test enables it too; the user's own mod selection is ignored, so this is the only way to verify that combination.
         Ask before enabling a packaged patch mod unless the user explicitly requested activation. Use set_agent_patch_mod_enabled to enable or disable it.
-        Use list_agent_patch_mods to check existing revisions and their enabled state before deciding whether a new workspace is necessary. Do not create a duplicate workspace for an ordinary follow-up modification.
+        Use switch_agent_workspace without arguments to discover drafts as well as packaged workspaces. list_agent_patch_mods shows only packaged revisions and their enabled state. Do not create a duplicate workspace for an ordinary follow-up modification.
         Use delete_agent_patch_mod with a patch_id to remove a patch revision entirely.
         Never claim that a patch mod was created, packaged, updated, enabled, disabled, or deleted until the corresponding tool confirms it.
         Ask before calling delete_agent_patch_mod unless the user explicitly requested the removal.

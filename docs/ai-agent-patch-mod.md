@@ -144,9 +144,21 @@ Scheduler/loop regression tests (no real LLM service or device required):
 The editor exposes these tools for the selected mod workspace:
 
 All workspace tools share a fixed virtual root `/` containing `/source/`, `/patch_source/` (multiple
-revisions), and `/tool_output/`. Returned paths are virtual absolute paths reusable across tools;
-relative inputs also start at `/`, never at the active patch. Launcher state and physical device paths
-are not exposed. See [the virtual path contract](ai-agent-local-editing.md#固定虚拟文件视图).
+revisions), and `/tool_output/`. Returned absolute paths always keep their original target. An
+unqualified relative file path such as `src/A.java` resolves inside the conversation's selected
+patch. Mount-qualified paths such as `source/A.java` retain their older meaning. Only the selected
+patch is writable. See [the virtual path contract](ai-agent-local-editing.md#固定虚拟文件视图).
+
+- `switch_agent_workspace`: call without arguments to list this parent's drafts and packaged
+  workspaces, or pass `patch_id` to bind an existing workspace. Switching must be the only call in
+  the batch. The composer folder picker uses the same persistent binding and permits clearing it
+  while idle. A fresh inspection session can remain unbound. Multiple conversations may select
+  the same patch; the editor's existing single-running-job reservation serializes agent jobs.
+- Upgrade: each conversation gets a nullable binding column in schema v10. The first full load
+  migrates once, after legacy JSON/context import. Prefer saved IDs corroborated by successful
+  actions; infer an unambiguous target only from durable state/structured results, not filenames
+  in prose or read/enable calls. Unavailable and ambiguous targets need a selection before
+  writing. The binding is separate from model checkpoints and conversation rollback.
 
 - `list_agent_workspace`: list materialized and generated files in the public virtual view.
 - `read_agent_workspace_file`: read UTF-8 or base64 content from an exposed workspace file.
@@ -191,8 +203,8 @@ are not exposed. See [the virtual path contract](ai-agent-local-editing.md#固�
   as either `Outer.Inner` or `Outer$Inner`. This is how the agent confirms an overload instead of
   recalling one from training data.
 - `compile_agent_patch_source`: compile Java sources under the active
-  `patch_source/<patch_id>/src/` into Java 8 `.class` files at that patch root. Pass `patch_id` to
-  compile an existing revision that was not created in the current session. See "On-device
+  `patch_source/<patch_id>/src/` into Java 8 `.class` files at that patch root. Bind an existing
+  revision first; explicit `patch_id` must match that binding. See "On-device
   compilation" below.
 - `package_agent_patch_mod`: validate and package the active `patch_source/<patch_id>/` into
   `agent_mods/<modid>/`. Rejects

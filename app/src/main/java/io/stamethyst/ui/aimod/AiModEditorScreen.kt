@@ -211,6 +211,7 @@ internal data class AiEditorSession(
     val revision: Long = 0,
     val context: io.stamethyst.backend.llm.AgentContextState? = null,
     val inbox: List<AiInboxItem> = emptyList(),
+    val workspaceBinding: AiWorkspaceBinding? = null,
 )
 
 internal fun AiEditorSession.hasUserPrompt(): Boolean =
@@ -320,6 +321,26 @@ internal class AiModEditorViewModel(
 
     private val conversationsRoot = RuntimePaths.agentModConversationsRoot(context, parentModSegment)
     private val conversationStore = AiConversationStore(conversationsRoot)
+    suspend fun workspaceChoices() = withContext(storageDispatcher) {
+        val packaged = AgentPatchModManager.listPackaged(context, modId).mapTo(HashSet()) { it.patchId }
+        io.stamethyst.backend.mods.AgentWorkspaceCatalog.list(workspaceAccessRoot).map { it to (it.id in packaged) }
+    }
+
+    fun chooseWorkspace(id: String?) {
+        if (busy || switchingConversation || !storageReady) return
+        val current = sessions.firstOrNull { it.id == currentSessionId } ?: return
+        switchingConversation = true
+        launchStorage {
+            try {
+                // A newly opened blank conversation may not have a DB row until its first send.
+                conversationStore.mutate(current.id, create = current) { it }
+                val next = checkNotNull(conversationStore.selectWorkspace(current.id, id, fromTool = false))
+                withContext(Dispatchers.Main.immediate) { if (currentSessionId == next.id) installSession(next) }
+            } finally {
+                withContext(Dispatchers.Main.immediate) { switchingConversation = false }
+            }
+        }
+    }
     private val storageDispatcher = AiEditorStorage.dispatcher
     private val jobStore = AiAgentJobStore(context, modId)
     var currentSessionId: String by mutableStateOf("")
@@ -1072,12 +1093,11 @@ fun LauncherAiModEditorScreen(
             Modifier.fillMaxSize().padding(bottom = composerHeight),
             contentAlignment = Alignment.Center,
         ) {
-        LazyColumn(
+        AiConversationTranscript(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .hazeSource(state = composerHazeState),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
         ) {
             if (presentation == AiConversationPresentation.EMPTY) {
                 item(key = "prompt-examples") {
@@ -1222,6 +1242,7 @@ fun LauncherAiModEditorScreen(
             attachments = draftAttachments,
             onRemoveAttachment = { draftAttachments.remove(it) },
             onAttach = { picker.launch(arrayOf("text/*", "application/json", "application/octet-stream", "image/*")) },
+            workspaceSelector = { AiWorkspacePicker(viewModel) },
             configured = configured && viewModel.storageReady && !viewModel.switchingConversation,
             busy = viewModel.busy,
             outputTokensPerSecond = outputSpeeds[modId to viewModel.currentSessionId],
@@ -1546,11 +1567,7 @@ internal fun AiMessageCard(
                     }
                 }
                 if (showProgress && message.streaming && !hasCopyContent && message.text.isBlank() && message.thinking.isBlank() && message.parts.isEmpty()) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.padding(vertical = 12.dp).size(18.dp).testTag("ai-assistant-loading"),
-                        strokeWidth = 2.dp,
-                        color = colors.onSurfaceVariant,
-                    )
+                    AiAssistantLoading()
                 }
             }
             if (!message.notice && showFooter) {
@@ -1598,6 +1615,15 @@ internal fun AiMessageCard(
             }
         }
     }
+}
+
+@Composable
+internal fun AiAssistantLoading() {
+    CircularProgressIndicator(
+        modifier = Modifier.padding(vertical = 12.dp).size(18.dp).testTag("ai-assistant-loading"),
+        strokeWidth = 2.dp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

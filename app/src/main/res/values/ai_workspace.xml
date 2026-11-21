@@ -1,0 +1,10 @@
+<resources>
+    <string name="ai_workspace_select">Select workspace</string>
+    <string name="ai_workspace_unbound">No workspace selected</string>
+    <string name="ai_workspace_missing">Workspace unavailable: %1$s</string>
+    <string name="ai_workspace_ambiguous">Choose the workspace to continue editing</string>
+    <string name="ai_workspace_failed">Could not load workspaces</string>
+    <string name="ai_workspace_empty">No patch workspaces for this mod yet.</string>
+    <string name="ai_workspace_packaged">Packaged</string>
+    <string name="ai_workspace_draft">Draft</string>
+</resources>

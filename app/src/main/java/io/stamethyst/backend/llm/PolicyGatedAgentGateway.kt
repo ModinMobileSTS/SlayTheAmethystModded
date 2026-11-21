@@ -322,7 +322,13 @@ class AgentToolRegistry(
         onToolExecution(event)
     }
 
-    fun execute(request: ToolExecutionRequest, checkCancelled: () -> Unit = {}): AgentToolOutput {
+    internal fun rejectMixedWorkspaceBatch(request: ToolExecutionRequest, checkCancelled: () -> Unit) =
+        dispatch(request, checkCancelled, "workspace_switch_must_be_alone")
+
+    fun execute(request: ToolExecutionRequest, checkCancelled: () -> Unit = {}): AgentToolOutput =
+        dispatch(request, checkCancelled, null)
+
+    private fun dispatch(request: ToolExecutionRequest, checkCancelled: () -> Unit, rejection: String?): AgentToolOutput {
         checkCancelled()
         val timer = AgentStepTimer(AgentStepKind.TOOL)
         val event = AgentToolExecutionEvent(
@@ -336,6 +342,7 @@ class AgentToolRegistry(
         val tool = toolsByName[request.name()]
         var executionError = ""
         val output = when {
+            rejection != null -> failure(rejection)
             tool == null -> failure("unknown_tool")
             !policyGate.allows(tool) -> failure("approval_required")
             else -> try {
@@ -419,8 +426,9 @@ class AgentWorkspaceListTool(
     workspaceRoot: File,
     private val maxEntries: Int = DEFAULT_MAX_LIST_ENTRIES,
     private val maxChars: Int = DEFAULT_MAX_LIST_CHARS,
+    binding: (() -> String?)? = null,
 ) : AgentTool {
-    private val paths = AgentWorkspacePaths(workspaceRoot)
+    private val paths = AgentWorkspacePaths(workspaceRoot, binding)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("list_agent_workspace")
         .description(
@@ -430,7 +438,7 @@ class AgentWorkspaceListTool(
         )
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Optional virtual directory; defaults to /. Relative paths also start at /.")
+                .addStringProperty("path", "Optional virtual directory; defaults to /. Unqualified relative paths use the bound patch.")
                 .additionalProperties(false)
                 .build(),
         )
@@ -494,8 +502,9 @@ class AgentWorkspaceFileTool(
     private val maxLines: Int = DEFAULT_MAX_READ_LINES,
     private val maxLineChars: Int = MAX_READ_LINE_CHARS,
     private val maxBytes: Long = DEFAULT_MAX_READ_BYTES,
+    binding: (() -> String?)? = null,
 ) : AgentTool {
-    private val paths = AgentWorkspacePaths(workspaceRoot)
+    private val paths = AgentWorkspacePaths(workspaceRoot, binding)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("read_agent_workspace_file")
         .description(
@@ -512,7 +521,7 @@ class AgentWorkspaceFileTool(
         )
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Virtual path such as /source/demo/A.java or /patch_source/<patch_id>/src/demo/Patch.java. Relative paths also start at /.")
+                .addStringProperty("path", "Full virtual path, or a relative filename inside the bound patch (e.g. src/demo/Patch.java).")
                 .addStringProperty("encoding", "utf8, utf8_chars (lossless character paging), or base64; defaults to utf8.")
                 .addStringProperty(
                     "offset",
@@ -766,8 +775,9 @@ class AgentWorkspaceFileTool(
 class AgentWorkspaceGlobTool(
     workspaceRoot: File,
     private val maxResults: Int = DEFAULT_MAX_GLOB_RESULTS,
+    binding: (() -> String?)? = null,
 ) : AgentTool {
-    private val paths = AgentWorkspacePaths(workspaceRoot)
+    private val paths = AgentWorkspacePaths(workspaceRoot, binding)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("glob_agent_workspace")
         .description(
@@ -779,7 +789,7 @@ class AgentWorkspaceGlobTool(
         .parameters(
             JsonObjectSchema.builder()
                 .addStringProperty("pattern", "Glob matched from / (not relative to path), for example '**/*.java' or '/source/ThMod/**'. A leading / is optional.")
-                .addStringProperty("path", "Optional virtual directory to scope the search; defaults to /. Relative paths also start at /.")
+                .addStringProperty("path", "Optional search directory; defaults to /. Unqualified relative paths use the bound patch.")
                 .required("pattern")
                 .additionalProperties(false)
                 .build(),
@@ -849,8 +859,9 @@ class AgentWorkspaceGrepTool(
     workspaceRoot: File,
     private val maxMatches: Int = DEFAULT_MAX_GREP_MATCHES,
     private val maxLineChars: Int = MAX_GREP_LINE_CHARS,
+    binding: (() -> String?)? = null,
 ) : AgentTool {
-    private val paths = AgentWorkspacePaths(workspaceRoot)
+    private val paths = AgentWorkspacePaths(workspaceRoot, binding)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("grep_agent_workspace")
         .description(
@@ -862,7 +873,7 @@ class AgentWorkspaceGrepTool(
         .parameters(
             JsonObjectSchema.builder()
                 .addStringProperty("pattern", "Java regular expression, for example 'CustomRelic|addCard'.")
-                .addStringProperty("path", "Optional virtual file or directory to scope the search; defaults to /. Relative paths also start at /.")
+                .addStringProperty("path", "Optional search file or directory; defaults to /. Unqualified relative paths use the bound patch.")
                 .addStringProperty("include", "Optional glob applied from / or to the filename, for example '*.java' or '/patch_source/**/*.java'.")
                 .required("pattern")
                 .additionalProperties(false)
@@ -962,14 +973,15 @@ class AgentWorkspaceGrepTool(
 class AgentWorkspaceWriteTool(
     workspaceRoot: File,
     private val maxBytes: Long = 64L * 1024L * 1024L,
+    binding: (() -> String?)? = null,
 ) : AgentTool {
-    private val paths = AgentWorkspacePaths(workspaceRoot)
+    private val paths = AgentWorkspacePaths(workspaceRoot, binding)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("write_agent_workspace_file")
-        .description("Create or replace a file under /patch_source/<patch_id>/ in the selected mod's virtual workspace rooted at /. Prefer edit_agent_workspace_file for small changes to existing text files; use this tool for creation or intentional full replacement. Use the patch_workspace_path returned by create_agent_patch_workspace. /source/ and /tool_output/ are read-only. Paths never depend on the active patch.")
+        .description("Create or replace a file inside the bound patch. Prefer edit_agent_workspace_file for small changes. /source/ and /tool_output/ are read-only.")
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Virtual path under /patch_source/<patch_id>/. Relative paths also start at /, never inside the active patch.")
+                .addStringProperty("path", "Patch-relative path or full /patch_source/<bound_patch_id>/ path.")
                 .addStringProperty("content", "UTF-8 file content.")
                 .addStringProperty("contentBase64", "Binary content encoded as base64.")
                 .required("path")
@@ -1006,8 +1018,9 @@ class AgentWorkspaceWriteTool(
 
 class AgentWorkspaceDeleteTool(
     workspaceRoot: File,
+    binding: (() -> String?)? = null,
 ) : AgentTool {
-    private val paths = AgentWorkspacePaths(workspaceRoot)
+    private val paths = AgentWorkspacePaths(workspaceRoot, binding)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("delete_agent_workspace_file")
         .description(
@@ -1016,7 +1029,7 @@ class AgentWorkspaceDeleteTool(
         )
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Virtual path under /patch_source/<patch_id>/. Relative paths also start at /.")
+                .addStringProperty("path", "Patch-relative path or full /patch_source/<bound_patch_id>/ path.")
                 .addBooleanProperty("recursive", "Delete a non-empty directory and everything under it. Defaults to false.")
                 .required("path")
                 .additionalProperties(false)
@@ -1713,7 +1726,7 @@ class AgentPatchWorkspaceCreateTool(
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("create_agent_patch_workspace")
         .description(
-            "Create a new writable workspace for preparing a patch mod for the selected parent mod. Records an " +
+            "Create and bind a new writable workspace for the selected parent mod. Call alone and wait for confirmation. Records an " +
                 "immutable parent JAR snapshot and prepares an editable patch_source/<patch_id>/ tree without " +
                 "extracting the full original mod. This does " +
                 "not compile, package, install, or enable a mod. Call this once only when the user requests a new " +
@@ -1808,7 +1821,7 @@ class AgentPatchModCompileTool(
                 "Each run replaces the previous class tree, so classes from renamed or deleted sources cannot " +
                 "survive into the package. Debug info (-g) is always emitted because ModTheSpire reads patch " +
                 "parameter names from the LocalVariableTable. " +
-                "Defaults to the current session's patch workspace; pass patch_id to compile an existing revision. " +
+                "Defaults to the bound workspace; to compile a different revision first select it using switch_agent_workspace. " +
                 "The classpath already includes the game jar, ModTheSpire, the required mods, and the parent mod, " +
                 "so imports such as com.megacrit.cardcrawl.*, basemod.* and " +
                 "com.evacipated.cardcrawl.modthespire.lib.* resolve.",
@@ -1817,7 +1830,7 @@ class AgentPatchModCompileTool(
             JsonObjectSchema.builder()
                 .addStringProperty(
                     "patch_id",
-                    "Patch ID of an existing revision to compile; defaults to the current session's workspace.",
+                    "Optional ID of the currently bound revision.",
                 )
                 .additionalProperties(false)
                 .build(),
@@ -2052,7 +2065,7 @@ class AgentPatchSkeletonTool(
         if (targetClass.isBlank() || member.isBlank() || packageName.isBlank() || className.isBlank()) {
             return failure("invalid_arguments")
         }
-        val paths = AgentWorkspacePaths(activeWorkspace.root)
+        val paths = AgentWorkspacePaths(activeWorkspace.root) { activeWorkspace.patchId }
         // Generation is also a workspace mutation: validate its destination before creating a file.
         val destination = try {
             paths.resolve("${paths.virtual(activeWorkspace.patchRoot)}/src/${packageName.replace('.', '/')}/$className.java", writable = true)
@@ -2108,7 +2121,7 @@ class AgentPatchPreflightTool(
                 "run this preflight, so do not routinely call it immediately before them. Checks every ModTheSpire patch annotation " +
                 "against the real target class and rejects missing classes, methods, constructors, and " +
                 "ambiguous or mismatched parameter signatures. Defaults to the current session's patch " +
-                "workspace; pass patch_id to validate an existing revision.",
+                "workspace; switch workspaces before validating another revision.",
         )
         .parameters(
             JsonObjectSchema.builder()
@@ -2571,6 +2584,8 @@ class PolicyGatedAgentGateway(
     /** Stable configuration snapshot; includes endpoint/model/reasoning changes, never logged. */
     private val currentModelConfiguration: (() -> Any)? = null,
     private val onNonStreamingThinking: (String) -> Unit = {},
+    /** Bounded previous chat turns for consumers without a persistent context manager. */
+    private val previousTurns: List<ChatMessage> = emptyList(),
 ) {
     private val toolScheduler = AgentToolScheduler(toolRegistry, maxParallelTools, checkCancelled)
     private val ownsRequestControl = requestControl == null
@@ -2598,7 +2613,7 @@ class PolicyGatedAgentGateway(
       try {
         val messages = if (contextManager != null) mutableListOf() else mutableListOf<ChatMessage>(
             SystemMessage.from(systemPrompt),
-            UserMessage.from(userPrompt),
+            *previousTurns.toTypedArray(), UserMessage.from(userPrompt),
         )
 
         var round = 0

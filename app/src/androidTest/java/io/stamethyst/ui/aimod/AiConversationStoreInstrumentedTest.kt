@@ -28,6 +28,30 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AiConversationStoreInstrumentedTest {
+    @Test fun legacyDraftSurvivesReopenAndExplicitSwitchWinsOverStaleCheckpointAndRollback() {
+        val tmp = newRoot()
+        try {
+            val root = File(tmp, ".conversations/parent").apply { mkdirs() }
+            for (id in listOf("patch-a", "patch-b")) {
+                val dir = File(tmp, "parent/patch_source/$id").apply { mkdirs() }
+                File(dir, "ModTheSpire.json").writeText("{}")
+                File(dir, "agent-patch.json").writeText("""{"parent_mod_id":"Parent","patch_id":"$id","name":"$id"}""")
+            }
+            val old = AiEditorSession("legacy", messages = listOf(AiEditorMessage(1, true, "edit"),
+                AiEditorMessage(2, false, "", tools = listOf(AiToolCall("t", "write_agent_workspace_file", "{}",
+                    result = """{"path":"patch_source/patch-a/src/Test.java","bytes":12}""")))))
+            File(root, "conversations.json").writeText(Json.encodeToString(listOf(old)))
+            val store = AiConversationStore(root)
+            assertEquals("patch-a", store.load("legacy")!!.workspaceBinding?.id)
+            store.selectWorkspace("legacy", "patch-b", false)
+            store.updateContext("legacy", AgentContextState(activePatchId = "patch-a"))
+            store.mutate("legacy") { it.copy(messages = it.messages.take(1), context = null) }
+            assertEquals("patch-b", AiConversationStore(root).load("legacy")!!.workspaceBinding?.id)
+            store.upsertJob(AiAgentJobRecord("job", "legacy", "parent", "Parent", "", 3))
+            assertTrue(runCatching { store.selectWorkspace("legacy", "patch-a", false) }.isFailure)
+            assertEquals("patch-b", store.load("legacy")!!.workspaceBinding?.id)
+        } finally { tmp.deleteRecursively() }
+    }
     @Test fun deletionClearsMessagesContextJobsAndPreventsDelayedWritesOrLegacyResurrection() {
         val root = newRoot()
         try {
@@ -528,7 +552,7 @@ class AiConversationStoreInstrumentedTest {
             legacy.writeText(Json.encodeToString(listOf(session)))
 
             val restored = AiConversationStore(root).load("legacy-session")
-            assertEquals(session, restored)
+            assertEquals(session.copy(workspaceBinding = AiWorkspaceBinding()), restored)
             assertTrue(File(root, "conversations.json.migrated").isFile)
             assertEquals(1, root.listFiles { file -> file.extension == "db" }!!.size)
         } finally {

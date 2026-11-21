@@ -65,6 +65,7 @@ internal fun AiReasoningEffortPicker(
     onConfigure: () -> Unit,
     enabled: Boolean,
     hazeState: HazeState,
+    hazeSourceKey: Any? = null,
 ) {
     // Old "off" omitted the provider parameter. Keep that saved selection until the user
     // explicitly configures new presets; it is not the same wire value as "none".
@@ -120,6 +121,7 @@ internal fun AiReasoningEffortPicker(
                     translationY = (1f - reveal) * 6.dp.toPx()
                 },
                 hazeState = hazeState,
+                hazeSourceKey = hazeSourceKey,
                 shape = RoundedCornerShape(22.dp),
                 shadowElevation = 8.dp,
             ) {

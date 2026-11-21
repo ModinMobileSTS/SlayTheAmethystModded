@@ -70,6 +70,32 @@ class AgentPatchPackagingWorkflowTest {
         assertTrue(AgentPatchModManager.listPackaged(context, "parent").isEmpty())
     }
 
+    @Test fun newConversationSelectsExistingDraftThenPackagesWithoutCopyingAndCannotWritePreviousTarget() {
+        val (context, jar, first) = fixture()
+        val second = AgentPatchModManager.createWorkspace(context, "parent", jar, "Second")
+        var selected: io.stamethyst.backend.mods.AgentPatchWorkspace? = null
+        val current = { selected?.patchId }
+        val select = AgentWorkspaceSelectionTool({ JsonObject(emptyMap()) }) { id ->
+            selected = AgentPatchModManager.resolvePatchWorkspace(context, "parent", id, jar)
+            selected != null
+        }
+        val writer = AgentWorkspaceWriteTool(first.root, binding = current)
+        fun write(path: String) = result(writer.execute("""{"path":"$path","content":"new content"}"""))
+        val pack = BoundRevisionTool(AgentPatchModPackageTool(context, jar) { selected }, current = current)
+        assertEquals("workspace_not_selected", result(pack.execute("{}")).text("error"))
+        assertEquals("selected", result(select.execute("""{"patch_id":"${first.patchId}"}""")).text("status"))
+        assertNull(write("asset.txt").text("error"))
+        assertEquals(first.patchId, result(pack.execute("{}")).text("patch_id"))
+        select.execute("""{"patch_id":"${second.patchId}"}""")
+        assertEquals("workspace_mismatch", write("/patch_source/${first.patchId}/asset.txt").text("error"))
+        assertEquals("workspace_mismatch", result(pack.execute("""{"patch_id":"${first.patchId}"}""")).text("error"))
+        java.nio.file.Files.createSymbolicLink(File(second.patchRoot, "link").toPath(), first.patchRoot.toPath().toAbsolutePath())
+        assertEquals("workspace_mismatch", write("link/asset.txt").text("error"))
+        assertEquals("new content", File(first.patchRoot, "asset.txt").readText())
+        assertFalse(File(second.patchRoot, "asset.txt").exists())
+        assertEquals(2, io.stamethyst.backend.mods.AgentWorkspaceCatalog.list(first.root).size)
+    }
+
     @Test fun failingUpdateLeavesThePackagedJarAndVersionIntact() {
         val (context, jar, workspace) = fixture()
         val packaged = result(AgentPatchModPackageTool(context, jar) { workspace }.execute("""{"version":"1.0.0"}"""))

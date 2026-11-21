@@ -1,0 +1,18 @@
+<resources>
+    <string name="market_ai_title">AI 搜尋</string>
+    <string name="market_ai_ordinary">一般搜尋</string>
+    <string name="market_ai_welcome">想找什麼模組？</string>
+    <string name="market_ai_intro">說說你想找什麼模組？我來幫你搜尋😈</string>
+    <string name="market_ai_example_map">有什麼大型模組推薦？</string>
+    <string name="market_ai_example_touch">有什麼可以提升遊玩體驗的模組？</string>
+    <string name="market_ai_source">符合依據 · 查看原文</string>
+    <string name="market_ai_partial">部分符合 · 查看原文</string>
+    <string name="market_ai_hint">描述需求，或繼續追問…</string>
+    <string name="market_ai_stopped">已停止本次搜尋。</string>
+    <string name="market_ai_configure">前往設定配置 LLM 後搜尋</string>
+    <string name="market_ai_no_verified_answer">未收到有效答覆，請重試。</string>
+    <string name="market_ai_uncited">這則答覆沒有已核對的工作坊引用。</string>
+    <string name="market_ai_search_tool">搜尋工作坊</string>
+    <string name="market_ai_read_tool">讀取模組詳情</string>
+    <string name="market_ai_cite_tool">核對原文引用</string>
+</resources>

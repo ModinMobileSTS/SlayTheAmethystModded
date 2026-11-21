@@ -1,0 +1,18 @@
+<resources>
+    <string name="market_ai_title">AI search</string>
+    <string name="market_ai_ordinary">Regular search</string>
+    <string name="market_ai_welcome">What kind of mod are you looking for?</string>
+    <string name="market_ai_intro">Tell me what kind of mod you want, and I’ll help you find it 😈</string>
+    <string name="market_ai_example_map">What are some big mods you recommend?</string>
+    <string name="market_ai_example_touch">What mods can improve the gameplay experience?</string>
+    <string name="market_ai_source">Match evidence · Read source</string>
+    <string name="market_ai_partial">Partial match · Read source</string>
+    <string name="market_ai_hint">Describe a feature, or ask a follow-up…</string>
+    <string name="market_ai_stopped">Search stopped.</string>
+    <string name="market_ai_configure">Configure your LLM in Settings to search</string>
+    <string name="market_ai_no_verified_answer">No usable answer was returned. Please retry.</string>
+    <string name="market_ai_uncited">This reply has no verified Workshop citation.</string>
+    <string name="market_ai_search_tool">Search Workshop</string>
+    <string name="market_ai_read_tool">Read mod details</string>
+    <string name="market_ai_cite_tool">Verify citation</string>
+</resources>

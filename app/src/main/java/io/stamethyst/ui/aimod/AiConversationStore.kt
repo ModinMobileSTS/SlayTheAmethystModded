@@ -33,6 +33,31 @@ internal class AiConversationStore(root: File) {
     private val root = if (root.extension == "json") root.parentFile ?: root else root
     private val json = Json { ignoreUnknownKeys = true }
     private val contextStorage = AiContextStorage()
+    private val workspaceRoot = File(this.root.parentFile?.parentFile, this.root.name)
+
+    /** Sole writer of explicit binding changes. Context/stream checkpoints never own this column. */
+    fun selectWorkspace(sessionId: String, patchId: String?, fromTool: Boolean): AiEditorSession? {
+        migrateLegacyConversations()
+        return withLockedDatabase(sessionId, create = false) { db ->
+            db.beginWriteTransactionWithRetry()
+            try {
+                if (!fromTool) check(readJobs(db).none { it.status == AiAgentJobStatus.RUNNING }) { "Conversation is running" }
+                val session = readSession(db, sessionId) ?: return@withLockedDatabase null
+                val entry = patchId?.let {
+                    requireNotNull(io.stamethyst.backend.mods.AgentWorkspaceCatalog.entry(workspaceRoot, it)) { "Workspace not found: $it" }
+                }
+                val binding = AiWorkspaceBinding(entry?.id, if (fromTool) "agent" else "user", entry?.name)
+                writeBinding(db, sessionId, binding)
+                bumpRevision(db)
+                db.setTransactionSuccessful()
+                session.copy(workspaceBinding = binding, revision = session.revision + 1)
+            } finally { db.endTransaction() }
+        }
+    }
+
+    private fun writeBinding(db: SQLiteDatabase, id: String, value: AiWorkspaceBinding) {
+        db.execSQL("UPDATE conversation SET workspace_binding = ? WHERE id = ?", arrayOf(json.encodeToString(value), id))
+    }
 
     fun load(): List<AiEditorSession> {
         migrateLegacyConversations()
@@ -49,7 +74,7 @@ internal class AiConversationStore(root: File) {
                     }
                 }
             }
-            .filter { it.first.hasUserPrompt() }
+            .filter { it.first.hasUserPrompt() || it.first.workspaceBinding?.id != null }
             .sortedBy { it.second }
             .map { it.first }
     }
@@ -72,7 +97,7 @@ internal class AiConversationStore(root: File) {
                     null
                 }
             }
-            .filter { it.first.hasUserPrompt() }
+            .filter { it.first.hasUserPrompt() || it.first.workspaceBinding?.id != null }
             .sortedBy { it.second }
             .map { it.first }
     }
@@ -490,6 +515,7 @@ internal class AiConversationStore(root: File) {
             addColumnIfMissing(db, TABLE_MESSAGES, "changed_revision", "INTEGER NOT NULL DEFAULT 0")
             addColumnIfMissing(db, TABLE_CONVERSATION, "context_revision", "INTEGER NOT NULL DEFAULT 0")
             addColumnIfMissing(db, TABLE_CONVERSATION, "inbox_json", "TEXT NOT NULL DEFAULT '[]'")
+            addColumnIfMissing(db, TABLE_CONVERSATION, "workspace_binding", "TEXT")
             // Images ride along with a message as base64 plus a MIME type; older rows stay text.
             addColumnIfMissing(db, TABLE_ATTACHMENTS, COLUMN_MIME, "TEXT NOT NULL DEFAULT 'text/plain'")
             addColumnIfMissing(db, TABLE_ATTACHMENTS, COLUMN_ATTACHMENT_DATA, "TEXT NOT NULL DEFAULT ''")
@@ -727,7 +753,7 @@ internal class AiConversationStore(root: File) {
                 cached[id]?.takeIf { revision <= previous.revision } ?: readMessage(db, id)
             }
         }
-        return AiEditorSession(
+        val session = AiEditorSession(
             id = metadata.id,
             messages = messages,
             title = metadata.title,
@@ -737,7 +763,24 @@ internal class AiConversationStore(root: File) {
                 if (it.moveToFirst()) json.decodeFromString<List<AiInboxItem>>(it.getString(0)) else emptyList()
             },
         )
+        val binding = readBinding(db, metadata.id) ?: inferWorkspaceBinding(session) { id ->
+            io.stamethyst.backend.mods.AgentWorkspaceCatalog.entry(workspaceRoot, id)?.name
+        }.also { writeBinding(db, metadata.id, it) }
+        // A restored backup may contain the conversation but not its patch directory.
+        if (previous == null && binding.id != null && binding.origin != "missing" &&
+            io.stamethyst.backend.mods.AgentWorkspaceCatalog.entry(workspaceRoot, binding.id) == null) {
+            val missing = binding.copy(origin = "missing")
+            writeBinding(db, metadata.id, missing)
+            return session.copy(workspaceBinding = missing)
+        }
+        return session.copy(workspaceBinding = binding)
     }
+
+    private fun readBinding(db: SQLiteDatabase, id: String): AiWorkspaceBinding? =
+        db.rawQuery("SELECT workspace_binding FROM conversation WHERE id = ?", arrayOf(id)).use {
+            check(it.moveToFirst())
+            if (it.isNull(0)) null else json.decodeFromString<AiWorkspaceBinding>(it.getString(0))
+        }
 
     private fun readSessionSummary(db: SQLiteDatabase): AiEditorSession? {
         val metadata = db.queryWindowSafe(
@@ -776,6 +819,7 @@ internal class AiConversationStore(root: File) {
             title = metadata.second,
             revision = metadata.third,
             messages = listOfNotNull(firstMessage),
+            workspaceBinding = readBinding(db, metadata.first),
         )
     }
 
@@ -1163,7 +1207,7 @@ internal class AiConversationStore(root: File) {
     private companion object {
         const val LOG_TAG = "AiModStore"
         /** Bump when [createSchema] changes so existing files are migrated on next open. */
-        const val SCHEMA_VERSION = 9
+        const val SCHEMA_VERSION = 10
         const val DATABASE_EXTENSION = "db"
         const val LEGACY_CONVERSATIONS_FILE = "conversations.json"
         const val LEGACY_JOBS_FILE = "agent_jobs.json"

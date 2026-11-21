@@ -1,0 +1,10 @@
+<resources>
+    <string name="ai_workspace_select">选择工作区</string>
+    <string name="ai_workspace_unbound">未选择工作区</string>
+    <string name="ai_workspace_missing">原工作区不可用：%1$s</string>
+    <string name="ai_workspace_ambiguous">请选择要继续编辑的工作区</string>
+    <string name="ai_workspace_failed">无法读取工作区列表</string>
+    <string name="ai_workspace_empty">这个模组还没有补丁工作区。</string>
+    <string name="ai_workspace_packaged">已打包</string>
+    <string name="ai_workspace_draft">草稿</string>
+</resources>

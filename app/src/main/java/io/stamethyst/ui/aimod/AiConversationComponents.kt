@@ -20,6 +20,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import kotlinx.coroutines.Dispatchers
@@ -80,12 +83,36 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 @Composable
+internal fun AiConversationTranscript(
+    state: LazyListState, modifier: Modifier, contentPadding: PaddingValues = PaddingValues(16.dp),
+    content: LazyListScope.() -> Unit,
+) {
+    LazyColumn(state = state, modifier = modifier, contentPadding = contentPadding, content = content)
+}
+
+@Composable
+internal fun AiConversationInput(
+    draft: String, onDraftChange: (String) -> Unit, placeholder: String,
+    enabled: Boolean, modifier: Modifier = Modifier, maxLines: Int = 6,
+) {
+    val colors = MaterialTheme.colorScheme
+    BasicTextField(value = draft, onValueChange = onDraftChange, enabled = enabled,
+        modifier = modifier.semantics { contentDescription = placeholder },
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface, lineHeight = 24.sp, letterSpacing = 0.sp),
+        cursorBrush = SolidColor(colors.onSurface), maxLines = maxLines,
+        decorationBox = { inner -> Box {
+            if (draft.isEmpty()) Text(placeholder, color = colors.onSurfaceVariant.copy(alpha = 0.6f), style = MaterialTheme.typography.bodyLarge)
+            inner()
+        } })
+}
+
+@Composable
 internal fun AiChatComposer(
     draft: String,
     onDraftChange: (String) -> Unit,
     attachments: List<AiAttachment>,
     onRemoveAttachment: (AiAttachment) -> Unit,
-    onAttach: () -> Unit,
+    onAttach: (() -> Unit)?,
     configured: Boolean,
     busy: Boolean,
     modelName: String,
@@ -107,15 +134,20 @@ internal fun AiChatComposer(
     onReorderInbox: (String, Int) -> Unit = { _, _ -> },
     onCancelInboxEdit: () -> Unit = {},
     outputTokensPerSecond: Double? = null,
-    onExecutionHistory: () -> Unit = {},
+    onExecutionHistory: (() -> Unit)? = null,
     reasoningOptions: List<LlmReasoningEffort> = LlmReasoningEffort.defaults,
     onConfigureEfforts: () -> Unit = {},
     contextCounter: @Composable () -> Unit = {},
+    workspaceSelector: @Composable () -> Unit = {},
+    leadingAction: @Composable () -> Unit = {},
+    placeholder: String = stringResource(R.string.ai_mod_editor_placeholder),
+    draftEnabled: Boolean = configured,
+    allowQueue: Boolean = true,
     modifier: Modifier = Modifier,
+    hazeSourceKey: Any? = null,
 ) {
     var modelMenu by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
-    val placeholder = stringResource(R.string.ai_mod_editor_placeholder)
     Box(
         modifier = modifier.fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -128,6 +160,7 @@ internal fun AiChatComposer(
             modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth()
                 .then(if (inbox.any { it.delivery == AiInboxDelivery.QUEUE }) Modifier.offset(y = (-6).dp) else Modifier),
             hazeState = hazeState,
+            hazeSourceKey = hazeSourceKey,
             shape = RoundedCornerShape(24.dp),
             shadowElevation = 6.dp,
         ) {
@@ -167,28 +200,18 @@ internal fun AiChatComposer(
                         }
                     }
                 }
-                BasicTextField(
-                    value = draft,
-                    onValueChange = onDraftChange,
-                    enabled = configured,
+                workspaceSelector()
+                AiConversationInput(
+                    draft, onDraftChange, placeholder, draftEnabled,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp)
-                        .heightIn(min = 64.dp, max = 160.dp)
-                        .semantics { contentDescription = placeholder },
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface, lineHeight = 24.sp, letterSpacing = 0.sp),
-                    cursorBrush = SolidColor(colors.onSurface),
-                    maxLines = 6,
-                    decorationBox = { innerTextField ->
-                        Box {
-                            if (draft.isEmpty()) Text(placeholder, color = colors.onSurfaceVariant.copy(alpha = 0.6f), style = MaterialTheme.typography.bodyLarge)
-                            innerTextField()
-                        }
-                    },
+                        .heightIn(min = 64.dp, max = 160.dp),
                 )
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    AiMessageAction(Icons.AttachFile, stringResource(R.string.ai_mod_editor_attach), onAttach, configured)
+                    leadingAction()
+                    if (onAttach != null) AiMessageAction(Icons.AttachFile, stringResource(R.string.ai_mod_editor_attach), onAttach, configured)
                     Box(Modifier.weight(1f)) {
-                        AiReasoningEffortPicker(effort, reasoningOptions, onEffortChange, onConfigureEfforts,
-                            enabled = configured, hazeState = hazeState)
+                         AiReasoningEffortPicker(effort, reasoningOptions, onEffortChange, onConfigureEfforts,
+                             enabled = configured, hazeState = hazeState, hazeSourceKey = hazeSourceKey)
                     }
                     val hasContent = draft.isNotBlank() || attachments.isNotEmpty()
                     val sendEnabled = configured && hasContent
@@ -213,7 +236,7 @@ internal fun AiChatComposer(
                             }
                         }
                         AnimatedVisibility(
-                            visible = !busy || hasContent,
+                            visible = !busy || (allowQueue && hasContent),
                             enter = fadeIn(tween(160)) + expandHorizontally(tween(180), expandFrom = Alignment.End),
                             exit = fadeOut(tween(120)) + shrinkHorizontally(tween(180), shrinkTowards = Alignment.End),
                         ) {
@@ -281,7 +304,7 @@ internal fun AiChatComposer(
                         }
                     }
                     contextCounter()
-                    AiHistorySpeedButton(outputTokensPerSecond, onExecutionHistory)
+                    if (onExecutionHistory != null) AiHistorySpeedButton(outputTokensPerSecond, onExecutionHistory)
                 }
             }
         }
@@ -307,12 +330,18 @@ internal fun AiToolCallRow(tool: AiToolCall, streaming: Boolean) {
     var expanded by rememberSaveable(tool.id) { mutableStateOf(false) }
     var enlargedImage by remember { mutableStateOf<AiAttachment?>(null) }
     val colors = MaterialTheme.colorScheme
-    val path by produceState("", tool.arguments) {
+    val argumentPreview by produceState("", tool.name, tool.arguments) {
         value = withContext(Dispatchers.Default) {
+            val previewField = when (tool.name) {
+                "search_workshop" -> "query"
+                "read_workshop", "cite_workshop" -> "id"
+                else -> "path"
+            }
             val parsed = runCatching {
-                Json.parseToJsonElement(tool.arguments).jsonObject["path"]?.jsonPrimitive?.content
+                Json.parseToJsonElement(tool.arguments).jsonObject[previewField]?.jsonPrimitive?.content
             }.getOrNull()
-            withoutPatchId((parsed ?: tool.arguments).take(512))
+            val preview = (parsed ?: tool.arguments).take(512)
+            if (previewField == "path") withoutPatchId(preview) else preview
         }
     }
     val status = stringResource(
@@ -323,7 +352,13 @@ internal fun AiToolCallRow(tool: AiToolCall, streaming: Boolean) {
             else -> R.string.ai_mod_editor_tool_stopped
         },
     )
-    val title = if (tool.name == "read_workspace_file") stringResource(R.string.ai_mod_editor_read_file) else tool.name
+    val title = when (tool.name) {
+        "read_workspace_file" -> stringResource(R.string.ai_mod_editor_read_file)
+        "search_workshop" -> stringResource(R.string.market_ai_search_tool)
+        "read_workshop" -> stringResource(R.string.market_ai_read_tool)
+        "cite_workshop" -> stringResource(R.string.market_ai_cite_tool)
+        else -> tool.name
+    }
     val codeStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, lineHeight = 16.sp)
     Column(Modifier.fillMaxWidth()) {
         Row(
@@ -344,7 +379,7 @@ internal fun AiToolCallRow(tool: AiToolCall, streaming: Boolean) {
                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 1.5.dp, color = colors.onSurfaceVariant)
             }
             Text(title, modifier = Modifier.widthIn(max = 160.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = colors.onSurface)
-            Text(path, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+            Text(argumentPreview, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
             if (tool.failed || (tool.result == null && !streaming)) {
                 Text(status, style = MaterialTheme.typography.labelSmall, color = if (tool.failed) colors.error else colors.onSurfaceVariant)
             }
@@ -356,9 +391,13 @@ internal fun AiToolCallRow(tool: AiToolCall, streaming: Boolean) {
                 tool.imageAttachments.forEach { image ->
                     AiToolImagePreview(image, onClick = { enlargedImage = image })
                 }
-                val chunks by produceState<List<String>>(emptyList(), tool.arguments, tool.result) {
+                val chunks by produceState<List<String>>(emptyList(), tool.name, tool.arguments, tool.result) {
                     value = withContext(Dispatchers.Default) {
-                        splitAiMarkdown(withoutPatchId(tool.arguments), preserveFences = false) +
+                        val arguments = when (tool.name) {
+                            "search_workshop", "read_workshop", "cite_workshop" -> tool.arguments
+                            else -> withoutPatchId(tool.arguments)
+                        }
+                        splitAiMarkdown(arguments, preserveFences = false) +
                             tool.result?.let { splitAiMarkdown(it, preserveFences = false) }.orEmpty()
                     }
                 }

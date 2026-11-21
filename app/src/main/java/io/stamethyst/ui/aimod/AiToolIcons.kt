@@ -10,8 +10,8 @@ import io.stamethyst.ui.icon.Search
 
 @Composable
 internal fun agentToolIcon(name: String): ImageVector = when (name) {
-    "read_workspace_file", "read_agent_workspace_file", "read_agent_mod_resource" -> Icons.Description
-    "search_agent_api", "inspect_agent_class", "list_agent_mod_entries", "inspect_agent_patch_target", "grep_agent_workspace", "glob_agent_workspace" -> Icons.Search
+    "read_workspace_file", "read_agent_workspace_file", "read_agent_mod_resource", "read_workshop" -> Icons.Description
+    "search_agent_api", "inspect_agent_class", "list_agent_mod_entries", "inspect_agent_patch_target", "grep_agent_workspace", "glob_agent_workspace", "search_workshop" -> Icons.Search
     else -> ImageVector.vectorResource(
         when (name) {
             "list_agent_workspace" -> R.drawable.ic_settings_resources
@@ -26,7 +26,7 @@ internal fun agentToolIcon(name: String): ImageVector = when (name) {
             "package_agent_patch_mod" -> R.drawable.ic_inventory
             "update_agent_patch_mod" -> R.drawable.ic_refresh
             "set_agent_patch_mod_enabled" -> R.drawable.ic_check_circle
-            "validate_agent_patch_mod" -> R.drawable.ic_check_circle
+            "validate_agent_patch_mod", "cite_workshop" -> R.drawable.ic_check_circle
             "smoke_test_agent_patch_mod" -> R.drawable.ic_play_arrow
             "read_agent_skill" -> R.drawable.ic_settings_tutorial
             else -> R.drawable.ic_build

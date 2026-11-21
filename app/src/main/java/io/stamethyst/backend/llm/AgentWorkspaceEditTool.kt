@@ -19,8 +19,9 @@ import java.security.MessageDigest
 class AgentWorkspaceEditTool(
     workspaceRoot: File,
     private val maxBytes: Long = MAX_WORKSPACE_TEXT_BYTES,
+    binding: (() -> String?)? = null,
 ) : AgentTool {
-    private val paths = AgentWorkspacePaths(workspaceRoot)
+    private val paths = AgentWorkspacePaths(workspaceRoot, binding)
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("edit_agent_workspace_file")
         .description(
@@ -33,7 +34,7 @@ class AgentWorkspaceEditTool(
         )
         .parameters(
             JsonObjectSchema.builder()
-                .addStringProperty("path", "Virtual path of an existing file under /patch_source/<patch_id>/. Relative paths also start at /, never inside the active patch.")
+                .addStringProperty("path", "Existing file in the bound workspace: use a patch-relative path or its full virtual path.")
                 .addStringProperty("old_text", "Nonempty literal text that must occur exactly once; include context to disambiguate.")
                 .addStringProperty("new_text", "Literal replacement text, preserving the intended line endings; may be empty.")
                 .addStringProperty("expected_sha256", "Optional whole-file SHA-256 from the latest read or successful edit.")

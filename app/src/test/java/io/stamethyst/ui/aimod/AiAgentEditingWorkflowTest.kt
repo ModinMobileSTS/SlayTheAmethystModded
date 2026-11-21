@@ -37,8 +37,8 @@ class AiAgentEditingWorkflowTest {
     @Test fun emittedPromptPrefersLocalEditsAndEvidenceReuseWhileKeepingRuntimeVerification() {
         // These are assertions on the actual prompt output contract, not implementation-source checks.
         val prompt = buildAiEditorSystemPrompt("Parent", "parent")
-        assertTrue(prompt.contains("fixed virtual filesystem root /"))
-        assertTrue(prompt.contains("active patch never changes path resolution"))
+        assertTrue(prompt.contains("Unqualified relative file paths like src/A.java use the bound patch"))
+        assertTrue(prompt.contains("switch_agent_workspace"))
         assertFalse(prompt.contains("/synthetic/workspace"))
         assertTrue(prompt.contains("Prefer edit_agent_workspace_file"))
         assertTrue(prompt.contains("expected_sha256"))

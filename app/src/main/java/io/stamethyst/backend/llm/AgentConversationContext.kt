@@ -373,7 +373,7 @@ class AgentContextManager(
 
     fun requestEstimate(): Int = rawEstimate(state)
 
-    fun setActivePatch(patchId: String) {
+    fun setActivePatch(patchId: String?) {
         state = state.copy(activePatchId = patchId)
         persist()
     }
@@ -440,12 +440,14 @@ class AgentContextManager(
 
     /** Never rewrite an earlier prompt when a workspace is created or selected. */
     private fun appendPatchStateIfNeeded() {
-        val patch = state.activePatchId ?: return
-        if (activeRecords().lastOrNull { it.patchState != null }?.patchState == patch) return
+        val patch = state.activePatchId
+        val previous = activeRecords().lastOrNull { it.patchState != null }?.patchState
+        if (previous.orEmpty() == patch.orEmpty()) return
         state = state.copy(messages = state.messages + AgentContextMessage(
             sourceMessageId, "user",
-            "Launcher state update (not a new user request): Current active patch ID: $patch; workspace: /patch_source/$patch/. The virtual root stays /; file paths never become relative to this patch.",
-            patchState = patch,
+            if (patch == null) "Launcher state update (not a new user request): No writable workspace is selected."
+            else "Launcher state update (not a new user request): Current active patch ID: $patch; workspace: /patch_source/$patch/. Relative file paths use this patch. Explicit virtual paths keep their target.",
+            patchState = patch.orEmpty(),
         ))
     }
 

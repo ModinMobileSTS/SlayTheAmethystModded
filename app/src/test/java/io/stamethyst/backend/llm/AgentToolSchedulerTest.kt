@@ -19,6 +19,15 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 class AgentToolSchedulerTest {
+    @Test fun mixedWorkspaceSwitchRejectsAllCallsWithoutExecutingOrLosingProtocolResults() {
+        val tools = listOf(tool("write") { error("must not write") }, tool(SWITCH_WORKSPACE) { error("must not switch") })
+        val results = mutableListOf<String>()
+        AgentToolScheduler(AgentToolRegistry(tools)).execute(calls("write", SWITCH_WORKSPACE, "write")) { call, r ->
+            assertTrue(r.text.contains("workspace_switch_must_be_alone"))
+            results += call.name()
+        }
+        assertEquals(listOf("write", SWITCH_WORKSPACE, "write"), results)
+    }
     @Test(timeout = 10_000)
     fun parallelCallsOverlapButResultsAndCheckpointsKeepModelOrder() {
         val bothStarted = CountDownLatch(2)

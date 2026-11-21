@@ -47,6 +47,11 @@ class AgentToolScheduler(
             checkActive()
         }
         try {
+            if (requests.size > 1 && requests.any { it.name() == SWITCH_WORKSPACE || it.name() == "create_agent_patch_workspace" }) {
+                // Reject the whole batch, including a write before or after the switch.
+                requests.forEach { onResult(it, registry.rejectMixedWorkspaceBatch(it, checkBatchActive)) }
+                return
+            }
             var index = 0
             while (index < requests.size) {
                 checkActive()
