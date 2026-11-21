@@ -7,6 +7,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.mods.ImportedModPatchRecord
 import io.stamethyst.backend.mods.ImportedModPatchInfo
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
+import io.stamethyst.backend.mods.ModJarManifestParser
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModManifestNameRewriter
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
@@ -259,6 +260,12 @@ internal object ModImportExecutor {
             } else {
                 DuplicateReusePlan()
             }
+            val customName = resolveReplacementName(context, reuse.sourceStoragePaths)
+            // Apply the remark to the staged jar, so a scan cannot cache the publisher's name
+            // between file commit and the rename. Keep a launcher alias if rewriting fails.
+            val remainingAlias = customName?.takeUnless { name ->
+                runCatching { ModManifestNameRewriter.rewriteNameInPlace(workingJar, name) }.isSuccess
+            }.orEmpty()
             val targetName = resolveImportTargetFileName(item, reuse.targetFileName)
             val target = ModManager.resolveStorageFileForImportedMod(context, targetName)
             progress.step(
@@ -343,12 +350,10 @@ internal object ModImportExecutor {
                     oldLocalJarPaths = reuse.sourceStoragePaths,
                     newLocalJarPath = targetPath,
                 )
-                applyDuplicateFileNameAlias(
-                    context = context,
-                    targetPath = targetPath,
-                    reuse = reuse,
-                    decisions = decisions
-                )
+                if (reuse.sourceStoragePaths.isNotEmpty()) {
+                    val updatedAliases = reuse.sourceStoragePaths.associateWith { "" } + (targetPath to remainingAlias)
+                    ModAliasStore.setAliases(context, updatedAliases)
+                }
             }
             progress.step(
                 item = item,
@@ -402,29 +407,27 @@ internal object ModImportExecutor {
         )
     }
 
-    private fun applyDuplicateFileNameAlias(
+    private fun resolveReplacementName(
         context: Context,
-        targetPath: String,
-        reuse: DuplicateReusePlan,
-        decisions: ModImportDecisions
-    ) {
+        sourceStoragePaths: List<String>,
+    ): String? {
+        if (sourceStoragePaths.isEmpty()) return null
         val existingAliases = ModAliasStore.loadAliases(context)
-        val alias = reuse.sourceStoragePaths.firstNotNullOfOrNull { sourcePath ->
-            ModAliasStore.resolveAlias(sourcePath, existingAliases).trim().ifEmpty { null }
-        }.orEmpty()
-        reuse.sourceStoragePaths.forEach { sourcePath ->
-            ModAliasStore.setAlias(context, sourcePath, "")
-        }
-        if (alias.isNotEmpty()) {
-            val targetFile = File(targetPath)
-            val rewritten = targetFile.isFile &&
-                runCatching {
-                    ModManifestNameRewriter.rewriteNameInPlace(targetFile, alias)
-                }.isSuccess
-            if (rewritten) {
-                ModAliasStore.setAlias(context, targetPath, "")
-            } else {
-                ModAliasStore.setAlias(context, targetPath, alias)
+        val patchInfoByPath by lazy { ImportedModPatchRegistry.readAll(context) }
+        return sourceStoragePaths.firstNotNullOfOrNull { sourcePath ->
+            ModAliasStore.resolveAlias(sourcePath, existingAliases).ifBlank { null }?.let {
+                return@firstNotNullOfOrNull it
+            }
+            val manifest = runCatching { ModJarManifestParser.readModManifest(File(sourcePath)) }.getOrNull()
+                ?: return@firstNotNullOfOrNull null
+            // Old renames did not mark the manifest. The recorded import name, if present,
+            // is from before any rename and tells us whether the installed name was customized.
+            val originalName = if (manifest.hasCustomName) null else {
+                ImportedModPatchRegistry.lookupKey(context, sourcePath)?.let(patchInfoByPath::get)
+                    ?.takeIf { ModManager.normalizeModId(it.modId) == manifest.normalizedModId }?.modName
+            }
+            manifest.name.takeIf {
+                manifest.hasCustomName || (!originalName.isNullOrBlank() && it != originalName)
             }
         }
     }

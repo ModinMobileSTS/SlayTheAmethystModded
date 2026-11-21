@@ -133,6 +133,7 @@ internal object ModJarManifestParser {
             description = sanitizeManifestText(description),
             dependencies = dependencies,
             authors = readManifestAuthors(obj),
+            hasCustomName = name.isNotBlank() && obj?.opt(ModManifestNameRewriter.CUSTOM_NAME_KEY) == name,
         )
     }
 

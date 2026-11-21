@@ -29,6 +29,7 @@ internal data class ModManifestNameRewriteResult(
 internal object ModManifestNameRewriter {
     private const val MANIFEST_FILE_NAME = "ModTheSpire.json"
     private const val DEFAULT_NAME_KEY = "name"
+    internal const val CUSTOM_NAME_KEY = "stamethystCustomName"
 
     private data class ManifestEntryPayload(
         val entryName: String,
@@ -67,7 +68,7 @@ internal object ModManifestNameRewriter {
             .orEmpty()
             .trim()
 
-        if (previousName == newName) {
+        if (previousName == newName && manifestObject.opt(CUSTOM_NAME_KEY) == newName) {
             return ModManifestNameRewriteResult(
                 manifestEntryName = payload.entryName,
                 previousName = previousName,
@@ -77,6 +78,7 @@ internal object ModManifestNameRewriter {
         }
 
         manifestObject.put(targetKey, newName)
+        manifestObject.put(CUSTOM_NAME_KEY, newName)
         val updatedJson = when (root) {
             is JSONObject -> root.toString(2)
             is JSONArray -> root.toString(2)

@@ -25,6 +25,7 @@ object ModJarSupport {
         @JvmField val description: String,
         dependencies: List<String>?,
         @JvmField val authors: List<String> = emptyList(),
+        internal val hasCustomName: Boolean = false,
     ) {
         @JvmField
         val dependencies: List<String> = dependencies ?: ArrayList()

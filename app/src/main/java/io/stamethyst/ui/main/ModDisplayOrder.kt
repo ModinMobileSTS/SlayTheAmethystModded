@@ -2,6 +2,7 @@ package io.stamethyst.ui.main
 
 import android.content.Context
 import android.content.SharedPreferences
+import io.stamethyst.backend.mods.resolveReplacedModKey
 import org.json.JSONArray
 
 /** Presentation order only: never changes the game's load priority. */
@@ -17,6 +18,13 @@ internal class ModDisplayOrder(context: Context) {
         preferences.edit().putString("paths", JSONArray(paths).toString()).apply()
     }
 
+    fun rebindInstalledPaths(installedKeys: Set<String>, replacements: Map<String, String>) {
+        if (replacements.isEmpty()) return
+        val previous = read()
+        val updated = rebindModDisplayOrder(previous, installedKeys, replacements)
+        if (updated != previous) save(updated)
+    }
+
     fun observe(onChange: (List<String>) -> Unit): () -> Unit {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == "paths") onChange(read())
@@ -25,6 +33,16 @@ internal class ModDisplayOrder(context: Context) {
         onChange(read())
         return { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
+}
+
+internal fun rebindModDisplayOrder(
+    order: List<String>,
+    installedKeys: Set<String>,
+    replacements: Map<String, String>,
+): List<String> {
+    return order.map { key ->
+        resolveReplacedModKey(key, installedKeys, replacements).takeIf(installedKeys::contains) ?: key
+    }.distinct()
 }
 
 internal fun reorderModPaths(order: List<String>, selected: Set<String>, target: String, after: Boolean): List<String> {

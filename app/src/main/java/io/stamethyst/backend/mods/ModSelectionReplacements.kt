@@ -5,7 +5,7 @@ import io.stamethyst.backend.workshop.WorkshopJsonFileStore
 import java.io.File
 import org.json.JSONObject
 
-/** Remaps saved and in-memory launch selections when an import replaces a jar's storage key. */
+/** Records the storage keys that an import replaces so user state can follow the new jar. */
 internal class ModSelectionReplacementStore(context: Context) {
     private val file = File(context.filesDir, "mod_selection_replacements.json")
 
@@ -37,10 +37,19 @@ internal fun rebindReplacedModSelection(
     installedKeys: Set<String>,
     replacements: Map<String, String>,
 ): Set<String> = selection.mapTo(LinkedHashSet()) { key ->
+    resolveReplacedModKey(key, installedKeys, replacements)
+}
+
+internal fun resolveReplacedModKey(
+    key: String,
+    installedKeys: Set<String>,
+    replacements: Map<String, String>,
+): String {
+    if (key in installedKeys || key !in replacements) return key
     var current = key
     val visited = HashSet<String>()
     while (current !in installedKeys && visited.add(current)) {
         current = replacements[current] ?: break
     }
-    current
+    return current
 }

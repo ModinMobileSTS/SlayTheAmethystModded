@@ -2,6 +2,7 @@ package io.stamethyst.ui.main
 
 import android.content.Context
 import androidx.compose.runtime.Stable
+import io.stamethyst.backend.mods.resolveReplacedModKey
 import io.stamethyst.model.ModItemUi
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
@@ -76,8 +77,8 @@ internal class ModAssociationStore {
 
     fun snapshot(): ModAssociationState = state
 
-    fun sanitize(context: Context, optionalMods: List<ModItemUi>) {
-        val sanitized = sanitizeModAssociationState(state, optionalMods)
+    fun sanitize(context: Context, optionalMods: List<ModItemUi>, replacements: Map<String, String>) {
+        val sanitized = sanitizeModAssociationState(state, optionalMods, replacements)
         if (sanitized != state) {
             state = sanitized
             writeState(context, state)
@@ -258,7 +259,8 @@ internal fun resolveModAssociationKeyCandidates(mod: ModItemUi): Set<String> =
 
 internal fun sanitizeModAssociationState(
     state: ModAssociationState,
-    optionalMods: List<ModItemUi>
+    optionalMods: List<ModItemUi>,
+    replacements: Map<String, String> = emptyMap(),
 ): ModAssociationState {
     if (state.groups.isEmpty()) {
         return state
@@ -274,13 +276,30 @@ internal fun sanitizeModAssociationState(
         return ModAssociationState()
     }
 
+    var rebound = false
     val normalizedGroups = state.groups.map { group ->
         val normalizedKeys = group.modKeys.mapNotNullTo(LinkedHashSet()) { storedKey ->
-            primaryKeyByCandidate[storedKey]
+            val key = resolveReplacedModKey(storedKey, primaryKeyByCandidate.keys, replacements)
+            primaryKeyByCandidate[key]?.also { if (key != storedKey) rebound = true }
         }
         group.copy(modKeys = normalizedKeys)
+    }.filter { it.modKeys.size >= MIN_ASSOCIATION_GROUP_SIZE }
+    if (!rebound) return ModAssociationState(normalizedGroups)
+
+    val mergedGroups = mutableListOf<ModAssociationGroup>()
+    for (group in normalizedGroups) {
+        // Replacing multiple copies can bring two previously separate groups together.
+        val overlapping = mergedGroups.filter { it.modKeys.any(group.modKeys::contains) }
+        val first = overlapping.firstOrNull()
+        if (first == null) {
+            mergedGroups.add(group)
+        } else {
+            val merged = first.copy(modKeys = overlapping.flatMapTo(LinkedHashSet()) { it.modKeys } + group.modKeys)
+            replaceGroup(mergedGroups, merged)
+            mergedGroups.removeAll(overlapping.drop(1).toSet())
+        }
     }
-    return ModAssociationState(normalizedGroups).withoutSingletonGroups()
+    return ModAssociationState(mergedGroups)
 }
 
 private fun ModAssociationState.withoutSingletonGroups(): ModAssociationState =

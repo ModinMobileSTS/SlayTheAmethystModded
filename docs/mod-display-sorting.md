@@ -12,6 +12,11 @@ file timestamp off the UI thread; cards without a known local timestamp go last 
 Equal keys preserve input order. This is a one-time sort: users can still drag cards afterward,
 and later imports do not trigger automatic re-sorting.
 
+When an import replaces an installed mod, its new JAR path takes over the saved display position and
+association memberships. A custom name saved by the launcher also follows the replacement. For
+older remarks written into a JAR without a marker, the launcher can recognize them if it still has
+the original import name; otherwise, saving the remark again before updating marks it for reuse.
+
 The list observes saved display-order changes, so applying a sort updates the visible cards
 without leaving the page. The same action is available in the multi-selection overflow menu;
 it sorts all cards, not just the selection.
