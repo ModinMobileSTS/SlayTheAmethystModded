@@ -17,6 +17,7 @@ import io.stamethyst.backend.llm.AgentQuestionOption
 import io.stamethyst.backend.llm.AgentQuestionRequest
 import io.stamethyst.backend.llm.LlmReasoningEffort
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +25,35 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AiQuestionDockInstrumentedTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun newQuestionSlidesUpIntoTheComposer() {
+        val question = mutableStateOf<AgentQuestionRequest?>(null)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val title = compose.onNodeWithText(context.getString(R.string.ai_question_title))
+        compose.setContent {
+            MaterialTheme {
+                AiChatComposer(
+                    draft = "", onDraftChange = {}, attachments = emptyList(),
+                    onRemoveAttachment = {}, onAttach = null, configured = true, busy = true,
+                    modelName = "test", models = listOf("test"), effort = LlmReasoningEffort.LOW,
+                    onEffortChange = {}, onModelSelect = {}, onStop = {}, onSend = {},
+                    hazeState = rememberHazeState(), onComposerHeightChanged = {}, pendingQuestion = question.value,
+                )
+            }
+        }
+        title.assertDoesNotExist()
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle {
+            question.value = AgentQuestionRequest("motion", listOf(AgentQuestion(
+                "Direction", "Which direction?", listOf(AgentQuestionOption("North", "")),
+            )))
+        }
+        compose.mainClock.advanceTimeBy(64)
+        val enteringY = title.fetchSemanticsNode().boundsInRoot.top
+        compose.mainClock.advanceTimeBy(300)
+        val restingY = title.fetchSemanticsNode().boundsInRoot.top
+        assertTrue("The dock should enter from below its resting position", enteringY > restingY + 1f)
+    }
 
     @Test fun questionDockPreservesDraftAndSubmitsAllPagesOnce() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

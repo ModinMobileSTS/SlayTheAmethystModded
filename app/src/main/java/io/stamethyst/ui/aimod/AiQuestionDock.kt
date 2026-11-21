@@ -1,5 +1,8 @@
 package io.stamethyst.ui.aimod
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,11 +38,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -67,6 +72,10 @@ internal fun AiQuestionDock(
     onReply: (List<List<String>>) -> Boolean,
     onDismiss: () -> Boolean,
 ) = key(request.id) {
+    val entrance = remember { Animatable(0f) }
+    LaunchedEffect(entrance) {
+        entrance.animateTo(1f, tween(durationMillis = 240, easing = LinearOutSlowInEasing))
+    }
     val questions = request.questions
     var page by rememberSaveable { mutableIntStateOf(0) }
     // One mask per question; the option immediately after the model's options is the custom row.
@@ -99,7 +108,14 @@ internal fun AiQuestionDock(
 
     val colors = MaterialTheme.colorScheme
     val typography = MaterialTheme.typography
-    Column(Modifier.fillMaxWidth().heightIn(max = 500.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(
+        Modifier.fillMaxWidth().heightIn(max = 500.dp).graphicsLayer {
+            val progress = entrance.value
+            alpha = progress
+            translationY = 16.dp.toPx() * (1f - progress)
+        },
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Surface(
             modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
             shape = RoundedCornerShape(24.dp),
