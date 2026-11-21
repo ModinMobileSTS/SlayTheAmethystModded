@@ -2531,7 +2531,7 @@
     <string name="settings_game_display_resolution">显示分辨率</string>
     <string name="settings_game_display_resolution_short">决定画面在屏幕上占多大</string>
     <string name="settings_game_render_resolution">渲染分辨率</string>
-    <string name="settings_game_render_resolution_short">按显示比例等比缩放</string>
+    <string name="settings_game_render_resolution_short">决定 GPU 实际渲染的内容清晰度</string>
     <string name="settings_game_resolution_dimensions">%1$d × %2$d</string>
     <string name="settings_game_resolution_approximate">约 %1$s</string>
     <string name="settings_game_resolution_percent">%1$d%%</string>
