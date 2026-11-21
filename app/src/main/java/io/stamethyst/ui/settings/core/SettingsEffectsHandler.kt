@@ -36,6 +36,7 @@ import io.stamethyst.ui.modimport.ModImportRequestBus
 @Composable
 fun SettingsEffectsHandler(
     viewModel: SettingsScreenViewModel,
+    onGameJarImported: () -> Unit,
 ) {
     val activity = requireNotNull(LocalActivity.current)
     val navigator = currentNavigator
@@ -59,7 +60,9 @@ fun SettingsEffectsHandler(
     val sharePerformanceLogsChooserTitle =
         stringResource(R.string.settings_share_performance_logs_chooser_title)
     val importJarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        viewModel.onJarPicked(activity, uri)
+        viewModel.onJarPicked(activity, uri) { imported ->
+            if (imported) onGameJarImported()
+        }
     }
     val importModsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         ModImportRequestBus.requestImport(uris.orEmpty())

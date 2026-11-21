@@ -286,7 +286,8 @@ fun LauncherContent(
     val showOverlayNav = currentRoute.launcherDockIndex() == null || navigator.stackSize > 1
     var forwardPageTransition by remember { mutableStateOf(true) }
     var modsBatchSelectionMode by remember { mutableStateOf(false) }
-    val showAnimatedLauncherDock = showDockPager && !showOverlayNav && !modsBatchSelectionMode
+    val showAnimatedLauncherDock = showDockPager && !showOverlayNav && !modsBatchSelectionMode &&
+        !(dockPageRoute == Route.Workshop && workshopViewModel.aiSearchSelected)
     val launcherDockHazeState = rememberHazeState()
     val launcherBannerHazeState = rememberHazeState()
     val launcherBannerState = remember { LauncherBannerState() }
@@ -492,6 +493,15 @@ fun LauncherContent(
         }
     }
 
+    LaunchedEffect(
+        activity,
+        settingsUiState.renderSurfaceBackend,
+        settingsUiState.rendererSelectionMode,
+        settingsUiState.manualRendererBackend,
+    ) {
+        mainViewModel.syncQuickRendererState(activity)
+    }
+
     LaunchedEffect(currentRoute) {
         val page = currentRoute.launcherDockIndex() ?: return@LaunchedEffect
         if (pendingDockRoute != null && pendingDockRoute != currentRoute) {
@@ -545,7 +555,10 @@ fun LauncherContent(
             settingsViewModel.retrySettingsLoad(activity, domain)
         },
     ) {
-        SettingsEffectsHandler(viewModel = settingsViewModel)
+        SettingsEffectsHandler(
+            viewModel = settingsViewModel,
+            onGameJarImported = { mainViewModel.refresh(activity) },
+        )
         LaunchedEffect(activity) {
             FeedbackInboxCoordinator.bind(activity.applicationContext)
             FeedbackInboxCoordinator.syncOnLauncherStart(activity.applicationContext)
@@ -616,6 +629,7 @@ fun LauncherContent(
                             onOpenWorkshopDetails = ::openWorkshopItemDetails,
                              onOpenInstalledWorkshopDetails = ::openInstalledWorkshopDetails,
                              onOpenAiEditor = ::openAiModEditor,
+                            onMarketLlmSettings = { navigator.push(Route.SettingsLlm) },
                             onCheckEasyTierCompatibilityUpdate = ::checkForEasyTierCompatibilityUpdate,
                             onBatchSelectionModeChange = { modsBatchSelectionMode = it },
                             userScrollEnabled = !modsBatchSelectionMode && !showOverlayNav,
@@ -951,8 +965,9 @@ fun LauncherContent(
                                     viewModel = workshopViewModel,
                                     modifier = Modifier.fillMaxSize(),
                                     showBackButton = navigator.stackSize > 1,
-                                    showSubscriptionsButton = true,
-                                    onBack = { navigator.goBack() },
+                                     showSubscriptionsButton = true,
+                                     onMarketLlmSettings = { navigator.push(Route.SettingsLlm) },
+                                     onBack = { navigator.goBack() },
                                     onOpenSteamLogin = { navigator.push(Route.SteamCloudLogin) },
                                     onOpenDownloadCenter = { navigator.push(Route.WorkshopDownloadCenter) },
                                     onOpenSubscriptions = { navigator.push(Route.WorkshopSubscriptions) },
@@ -1475,12 +1490,12 @@ private fun LauncherDockPager(
     onOpenWorkshopDetails: (WorkshopItemSummary) -> Unit,
     onOpenInstalledWorkshopDetails: (ModItemUi) -> Unit,
     onOpenAiEditor: (ModItemUi) -> Unit,
+    onMarketLlmSettings: () -> Unit,
     onCheckEasyTierCompatibilityUpdate: () -> Unit,
     onBatchSelectionModeChange: (Boolean) -> Unit,
     userScrollEnabled: Boolean,
     handleMainEffects: Boolean,
 ) {
-    val activity = LocalActivity.current
     val context = LocalContext.current
     val settingsUiState = settingsViewModel.uiState
     val updateNotice = settingsUiState.availableUpdatePromptState?.let { promptState ->
@@ -1501,13 +1516,6 @@ private fun LauncherDockPager(
         WorkshopUpdateCheckCoordinator.bind(context.applicationContext)
     }
 
-    LaunchedEffect(workshopUpdateCheckState.lastCompletedAtMs) {
-        val hostActivity = activity
-        if (hostActivity != null && workshopUpdateCheckState.lastCompletedAtMs > 0L) {
-            mainViewModel.refresh(hostActivity)
-        }
-    }
-
     LauncherMainRoute(
         modifier = modifier,
         viewModel = mainViewModel,
@@ -1516,6 +1524,7 @@ private fun LauncherDockPager(
         onOpenAiEditor = onOpenAiEditor,
         handleEffects = handleMainEffects,
         pollWorkshopDownloads = shouldPollMainWorkshopDownloads,
+        lastWorkshopCheckCompletedAtMs = workshopUpdateCheckState.lastCompletedAtMs,
     ) { routeModifier, uiState, actions ->
         HorizontalPager(
             state = pagerState,
@@ -1590,6 +1599,7 @@ private fun LauncherDockPager(
                         showBackButton = false,
                         showSubscriptionsButton = true,
                         active = shouldPollWorkshopScreenDownloads,
+                        onMarketLlmSettings = onMarketLlmSettings,
                         onBack = {},
                         onOpenSteamLogin = onOpenSteamLogin,
                         onOpenDownloadCenter = onOpenDownloadCenter,
