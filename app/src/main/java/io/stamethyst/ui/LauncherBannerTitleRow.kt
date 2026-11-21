@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.lerp
 /** The title, icon and subtitle all follow the same animated fraction as the banner body. */
 @Composable
 internal fun LauncherBannerTitleRow(
-    @DrawableRes iconResId: Int?,
+    @DrawableRes iconResId: Int,
     title: String,
     subtitle: String,
     iconContainerColor: Color = MaterialTheme.colorScheme.secondaryContainer,
@@ -53,29 +53,27 @@ internal fun LauncherBannerTitleRow(
         horizontalArrangement = Arrangement.spacedBy(lerp(12.dp, 10.dp, fraction)),
     ) {
         navigationIcon?.invoke()
-        if (iconResId != null) {
-            Surface(
-                modifier = Modifier.size(lerp(52.dp, 40.dp, fraction)),
-                shape = RoundedCornerShape(lerp(18.dp, 14.dp, fraction)),
-                color = iconContainerColor,
-                contentColor = iconContentColor,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    val sharedNavigationIcon = LauncherNavigationIcons.forHeaderResource(iconResId)
-                    val iconModifier = Modifier.size(lerp(iconSize, 24.dp, fraction))
-                    if (sharedNavigationIcon != null) {
-                        Icon(
-                            imageVector = sharedNavigationIcon,
-                            contentDescription = iconContentDescription,
-                            modifier = iconModifier,
-                        )
-                    } else {
-                        Icon(
-                            painter = painterResource(iconResId),
-                            contentDescription = iconContentDescription,
-                            modifier = iconModifier,
-                        )
-                    }
+        Surface(
+            modifier = Modifier.size(lerp(52.dp, 40.dp, fraction)),
+            shape = RoundedCornerShape(lerp(18.dp, 14.dp, fraction)),
+            color = iconContainerColor,
+            contentColor = iconContentColor,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                val sharedNavigationIcon = LauncherNavigationIcons.forHeaderResource(iconResId)
+                val iconModifier = Modifier.size(lerp(iconSize, 24.dp, fraction))
+                if (sharedNavigationIcon != null) {
+                    Icon(
+                        imageVector = sharedNavigationIcon,
+                        contentDescription = iconContentDescription,
+                        modifier = iconModifier,
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(iconResId),
+                        contentDescription = iconContentDescription,
+                        modifier = iconModifier,
+                    )
                 }
             }
         }

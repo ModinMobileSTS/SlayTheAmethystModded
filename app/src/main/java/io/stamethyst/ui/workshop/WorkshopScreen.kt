@@ -107,6 +107,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -646,49 +647,70 @@ internal fun WorkshopHeaderPinnedContent(
     } else {
         stringResource(R.string.workshop_download_center_title)
     }
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        // On narrow screens give the title room by omitting the decorative icon, not a search tab.
-        // Reserve room for subscriptions even before Steam auth finishes loading.
-        val showMarketIcon = modeTabs == null || maxWidth >= 380.dp + (if (showBackButton) 48.dp else 0.dp)
-        LauncherBannerTitleRow(
-            iconResId = if (showMarketIcon) R.drawable.ic_dock_market else null,
-            title = title,
-            subtitle = "",
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                modeTabs?.invoke()
-                if (showBackButton) {
-                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                        Icon(
-                            imageVector = Icons.ArrowBack,
-                            contentDescription = stringResource(R.string.common_content_desc_back),
-                        )
-                    }
+    val actions: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            modeTabs?.invoke()
+            if (showBackButton) {
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        imageVector = Icons.ArrowBack,
+                        contentDescription = stringResource(R.string.common_content_desc_back),
+                    )
                 }
-                IconButton(
-                    onClick = onOpenDownloadCenter,
-                    modifier = Modifier.size(48.dp),
+            }
+            IconButton(
+                onClick = onOpenDownloadCenter,
+                modifier = Modifier.size(48.dp),
+            ) {
+                BadgedBox(
+                    badge = {
+                        if (activeDownloadTaskCount > 0) {
+                            Badge { Text(if (activeDownloadTaskCount > 99) "99+" else activeDownloadTaskCount.toString()) }
+                        }
+                    },
                 ) {
-                    BadgedBox(
-                        badge = {
-                            if (activeDownloadTaskCount > 0) {
-                                Badge { Text(if (activeDownloadTaskCount > 99) "99+" else activeDownloadTaskCount.toString()) }
-                            }
-                        },
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_workshop_download),
-                            contentDescription = downloadCenterDescription,
-                        )
-                    }
+                    Icon(
+                        painter = painterResource(R.drawable.ic_workshop_download),
+                        contentDescription = downloadCenterDescription,
+                    )
                 }
-                if (showSubscriptionsButton) {
-                    IconButton(onClick = onOpenSubscriptions, modifier = Modifier.size(48.dp)) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_workshop_subscriptions),
-                            contentDescription = stringResource(R.string.workshop_subscriptions_title),
-                        )
-                    }
+            }
+            if (showSubscriptionsButton) {
+                IconButton(onClick = onOpenSubscriptions, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_workshop_subscriptions),
+                        contentDescription = stringResource(R.string.workshop_subscriptions_title),
+                    )
+                }
+            }
+        }
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val stacked = if (modeTabs != null) {
+            val titleWidth = rememberTextMeasurer().measure(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                softWrap = false,
+            ).size.width
+            // Use expanded dimensions so actions don't move while scrolling or when Steam auth loads.
+            val chromeWidth = 16.dp * 2 + 52.dp + 12.dp * 2 // Title row padding, logo, and gaps.
+            val actionsWidth = 48.dp * (if (showBackButton) 5 else 4)
+            maxWidth < with(LocalDensity.current) { titleWidth.toDp() } + chromeWidth + actionsWidth
+        } else {
+            false
+        }
+        Column {
+            LauncherBannerTitleRow(
+                iconResId = R.drawable.ic_dock_market,
+                title = title,
+                subtitle = "",
+            ) {
+                if (!stacked) actions()
+            }
+            if (stacked) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.CenterEnd) {
+                    actions()
                 }
             }
         }
