@@ -4161,19 +4161,13 @@ fun LauncherModsScreen(
         WorkshopUpdateCheckCoordinator.bind(context.applicationContext)
     }
 
-    LaunchedEffect(workshopUpdateCheckState.lastCompletedAtMs) {
-        val hostActivity = context as? Activity
-        if (hostActivity != null && workshopUpdateCheckState.lastCompletedAtMs > 0L) {
-            viewModel.refresh(hostActivity)
-        }
-    }
-
     LauncherMainRoute(
         modifier = modifier,
         viewModel = viewModel,
         onOpenWorkshop = onOpenWorkshop,
         onOpenWorkshopDetails = onOpenWorkshopDetails,
         onOpenAiEditor = onOpenAiEditor,
+        lastWorkshopCheckCompletedAtMs = workshopUpdateCheckState.lastCompletedAtMs,
     ) { routeModifier, uiState, actions ->
         LauncherModsScreenContent(
             modifier = routeModifier,
@@ -4273,6 +4267,7 @@ internal fun LauncherMainRoute(
     onOpenAiEditor: (ModItemUi) -> Unit = {},
     handleEffects: Boolean = true,
     pollWorkshopDownloads: Boolean = true,
+    lastWorkshopCheckCompletedAtMs: Long = 0L,
     content: @Composable (
         modifier: Modifier,
         uiState: MainScreenViewModel.UiState,
@@ -4347,23 +4342,11 @@ internal fun LauncherMainRoute(
         onOpenAiEditor = onOpenAiEditor,
     )
 
-    LaunchedEffect(hostActivity, pollWorkshopDownloads) {
-        if (hostActivity != null) {
-            // Load persisted task state before enumerating local mods. Otherwise an import that
-            // finishes between these two operations can remove its temporary card without a
-            // subsequent full refresh to add the newly imported jar.
-            if (pollWorkshopDownloads && !viewModel.uiState.launchInFlight) {
-                viewModel.refreshWorkshopDownloadCards(hostActivity)
-                // Dock pages stay composed. Returning from the market must rescan even inside
-                // the usual refresh cooldown: a completed task is no longer an active poll trigger.
-                viewModel.refresh(hostActivity)
-            } else {
-                viewModel.refreshIfStale(hostActivity)
-            }
-            viewModel.syncModSuggestionsIfNeeded(hostActivity)
-            // Automatic entry refreshes should respect the normal Steam Cloud cooldown so a
-            // freshly completed sync does not immediately restart on recomposition.
-            viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = false)
+    // Also reconcile after the first scan: a download may finish while its initial
+    // filesystem snapshot is being built, before the task overlay has seen it.
+    LaunchedEffect(hostActivity, pollWorkshopDownloads, uiState.hasLoadedModSnapshot, lastWorkshopCheckCompletedAtMs) {
+        if (hostActivity != null && pollWorkshopDownloads && !viewModel.uiState.launchInFlight) {
+            viewModel.refreshWorkshopDownloadCards(hostActivity)
         }
     }
 
@@ -4373,11 +4356,7 @@ internal fun LauncherMainRoute(
         while (true) {
             delay(WORKSHOP_DOWNLOAD_PROGRESS_REFRESH_INTERVAL_MS)
             if (viewModel.uiState.launchInFlight) return@LaunchedEffect
-            val stillActive = viewModel.refreshWorkshopDownloadCards(activity)
-            if (!stillActive) {
-                viewModel.refresh(activity)
-            }
-            if (!stillActive) break
+            if (!viewModel.refreshWorkshopDownloadCards(activity)) break
         }
     }
 
@@ -4952,7 +4931,7 @@ private fun LauncherMainScreenContent(
     var showSteamCloudBottomSheet by remember { mutableStateOf(false) }
     var showEnabledModsDialog by remember { mutableStateOf(false) }
     var showModSizeDialog by remember { mutableStateOf(false) }
-    val showInitializing = uiState.initializing
+    val showInitializing = uiState.showModListLoading
     val hazeState = rememberHazeState()
     val pendingLaunchUnreadSuggestionModNames = uiState.pendingLaunchUnreadSuggestionModNames
     val enabledMods = remember(uiState.optionalMods) {

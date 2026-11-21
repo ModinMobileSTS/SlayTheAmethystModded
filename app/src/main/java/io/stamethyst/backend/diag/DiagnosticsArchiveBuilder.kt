@@ -14,6 +14,7 @@ import io.stamethyst.backend.resources.ResourcePackInspection
 import io.stamethyst.backend.resources.ResourcePackStore
 import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
 import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
+import io.stamethyst.backend.steamcloud.SteamCloudSyncTrace
 import io.stamethyst.backend.steamcloud.SteamGamePresenceDiagnosticsStore
 import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
 import io.stamethyst.ui.settings.files.StsJarImportLogStore
@@ -326,6 +327,7 @@ internal object DiagnosticsArchiveBuilder {
                 SteamCloudManifestStore.pullSummaryFile(context),
                 "sts/steam_cloud/phase1/${SteamCloudManifestStore.pullSummaryFile(context).name}"
             )
+            exportedCount += writeCloudSyncSummaries(zipOutput, context)
             exportedCount += writeOptionalFile(
                 zipOutput,
                 File(SteamCloudManifestStore.outputDir(context), "last-websocket-cm-endpoint.txt"),
@@ -842,6 +844,23 @@ internal object DiagnosticsArchiveBuilder {
     }
 
     @Throws(IOException::class)
+    internal fun writeCloudSyncSummaries(zip: ZipOutputStream, context: Context): Int {
+        val push = SteamCloudManifestStore.pushSummaryFile(context)
+        val pass = File(SteamCloudManifestStore.outputDir(context), SteamCloudSyncTrace.FILE_NAME)
+        return listOf(push, pass).count { file ->
+            // Shared/external storage can contain old formats or unrelated text. Never
+            // archive free-form lines, even from a file with an expected diagnostic name.
+            val text = runCatching {
+                if (!file.isFile || file.length() > 8192) return@count false
+                file.readLines().filter { SteamCloudSyncTrace.exportable(it, file == push) }.joinToString("\n")
+            }.getOrNull()
+            if (text.isNullOrEmpty()) false else {
+                writeTextEntry(zip, "sts/steam_cloud/phase1/${file.name}", "$text\n")
+                true
+            }
+        }
+    }
+
     private fun writeOptionalFile(
         zipOutput: ZipOutputStream,
         file: File,

@@ -40,7 +40,6 @@ import io.stamethyst.backend.easytier.EasyTierNetworkMode
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.steam.SteamAccountLogoutCoordinator
 import io.stamethyst.backend.steamcloud.STEAM_CLOUD_APP_ID
-import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAuthCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
@@ -1918,7 +1917,8 @@ class SettingsScreenViewModel : ViewModel() {
                         throw error
                     }
                     retriedWithoutGuardData = true
-                    runCatching { SteamCloudAuthStore.clearGuardData(host) }
+                    // Omit Guard data for this attempt only. The saved account may already
+                    // have changed, and a failed login must not mutate its credentials.
                     authenticateWithGuardData("")
                 }
                 val loginDiagnosticsExtraLines = mutableListOf(
@@ -1933,7 +1933,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
                 if (retriedWithoutGuardData) {
                     loginDiagnosticsExtraLines +=
-                        "Stored guard data was cleared and the credential login was retried without it after Steam rejected the remembered device state."
+                        "Credential login was retried without remembered device data after a typed authentication rejection."
                 }
                 // Identity is usable once authentication completes. Cosmetic HTTP requests
                 // run through steamProfileTask after the account state is published.
@@ -1953,7 +1953,6 @@ class SettingsScreenViewModel : ViewModel() {
                         avatarUrl = "",
                     )
                 }
-                SteamAuthenticationCircuitBreaker.reset()
                 runCatching {
                     SteamCloudDiagnosticsStore.writeSummary(
                         context = host,
@@ -1998,24 +1997,10 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
-                val loginCancelled = cancellationHandle.isCancelled || isSteamCloudLoginCancellation(error)
-                val failureCategory = if (loginCancelled) {
-                    SteamCloudFailureCategory.CANCELLED
-                } else {
-                    SteamCloudFailureClassifier.classify(error)
-                }
-                val circuitTripped = SteamAuthenticationCircuitBreaker.trip(failureCategory)
-                val circuitLogoutFailure = if (circuitTripped) {
-                    runCatching {
-                        SteamAccountLogoutCoordinator.logout(
-                            context = host,
-                            clearDiagnostics = false,
-                        )
-                    }.exceptionOrNull()
-                } else {
-                    null
-                }
-                if (!loginCancelled) {
+                val failureCategory = if (cancellationHandle.isCancelled) SteamCloudFailureCategory.CANCELLED
+                    else SteamCloudFailureClassifier.classify(error)
+                val loginCancelled = failureCategory == SteamCloudFailureCategory.CANCELLED
+                if (!loginCancelled && savedAuthMaterial?.accountName.equals(normalizedUsername, ignoreCase = true)) {
                     savedAuthMaterial?.let { authMaterial ->
                         runCatching { SteamCloudAuthStore.recordFailure(host, summary, authMaterial) }
                     }
@@ -2028,28 +2013,7 @@ class SettingsScreenViewModel : ViewModel() {
                     pendingSteamCloudLoginCancellationHandle = null
                     pendingSteamCloudLoginTask = null
                     dismissSteamCloudManifestDialog()
-                    if (circuitTripped) {
-                        _effects.tryEmit(
-                            Effect.ShowDialog(
-                                title = host.getString(R.string.main_steam_auth_circuit_logout_title),
-                                message = when {
-                                    circuitLogoutFailure != null -> host.getString(
-                                        R.string.main_steam_auth_circuit_logout_failed_message,
-                                        circuitLogoutFailure.message ?: circuitLogoutFailure.javaClass.simpleName,
-                                    )
-
-                                    failureCategory == SteamCloudFailureCategory.RATE_LIMITED -> host.getString(
-                                        R.string.main_steam_auth_circuit_rate_limited_message,
-                                    )
-
-                                    else -> host.getString(
-                                        R.string.main_steam_auth_circuit_rejected_message,
-                                        summary,
-                                    )
-                                },
-                            )
-                        )
-                    } else if (loginCancelled) {
+                    if (loginCancelled) {
                         showToast(host, UiText.StringResource(R.string.settings_steam_cloud_login_cancelled))
                     } else {
                         showToast(
@@ -6707,11 +6671,6 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun isSteamCloudLoginCancellation(error: Throwable): Boolean {
-        return generateSequence(error) { current -> current.cause?.takeUnless { it === current } }
-            .any { current -> current is CancellationException }
-    }
-
     private fun isActiveSteamCloudLogin(
         cancellationHandle: SteamCloudAuthCoordinator.CancellationHandle,
         loginGeneration: Long,
@@ -6863,6 +6822,11 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun summarizeSteamCloudError(host: Activity, error: Throwable): String {
+        when (SteamCloudFailureClassifier.classify(error)) {
+            SteamCloudFailureCategory.RATE_LIMITED -> return host.getString(R.string.steam_cloud_rate_limited_retry_later)
+            SteamCloudFailureCategory.PERMISSION_DENIED -> return host.getString(R.string.steam_cloud_permission_denied)
+            else -> Unit
+        }
         val cause = SteamCloudErrorClassifier.meaningfulCause(error)
         val message = cause.message?.trim().orEmpty()
         when (SteamCloudErrorClassifier.classify(error)) {

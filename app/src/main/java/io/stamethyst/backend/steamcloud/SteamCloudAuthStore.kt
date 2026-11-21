@@ -286,6 +286,7 @@ internal object SteamCloudAuthStore {
                 ) {
                     throw CancellationException("Steam login attempt is no longer active.")
                 }
+                SteamCloudGameReturn.newLogin(context)
                 writeState(
                     context = appContext(context),
                     state = state.copy(
@@ -418,16 +419,20 @@ internal object SteamCloudAuthStore {
         }
     }
 
-    fun clearGuardData(context: Context) {
-        mutateAuthenticatedState(context) { state -> state.copy(guardData = "") }
-    }
-
     /** Unlike profile migration, network authentication must respect the logout fence immediately. */
     fun readCmAuthMaterial(context: Context): SavedAuthMaterial? {
         val epoch = SteamCmAccountEpoch.read(context)
         val state = readStateOrNull(context) ?: return null
         return state.takeIf { it.cmAccountEpoch == epoch && SteamCmAccountEpoch.read(context) == epoch }
             ?.toAuthMaterialOrNull()
+    }
+
+    /** Read-only while holding the notice lock. Never migrate missing state under this lock:
+     * explicit login holds the operation lock while clearing an older notice. */
+    fun readPersistedCmAuthMaterial(context: Context, expectedEpoch: String): SavedAuthMaterial? {
+        val file = authStateFile(appContext(context))
+        if (!file.isFile) return null
+        return readState(file).takeIf { it.cmAccountEpoch == expectedEpoch }?.toAuthMaterialOrNull()
     }
 
     /**

@@ -6,6 +6,8 @@ import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import io.stamethyst.ui.main.SteamCloudOperationEventGate
+import io.stamethyst.ui.main.shouldRequestSteamCloudCheck
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -17,6 +19,7 @@ class SteamCloudSyncEngineTest {
     private val live get() = File(root, "live")
     private val frozen get() = File(root, "frozen")
     private val state get() = File(root, "steam-cloud")
+    private fun store(steamId: String = "1") = SteamCloudRemoteCommitStore(state, steamId)
     private val path = "saves/IRONCLAD.autosave"
     private fun put(root: File, path: String, text: String) = File(root, path).also { it.parentFile.mkdirs(); it.writeText(text) }
     private fun freeze() { live.mkdirs(); SteamCloudFileTransaction.copyPath(live, frozen) }
@@ -25,20 +28,164 @@ class SteamCloudSyncEngineTest {
     private fun savedBaseline() = Json.decodeFromString<SteamCloudSyncBaseline>(File(state, "sync-baseline.json").readText())
     private fun engine(remote: FakeRemote, blacklist: Set<String> = emptySet(),
         continueSync: () -> Boolean = { true }, mutate: ((() -> Unit) -> Unit) = { it() }) =
-        SteamCloudSyncEngine(root, live, state, remote, blacklist, continueSync, mutate = mutate)
+        SteamCloudSyncEngine(root, live, state, remote, store(remote.steamId64), blacklist, continueSync, mutate = mutate)
 
+    @Test fun steadyMergeReadsOneFreshListingAndMakesNoCommit() {
+        val remote = FakeRemote(); put(live, path, "same"); remote.files[path] = "same"; freeze()
+        engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        val before = remote.manifestCount
+        val checked = SteamCloudSyncEngine(root, live, state, remote, store(), emptySet(), transact = {
+            fail("An established agreement needs no commit")
+        })
+        checked.run(frozen, savedBaseline(), SteamCloudSyncMode.MERGE)
+        assertEquals(1, remote.manifestCount - before)
+        // A listing is evidence for this pass alone.
+        remote.files[path] = "next device"
+        assertEquals(1, engine(remote).run(frozen, savedBaseline(), SteamCloudSyncMode.MERGE).downloaded)
+    }
+
+    @Test fun steadyMergeRepairsPersistedManifestCountsEvenWhenEntriesAgree() {
+        val remote = FakeRemote(); put(live, path, "same"); remote.files[path] = "same"; freeze()
+        engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        val file = File(state, "manifest.json")
+        for ((key, expected) in mapOf("fileCount" to 1, "preferencesCount" to 0, "savesCount" to 1)) {
+            val field = Regex("(\"$key\"\\s*:\\s*)\\d+")
+            val corrupt = field.replace(file.readText()) { "${it.groupValues[1]}999" }
+            assertNotEquals(file.readText(), corrupt)
+            file.writeText(corrupt)
+            engine(remote).run(frozen, savedBaseline(), SteamCloudSyncMode.MERGE)
+            assertEquals(expected.toString(), field.find(file.readText())!!.value.substringAfter(':').trim())
+        }
+    }
+
+    @Test fun returnDuringUnchangedListingStillGetsANewFreezeAndMerge() {
+        val remote = FakeRemote(); put(live, path, "before"); remote.files[path] = "before"; freeze()
+        engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        val batch = SteamCloudReturnBatch("1", null)
+        val reads = remote.manifestCount
+        val first = engine(remote).run(frozen, savedBaseline(), SteamCloudSyncMode.MERGE, onPlan = {
+            batch.attach(123); put(live, path, "at exit")
+        })
+        assertEquals(1, remote.manifestCount - reads)
+        batch.finish(SteamCloudSyncProcessService.RESULT_PLAN_READY, first.plan, false, mergeAgain = {
+            assertEquals(123L, it.returnedLaunch); freeze()
+            assertEquals(1, engine(remote).run(frozen, savedBaseline(), it.mode).uploaded)
+        }, publish = { fail("must consume return before publishing up to date") })
+        assertEquals("at exit", remote.files[path])
+    }
+
+    @Test fun steadyMergeHonorsCancellationAfterCheckingMetadata() {
+        val remote = FakeRemote(); freeze()
+        engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        var active = true
+        val reads = remote.manifestCount
+        assertThrows(CancellationException::class.java) {
+            engine(remote, continueSync = { active }).run(frozen, savedBaseline(), SteamCloudSyncMode.MERGE,
+                metadata = { _, _ -> throw AssertionError("committed") },
+                profileIsCurrent = { active = false; true })
+        }
+        assertEquals(1, remote.manifestCount - reads)
+    }
+
+    @Test fun traceReplacesLastPassOnErrorAndNeverExportsFailureOrSaveText() {
+        val remote = FakeRemote(); put(live, path, "private-save-body"); freeze()
+        val traceFile = File(state, SteamCloudSyncTrace.FILE_NAME)
+        val first = SteamCloudSyncTrace()
+        val previous = first.record(state, SteamCloudSyncMode.MERGE, "1") {
+            SteamCloudSyncEngine(root, live, state, remote, store(), emptySet(), trace = first)
+                .run(frozen, null, SteamCloudSyncMode.MERGE)
+        }
+        assertTrue(traceFile.readText().contains("outcome=COMPLETED"))
+        put(live, path, "next"); freeze()
+        remote.onBegin = {
+            val current = traceFile.readText()
+            assertTrue(current.contains("outcome=RUNNING")); assertFalse(current.contains(first.operation.toString()))
+            throw IOException("user credentials and /private/path")
+        }
+        val second = SteamCloudSyncTrace.service("untrusted-id/with-credentials", SteamCloudServicePass("secret-account",
+            returnedLaunch = 42))
+        val freezeId = java.util.UUID.randomUUID()
+        assertThrows(IOException::class.java) {
+            second.record(state, SteamCloudSyncMode.MERGE, "1") {
+                second.frozen(freezeId)
+                SteamCloudSyncEngine(root, live, state, remote, store(), emptySet(), trace = second)
+                    .run(frozen, savedBaseline(), SteamCloudSyncMode.MERGE)
+            }
+        }
+        val text = traceFile.readText()
+        for (expected in listOf("outcome=FAILED_UNKNOWN", "enteredWrite=true", "pendingNow=true", "pendingBefore=false",
+                "source=GAME_RETURN", "freezeId=$freezeId", "returnedLaunch=42", "manifestCalls=2", "localFiles=1",
+                "remoteFiles=1", "phaseMs.WRITE=", "durationMs=")) assertTrue(expected, text.contains(expected))
+        for (secret in listOf("credentials", "secret-account", "/private/path", path, "private-save-body", "COMPLETED"))
+            assertFalse(secret, text.contains(secret))
+        // Diagnostics directory unavailable: don't fail a good result or replace the real error.
+        val unusable = File(live, path)
+        val failed = IllegalArgumentException("original")
+        assertSame(failed, assertThrows(IllegalArgumentException::class.java) {
+            SteamCloudSyncTrace().record(unusable, SteamCloudSyncMode.MERGE, null) { throw failed }
+        })
+        assertSame(previous, SteamCloudSyncTrace().record(unusable, SteamCloudSyncMode.MERGE, null) { previous })
+    }
     @Test fun ordinaryUploadVerifiesAndAdvancesBaseline() {
         val remote = FakeRemote(); put(live, path, "old"); remote.files[path] = "old"
         val old = baseline(remote); put(live, path, "new"); freeze()
         val result = engine(remote).run(frozen, old, SteamCloudSyncMode.MERGE)
         assertEquals(1, result.uploaded); assertEquals("new", remote.files[path])
-        assertEquals(localEntries(), savedBaseline().localEntries); assertFalse(File(state, "remote-pending-v2.json").exists())
+        assertEquals(localEntries(), savedBaseline().localEntries); assertFalse(store().hasPending())
     }
     @Test fun forcedUploadUsesSamePostCommitVerification() {
         val remote = FakeRemote(); put(live, path, "new"); remote.files[path] = "old"; remote.dropCommit = true; freeze()
         try { engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS); fail() }
         catch (_: SteamCloudPushReconciliationException) { }
-        assertTrue(File(state, "remote-pending-v2.json").exists()); assertFalse(File(state, "sync-baseline.json").exists())
+        assertTrue(store().hasPending()); assertFalse(File(state, "sync-baseline.json").exists())
+    }
+    @Test fun deniedFinalizerPreservesTypedFailureAndOnlyItsOwnersJournal() {
+        val remote = FakeRemote(); put(live, path, "progress"); freeze()
+        val denial = top.apricityx.workshop.steam.protocol.SteamServiceMethodException(
+            "Cloud.CompleteAppUploadBatchBlocking#1", 15, "AccessDenied")
+        remote.dropCommit = true; remote.afterCommit = { throw denial }
+        val result = runCatching { engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE) }
+        assertSame(denial, result.exceptionOrNull())
+        val service = SteamCloudSyncProcessService
+        val (code, category) = service.failureEvent(denial, SteamCloudSyncMode.MERGE, false)
+        assertEquals(service.RESULT_FAILURE, code)
+        assertEquals(SteamCloudFailureCategory.PERMISSION_DENIED, category)
+        assertEquals(io.stamethyst.ui.main.MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED,
+            io.stamethyst.ui.main.steamCloudFailureState(false, service.requiresResolution(denial)))
+        assertEquals(2, remote.manifestCount)
+        assertTrue(store("1").hasPending()); assertFalse(store("2").hasPending())
+        assertFalse(File(state, "sync-baseline.json").exists())
+        // A fresh inspection may prove the content, not the fate of the finalizer. If still
+        // unmatched, never promote the journal's expected bytes into a verified baseline.
+        val uncertain = assertThrows(SteamCloudPushReconciliationException::class.java) {
+            engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        }
+        assertTrue(service.requiresResolution(uncertain))
+        assertEquals(1, remote.beginCount)
+        assertFalse(File(state, "sync-baseline.json").exists())
+    }
+
+    @Test fun denialIsNeverReportedAsSuccessButNextPassCanVerifyActualContent() {
+        val remote = FakeRemote(); put(live, path, "progress"); freeze()
+        val denial = top.apricityx.workshop.steam.protocol.SteamServiceMethodException(
+            "Cloud.CompleteAppUploadBatchBlocking#1", 15, null)
+        remote.afterCommit = { throw denial } // Current content matches despite finalizer refusal.
+        assertSame(denial, runCatching { engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE) }.exceptionOrNull())
+        assertTrue(store().hasPending()); assertFalse(File(state, "sync-baseline.json").exists())
+        assertEquals(0, engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE).uploaded)
+        assertEquals(1, remote.beginCount); assertFalse(store().hasPending())
+        assertEquals(localEntries(), savedBaseline().localEntries)
+    }
+
+    @Test fun ordinaryFilenameThatLooksLikeAnAuthResultCannotBecomeALoginRejection() {
+        val remote = FakeRemote()
+        put(live, "preferences/InvalidPassword", "local")
+        remote.files["preferences/invalidpassword"] = "remote"
+        freeze()
+        val error = runCatching { engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE) }.exceptionOrNull()!!
+        assertTrue(error.message.orEmpty().contains("InvalidPassword"))
+        assertNotEquals(SteamCloudFailureCategory.AUTH_REJECTED, SteamCloudFailureClassifier.classify(error))
+        assertEquals(0, remote.beginCount); assertFalse(store().hasPending())
     }
     @Test fun unknownOutcomeIsNotAutomaticallyReplayed() {
         val remote = FakeRemote(); put(live, path, "new"); remote.files[path] = "old"; remote.dropCommit = true; freeze()
@@ -50,16 +197,69 @@ class SteamCloudSyncEngineTest {
     @Test fun thrownCompletionResponseCanStillBeVerified() {
         val remote = FakeRemote(); remote.throwAfterCommit = true; put(live, path, "new"); freeze()
         assertEquals(1, engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS).uploaded)
-        assertEquals("new", remote.files[path]); assertFalse(File(state, "remote-pending-v2.json").exists())
+        assertEquals("new", remote.files[path]); assertFalse(store().hasPending())
+    }
+    @Test fun completionThrottleKeepsPreviousBaselineAndSlot() {
+        val remote = FakeRemote(); put(live, path, "before"); freeze()
+        val slot = File(root, "profile/$path")
+        val metadata = { _: File, projected: File -> listOf(SteamCloudPathReplacement(File(projected, path), slot)) }
+        engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE, metadata = metadata)
+        val before = File(state, "sync-baseline.json").readText()
+        put(live, path, "current"); freeze()
+        val error = top.apricityx.workshop.steam.protocol.SteamServiceMethodException("Cloud.CompleteAppUploadBatchBlocking#1", 84, null)
+        remote.dropCommit = true
+        remote.afterCommit = { throw error }
+        val reads = remote.manifestCount
+        val failure = runCatching { engine(remote).run(frozen, savedBaseline(), SteamCloudSyncMode.MERGE, metadata = metadata) }.exceptionOrNull()
+        assertSame(error, failure)
+        assertEquals(2, remote.manifestCount - reads) // No verification request into the throttle.
+        assertEquals(before, File(state, "sync-baseline.json").readText())
+        assertEquals("before", slot.readText())
+        assertEquals("current", File(live, path).readText())
+        assertTrue(store().hasPending())
+        assertEquals(0, remote.abortCount)
     }
     @Test fun interruptedVerifiedCommitRecoversWithoutUploadReplay() {
         val remote = FakeRemote(); put(live, path, "new"); freeze()
         remote.failManifestAfterCommit = true
         try { engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS); fail() } catch (_: IOException) { }
-        assertTrue(File(state, "remote-pending-v2.json").exists())
+        assertTrue(store().hasPending())
         remote.failManifestAfterCommit = false
         val result = engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
         assertEquals(0, result.uploaded); assertEquals(1, remote.beginCount); assertEquals("new", remote.files[path])
+    }
+    @Test fun verifiedJournalCannotTakeSteadyShortcutEvenWithUnchangedDiskMetadata() {
+        val remote = FakeRemote(); put(live, path, "same"); remote.files[path] = "same"; freeze()
+        engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        val old = savedBaseline()
+        store().prepareBeforeBegin(
+            SteamCloudRemoteCommitStore.Pending(steamId64 = "1", localEntries = old.localEntries, priorBaseline = old,
+                expectedRemoteEntries = old.remoteEntries, deletedPaths = emptySet()), null, {})
+        val before = remote.manifestCount
+        var installed = false
+        engine(remote).run(frozen, old, SteamCloudSyncMode.MERGE,
+            metadata = { _, projected -> installed = File(projected, path).readText() == "same"; emptyList() },
+            profileIsCurrent = { throw AssertionError("cannot bypass recovery") })
+        assertTrue(installed); assertEquals(3, remote.manifestCount - before); assertEquals(0, remote.beginCount)
+        assertFalse(store().hasPending())
+    }
+    @Test fun failedVerifiedRecoveryKeepsJournalAndDoesNotReportCancellation() {
+        val remote = FakeRemote(); put(live, path, "new"); freeze()
+        remote.failManifestAfterCommit = true
+        assertThrows(IOException::class.java) { engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE) }
+        remote.failManifestAfterCommit = false
+        val original = store().file.readText()
+        val obstacle = File(state, "sync-baseline.json")
+        assertTrue(obstacle.mkdir()) // Can't atomically replace a directory with baseline JSON.
+        val error = assertThrows(SteamCloudJournalPersistenceException::class.java) {
+            engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        }
+        assertEquals(SteamCloudSyncProcessService.RESULT_FAILURE to SteamCloudFailureCategory.JOURNAL_PERSISTENCE,
+            SteamCloudSyncProcessService.failureEvent(error, SteamCloudSyncMode.MERGE, cancelled = true))
+        assertEquals(original, store().file.readText())
+        assertTrue(obstacle.delete())
+        engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        assertEquals(1, remote.beginCount); assertFalse(store().hasPending())
     }
     @Test fun explicitResolutionArchivesUncertainRecord() {
         val remote = FakeRemote(); put(live, path, "new"); remote.files[path] = "old"; remote.dropCommit = true; freeze()
@@ -68,18 +268,61 @@ class SteamCloudSyncEngineTest {
         engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS)
         assertTrue(state.listFiles()!!.any { it.name.startsWith("uncertain-remote-") }); assertEquals("new", remote.files[path])
     }
-    @Test fun pendingWriteForAnotherAccountCannotBeReplayedAutomatically() {
+    @Test fun otherAccountCanPullButCannotResolveOriginalAccountsUnknownWrite() = switchAccountWithPending(legacy = false)
+    @Test fun legacyOwnerStillHasToReconcileAfterOtherAccountPulled() = switchAccountWithPending(legacy = true)
+    private fun switchAccountWithPending(legacy: Boolean) {
         val remote = FakeRemote(); put(live, path, "account-one"); remote.dropCommit = true; freeze()
         try { engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS); fail() }
         catch (_: SteamCloudPushReconciliationException) { }
+        val original = if (legacy) File(state, SteamCloudRemoteCommitStore.LEGACY_FILE_NAME).also {
+            assertTrue(store().file.renameTo(it))
+        } else store().file
+        val before = original.readText()
+        fun pass(mode: SteamCloudSyncMode, prior: SteamCloudSyncBaseline? = null) =
+            SteamCloudSyncTrace().record(state, mode, remote.steamId64) { engine(remote).run(frozen, prior, mode) }
+        val trace = File(state, SteamCloudSyncTrace.FILE_NAME)
         remote.steamId64 = "2"; remote.dropCommit = false; remote.files[path] = "account-two"
-        try { engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE); fail() }
-        catch (_: SteamCloudPushReconciliationException) { }
-        assertEquals(1, remote.beginCount); assertEquals("account-two", remote.files[path])
-        engine(remote).run(frozen, null, SteamCloudSyncMode.CLOUD_WINS)
+        val b = store("2")
+        assertThrows(CancellationException::class.java) {
+            engine(remote, continueSync = { !b.file.exists() }).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS)
+        }
+        assertEquals(before, original.readText()); assertFalse(b.hasPending())
+        pass(SteamCloudSyncMode.CLOUD_WINS)
         assertEquals("account-two", File(live, path).readText())
         assertEquals("2", savedBaseline().steamId64)
-        assertTrue(state.listFiles()!!.any { it.name.startsWith("uncertain-remote-") })
+        assertTrue(trace.readText().contains("pendingBefore=false\npendingNow=false"))
+        assertEquals(before, original.readText()); assertFalse(state.listFiles()!!.any { it.name.startsWith("uncertain-remote-") })
+        freeze()
+        val reads = remote.manifestCount
+        pass(SteamCloudSyncMode.MERGE, savedBaseline())
+        assertEquals(1, remote.manifestCount - reads)
+        remote.steamId64 = "1"; remote.files.clear()
+        assertThrows(SteamCloudPushReconciliationException::class.java) {
+            pass(SteamCloudSyncMode.MERGE)
+        }
+        assertTrue(trace.readText().contains("pendingBefore=true\npendingNow=true"))
+        assertEquals(before, store().file.readText())
+        assertEquals(1, remote.beginCount); assertTrue(remote.files.isEmpty())
+    }
+    @Test fun failedCleanupAfterCancellationProducesServiceFailureAndRecoveryDiagnostic() {
+        val remote = FakeRemote(); put(live, path, "new"); freeze()
+        // Some fsync failures themselves carry a cancellation/interrupt cause.
+        val store = SteamCloudRemoteCommitStore(state, "1") { throw IOException("fsync", InterruptedException()) }
+        val trace = SteamCloudSyncTrace()
+        val mode = SteamCloudSyncMode.MERGE
+        val error = assertThrows(SteamCloudJournalPersistenceException::class.java) {
+            trace.record(state, mode, "1") {
+                SteamCloudSyncEngine(root, live, state, remote, store, emptySet(), shouldContinue = { !store.file.exists() },
+                    trace = trace).run(frozen, null, mode)
+            }
+        }
+        assertEquals(0, remote.beginCount)
+        assertEquals(SteamCloudSyncProcessService.RESULT_FAILURE to SteamCloudFailureCategory.JOURNAL_PERSISTENCE,
+            SteamCloudSyncProcessService.failureEvent(error, mode, cancelled = true))
+        val summary = File(state, SteamCloudSyncTrace.FILE_NAME).readText()
+        for (line in listOf("enteredWrite=false", "pendingBefore=false", "pendingNow=unknown", "outcome=FAILED_JOURNAL_PERSISTENCE")) {
+            assertTrue(line, summary.contains(line)); assertTrue(SteamCloudSyncTrace.exportable(line, false))
+        }
     }
     @Test fun cloudWinnerDownloadsVerifiesAndPreservesOriginalBackup() {
         val remote = FakeRemote(); put(live, path, "old"); remote.files[path] = "new"; freeze()
@@ -109,7 +352,7 @@ class SteamCloudSyncEngineTest {
         val remote = FakeRemote(); put(live, path, "new"); freeze()
         remote.afterCommit = { remote.files[path] = "other-device" }
         try { engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS); fail() } catch (_: SteamCloudPushReconciliationException) { }
-        assertTrue(File(state, "remote-pending-v2.json").exists()); assertFalse(File(state, "sync-baseline.json").exists())
+        assertTrue(store().hasPending()); assertFalse(File(state, "sync-baseline.json").exists())
     }
     @Test fun frozenUploadDoesNotReadNewGameWrites() {
         val remote = FakeRemote(); put(live, path, "frozen"); freeze(); put(live, path, "game-new")
@@ -144,6 +387,75 @@ class SteamCloudSyncEngineTest {
         val next = SteamCloudSyncPlanner.buildUploadPlan(2, localEntries(), remote.manifest(), savedBaseline())
         assertTrue(next.conflicts.isEmpty()); assertEquals(1, next.uploadCandidates.size)
     }
+
+    @Test fun busyLauncherDeliversExitWhileItsFrozenUploadIsActive() = returnDuringFrozenUpload(recreate = false)
+    @Test fun recreatedLauncherCanAttachAndDeliverExitWhileOldWorkerOwnsTheUpload() = returnDuringFrozenUpload(recreate = true)
+
+    // Exercise the launcher request gate, operation attachment and service terminal decision with
+    // real frozen trees, baseline commits and an in-memory remote. No Binder/Steam dependency.
+    private fun returnDuringFrozenUpload(recreate: Boolean) {
+        val remote = FakeRemote()
+        put(live, path, "at launch")
+        freeze()
+        val batch = SteamCloudReturnBatch("1", initialReturn = null)
+        var launcher = SteamCloudOperationEventGate().apply { begin("upload"); check(accept("upload", 1)) }
+        val old = engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE, onPlan = {
+            put(live, path, "at exit")
+            if (recreate) {
+                launcher = SteamCloudOperationEventGate()
+                assertTrue(launcher.attach("upload")) // state query after Activity recreation
+                assertTrue(launcher.accept("upload", 2))
+            }
+            assertFalse(shouldRequestSteamCloudCheck(null, busy = true, inFlight = true))
+            assertTrue(shouldRequestSteamCloudCheck(100, busy = true, inFlight = true))
+            launcher.begin("return-request")
+            assertFalse(launcher.accept("upload", 3)) // stale event in transit, before service ACK
+            batch.attach(100)
+            assertTrue(launcher.attach("upload", "return-request"))
+            assertTrue(launcher.accept("upload", 3))
+        })
+        assertEquals("at launch", remote.files[path])
+        val terminals = mutableListOf<Int>()
+        val completed = SteamCloudSyncProcessService.RESULT_AUTO_SYNC_COMPLETED
+        batch.attach(null) // ordinary onResume
+        batch.attach(100)  // duplicate before and during follow-up
+        batch.finish(completed, old.plan, false, mergeAgain = { pass ->
+            assertTrue(terminals.isEmpty())
+            assertEquals("1", pass.steamId)
+            assertNull(pass.expectedPlan)
+            freeze()
+            val fresh = engine(remote).run(frozen, savedBaseline(), pass.mode, onPlan = { batch.attach(100) })
+            batch.finish(completed, fresh.plan, false, mergeAgain = { fail("replayed return") }, publish = terminals::add)
+        }, publish = terminals::add)
+        assertEquals("at exit", remote.files[path])
+        assertEquals(2, remote.beginCount)
+        assertTrue(launcher.accept("upload", 4))
+        assertEquals(listOf(completed), terminals)
+    }
+
+    @Test fun exitAfterAnOverrideUsesFreshMergeAndPreservesNewConflict() {
+        val remote = FakeRemote()
+        remote.files[path] = "cloud before override"
+        put(live, path, "confirmed local")
+        freeze()
+        val batch = SteamCloudReturnBatch("1", null)
+        val old = engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS, onPlan = {
+            put(live, path, "game exit")
+            batch.attach(1)
+        })
+        remote.files[path] = "other device"
+        batch.finish(SteamCloudSyncProcessService.RESULT_LOCAL_OVERRIDE_COMPLETED, old.plan, false, mergeAgain = { pass ->
+            freeze()
+            val fresh = engine(remote).run(frozen, savedBaseline(), pass.mode, pass.expectedPlan)
+            assertEquals(1, fresh.plan.conflicts.size)
+            batch.attach(2)
+            val code = SteamCloudSyncProcessService.RESULT_PLAN_READY
+            batch.finish(code, fresh.plan, false, mergeAgain = { fail("retried conflict") }, publish = { assertEquals(code, it) })
+        }, publish = { fail("published stale success") })
+        assertEquals(1, remote.beginCount)
+        assertEquals("other device", remote.files[path])
+        assertEquals("game exit", File(live, path).readText())
+    }
     @Test fun immediateLaunchBeforeRemoteCheckStillAllowsFrozenUpload() {
         val remote = FakeRemote(); put(live, path, "old"); remote.files[path] = "old"
         val old = baseline(remote); put(live, path, "before-launch"); freeze()
@@ -164,7 +476,7 @@ class SteamCloudSyncEngineTest {
         } catch (_: SteamCloudLiveSaveInUseException) { }
         assertEquals(0, remote.beginCount); assertEquals(0, remote.downloadCount)
         assertEquals("old-save", remote.files[path]); assertEquals("old-pref", File(live, other).readText())
-        assertFalse(File(state, "remote-pending-v2.json").exists())
+        assertFalse(store().hasPending())
     }
     @Test fun immediateLaunchDuringDownloadStopsMixedBatchBeforeRemoteWrites() {
         val remote = FakeRemote(); val other = "preferences/STSPlayer"
@@ -179,13 +491,13 @@ class SteamCloudSyncEngineTest {
         } catch (_: SteamCloudLiveSaveInUseException) { }
         assertEquals(1, remote.downloadCount); assertEquals(0, remote.beginCount)
         assertEquals("game-new", File(live, path).readText()); assertEquals("old-pref", File(live, other).readText())
-        assertFalse(File(state, "remote-pending-v2.json").exists())
+        assertFalse(store().hasPending())
     }
     @Test fun launchRequestAtLocalCommitStopsCloudDeletionEvenBeforeGameLeaseIsAcquired() {
         val remote = FakeRemote(); put(live, path, "old"); remote.files[path] = "old"
         val old = baseline(remote); remote.files.remove(path); freeze()
         var launchRequested = false
-        val guarded = SteamCloudSyncEngine(root, live, state, remote, emptySet(), transact = { commit ->
+        val guarded = SteamCloudSyncEngine(root, live, state, remote, store(), emptySet(), transact = { commit ->
             launchRequested = true
             commit()
         })
@@ -202,7 +514,7 @@ class SteamCloudSyncEngineTest {
         remote.files[path] = "old-save"; remote.files[other] = "old-pref"
         val old = baseline(remote); put(live, path, "new-save"); remote.files[other] = "new-pref"; freeze()
         var gameOwnsLease = false
-        val guarded = SteamCloudSyncEngine(root, live, state, remote, emptySet(), progress = { progress ->
+        val guarded = SteamCloudSyncEngine(root, live, state, remote, store(), emptySet(), progress = { progress ->
             if (progress.phase == SteamCloudSyncPhase.UPLOADING) gameOwnsLease = true
         }, mutate = { apply ->
             if (gameOwnsLease) throw SteamCloudLiveSaveInUseException()
@@ -216,12 +528,12 @@ class SteamCloudSyncEngineTest {
             fail("Starting the game during a mixed sync must block local installation")
         } catch (_: SteamCloudLiveSaveInUseException) { }
         assertEquals("old-pref", File(live, other).readText())
-        assertTrue(File(state, "remote-pending-v2.json").exists())
+        assertTrue(store().hasPending())
     }
     @Test fun downloadedFilesAndModeMetadataRollbackTogether() {
         val remote = FakeRemote(); put(live, path, "old"); remote.files[path] = "new"; freeze()
         val mode = put(root, "mode", "independent")
-        val brokenEngine = SteamCloudSyncEngine(root, live, state, remote, emptySet(), transact = {
+        val brokenEngine = SteamCloudSyncEngine(root, live, state, remote, store(), emptySet(), transact = {
             throw IOException("transaction adapter failed")
         })
         try { brokenEngine.run(frozen, null, SteamCloudSyncMode.CLOUD_WINS, metadata = { work, _ ->
@@ -294,7 +606,7 @@ class SteamCloudSyncEngineTest {
     }
     @Test fun changedPreviewIsRejected() {
         val remote = FakeRemote(); put(live, path, "a"); freeze()
-        val preview = engine(remote).inspect(localEntries(), null)
+        val preview = engine(remote).inspect(live, null)
         assertTrue(File(state, "manifest.json").isFile)
         remote.files[path] = "other"
         try { engine(remote).run(frozen, null, SteamCloudSyncMode.UPLOAD_ONLY, preview); fail() } catch (_: SteamCloudStalePlanException) { }
@@ -306,16 +618,122 @@ class SteamCloudSyncEngineTest {
         catch (_: CancellationException) { }
         assertEquals(0, remote.beginCount); assertTrue(remote.files.isEmpty())
     }
+    @Test fun interruptedAfterJournalBeforeBeginAllowsNextAutomaticUpload() {
+        val remote = FakeRemote(); put(live, path, "new"); freeze()
+        val journal = store().file
+        try {
+            assertThrows(CancellationException::class.java) {
+                engine(remote, continueSync = {
+                    if (journal.isFile) Thread.currentThread().interrupt()
+                    true
+                }).run(frozen, null, SteamCloudSyncMode.MERGE)
+            }
+            assertTrue(Thread.currentThread().isInterrupted)
+        } finally { Thread.interrupted() }
+        assertEquals(0, remote.beginCount); assertFalse(journal.exists()); assertTrue(remote.files.isEmpty())
+        assertFalse(File(state, "sync-baseline.json").exists())
+        assertEquals(1, engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE).uploaded)
+        assertEquals("new", remote.files[path])
+    }
+    @Test fun newEngineCannotAssumeACrashedProcessStoppedBeforeBegin() {
+        val remote = FakeRemote(); put(live, path, "new"); freeze()
+        val journal = store().file
+        val crash = Error("process stopped with durable intent")
+        assertSame(crash, assertThrows(Error::class.java) {
+            engine(remote, continueSync = { if (journal.isFile) throw crash else true })
+                .run(frozen, null, SteamCloudSyncMode.MERGE)
+        })
+        val uncertain = journal.readText()
+        assertThrows(SteamCloudPushReconciliationException::class.java) {
+            engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        }
+        assertEquals(0, remote.beginCount); assertEquals(uncertain, journal.readText())
+    }
+    @Test fun cancellationInsideBeginWithoutBatchIdProtectsJournalEvenIfNextOverrideIsCancelled() {
+        val remote = FakeRemote(); put(live, path, "new"); freeze()
+        val journal = store().file
+        remote.onBegin = { throw CancellationException("received begin but lost reply") }
+        assertThrows(CancellationException::class.java) { engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE) }
+        val uncertain = journal.readText()
+        remote.onBegin = {}
+        assertThrows(CancellationException::class.java) {
+            engine(remote, continueSync = { !journal.exists() || journal.readText() == uncertain })
+                .run(frozen, null, SteamCloudSyncMode.LOCAL_WINS)
+        }
+        assertEquals(uncertain, journal.readText())
+        assertThrows(SteamCloudPushReconciliationException::class.java) {
+            engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        }
+        assertEquals(1, remote.beginCount); assertEquals(0, remote.abortCount)
+        assertEquals(1, engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS).uploaded)
+        assertFalse(journal.exists()); assertEquals("new", remote.files[path])
+    }
+    @Test fun ambiguousNamesStopPreviewAndEverySyncBeforeTransfersOrInstallation() {
+        val remote = FakeRemote()
+        val localName = "preferences/MyMod"; val cloudName = "preferences/mymod"
+        put(live, localName, "local"); remote.files[cloudName] = "cloud"; freeze()
+        val guarded = engine(remote, mutate = { fail("must not install ambiguous paths") })
+        assertThrows(SteamCloudIncompleteManifestException::class.java) { guarded.inspect(frozen, null) }
+        for (mode in SteamCloudSyncMode.entries) {
+            assertThrows(SteamCloudIncompleteManifestException::class.java) { guarded.run(frozen, null, mode) }
+        }
+        assertEquals(0, remote.beginCount); assertEquals(0, remote.downloadCount)
+        assertEquals(mapOf(cloudName to "cloud"), remote.files); assertEquals("local", File(live, localName).readText())
+        assertFalse(File(state, "sync-baseline.json").exists()); assertFalse(store().hasPending())
+    }
+    @Test fun emptyDirectoryAndProtectedFileAliasesCannotBeInstalledOver() {
+        val remote = FakeRemote()
+        val empty = File(live, "preferences/EmptyMod").also { assertTrue(it.mkdirs()) }
+        val excluded = "saves/MyMod"
+        put(live, excluded, "private"); put(live, path, "upload"); freeze()
+        val guarded = engine(remote, setOf(excluded))
+        for (cloudName in listOf("preferences/emptymod/nested", "preferences/EmptyMod", "saves/mymod")) {
+            remote.files.clear(); remote.files[cloudName] = "cloud"
+            assertThrows(SteamCloudIncompleteManifestException::class.java) { guarded.inspect(frozen, null) }
+            assertThrows(SteamCloudIncompleteManifestException::class.java) {
+                guarded.run(frozen, null, SteamCloudSyncMode.MERGE)
+            }
+        }
+        assertTrue(empty.isDirectory); assertEquals("private", File(live, excluded).readText())
+        assertEquals(0, remote.downloadCount); assertEquals(0, remote.beginCount)
+    }
+    @Test fun directoryIntroducedDuringDownloadIsRecheckedBeforeInstall() {
+        val remote = FakeRemote(); remote.files[path] = "cloud"; freeze()
+        val target = File(live, path)
+        remote.afterDownload = { assertTrue(target.mkdirs()) }
+        assertThrows(SteamCloudIncompleteManifestException::class.java) {
+            engine(remote).run(frozen, null, SteamCloudSyncMode.CLOUD_WINS)
+        }
+        assertTrue(target.isDirectory); assertFalse(File(state, "sync-baseline.json").exists())
+    }
+    @Test fun failedExplicitCloudInstallDoesNotReleaseOriginalUncertainty() {
+        val remote = FakeRemote(); put(live, path, "new"); remote.files[path] = "old"; freeze()
+        remote.onBegin = { throw IOException("response lost") }
+        assertThrows(IOException::class.java) { engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS) }
+        val journal = store().file
+        val original = journal.readText()
+        assertThrows(CancellationException::class.java) {
+            engine(remote, mutate = { throw CancellationException("before local install") })
+                .run(frozen, null, SteamCloudSyncMode.CLOUD_WINS)
+        }
+        assertEquals(original, journal.readText())
+        assertThrows(SteamCloudPushReconciliationException::class.java) {
+            engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE)
+        }
+        engine(remote).run(frozen, null, SteamCloudSyncMode.CLOUD_WINS)
+        assertFalse(journal.exists()); assertEquals(1, remote.beginCount)
+        assertEquals("old", File(live, path).readText())
+    }
     @Test fun confirmedMergePreviewCanResolveWithLocalWinner() {
         val remote = FakeRemote(); put(live, path, "local"); remote.files[path] = "cloud"; freeze()
-        val preview = engine(remote).inspect(localEntries(), null)
+        val preview = engine(remote).inspect(live, null)
         assertEquals(1, preview.conflicts.size)
         val result = engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS, preview)
         assertEquals(1, result.uploaded); assertEquals("local", remote.files[path])
     }
     @Test fun confirmedMergePreviewCanResolveWithCloudWinner() {
         val remote = FakeRemote(); put(live, path, "local"); remote.files[path] = "cloud"; freeze()
-        val preview = engine(remote).inspect(localEntries(), null)
+        val preview = engine(remote).inspect(live, null)
         assertEquals(1, engine(remote).run(frozen, null, SteamCloudSyncMode.CLOUD_WINS, preview).downloaded)
         assertEquals("cloud", File(live, path).readText())
     }
@@ -323,7 +741,7 @@ class SteamCloudSyncEngineTest {
         val remote = FakeRemote(); val other = "preferences/STSPlayer"
         put(live, path, "local"); remote.files[path] = "cloud"
         put(live, other, "same"); remote.files[other] = "same"
-        val preview = engine(remote).inspect(localEntries(), null)
+        val preview = engine(remote).inspect(live, null)
         put(live, other, "changed-after-dialog"); freeze()
         try { engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS, preview); fail() }
         catch (_: SteamCloudStalePlanException) { }
@@ -331,7 +749,7 @@ class SteamCloudSyncEngineTest {
     }
     @Test fun changedCloudPreviewCannotBeUsedForForcedOverwrite() {
         val remote = FakeRemote(); put(live, path, "local"); remote.files[path] = "cloud"; freeze()
-        val preview = engine(remote).inspect(localEntries(), null)
+        val preview = engine(remote).inspect(live, null)
         remote.files[path] = "another-device"
         try { engine(remote).run(frozen, null, SteamCloudSyncMode.CLOUD_WINS, preview); fail() }
         catch (_: SteamCloudStalePlanException) { }
@@ -342,7 +760,7 @@ class SteamCloudSyncEngineTest {
         put(live, path, "old"); put(live, other, "old"); remote.files[path] = "old"; remote.files[other] = "old"
         val old = baseline(remote); put(live, path, "new"); remote.files[other] = "new"; freeze()
         val phases = mutableListOf<SteamCloudSyncPhase>()
-        SteamCloudSyncEngine(root, live, state, remote, emptySet(), progress = { phases += it.phase })
+        SteamCloudSyncEngine(root, live, state, remote, store(), emptySet(), progress = { phases += it.phase })
             .run(frozen, old, SteamCloudSyncMode.MERGE)
         assertTrue(phases.indexOf(SteamCloudSyncPhase.DOWNLOADING) < phases.indexOf(SteamCloudSyncPhase.UPLOADING))
         assertTrue(phases.indexOf(SteamCloudSyncPhase.UPLOADING) < phases.indexOf(SteamCloudSyncPhase.VERIFYING_REMOTE))
@@ -364,7 +782,7 @@ class SteamCloudSyncEngineTest {
         remote.beforeManifest = {
             if (phases.lastOrNull() == SteamCloudSyncPhase.RECHECKING_REMOTE) checkedFinalRemote = true
         }
-        SteamCloudSyncEngine(root, live, state, remote, emptySet(), progress = { phases += it.phase },
+        SteamCloudSyncEngine(root, live, state, remote, store(), emptySet(), progress = { phases += it.phase },
             mutate = { fail("Upload-only sync must not acquire the live save lease") })
             .run(frozen, null, SteamCloudSyncMode.LOCAL_WINS)
         assertTrue(checkedFinalRemote)
@@ -375,13 +793,14 @@ class SteamCloudSyncEngineTest {
     @Test fun uploadFailureLeavesJournalAndDoesNotReplay() {
         val remote = FakeRemote(); put(live, path, "a"); freeze(); remote.failUpload = true
         try { engine(remote).run(frozen, null, SteamCloudSyncMode.LOCAL_WINS); fail() } catch (_: IOException) { }
-        assertEquals(1, remote.abortCount); assertTrue(File(state, "remote-pending-v2.json").exists())
+        // A file RPC may have been accepted; do not follow a lost reply with a failure finalizer.
+        assertEquals(0, remote.abortCount); assertTrue(store().hasPending())
         remote.failUpload = false
         try { engine(remote).run(frozen, null, SteamCloudSyncMode.MERGE); fail() } catch (_: SteamCloudPushReconciliationException) { }
         assertEquals(1, remote.beginCount)
     }
 
-    private class FakeRemote : SteamCloudSyncTransport {
+    internal class FakeRemote : SteamCloudSyncTransport {
         val files = linkedMapOf<String, String>()
         private val uploads = linkedMapOf<String, String>()
         private val deletes = mutableSetOf<String>()
@@ -390,6 +809,7 @@ class SteamCloudSyncEngineTest {
         var corruptDownloads = false; var failUpload = false; private var committed = false
         var beforeManifest: (Int) -> Unit = {}; var afterCommit: () -> Unit = {}
         var afterDownload: () -> Unit = {}
+        var onBegin: () -> Unit = {}
         var steamId64 = "1"
         override fun manifest(): SteamCloudManifestSnapshot {
             beforeManifest(++manifestCount)
@@ -408,7 +828,7 @@ class SteamCloudSyncEngineTest {
             afterDownload()
         }
         override fun begin(uploads: List<String>, deletes: List<String>): Long {
-            beginCount++; this.uploads.clear(); this.deletes.clear(); return 1
+            beginCount++; onBegin(); this.uploads.clear(); this.deletes.clear(); return 1
         }
         override fun upload(candidate: SteamCloudUploadCandidate, source: File, batch: Long) {
             if (failUpload) throw IOException("upload failed")

@@ -7,9 +7,8 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import top.apricityx.workshop.steam.protocol.OkHttpSteamCmSession
 import top.apricityx.workshop.steam.protocol.SteamAuthenticationClient
 import top.apricityx.workshop.steam.protocol.SteamAuthSessionDetails
@@ -175,7 +174,8 @@ internal object SteamCloudAuthCoordinator {
                 )
             }
         } catch (error: Throwable) {
-            val cancelled = cancellationHandle.isCancelled || isCancellation(error)
+            val cancelled = cancellationHandle.isCancelled ||
+                SteamCloudFailureClassifier.classify(error) == SteamCloudFailureCategory.CANCELLED
             runCatching {
                 SteamCloudDiagnosticsStore.writeSummary(
                     context = context,
@@ -368,17 +368,8 @@ internal object SteamCloudAuthCoordinator {
 
     @Throws(Exception::class)
     private suspend fun awaitAuthResultWithTimeout(session: SteamCredentialAuthSession) =
-        try {
-            withTimeout(AUTH_COMPLETION_TIMEOUT_MS) {
-                session.awaitResult()
-            }
-        } catch (error: TimeoutCancellationException) {
-            throw TimeoutException(
-                "Timed out waiting for Steam auth completion after ${AUTH_COMPLETION_TIMEOUT_MS}ms."
-            ).apply {
-                initCause(error)
-            }
-        }
+        withTimeoutOrNull(AUTH_COMPLETION_TIMEOUT_MS) { session.awaitResult() }
+            ?: throw TimeoutException("Timed out waiting for Steam auth completion after ${AUTH_COMPLETION_TIMEOUT_MS}ms.")
 
     private fun describePrompt(
         challengeType: SteamGuardChallengeType,
@@ -443,10 +434,6 @@ internal object SteamCloudAuthCoordinator {
                     message.contains("twofactorcodemismatch") ||
                     message.contains("invalidloginauthcode")
             }
-
-    private fun isCancellation(error: Throwable): Boolean =
-        generateSequence(error) { current -> current.cause?.takeUnless { it === current } }
-            .any { current -> current is CancellationException }
 
     private fun isValidSteamId64(value: String): Boolean =
         value.toULongOrNull()?.let { it > 0uL } == true

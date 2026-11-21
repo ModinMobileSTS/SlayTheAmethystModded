@@ -85,6 +85,39 @@ class SteamCloudSyncPlannerTest {
         assertEquals(1, plan(l, r, mode = SteamCloudSyncMode.LOCAL_WINS).uploadCandidates.size)
         assertEquals(1, plan(l, r, mode = SteamCloudSyncMode.CLOUD_WINS).remoteOnlyChanges.size)
     }
+    @Test fun caseAliasesWithinOrAcrossListingsAreUnsafeInEveryMode() {
+        val a = local("preferences/MyMod")
+        val b = local("preferences/mymod")
+        for (mode in SteamCloudSyncMode.entries) {
+            assertThrows(SteamCloudIncompleteManifestException::class.java) {
+                plan(listOf(a, b), snapshot(), mode = mode)
+            }
+            assertThrows(SteamCloudIncompleteManifestException::class.java) {
+                plan(emptyList(), snapshot(remote(a), remote(b)), mode = mode)
+            }
+            assertThrows(SteamCloudIncompleteManifestException::class.java) {
+                plan(listOf(a), snapshot(remote(b)), mode = mode)
+            }
+            assertThrows(SteamCloudIncompleteManifestException::class.java) {
+                plan(listOf(a), snapshot(remote(b).copy(persistState = "Deleted")), mode = mode)
+            }
+            for (old in listOf(baseline(b).copy(localEntries = emptyList()), baseline(b).copy(remoteEntries = emptyList()))) {
+                assertThrows(SteamCloudIncompleteManifestException::class.java) {
+                    plan(listOf(a), snapshot(remote(a)), old, mode)
+                }
+            }
+        }
+    }
+    @Test fun directorySpellingsAndFileDirectoryOverlapsAreCheckedByComponent() {
+        for ((left, right) in listOf("Mod/file1" to "mod/file2", "Mod" to "mod/file", "Mod/file" to "Mod")) {
+            assertThrows(SteamCloudIncompleteManifestException::class.java) {
+                plan(listOf(local("saves/$left")), snapshot(remote(local("saves/$right"))))
+            }
+        }
+        val p = plan(listOf(local("saves/Mod/Slot")), snapshot(remote(local("saves/Mod/Slot2")), remote(local("preferences/mod/slot"))))
+        assertEquals("saves/Mod/Slot", p.uploadCandidates.single().localRelativePath)
+        assertEquals(setOf("saves/Mod/Slot2", "preferences/mod/slot"), p.remoteOnlyChanges.map { it.localRelativePath }.toSet())
+    }
     @Test fun reconcileDoesNotAdvanceUntouchedRemoteChange() {
         val b = baseline(local())
         val next = SteamCloudSyncPlanner.reconcileBaseline(b, listOf(local()), snapshot(remote(local(content = "b"))))

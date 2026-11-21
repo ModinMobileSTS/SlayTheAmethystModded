@@ -12,6 +12,8 @@ internal object SteamCloudSyncPlanner {
         currentRemoteSnapshot: SteamCloudManifestSnapshot,
         baseline: SteamCloudSyncBaseline?,
         mode: SteamCloudSyncMode = SteamCloudSyncMode.MERGE,
+        directories: Set<String> = emptySet(),
+        excludedFiles: Set<String> = emptySet(),
     ): SteamCloudUploadPlan {
         validateManifest(currentRemoteSnapshot)
         val local = currentLocalEntries.associateBy { it.localRelativePath }
@@ -25,6 +27,7 @@ internal object SteamCloudSyncPlanner {
         val conflicts = mutableListOf<SteamCloudConflict>()
         val warnings = currentRemoteSnapshot.warnings.toMutableList()
         val paths = (local.keys + remote.keys + oldLocal.keys + oldRemote.keys).sorted()
+        validatePathTree(paths, directories, excludedFiles)
         for (path in paths) {
             val l = local[path]
             val r = remote[path]?.takeIf { it.isLive }
@@ -112,6 +115,35 @@ internal object SteamCloudSyncPlanner {
                 throw SteamCloudIncompleteManifestException("Unsafe or incomplete cloud listing: ${entry.remotePath}")
             }
         }
+        validatePathTree(paths)
+    }
+
+    // Steam names and local filesystem names need not have the same case semantics.
+    // Check the spelling and file/directory role of every shared component; only the
+    // comparison keys are folded. Never pick a spelling or rewrite a planned path.
+    fun validatePathTree(paths: Iterable<String>, directories: Set<String> = emptySet(),
+        excludedFiles: Set<String> = emptySet()) {
+        val seen = HashMap<String, String>()
+        fun checkPath(path: String, file: Boolean, record: Boolean) {
+            var end = path.length
+            while (end > 0) {
+                val prefix = path.substring(0, end)
+                val spelling = if (file && end == path.length) prefix else "$prefix/"
+                val key = prefix.lowercase()
+                val other = if (record) seen.putIfAbsent(key, spelling) else seen[key]
+                if (other != null) {
+                    if (other != spelling) throw SteamCloudIncompleteManifestException(
+                        "Ambiguous managed save paths: $other and $spelling")
+                    break // Its ancestors have already been checked under this exact spelling.
+                }
+                end = path.lastIndexOf('/', end - 1)
+            }
+        }
+        paths.forEach { checkPath(it, file = true, record = true) }
+        // These are not sync candidates. An empty directory or protected local subtree
+        // must not be recursively replaced by installing a managed file over it.
+        directories.forEach { checkPath(it, file = false, record = false) }
+        excludedFiles.forEach { checkPath(it, file = true, record = false) }
     }
 
     /** Advance only proven agreements; preserve pending remote changes on untouched paths. */
@@ -124,6 +156,8 @@ internal object SteamCloudSyncPlanner {
         validateManifest(remote)
         val ls = prior?.localEntries?.associateBy { it.localRelativePath }?.toMutableMap() ?: linkedMapOf()
         val rs = prior?.remoteEntries?.associateBy { it.localRelativePath }?.toMutableMap() ?: linkedMapOf()
+        validatePathTree(ls.keys + rs.keys + local.map { it.localRelativePath } +
+            remote.entriesForPlanning.map { it.localRelativePath } + deletedPaths)
         val byPath = remote.entries.associateBy { it.localRelativePath }
         local.forEach { l ->
             val r = byPath[l.localRelativePath]

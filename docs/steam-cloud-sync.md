@@ -25,10 +25,23 @@ the former push/pull coordinators and diff/mirror/pull planners are removed.
    the live-save and local-state locks. Pure uploads can finish while a newly
    launched game owns the live lease.
 
+A steady ordinary merge can end after one fresh full listing: the frozen local
+files and remote content must agree, and the stored baseline, cached manifest
+and on-disk account profile must already match. The launcher still freezes live
+files and checks the profile contents rather than trusting its timestamp or
+initialization marker. In this case it skips the projected copy and directory
+transaction. Initial sync, pending-write recovery, explicit installations and
+metadata/profile repairs keep the full reconciliation path.
+
 Automatic local-to-cloud deletion propagation is restricted to saves. Explicit local-wins
 mirrors may also delete preferences. Blacklisted paths are excluded from sync,
 and mode/profile replacement preserves their live values. Symbolic links and
 ambiguous or incomplete managed remote paths fail closed.
+
+Before planning a transfer, check the combined path layout, not just each
+endpoint separately. A case-only spelling conflict (including a parent directory)
+or a path that would need to be both a file and a directory stops the operation
+before either endpoint is changed. A forced direction is not a bypass.
 
 ## Recovery and storage
 
@@ -49,6 +62,21 @@ Offline `:steam-protocol:test` coverage uses fake WebSockets for node failover,
 bounded exhaustion, credential/rate-limit rejection, cancellation, and stale
 callbacks; no Steam account or network is required.
 
+After login, the CM transport may reconnect and retry the two read-only cloud
+RPCs (listing and download information). It does not transparently send a cloud
+write again when a reply is lost. App-level write backoff is reserved for specific,
+typed server refusals for that same method. An ambiguous begin or commit is
+reconciled from the pending record rather than assuming a failed transfer.
+Cloud RPC rate limiting (`EResult=84`) backs off for 60 seconds for that account
+in the calling process; it does not revoke the login or change save slots.
+An explicit permission denial from the batch finalizer is reported as a
+permission error. The pending record is retained for an independent recheck;
+choosing an overwrite direction does not grant permission. Filenames, HTTP
+response text and cloud RPC failures cannot trigger account logout. A confirmed
+CM credential rejection can prompt the affected account to sign in again.
+An elapsed internal RPC deadline is reported as a connection failure. A caller
+that actually cancels the operation still receives a cancellation result.
+
 ### Local recovery
 
 Relative to the app's storage root, `steam-cloud/` contains:
@@ -58,8 +86,10 @@ Relative to the app's storage root, `steam-cloud/` contains:
 | `control-v2.json` | Uncached, separately locked controls migrated from existing preferences |
 | `sync-baseline.json`, `manifest.json` | Existing compatible metadata locations |
 | `push-summary.txt`, `pull-summary.txt` | Best-effort operation summaries for settings and diagnostics |
-| `remote-pending-v2.json` | Expected remote result for an unfinished write |
-| `uncertain-remote-*.json` | Previous uncertain records retained after explicit resolution |
+| `last-sync-pass.txt` | Latest repository pass: operation/freeze IDs, trigger, phase times, counts, pending/write state and outcome |
+| `remote-pending-v3-<steamId>.json` | Expected remote result for an unfinished write, owned by one account |
+| `remote-pending-v2.json` | Legacy pending record, migrated under the operation lock by its owning account |
+| `uncertain-remote-*.json` | Archived records retained after an explicit resolution by their owner |
 | `transactions-v2/<id>/` | Write-ahead journal, copies of originals, and prepared replacements |
 | `history-v2/<id>/` | Original local data retained after destructive sync, with target mapping in `journal.json` |
 | `frozen-v2/`, `work-v2/` | Ephemeral snapshots and download staging; never authoritative recovery data |
@@ -74,8 +104,20 @@ Retained history and uncertain records are not automatically pruned; they remain
 available for manual inspection/restoration. Failed operations can leave ephemeral
 workspaces after process death, but these are not used to reconstruct saves.
 
+The feedback archive includes allowlisted fields from `push-summary.txt` and
+`last-sync-pass.txt`. The latter starts as `RUNNING` so that an interrupted pass
+is distinguishable from a previous success. Neither of these exported summaries
+needs save contents, filenames, raw exception messages or credentials.
+
 If the remote result matches a pending ordinary write, recover its verified
 baseline without re-uploading. Otherwise stop and require an explicit choice.
+If a live worker is cancelled after journaling but before it invokes the first
+write RPC, it can prove nothing was sent and retract **its own** pending record.
+Once that call has been entered, or after process death, the outcome still needs
+verification: a missing batch ID does not establish that no request reached Steam.
+Switching accounts does not resolve the previous account's journal. A failure to
+persist or remove a journal is reported as a recovery error even if the worker
+was also cancelled; it is not reported as a clean cancellation.
 An unfinished independent-profile overwrite additionally requires its local
 installation to be verified; old live cloud files cannot be silently uploaded
 over the newly committed independent profile.
@@ -133,6 +175,21 @@ local saves, that worker also defers until return; it never copies live game wri
 without the lease. Pure uploads from an existing frozen snapshot continue normally.
 Cloud conflicts/failures discovered after launch are reported without relaunching
 the game or replacing local saves. This choice can start with older local progress.
+
+A clean game return hands the service the launch marker and expected Steam account,
+even when an older operation is active. Reattaching the Activity to the old operation
+does not count as checking the returned game's saves. The service coalesces duplicate
+markers and, after an eligible previous pass, takes a **new snapshot** for an ordinary
+merge before publishing an up-to-date result. A conflict, failure, or cancellation
+remains visible; an earlier forced overwrite is never replayed as the follow-up.
+Immediate launches have separate protection markers, so an older task cannot
+release a newer game's protection before its JVM acquires the live-save lease.
+The launcher retains a clean-return handoff until the correct account's service
+accepts it. A transient credential-store read failure delays handoff or UI
+attachment instead of consuming the return as if the account had logged out.
+The service revalidates the expected account and cloud slot under the cross-process
+operation lock, before copying live data. An intentional pull from settings that
+initializes a cloud slot from independent mode is a separate operation.
 
 The cloud service owns result notifications independently of the launcher Activity,
 which finishes when the game opens. Completed transfers, failures, conflicts,

@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.FileObserver
 import io.stamethyst.backend.steam.SteamCmAccountEpoch
 import io.stamethyst.backend.steam.SteamCmLoginFailureNotice
-import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import java.util.concurrent.TimeUnit
@@ -73,16 +72,22 @@ internal object SharedSteamCmSessions {
         }
         return SharedSteamCmSession(
             sessionFactory = {
+                val revision = java.util.concurrent.atomic.AtomicReference<Long?>()
                 identity.createSession(
                     cmHttpClient,
                     accountValidator = { account ->
-                        SteamCmAccountEpoch.read(appContext) == sessionEpoch &&
-                            readSharedAccount(appContext, identity)?.let {
-                                it.steamId == account.steamId && it.refreshToken == account.refreshToken
-                            } == true
+                        val auth = SteamCloudAuthStore.readCmAuthMaterial(appContext)
+                        if (SteamCmAccountEpoch.read(appContext) != sessionEpoch || auth == null ||
+                            auth.steamId64 != account.steamId.toString() || auth.refreshToken != account.refreshToken) false
+                        else {
+                            revision.compareAndSet(null, auth.credentialRevision)
+                            revision.get() == auth.credentialRevision
+                        }
                     },
                     onAccountLogonFailure = { account, error ->
-                        if (error.isSteamCmCredentialRejection()) SteamCmLoginFailureNotice.report(appContext, account)
+                        if (error.isSteamCmCredentialRejection()) {
+                            revision.get()?.let { SteamCmLoginFailureNotice.report(appContext, account, it, sessionEpoch) }
+                        }
                     },
                     sessionValidator = { SteamCmAccountEpoch.read(appContext) == sessionEpoch },
                 )
@@ -100,9 +105,6 @@ internal object SharedSteamCmSessions {
         appContext: Context,
         identity: WorkshopSteamClientIdentity,
     ): SteamAccountSession? {
-        if (SteamAuthenticationCircuitBreaker.isOpen()) {
-            return null
-        }
         val auth = SteamCloudAuthStore.readCmAuthMaterial(appContext)
             ?: return null
         if (auth.refreshToken.isBlank()) {

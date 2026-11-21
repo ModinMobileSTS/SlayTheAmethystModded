@@ -9,7 +9,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import top.apricityx.workshop.steam.protocol.OkHttpSteamCmSession
 import top.apricityx.workshop.steam.protocol.SteamAccountSession
@@ -37,6 +37,10 @@ internal class SteamCloudProtocolClient(
             serverSelector = top.apricityx.workshop.steam.protocol.SteamCmServerSelector(webSocketFactory),
         )
     private val directory = SteamDirectoryClient(httpClient)
+    private companion object {
+        val cloudRpcCooldown = SteamCloudRpcCooldown()
+    }
+    private var loggedOnId: Long? = null
 
     fun logOn(accountName: String, refreshToken: String, steamId64: String): Long = runBlocking {
         val servers = directory.loadServers()
@@ -47,7 +51,7 @@ internal class SteamCloudProtocolClient(
                 steamId = steamId64.toLongOrNull() ?: 0L,
                 refreshToken = refreshToken,
             ),
-        ).steamId
+        ).steamId.also { loggedOnId = it }
     }
 
     fun getUserStats(appId: Long, steamId64: Long, timeoutMs: Long): SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse =
@@ -58,7 +62,7 @@ internal class SteamCloudProtocolClient(
                 .setSchemaLocalVersion(0)
                 .setCrcStats(0)
                 .build()
-            withTimeout(timeoutMs) {
+            withTimeoutOrNull(timeoutMs) {
                 session.sendClientMessage(
                     SteamPacketCodec.emsgClientGetUserStats,
                     request,
@@ -66,7 +70,7 @@ internal class SteamCloudProtocolClient(
                     SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse.parser(),
                     appId.toUInt(),
                 )
-            }
+            } ?: throw java.net.SocketTimeoutException("Timed out waiting for ClientGetUserStats")
         }
 
     fun storeUserStat(
@@ -90,7 +94,7 @@ internal class SteamCloudProtocolClient(
             .setExplicitReset(false)
             .addStats(stat)
             .build()
-        withTimeout(timeoutMs) {
+        withTimeoutOrNull(timeoutMs) {
             session.sendClientMessage(
                 SteamPacketCodec.emsgClientStoreUserStats2,
                 request,
@@ -98,7 +102,7 @@ internal class SteamCloudProtocolClient(
                 SteammessagesClientserverUserstats.CMsgClientStoreUserStatsResponse.parser(),
                 appId.toUInt(),
             )
-        }
+        } ?: throw java.net.SocketTimeoutException("Timed out waiting for ClientStoreUserStats")
     }
 
     fun sendGamesPlayed(appId: Long) = runBlocking {
@@ -215,7 +219,9 @@ internal class SteamCloudProtocolClient(
         method: String,
         request: com.google.protobuf.MessageLite,
         parser: com.google.protobuf.Parser<T>,
-    ): T = runBlocking { session.callServiceMethod(method, request, parser) }
+    ): T = cloudRpcCooldown.call(checkNotNull(loggedOnId) { "Cloud file request requires logon" }) {
+        runBlocking { session.callServiceMethod(method, request, parser) }
+    }
 
     override fun close() {
         if (ownsSession) {

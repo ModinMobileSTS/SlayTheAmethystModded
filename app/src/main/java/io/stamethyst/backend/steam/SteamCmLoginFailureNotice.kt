@@ -31,14 +31,19 @@ internal object SteamCmLoginFailureNotice {
         val classificationVersion: Int = 0,
     )
 
-    fun report(context: Context, account: SteamAccountSession) {
-        val auth = SteamCloudAuthStore.readCmAuthMaterial(context) ?: return
-        if (auth.steamId64 != account.steamId.toString() || auth.refreshToken != account.refreshToken) return
-        val notice = Notice(
-            auth.steamId64, auth.credentialRevision, SteamCmAccountEpoch.read(context), classificationVersion = 1,
-        )
+    fun noticeForRejectedLogon(account: SteamAccountSession, revision: Long, epoch: String,
+        auth: SteamCloudAuthStore.SavedAuthMaterial?, currentEpoch: String): Notice? {
+        if (epoch != currentEpoch || auth == null || auth.credentialRevision != revision ||
+            auth.steamId64 != account.steamId.toString() || auth.refreshToken != account.refreshToken) return null
+        return Notice(auth.steamId64, revision, epoch, classificationVersion = 1)
+    }
+
+    fun report(context: Context, account: SteamAccountSession, revision: Long, epoch: String) {
         // At most one dialog per credential revision, even if several features fail together.
         locked(context) {
+            val notice = noticeForRejectedLogon(account, revision, epoch,
+                SteamCloudAuthStore.readPersistedCmAuthMaterial(context, epoch), SteamCmAccountEpoch.read(context))
+                ?: return@locked
             if (read(context)?.copy(dismissed = false) != notice) write(context, notice)
         }
     }

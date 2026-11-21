@@ -108,15 +108,8 @@ public final class SteamCloudClient implements AutoCloseable {
     private static final long CALLBACK_POLL_TIMEOUT_MS = 250L;
     private static final int DOWNLOAD_MAX_ATTEMPTS = 4;
     private static final long[] DOWNLOAD_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
-    private static final int BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS = 7;
-    private static final int BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS = 7;
-    private static final long[] BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
-    private static final long[] BEGIN_HTTP_UPLOAD_PENDING_RETRY_DELAYS_MS =
-        new long[] { 10_000L, 20_000L, 30_000L, 60_000L, 90_000L, 120_000L };
     private static final int TRANSIENT_RPC_MAX_ATTEMPTS = 4;
     private static final long[] TRANSIENT_RPC_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
-    private static final int COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS = 5;
-    private static final long[] COMPLETE_UPLOAD_BATCH_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L, 20_000L };
     private static final int JAVA_STEAM_LOG_TAIL_LIMIT = 12;
     private static final int JAVA_STEAM_STACKTRACE_LINE_LIMIT = 24;
     private static final int DIAGNOSTIC_EVENT_LIMIT = 96;
@@ -1140,11 +1133,7 @@ public final class SteamCloudClient implements AutoCloseable {
                     .setAppBuildId(0L)
                     .build();
             SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response response =
-                beginAppUploadBatchWithRetries(
-                    request,
-                    remotePathsToUpload.size(),
-                    remotePathsToDelete.size()
-                );
+                writeRpc(SteamCloudWriteRpc.BEGIN_BATCH, () -> protocolClient.beginAppUploadBatch(request));
             SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response body = response;
             long batchId = body.getBatchId();
             if (batchId == 0L) {
@@ -1172,7 +1161,7 @@ public final class SteamCloudClient implements AutoCloseable {
         }
 
         File uploadSnapshot = createUploadSnapshot(sourceFile, uploadSnapshotDir);
-        boolean startedUpload = false;
+        boolean awaitingTransfer = false;
         long fileSizeLong = 0L;
         String sha1Hex = "";
 
@@ -1215,8 +1204,8 @@ public final class SteamCloudClient implements AutoCloseable {
                     .setUploadBatchId(uploadBatchId)
                     .build();
             SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response beginResponse =
-                beginHttpUploadWithRetries(request, remotePath);
-            startedUpload = true;
+                writeRpc(SteamCloudWriteRpc.BEGIN_FILE, () -> protocolClient.beginHttpUpload(request));
+            awaitingTransfer = true;
 
             SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response body = beginResponse;
             String url = (body.getUseHttps() ? "https://" : "http://") + body.getUrlHost() + body.getUrlPath();
@@ -1256,6 +1245,8 @@ public final class SteamCloudClient implements AutoCloseable {
                 );
             }
 
+            // Never send a contradictory failure commit after a possibly successful commit.
+            awaitingTransfer = false;
             boolean committed = commitHttpUpload(true, appId, sha1Hex, remotePath);
             if (!committed) {
                 throw new IllegalStateException("Steam did not commit uploaded file: " + remotePath);
@@ -1269,12 +1260,12 @@ public final class SteamCloudClient implements AutoCloseable {
                     + remotePath
                     + " batchId="
                     + uploadBatchId
-                    + " startedUpload="
-                    + startedUpload
+                    + " awaitingTransfer="
+                    + awaitingTransfer
                     + " error="
                     + describeThrowable(error)
             );
-            if (startedUpload) {
+            if (awaitingTransfer && SteamCloudFailureClassifier.INSTANCE.classify(error) != SteamCloudFailureCategory.CANCELLED) {
                 try {
                     commitHttpUpload(false, appId, sha1Hex, remotePath);
                 } catch (Throwable commitError) {
@@ -1331,87 +1322,25 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     public void completeUploadBatch(int appId, long batchId, EResult batchResult) throws Exception {
-        // CompleteAppUploadBatch is susceptible to transient EResult.Fail (2) responses from the
-        // Steam backend when the batch finalization is still in-flight server-side even though all
-        // individual file commits succeeded.  Retry with back-off before giving up.
         SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request request =
             SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request.newBuilder()
                 .setAppid(appId)
                 .setBatchId(batchId)
                 .setBatchEresult(batchResult.code())
                 .build();
-        for (int attempt = 1; attempt <= COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS; attempt++) {
-            try {
-                protocolClient.completeAppUploadBatch(request);
-                Log.i(TAG, "Steam Cloud upload batch completed. batchId=" + batchId
-                    + " result=" + batchResult + " attempt=" + attempt);
-                recordDiagnosticEvent(
-                    "completeappuploadbatch success batchId=" + batchId
-                        + " result=" + batchResult + " attempt=" + attempt
-                );
-                return;
-            } catch (Exception error) {
-                boolean isRetryable = isRetryableCompleteUploadBatchException(error);
-                recordDiagnosticEvent(
-                    "completeappuploadbatch failed batchId=" + batchId
-                        + " attempt=" + attempt + " retryable=" + isRetryable
-                        + " error=" + describeThrowable(error)
-                );
-                if (!isRetryable || attempt >= COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS) {
-                    Log.e(TAG, "Steam Cloud upload batch completion failed during " + currentStage
-                        + " batchId=" + batchId + " attempt=" + attempt + '.', error);
-                    throw error;
-                }
-                long delayMs = COMPLETE_UPLOAD_BATCH_RETRY_DELAYS_MS[
-                    Math.min(attempt - 1, COMPLETE_UPLOAD_BATCH_RETRY_DELAYS_MS.length - 1)
-                ];
-                Log.w(TAG, "Steam Cloud upload batch completion failed transiently for batchId=" + batchId
-                    + ": " + sanitizeSingleLine(error.getMessage())
-                    + "; retrying attempt " + (attempt + 1) + "/" + COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS
-                    + " after " + delayMs + "ms.", error);
-                sleepBeforeRetry(delayMs);
-            }
-        }
-        throw new IllegalStateException("CompleteAppUploadBatch failed without completing. batchId=" + batchId);
+        writeRpc(SteamCloudWriteRpc.COMPLETE_BATCH, () -> protocolClient.completeAppUploadBatch(request));
+        recordDiagnosticEvent("completeappuploadbatch success batchId=" + batchId + " result=" + batchResult);
     }
 
-    private static boolean isRetryableCompleteUploadBatchException(Throwable error) {
-        Throwable current = error;
-        while (current != null) {
-            if (current instanceof TimeoutException) {
-                return true;
-            }
-            // SteamServiceMethodException carries the raw EResult code; EResult.Fail (2) is the
-            // most common transient result during CompleteAppUploadBatch.
-            if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
-                int code = ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode();
-                return isRetryableCompleteUploadBatchResultCode(code);
-            }
-            String message = current.getMessage();
-            if (message != null) {
-                String normalized = message.toLowerCase(Locale.ROOT);
-                if (normalized.contains("completeappuploadbatch failed: fail")
-                    || normalized.contains("eresult=2")
-                    || normalized.contains("eresult = 2")
-                    || normalized.contains("busy")
-                    || normalized.contains("timeout")
-                    || normalized.contains("timed out")
-                    || normalized.contains("serviceunavailable")
-                    || normalized.contains("service unavailable")
-                    || normalized.contains("remotecallfailed")
-                    || normalized.contains("remote call failed")
-                ) {
-                    return true;
-                }
-            }
-            current = current.getCause();
-        }
-        return false;
-    }
-
-    private static boolean isRetryableCompleteUploadBatchResultCode(int code) {
-        // EResult.Fail=2, Busy=10, ServiceUnavailable=15, Timeout=16, RemoteCallFailed=71
-        return code == 2 || code == 10 || code == 15 || code == 16 || code == 71;
+    private <T> T writeRpc(SteamCloudWriteRpc rpc, SteamCloudWriteRpc.Call<T> call) throws Exception {
+        return rpc.execute(() -> {
+            SteamCloudSyncPolicy.requireSyncEnabled(appContext);
+            return call.invoke();
+        }, (rejection, attempt, delayMs) -> {
+            recordDiagnosticEvent(rpc.method + " rejected EResult=" + rejection.getResultCode() +
+                " attempt=" + attempt + " retryAfterMs=" + delayMs);
+            sleepBeforeRetry(delayMs);
+        });
     }
 
     @Override
@@ -2003,19 +1932,7 @@ public final class SteamCloudClient implements AutoCloseable {
                 .setFileSha(sha1Hex)
                 .setFilename(remotePath)
                 .build();
-        SteammessagesCloudSteamclient.CCloud_CommitHTTPUpload_Response response = null;
-        for (int attempt = 1; attempt <= TRANSIENT_RPC_MAX_ATTEMPTS; attempt++) {
-            try {
-                response = protocolClient.commitHttpUpload(request);
-                return response.getFileCommitted();
-            } catch (Exception error) {
-                if (!isRetryableSteamCloudException(error) || attempt >= TRANSIENT_RPC_MAX_ATTEMPTS) {
-                    throw error;
-                }
-                sleepBeforeTransientRetry("CommitHTTPUpload", error, attempt);
-            }
-        }
-        throw new IllegalStateException("CommitHTTPUpload failed without a response result.");
+        return writeRpc(SteamCloudWriteRpc.COMMIT_FILE, () -> protocolClient.commitHttpUpload(request)).getFileCommitted();
     }
 
     private <T extends GeneratedMessage.Builder<T>> ServiceMethodResponse<T> waitForServiceJob(
@@ -2055,71 +1972,6 @@ public final class SteamCloudClient implements AutoCloseable {
 
         ensureServiceResult(response, stage);
         throw new IllegalStateException(stage + " failed without a response result.");
-    }
-
-    private SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response
-    beginHttpUploadWithRetries(
-        SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Request request,
-        String remotePath
-    ) throws Exception {
-        SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response response = null;
-        for (int attempt = 1; attempt <= BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS; attempt++) {
-            try {
-                response = protocolClient.beginHttpUpload(request);
-                recordDiagnosticEvent("begin_http_upload success remotePath=" + remotePath + " attempt=" + attempt);
-                return response;
-            } catch (Exception error) {
-                if (!isRetryableSteamCloudException(error) || attempt >= BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS) {
-                    throw error;
-                }
-                sleepBeforeTransientRetry("BeginHTTPUpload", error, attempt);
-            }
-        }
-        throw new IllegalStateException("BeginHTTPUpload failed without a response result.");
-    }
-
-    private SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response
-    beginAppUploadBatchWithRetries(
-        SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Request request,
-        int uploadCount,
-        int deleteCount
-    ) throws Exception {
-        SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response response = null;
-        for (int attempt = 1; attempt <= BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS; attempt++) {
-            try {
-                response = protocolClient.beginAppUploadBatch(request);
-                long batchId = response.getBatchId();
-                recordDiagnosticEvent(
-                    "begin_app_upload_batch success uploads=" + uploadCount + " deletes=" + deleteCount
-                        + " attempt=" + attempt + " batchId=" + batchId
-                );
-                ensureValidUploadBatchId(batchId, EResult.OK);
-                return response;
-            } catch (Exception error) {
-                EResult typedResult = steamCloudResultFromException(error);
-                long batchId = response == null ? 0L : response.getBatchId();
-                boolean retryable = typedResult != null
-                    ? isRetryableBeginAppUploadBatchResult(typedResult, batchId)
-                    : isRetryableSteamCloudException(error);
-                if (!retryable || attempt >= BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS) {
-                    throw error;
-                }
-                if (typedResult != null) {
-                    long delayMs = beginAppUploadBatchRetryDelayMs(typedResult, batchId, attempt);
-                    Log.w(
-                        TAG,
-                        "BeginAppUploadBatch returned " + typedResult +
-                            beginAppUploadBatchRetryHint(typedResult, batchId) +
-                            "; retrying attempt " + (attempt + 1) + "/" +
-                            BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS + " after " + delayMs + "ms."
-                    );
-                    sleepBeforeRetry(delayMs);
-                } else {
-                    sleepBeforeTransientRetry("BeginAppUploadBatch", error, attempt);
-                }
-            }
-        }
-        throw new IllegalStateException("BeginAppUploadBatch failed without a response result.");
     }
 
     private static void sleepBeforeTransientRetry(
@@ -2192,8 +2044,8 @@ public final class SteamCloudClient implements AutoCloseable {
             // of relying on string parsing which misses codes like EResult.Fail (2).
             if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
                 int code = ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode();
-                // Busy=10, ServiceUnavailable=15, Timeout=16, RemoteCallFailed=71
-                if (code == 10 || code == 15 || code == 16 || code == 71 || code == 108) {
+                // AccessDenied=15 is never transient. Compare against the protocol enum.
+                if (isRetryableSteamCloudResult(EResult.from(code)) || code == EResult.TooManyPending.code()) {
                     return true;
                 }
                 // Do not retry other typed results (e.g. Fail=2 for generic cloud calls,
@@ -2217,19 +2069,6 @@ public final class SteamCloudClient implements AutoCloseable {
             current = current.getCause();
         }
         return false;
-    }
-
-    private static EResult steamCloudResultFromException(Throwable error) {
-        Throwable current = error;
-        while (current != null) {
-            if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
-                return EResult.from(
-                    ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode()
-                );
-            }
-            current = current.getCause();
-        }
-        return null;
     }
 
     private static boolean isRetryableDownloadException(Throwable error) {
@@ -2260,50 +2099,6 @@ public final class SteamCloudClient implements AutoCloseable {
 
     private static long downloadRetryDelayMs(int attempt) {
         return DOWNLOAD_RETRY_DELAYS_MS[Math.min(attempt - 1, DOWNLOAD_RETRY_DELAYS_MS.length - 1)];
-    }
-
-    private static boolean isRetryableBeginHttpUploadResult(EResult result) {
-        return isRetryableSteamCloudResult(result)
-            || result == EResult.TooManyPending
-            || result == EResult.DuplicateRequest;
-    }
-
-    private static boolean isRetryableBeginAppUploadBatchResult(EResult result, long batchId) {
-        return result == EResult.OK
-            ? batchId == 0L
-            : isRetryableSteamCloudResult(result) || result == EResult.TooManyPending;
-    }
-
-    private static long beginAppUploadBatchRetryDelayMs(EResult result, long batchId, int attempt) {
-        long[] delays = (result == EResult.TooManyPending || (result == EResult.OK && batchId == 0L))
-            ? BEGIN_HTTP_UPLOAD_PENDING_RETRY_DELAYS_MS
-            : BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS;
-        return delays[Math.min(attempt - 1, delays.length - 1)];
-    }
-
-    private static String beginAppUploadBatchRetryHint(EResult result, long batchId) {
-        if (result == EResult.TooManyPending || (result == EResult.OK && batchId == 0L)) {
-            return " Steam may still be clearing an earlier unfinished upload batch after repeated uploads or cancellations.";
-        }
-        return "";
-    }
-
-    private static long beginHttpUploadRetryDelayMs(EResult result, int attempt) {
-        long[] delays = isPendingUploadSlotResult(result)
-            ? BEGIN_HTTP_UPLOAD_PENDING_RETRY_DELAYS_MS
-            : BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS;
-        return delays[Math.min(attempt - 1, delays.length - 1)];
-    }
-
-    private static String beginHttpUploadRetryHint(EResult result) {
-        if (!isPendingUploadSlotResult(result)) {
-            return "";
-        }
-        return " Steam may still be clearing an earlier unfinished upload batch.";
-    }
-
-    private static boolean isPendingUploadSlotResult(EResult result) {
-        return result == EResult.TooManyPending || result == EResult.DuplicateRequest;
     }
 
     private static void sleepBeforeRetry(long delayMs) throws InterruptedException {

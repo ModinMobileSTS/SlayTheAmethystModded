@@ -23,6 +23,10 @@ import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.Collections;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicInteger;
+import top.apricityx.workshop.steam.protocol.SteamServiceMethodException;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -311,46 +315,49 @@ public final class SteamCloudClientTest {
     }
 
     @Test
-    public void isRetryableBeginHttpUploadResult_retriesTooManyPending() throws Exception {
-        Assert.assertTrue(invokeIsRetryableBeginHttpUploadResult(EResult.TooManyPending));
-        Assert.assertTrue(invokeIsRetryableBeginHttpUploadResult(EResult.DuplicateRequest));
-        Assert.assertTrue(invokeIsRetryableBeginHttpUploadResult(EResult.Timeout));
-        Assert.assertFalse(invokeIsRetryableBeginHttpUploadResult(EResult.AccessDenied));
+    public void writesDoNotReplayAnAmbiguousResponseOrCancellation() {
+        for (SteamCloudWriteRpc rpc : SteamCloudWriteRpc.values()) {
+            for (Exception error : new Exception[]{
+                new IOException("Busy; CompleteAppUploadBatch failed: Fail EResult=2"),
+                new SocketTimeoutException("timed out"), new CancellationException("cancelled"),
+                new SteamServiceMethodException(rpc.method, 16, null, null),
+                new SteamServiceMethodException(rpc.method, 71, null, null),
+                new SteamServiceMethodException(rpc.method, 84, null, null),
+                new SteamServiceMethodException(rpc.method, EResult.AccessDenied.code(), null, null),
+                new SteamServiceMethodException("Different.job#1", EResult.Busy.code(), null, null),
+                new IllegalStateException("invalid batchId=0")
+            }) {
+                AtomicInteger calls = new AtomicInteger();
+                Assert.assertSame(error, Assert.assertThrows(Exception.class, () -> rpc.execute(() -> {
+                    calls.incrementAndGet();
+                    throw error;
+                }, (rejection, attempt, delay) -> Assert.fail("Retried " + error))));
+                Assert.assertEquals(1, calls.get());
+            }
+        }
     }
 
     @Test
-    public void isRetryableBeginAppUploadBatchResult_retriesTooManyPendingAndZeroBatchId() throws Exception {
-        Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.TooManyPending, 0L));
-        Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.Timeout, 0L));
-        Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.OK, 0L));
-        Assert.assertFalse(invokeIsRetryableBeginAppUploadBatchResult(EResult.OK, 1L));
-        Assert.assertFalse(invokeIsRetryableBeginAppUploadBatchResult(EResult.AccessDenied, 0L));
-    }
-
-    @Test
-    public void isRetryableBeginAppUploadBatchResult_recognizesSteamCode108AsTooManyPending() throws Exception {
-        Assert.assertEquals(108, EResult.TooManyPending.code());
-        Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.from(108), 0L));
-    }
-
-    @Test
-    public void beginAppUploadBatchRetryDelayMs_usesLongerBackoffForTooManyPendingAndZeroBatchId() throws Exception {
-        Assert.assertEquals(10_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.TooManyPending, 0L, 1));
-        Assert.assertEquals(20_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.OK, 0L, 2));
-        Assert.assertEquals(120_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.OK, 0L, 7));
-        Assert.assertEquals(2_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.Timeout, 0L, 1));
-        Assert.assertEquals(10_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.Timeout, 99L, 4));
-    }
-
-    @Test
-    public void beginHttpUploadRetryDelayMs_usesLongerBackoffForTooManyPending() throws Exception {
-        Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 1));
-        Assert.assertEquals(20_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 2));
-        Assert.assertEquals(120_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 7));
-        Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.DuplicateRequest, 1));
-        Assert.assertEquals(20_000L, invokeBeginHttpUploadRetryDelayMs(EResult.DuplicateRequest, 2));
-        Assert.assertEquals(2_000L, invokeBeginHttpUploadRetryDelayMs(EResult.Timeout, 1));
-        Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.Timeout, 4));
+    public void matchingServiceRejectionsUseBoundedBackoff() throws Exception {
+        for (SteamCloudWriteRpc rpc : SteamCloudWriteRpc.values()) {
+            AtomicInteger calls = new AtomicInteger();
+            boolean complete = rpc == SteamCloudWriteRpc.COMPLETE_BATCH;
+            List<Long> waits = new ArrayList<>();
+            Assert.assertEquals("accepted", rpc.execute(() -> {
+                if (calls.incrementAndGet() < 3) {
+                    throw new SteamServiceMethodException(rpc.method, complete ? 2 : 108, null, null);
+                }
+                return "accepted";
+            }, (error, attempt, delay) -> waits.add(delay)));
+            Assert.assertEquals(complete ? List.of(2_000L, 5_000L) : List.of(10_000L, 20_000L), waits);
+        }
+        SteamCloudWriteRpc begin = SteamCloudWriteRpc.BEGIN_FILE;
+        List<Long> delays = new ArrayList<>();
+        SteamServiceMethodException duplicate = new SteamServiceMethodException(
+            begin.method, EResult.DuplicateRequest.code(), null, null);
+        Assert.assertSame(duplicate, Assert.assertThrows(SteamServiceMethodException.class,
+            () -> begin.execute(() -> { throw duplicate; }, (error, attempt, delay) -> delays.add(delay))));
+        Assert.assertEquals(List.of(10_000L, 20_000L, 30_000L, 60_000L, 90_000L, 120_000L), delays);
     }
 
     @Test
@@ -531,46 +538,6 @@ public final class SteamCloudClientTest {
                 output.closeEntry();
             }
         }
-    }
-
-    private static boolean invokeIsRetryableBeginHttpUploadResult(EResult result) throws Exception {
-        Method method = SteamCloudClient.class.getDeclaredMethod(
-            "isRetryableBeginHttpUploadResult",
-            EResult.class
-        );
-        method.setAccessible(true);
-        return (boolean) method.invoke(null, result);
-    }
-
-    private static long invokeBeginHttpUploadRetryDelayMs(EResult result, int attempt) throws Exception {
-        Method method = SteamCloudClient.class.getDeclaredMethod(
-            "beginHttpUploadRetryDelayMs",
-            EResult.class,
-            int.class
-        );
-        method.setAccessible(true);
-        return (long) method.invoke(null, result, attempt);
-    }
-
-    private static boolean invokeIsRetryableBeginAppUploadBatchResult(EResult result, long batchId) throws Exception {
-        Method method = SteamCloudClient.class.getDeclaredMethod(
-            "isRetryableBeginAppUploadBatchResult",
-            EResult.class,
-            long.class
-        );
-        method.setAccessible(true);
-        return (boolean) method.invoke(null, result, batchId);
-    }
-
-    private static long invokeBeginAppUploadBatchRetryDelayMs(EResult result, long batchId, int attempt) throws Exception {
-        Method method = SteamCloudClient.class.getDeclaredMethod(
-            "beginAppUploadBatchRetryDelayMs",
-            EResult.class,
-            long.class,
-            int.class
-        );
-        method.setAccessible(true);
-        return (long) method.invoke(null, result, batchId, attempt);
     }
 
     private static void invokeEnsureValidUploadBatchId(long batchId, EResult result) throws Exception {

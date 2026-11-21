@@ -98,11 +98,40 @@ internal object SteamCloudSaveProfileManager {
     fun profileRoot(context: Context, mode: SteamCloudSaveMode): File =
         profileDir(context, mode, resolveCloudProfileId(context))
 
+    fun cloudSlot(context: Context, steamId: String): File {
+        SteamCloudRemoteCommitStore.checkedSteamId(steamId)
+        return profileDir(context, SteamCloudSaveMode.STEAM_CLOUD, steamId)
+    }
+
+    /** The slot is restorable data, not a cache flag. Compare all managed files on disk
+     * (including unexpected/excluded files), but never inspect the slot-local runs/ history. */
+    fun cloudSlotMatches(target: File, expected: List<SteamCloudLocalFileSnapshotEntry>): Boolean {
+        val marker = File(target, PROFILE_INITIALIZED_FILE_NAME)
+        return try {
+            if (marker.canonicalFile != marker.absoluteFile || !marker.isFile || marker.length() != 3L ||
+                marker.readText() != "v2\n") return false
+            val directories = hashSetOf<String>()
+            val actual = SteamCloudLocalSnapshotCollector.collect(target, directories)
+            if (actual.size != expected.size || actual.indices.any { i ->
+                actual[i].localRelativePath != expected[i].localRelativePath ||
+                    !SteamCloudSyncPlanner.sameLocal(actual[i], expected[i])
+            }) return false
+            // Staging omits empty directories, including excluded subtrees.
+            SteamCloudRootKind.entries.filter { File(target, it.directoryName).exists() }.forEach { directories.add(it.directoryName) }
+            actual.forEach {
+                var path = it.localRelativePath
+                while ('/' in path) {
+                    path = path.substringBeforeLast('/')
+                    if (!directories.remove(path)) break
+                }
+            }
+            directories.isEmpty()
+        } catch (_: IOException) { false }
+    }
+
     /** Profile content and its initialization marker commit with pulled saves and mode metadata. */
-    fun stageCloudProfile(context: Context, work: File, preparedRoot: File): List<SteamCloudPathReplacement> {
+    fun stageCloudProfile(target: File, blacklist: Set<String>, work: File, preparedRoot: File): List<SteamCloudPathReplacement> {
         val staged = File(work, "cloud-profile")
-        val target = profileRoot(context, SteamCloudSaveMode.STEAM_CLOUD)
-        val blacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(context)
         val replacements = SteamCloudRootKind.entries.map { kind ->
             val source = File(preparedRoot, kind.directoryName)
             val destination = File(staged, kind.directoryName)

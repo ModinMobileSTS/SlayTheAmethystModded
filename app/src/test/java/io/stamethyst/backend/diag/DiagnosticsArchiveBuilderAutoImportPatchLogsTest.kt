@@ -12,6 +12,8 @@ import io.stamethyst.backend.easytier.EasyTierFailureCategory
 import io.stamethyst.backend.easytier.EasyTierNetworkMode
 import io.stamethyst.backend.easytier.EasyTierStateStore
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
+import io.stamethyst.backend.steamcloud.SteamCloudSyncTrace
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
@@ -24,6 +26,32 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsArchiveBuilderAutoImportPatchLogsTest {
+    @Test
+    fun cloudSyncArchiveExportsOnlyTypedPushAndPassFields() {
+        val roots = TestRoots.create("diag-cloud-sync")
+        val dir = SteamCloudManifestStore.outputDir(roots.context).also { it.mkdirs() }
+        val id = java.util.UUID.randomUUID()
+        SteamCloudManifestStore.pushSummaryFile(roots.context).writeText(
+            "engine=v2\ncompletedAtMs=123\nuploaded=1\ndeleted=0\naccountName=PRIVATE\nuploaded=/PRIVATE/path\n")
+        File(dir, SteamCloudSyncTrace.FILE_NAME).writeText(
+            "operationId=$id\nsource=GAME_RETURN\nphaseMs.LIST=42\nenteredWrite=false\npendingNow=true\n" +
+                "outcome=FAILED_TRANSIENT_NETWORK\nphaseMs.PRIVATE=4\nreturnedLaunch=PRIVATE\noperationId=PRIVATE\noutcome=PRIVATE\n")
+        File(dir, "remote-pending-v2.json").writeText("PRIVATE journal")
+        File(dir, "saves").mkdir()
+        File(dir, "saves/private").writeText("PRIVATE save")
+        val archive = File(roots.rootDir, "sync.zip")
+        ZipOutputStream(archive.outputStream()).use {
+            assertEquals(2, DiagnosticsArchiveBuilder.writeCloudSyncSummaries(it, roots.context))
+        }
+        ZipFile(archive).use { zip ->
+            fun text(name: String) = zip.getInputStream(zip.getEntry("sts/steam_cloud/phase1/$name"))
+                .bufferedReader().use { it.readText() }
+            assertEquals(2, zip.size())
+            assertEquals("engine=v2\ncompletedAtMs=123\nuploaded=1\ndeleted=0\n", text("push-summary.txt"))
+            assertEquals("operationId=$id\nsource=GAME_RETURN\nphaseMs.LIST=42\nenteredWrite=false\npendingNow=true\n" +
+                "outcome=FAILED_TRANSIENT_NETWORK\n", text(SteamCloudSyncTrace.FILE_NAME))
+        }
+    }
     @Test
     fun writeWorkshopAutoImportPatchLogsForArchive_includesPatchLogs() {
         val roots = TestRoots.create("diag-auto-import-patch-logs")

@@ -13,9 +13,66 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
+import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
+import io.stamethyst.backend.steamcloud.SteamCloudControlStore
+import io.stamethyst.config.SteamCloudSaveMode
 
 class SteamCloudUiEventQueueTest {
     private data class Event(val id: String, val sequence: Long)
+
+    @Test fun recreatedLauncherRetainsUnverifiableAttachmentAheadOfTerminalUntilResume() = runBlocking {
+        val gate = SteamCloudOperationEventGate().apply { begin("request-R") }
+        val cloud = SteamCloudControlStore.State(mode = SteamCloudSaveMode.STEAM_CLOUD.persistedValue)
+        val parked = CompletableDeferred<Unit>()
+        val applied = Channel<Long>(Channel.UNLIMITED)
+        var reads = 0
+        var unlocked = false
+        val material = SteamCloudAuthStore.SavedAuthMaterial("A", "", "", "1", 0)
+        val queue = SteamCloudUiEventQueue<Event, SteamCloudUiAccess>(this,
+            isRelevant = { gate.canAccept(it.id, it.sequence) || it.sequence == 1L && gate.canAttach("request-R") },
+            validate = {
+                validateSteamCloudEvent(cloud, "1") {
+                    if (++reads == 4) parked.complete(Unit)
+                    SteamCloudAuthStore.AuthMaterialRead(material.takeIf { unlocked }, !unlocked, "")
+                }
+            },
+            apply = { e, access ->
+                if (access.accountMatches) {
+                    if (e.sequence == 1L) gate.attach(e.id, "request-R")
+                    if (gate.accept(e.id, e.sequence)) applied.trySend(e.sequence)
+                }
+            }, onFailure = { applied.close(it) }, backoff = {})
+        try {
+            queue.offer(Event("actual-A", 1))
+            queue.offer(Event("actual-A", 2))
+            withTimeout(2000) { parked.await() }
+            assertTrue(applied.tryReceive().isFailure)
+            unlocked = true
+            queue.retry()
+            withTimeout(2000) {
+                assertEquals(1L, applied.receive()); assertEquals(2L, applied.receive())
+            }
+        } finally { queue.close() }
+    }
+
+    @Test fun terminalRetriedAfterTransientKeyStoreFailureNeverAppliesDifferentAccountOrSlot() = runBlocking {
+        val cloud = SteamCloudControlStore.State(mode = SteamCloudSaveMode.STEAM_CLOUD.persistedValue)
+        for ((controls, current) in listOf(cloud to "2", cloud.copy(mode = SteamCloudSaveMode.INDEPENDENT.persistedValue) to "1",
+                cloud.copy(independentSwitchPending = true) to "1", cloud to "1")) {
+            val results = Channel<Boolean>(1)
+            var retry = false
+            val queue = SteamCloudUiEventQueue<Event, SteamCloudUiAccess>(this, { true },
+                validate = { validateSteamCloudEvent(if (retry) controls else cloud, "1") {
+                    SteamCloudAuthStore.AuthMaterialRead(if (retry) SteamCloudAuthStore.SavedAuthMaterial("", "", "", current, 0)
+                        else null, !retry, "")
+                } }, apply = { _, access -> results.trySend(access.cloudMode && access.accountMatches) },
+                onFailure = { results.close(it) }, backoff = { retry = true })
+            try {
+                queue.offer(Event("old", 8))
+                assertEquals(controls == cloud && current == "1", withTimeout(2000) { results.receive() })
+            } finally { queue.close() }
+        }
+    }
 
     @Test fun blockingValidationDoesNotBlockUiAndDuplicatesAreValidatedOnlyOnce() = runBlocking {
         Executors.newSingleThreadExecutor { Thread(it, "test-cloud-ui") }.asCoroutineDispatcher().use { ui ->

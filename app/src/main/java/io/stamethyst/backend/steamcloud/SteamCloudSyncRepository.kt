@@ -36,63 +36,106 @@ internal object SteamCloudSyncRepository {
         withFrozen(host, shouldContinue) { frozen ->
             requireCurrentAuth(host, authMaterial)
             SteamCloudSteamTransport(host, authMaterial).use { transport ->
-                engine(host, transport, shouldContinue).inspect(collect(host, frozen), baseline(host, authMaterial)).also {
+                engine(host, transport, authMaterial.steamId64, shouldContinue).inspect(frozen, baseline(host, authMaterial)).also {
                     recordStatus { SteamCloudAuthStore.recordManifestSuccess(host, it.remoteManifestFetchedAtMs) }
                 }
             }
         }
     }
 
-    fun synchronize(host: Context, authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
+    fun synchronize(host: Context, authMaterial: SteamCloudAuthStore.SavedAuthMaterial?,
         mode: SteamCloudSyncMode = SteamCloudSyncMode.MERGE, expectedPlan: SteamCloudUploadPlan? = null,
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
         shouldContinue: () -> Boolean = { true }, saveModeAfterPull: SteamCloudSaveMode? = null,
         sourceRoot: File = RuntimePaths.stsRoot(host),
+        expectedCloudAccount: String? = null,
+        expectedReturnScope: String? = null,
+        trace: SteamCloudSyncTrace = SteamCloudSyncTrace(),
         onPlan: (SteamCloudUploadPlan) -> Unit = {}): SteamCloudSyncEngine.Result = SteamCloudOperationMutex.runExclusive(host) {
-        require(sourceRoot.canonicalFile == RuntimePaths.stsRoot(host).canonicalFile || mode == SteamCloudSyncMode.LOCAL_WINS)
-        val installSource = sourceRoot.canonicalFile != RuntimePaths.stsRoot(host).canonicalFile
-        withFrozen(host, shouldContinue, sourceRoot) { frozen ->
-            requireCurrentAuth(host, authMaterial)
-            SteamCloudSteamTransport(host, authMaterial).use { transport ->
-                engine(host, transport, shouldContinue, progressCallback).run(frozen, baseline(host, authMaterial), mode,
-                    expectedPlan, metadata = if (installSource || saveModeAfterPull != null ||
-                        LauncherConfig.readSteamCloudSaveMode(host) == SteamCloudSaveMode.STEAM_CLOUD) { work, preparedRoot ->
-                        buildList {
-                            if (installSource) addAll(SteamCloudSaveProfileManager.stageLiveRoot(host, work, preparedRoot))
-                            addAll(SteamCloudSaveProfileManager.stageCloudProfile(host, work, preparedRoot))
-                            saveModeAfterPull?.let { targetMode ->
-                                val stagedControl = File(work, "control.json")
-                                SteamCloudControlStore.write(stagedControl, SteamCloudControlStore.read(host).copy(mode = targetMode.persistedValue))
-                                add(SteamCloudControlStore.modeReplacement(host, stagedControl))
-                            }
-                        }
-                    } else null, metadataRequiresLiveLease = saveModeAfterPull != null,
-                    requiresLocalInstall = installSource, onPlan = onPlan,
-                    shouldDeferLocalChanges = {
-                        mode == SteamCloudSyncMode.MERGE && LauncherConfig.isSteamCloudBackgroundLaunchRequested(host)
-                    }).also { result ->
+        trace.record(SteamCloudManifestStore.outputDir(host), mode, expectedCloudAccount ?: authMaterial?.steamId64) {
+            if (expectedCloudAccount != null && LauncherConfig.readSteamCloudSaveMode(host) != SteamCloudSaveMode.STEAM_CLOUD)
+                throw CancellationException("Independent saves are not automatically synchronized")
+            val auth = authMaterial
+                ?: throw SteamCloudCredentialsMissingException(host.getString(io.stamethyst.R.string.settings_steam_cloud_credentials_missing))
+            require(sourceRoot.canonicalFile == RuntimePaths.stsRoot(host).canonicalFile || mode == SteamCloudSyncMode.LOCAL_WINS)
+            val installSource = sourceRoot.canonicalFile != RuntimePaths.stsRoot(host).canonicalFile
+            trace.phase(SteamCloudSyncTrace.Phase.FREEZE)
+            withFrozen(host, shouldContinue, sourceRoot, beforeCopy = {
+                if (expectedCloudAccount != null) {
+                    // Recovery can itself restore the previous mode. Check the recovered slot,
+                    // with the same operation mutex used by settings/profile switches still held.
+                    val controls = LauncherConfig.readSteamCloudControls(host)
+                    if (controls.mode != SteamCloudSaveMode.STEAM_CLOUD.persistedValue || controls.independentSwitchPending ||
+                        (expectedReturnScope != null && SteamCloudGameReturn.scope(host) != expectedReturnScope) ||
+                        expectedCloudAccount != auth.steamId64 || expectedCloudAccount.isBlank()) {
+                        throw CancellationException("Steam Cloud source profile changed before synchronization")
+                    }
+                    requireCurrentAuth(host, auth)
+                }
+            }) { frozen ->
+                trace.frozen(UUID.fromString(frozen.name))
+                requireCurrentAuth(host, auth)
+                trace.phase(SteamCloudSyncTrace.Phase.CONNECT)
+                SteamCloudSteamTransport(host, auth).use { transport ->
+                    synchronizeFrozen(host, transport, frozen, auth.steamId64, mode, expectedPlan,
+                        progressCallback, shouldContinue, saveModeAfterPull, installSource, trace, onPlan,
+                        verifyAccount = { requireCurrentAuth(host, auth) })
+                }.also { result ->
                     recordStatus {
-                        requireCurrentAuth(host, authMaterial)
-                        val completedAt = System.currentTimeMillis()
-                        SteamCloudAuthStore.recordManifestSuccess(host, result.plan.remoteManifestFetchedAtMs)
-                        if (result.plan.conflicts.isEmpty()) {
-                            if (result.uploaded + result.deleted > 0 || mode == SteamCloudSyncMode.LOCAL_WINS) {
-                                SteamCloudAuthStore.recordPushSuccess(host, completedAt)
-                                SteamCloudAtomicFileStore.writeTextWithoutBackup(SteamCloudManifestStore.pushSummaryFile(host),
-                                    "engine=v2\ncompletedAtMs=$completedAt\nuploaded=${result.uploaded}\ndeleted=${result.deleted}\n")
-                            }
-                            if (result.plan.remoteOnlyChanges.isNotEmpty() && mode != SteamCloudSyncMode.UPLOAD_ONLY ||
-                                mode == SteamCloudSyncMode.CLOUD_WINS) {
-                                SteamCloudAuthStore.recordPullSuccess(host, completedAt)
-                                SteamCloudAtomicFileStore.writeTextWithoutBackup(SteamCloudManifestStore.pullSummaryFile(host),
-                                    "engine=v2\ncompletedAtMs=$completedAt\ndownloaded=${result.downloaded}\n" +
-                                        "localDeletions=${result.plan.remoteOnlyChanges.count { it.currentRemote?.isLive != true }}\n")
-                            }
-                        }
+                        requireCurrentAuth(host, auth)
+                        recordResult(host, result, mode, trace.operation, frozen.name)
                     }
                 }
             }
         }
+    }
+
+    private fun recordResult(host: Context, result: SteamCloudSyncEngine.Result, mode: SteamCloudSyncMode,
+        operation: UUID, freeze: String) {
+        SteamCloudAuthStore.recordManifestSuccess(host, result.plan.remoteManifestFetchedAtMs)
+        if (result.plan.conflicts.isNotEmpty()) return
+        val completedAt = System.currentTimeMillis()
+        val header = "engine=v2\noperationId=$operation\nfreezeId=$freeze\ncompletedAtMs=$completedAt\n"
+        if (result.uploaded + result.deleted > 0 || mode == SteamCloudSyncMode.LOCAL_WINS) {
+            SteamCloudAuthStore.recordPushSuccess(host, completedAt)
+            SteamCloudAtomicFileStore.writeTextWithoutBackup(SteamCloudManifestStore.pushSummaryFile(host),
+                header + "uploaded=${result.uploaded}\ndeleted=${result.deleted}\n")
+        }
+        if (result.plan.remoteOnlyChanges.isNotEmpty() && mode != SteamCloudSyncMode.UPLOAD_ONLY ||
+            mode == SteamCloudSyncMode.CLOUD_WINS) {
+            SteamCloudAuthStore.recordPullSuccess(host, completedAt)
+            SteamCloudAtomicFileStore.writeTextWithoutBackup(SteamCloudManifestStore.pullSummaryFile(host),
+                header + "downloaded=${result.downloaded}\nlocalDeletions=${result.plan.remoteOnlyChanges.count { it.currentRemote?.isLive != true }}\n")
+        }
+    }
+
+    /** Caller holds the operation lock; mode, baseline, blacklist and account slot belong to this pass. */
+    internal fun synchronizeFrozen(host: Context, transport: SteamCloudSyncTransport, frozen: File, steamId: String,
+        mode: SteamCloudSyncMode, expectedPlan: SteamCloudUploadPlan?, progressCallback: ((SteamCloudSyncProgress) -> Unit)?,
+        shouldContinue: () -> Boolean, saveModeAfterPull: SteamCloudSaveMode?, installSource: Boolean,
+        trace: SteamCloudSyncTrace, onPlan: (SteamCloudUploadPlan) -> Unit, verifyAccount: () -> Unit): SteamCloudSyncEngine.Result {
+        val blacklist = LauncherConfig.readSteamCloudSyncBlacklistPaths(host)
+        val slot = if (installSource || saveModeAfterPull != null ||
+            LauncherConfig.readSteamCloudSaveMode(host) == SteamCloudSaveMode.STEAM_CLOUD)
+            SteamCloudSaveProfileManager.cloudSlot(host, steamId) else null
+        return engine(host, transport, steamId, shouldContinue, progressCallback, blacklist, trace).run(frozen,
+            SteamCloudBaselineStore.readSnapshot(host, steamId), mode, expectedPlan,
+            metadata = if (slot == null) null else { work, preparedRoot ->
+                buildList {
+                    if (installSource) addAll(SteamCloudSaveProfileManager.stageLiveRoot(host, work, preparedRoot))
+                    addAll(SteamCloudSaveProfileManager.stageCloudProfile(slot, blacklist, work, preparedRoot))
+                    saveModeAfterPull?.let { targetMode ->
+                        val stagedControl = File(work, "control.json")
+                        SteamCloudControlStore.write(stagedControl, SteamCloudControlStore.read(host).copy(mode = targetMode.persistedValue))
+                        add(SteamCloudControlStore.modeReplacement(host, stagedControl))
+                    }
+                }
+            }, metadataRequiresLiveLease = saveModeAfterPull != null, requiresLocalInstall = installSource,
+            onPlan = onPlan, shouldDeferLocalChanges = {
+                mode == SteamCloudSyncMode.MERGE && SteamCloudLaunchFence.active(host)
+            }, profileIsCurrent = { local ->
+                (slot == null || SteamCloudSaveProfileManager.cloudSlotMatches(slot, local)).also { verifyAccount() }
+            })
     }
 
     fun pushLocalChanges(host: Context, authMaterial: SteamCloudAuthStore.SavedAuthMaterial, plan: SteamCloudUploadPlan,
@@ -146,13 +189,14 @@ internal object SteamCloudSyncRepository {
         }
 
     private fun <T> withFrozen(host: Context, shouldContinue: () -> Boolean,
-        sourceRoot: File = RuntimePaths.stsRoot(host), block: (File) -> T): T {
+        sourceRoot: File = RuntimePaths.stsRoot(host), beforeCopy: () -> Unit = {}, block: (File) -> T): T {
         SteamCloudSyncPolicy.requireSyncEnabled(host)
         val frozen = File(SteamCloudManifestStore.outputDir(host), "frozen-v2/${UUID.randomUUID()}")
         check(frozen.mkdirs())
         try {
             SteamCloudLiveSaveLease.runMutation(host) {
                 recoverLocal(host)
+                beforeCopy()
                 SteamCloudRootKind.entries.forEach { root ->
                     if (!shouldContinue()) throw CancellationException()
                     val source = File(sourceRoot, root.directoryName)
@@ -162,15 +206,15 @@ internal object SteamCloudSyncRepository {
             return block(frozen)
         } finally { frozen.deleteRecursively() }
     }
-    private fun engine(host: Context, transport: SteamCloudSyncTransport, shouldContinue: () -> Boolean,
-        progress: ((SteamCloudSyncProgress) -> Unit)? = null) = SteamCloudSyncEngine(
+    private fun engine(host: Context, transport: SteamCloudSyncTransport, steamId: String, shouldContinue: () -> Boolean,
+        progress: ((SteamCloudSyncProgress) -> Unit)? = null,
+        blacklist: Set<String> = LauncherConfig.readSteamCloudSyncBlacklistPaths(host),
+        trace: SteamCloudSyncTrace? = null) = SteamCloudSyncEngine(
         RuntimePaths.storageRoot(host), RuntimePaths.stsRoot(host), SteamCloudManifestStore.outputDir(host), transport,
-        LauncherConfig.readSteamCloudSyncBlacklistPaths(host),
+        SteamCloudRemoteCommitStore(SteamCloudManifestStore.outputDir(host), steamId), blacklist,
         { shouldContinue() && !LauncherConfig.isSteamCloudSyncDisabled(host) }, { progress?.invoke(it) },
         { apply -> SteamCloudLiveSaveLease.runMutation(host) { apply() } },
-        { apply -> SteamCloudLocalStateMutex.runExclusive(host) { SteamCloudControlStore.locked(host) { apply() } } })
-    private fun collect(host: Context, root: File) = SteamCloudSyncBlacklist.filterLocalEntries(
-        SteamCloudLocalSnapshotCollector.collect(root), LauncherConfig.readSteamCloudSyncBlacklistPaths(host))
+        { apply -> SteamCloudLocalStateMutex.runExclusive(host) { SteamCloudControlStore.locked(host) { apply() } } }, trace)
     private fun baseline(host: Context, auth: SteamCloudAuthStore.SavedAuthMaterial) = SteamCloudSyncBlacklist.filterBaseline(
         SteamCloudBaselineStore.readSnapshot(host, auth.steamId64), LauncherConfig.readSteamCloudSyncBlacklistPaths(host))
     private fun requireCurrentAuth(host: Context, expected: SteamCloudAuthStore.SavedAuthMaterial) {

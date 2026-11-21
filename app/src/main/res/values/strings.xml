@@ -2012,10 +2012,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_bar_summary_hidden"></string>
     <string name="main_steam_cloud_bar_summary_conflict_missing">Conflict details are temporarily unavailable. Refresh once and try again.</string>
     <string name="main_steam_cloud_service_start_blocked">Android blocked Steam Cloud background sync startup. Return to the launcher and retry while it is in the foreground.</string>
-    <string name="main_steam_auth_circuit_logout_title">Steam sign-in ended</string>
-    <string name="main_steam_auth_circuit_rate_limited_message">Steam rejected repeated authentication requests. The launcher has signed out this Steam account and stopped automatic retries. Please sign in again manually.</string>
-    <string name="main_steam_auth_circuit_rejected_message">Steam rejected the saved sign-in session. The launcher has signed out this Steam account and stopped automatic retries. Details: %1$s</string>
-    <string name="main_steam_auth_circuit_logout_failed_message">Steam authentication was blocked, but the launcher could not completely sign out the account: %1$s</string>
+    <string name="steam_cloud_permission_denied">Steam denied permission for this request (AccessDenied, EResult=15).</string>
+    <string name="steam_cloud_rate_limited_retry_later">Steam is limiting requests. Wait at least a minute before trying again.</string>
     <string name="main_steam_cloud_action_recheck">Check again</string>
     <string name="main_steam_cloud_action_retry">Retry</string>
     <string name="main_steam_cloud_action_retry_auto">Retry (%1$ds)</string>
@@ -2922,8 +2920,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_subscriptions_subtitle">View Workshop mods subscribed by the current Steam account</string>
     <string name="workshop_download_center_title">Download center</string>
     <string name="workshop_download_center_subtitle">Download progress and task details</string>
-    <string name="workshop_market_title">Mod market</string>
-    <string name="workshop_market_subtitle">Browse and download mods</string>
+    <string name="workshop_market_title">Market</string>
     <string name="workshop_scroll_to_top">Back to top</string>
     <string name="workshop_section_browse">Workshop list</string>
     <string name="workshop_section_loading">Loading</string>

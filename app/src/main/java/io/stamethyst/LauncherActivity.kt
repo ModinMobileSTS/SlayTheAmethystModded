@@ -141,6 +141,7 @@ class LauncherActivity : AppCompatActivity() {
         val startupBackground = StartupWindowBackground.launcherColor(this)
         StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
+        io.stamethyst.backend.steamcloud.SteamCloudLaunchFence.recoverLauncher(this, GameLaunchReturnTracker.pendingFence(this))
         DisplayRefreshRatePolicy.requestHighestRefreshRate(this, window)
         StartupTraceEvents.append(
             this,
@@ -305,6 +306,7 @@ class LauncherActivity : AppCompatActivity() {
                     throw IllegalStateException("Launcher settings sync failed")
                 }
                 if (GameLaunchReturnTracker.isGameProcessRunning(this, includeCached = true)) {
+                    val previousLaunch = GameLaunchReturnTracker.readPendingGameLaunchStartedAt(this)
                     StartupTraceEvents.append(
                         this,
                         "direct_debug_launch_cleanup_game_process",
@@ -313,7 +315,7 @@ class LauncherActivity : AppCompatActivity() {
                     check(GameLaunchReturnTracker.terminateTrackedGameProcessAndWait(this)) {
                         "Previous game process did not stop; refusing direct debug launch"
                     }
-                    GameLaunchReturnTracker.clearPendingGameLaunch(this)
+                    GameLaunchReturnTracker.clearPendingGameLaunch(this, previousLaunch)
                 }
                 MainProcessLaunchPreparationCoordinator.prepareBeforeLaunch(
                     context = applicationContext,
@@ -543,7 +545,8 @@ class LauncherActivity : AppCompatActivity() {
                     }
                     remainingAttempts--
                     if (remainingAttempts <= 0) {
-                        GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                        // The game is still alive and may not have acquired its save lease yet.
+                        // Preserve the launch marker/fence for the next resume.
                         mainViewModel.refresh(this@LauncherActivity)
                         cancelPendingGameReturnAnalysis()
                         return
@@ -558,7 +561,7 @@ class LauncherActivity : AppCompatActivity() {
                         allowProcessExitCrashFallback = !killRequested
                     )
                 ) {
-                    GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                    GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity, currentLaunchStartedAt)
                     if (!(mainViewModel.uiState.busy &&
                             mainViewModel.uiState.busyOperation == UiBusyOperation.STEAM_CLOUD_SYNC)
                     ) {
@@ -569,7 +572,7 @@ class LauncherActivity : AppCompatActivity() {
                     return
                 }
                 if (killRequested) {
-                    GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                    GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity, currentLaunchStartedAt)
                     mainViewModel.refresh(this@LauncherActivity)
                     settingsViewModel.startGameReturnAutoUpdateCheck(this@LauncherActivity)
                     cancelPendingGameReturnAnalysis()
@@ -577,7 +580,7 @@ class LauncherActivity : AppCompatActivity() {
                 }
                 remainingAttempts--
                 if (remainingAttempts <= 0) {
-                    GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity)
+                    GameLaunchReturnTracker.clearPendingGameLaunch(this@LauncherActivity, currentLaunchStartedAt)
                     settingsViewModel.startGameReturnAutoUpdateCheck(this@LauncherActivity)
                     cancelPendingGameReturnAnalysis()
                     return

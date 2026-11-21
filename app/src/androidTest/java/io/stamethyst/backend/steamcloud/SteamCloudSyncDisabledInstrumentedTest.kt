@@ -48,9 +48,9 @@ class SteamCloudSyncDisabledInstrumentedTest {
                 assertCancelled { client.deleteFile(STEAM_CLOUD_APP_ID, "preferences/STSPlayer", 1L) }
             }
             assertFalse(unusedRoot.exists())
-            assertFalse(SteamCloudSyncProcessService.startCheckAndSync(context, userInitiated = false))
-            assertFalse(SteamCloudSyncProcessService.startUseLocal(context))
-            assertFalse(SteamCloudSyncProcessService.startUseCloud(context))
+            assertFalse(SteamCloudSyncProcessService.startCheckAndSync(context, auth.steamId64, userInitiated = false))
+            assertFalse(SteamCloudSyncProcessService.startUseLocal(context, auth.steamId64))
+            assertFalse(SteamCloudSyncProcessService.startUseCloud(context, auth.steamId64))
             assertEquals(originalMode, LauncherConfig.readSteamCloudSaveMode(context))
             assertEquals(originalAuth, SteamCloudAuthStore.readSnapshot(context))
 

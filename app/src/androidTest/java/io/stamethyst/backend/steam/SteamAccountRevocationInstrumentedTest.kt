@@ -51,16 +51,20 @@ class SteamAccountRevocationInstrumentedTest {
         runBlocking {
             saveAccount(context)
             val account = SteamAccountSession("test-account", steamId.toLong(), "test-token")
-            SteamCmLoginFailureNotice.report(context, account)
+            fun report() = SteamCmLoginFailureNotice.report(context, account,
+                SteamCloudAuthStore.readAuthMaterial(context)!!.credentialRevision, SteamCmAccountEpoch.read(context))
+            report()
             val notice = withTimeout(2_000) { SteamCmLoginFailureNotice.observe(context).first() }!!
             SteamCmLoginFailureNotice.dismiss(context, notice)
-            SteamCmLoginFailureNotice.report(context, account)
+            report()
             assertNull(withTimeout(2_000) { SteamCmLoginFailureNotice.observe(context).first() })
             saveAccount(context)
-            SteamCmLoginFailureNotice.report(context, account)
+            report()
             assertNotNull(withTimeout(2_000) { SteamCmLoginFailureNotice.observe(context).first() })
+            val originalRevision = SteamCloudAuthStore.readAuthMaterial(context)!!.credentialRevision
+            val originalEpoch = SteamCmAccountEpoch.read(context)
             SteamCmAccountEpoch.revoke(context)
-            SteamCmLoginFailureNotice.report(context, account)
+            SteamCmLoginFailureNotice.report(context, account, originalRevision, originalEpoch)
             assertNull(withTimeout(2_000) { SteamCmLoginFailureNotice.observe(context).first() })
         }
     }
@@ -77,7 +81,8 @@ class SteamAccountRevocationInstrumentedTest {
                 """{"steamId":"$steamId","credentialRevision":${auth.credentialRevision},"epoch":"${SteamCmAccountEpoch.read(context)}"}""",
             )
             assertNull(withTimeout(2_000) { SteamCmLoginFailureNotice.observe(context).first() })
-            SteamCmLoginFailureNotice.report(context, SteamAccountSession("test-account", steamId.toLong(), "test-token"))
+            SteamCmLoginFailureNotice.report(context, SteamAccountSession("test-account", steamId.toLong(), "test-token"),
+                auth.credentialRevision, SteamCmAccountEpoch.read(context))
             val notice = withTimeout(2_000) { SteamCmLoginFailureNotice.observe(context).first() }
             assertNotNull(notice)
             assertEquals(1, notice!!.classificationVersion)

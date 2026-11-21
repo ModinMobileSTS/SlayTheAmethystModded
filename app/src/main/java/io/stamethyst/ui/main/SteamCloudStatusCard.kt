@@ -70,6 +70,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.stamethyst.R
+import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudSyncPhase
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.steamcloud.SteamCloudUserWarning
@@ -492,7 +493,11 @@ private fun cloudHint(state: CloudState): String = when (state.state) {
         else -> R.string.cloud_card_syncing_hint
     })
     Status.CONFLICT -> stringResource(R.string.cloud_card_conflict_hint)
-    Status.CONNECTION_FAILED -> stringResource(R.string.cloud_card_failed_hint)
+    Status.CONNECTION_FAILED -> stringResource(when (state.failureCategory) {
+        SteamCloudFailureCategory.RATE_LIMITED -> R.string.steam_cloud_rate_limited_retry_later
+        SteamCloudFailureCategory.PERMISSION_DENIED -> R.string.steam_cloud_permission_denied
+        else -> R.string.cloud_card_failed_hint
+    })
     else -> stringResource(R.string.cloud_card_unchecked_hint)
 }
 

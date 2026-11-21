@@ -14,6 +14,8 @@ import java.util.Locale
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletionException
 import java.util.concurrent.ExecutionException
+import io.stamethyst.backend.steamcloud.SteamCloudFailureClassifier
+import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 
 internal enum class SteamCloudErrorKind {
     USER_CANCELLED,
@@ -42,7 +44,7 @@ internal object SteamCloudErrorClassifier {
         if (firstCause is CancellationException) {
             return SteamCloudErrorKind.AUTH_CONNECTION_CANCELLED
         }
-        if (messages.any(::isSteamInvalidCredentials)) {
+        if (SteamCloudFailureClassifier.classify(error) == SteamCloudFailureCategory.AUTH_REJECTED) {
             return SteamCloudErrorKind.INVALID_CREDENTIALS
         }
         if (isSteamCloudUploadDisconnect(message)) {
@@ -119,14 +121,6 @@ internal object SteamCloudErrorClassifier {
         return normalized.contains("timed out waiting for steam auth completion")
     }
 
-    private fun isSteamInvalidCredentials(message: String): Boolean {
-        val normalized = message.lowercase(Locale.US)
-        return normalized.contains("invalidpassword") ||
-            normalized.contains("invalid password") ||
-            normalized.contains("eresult=5") ||
-            normalized.contains("账号名或密码错误")
-    }
-
     private fun isSteamCloudUploadDisconnect(message: String): Boolean {
         val normalized = message.lowercase(Locale.US)
         return normalized.contains("beginhttpupload") &&
@@ -135,18 +129,7 @@ internal object SteamCloudErrorClassifier {
     }
 }
 
-internal fun shouldRetrySteamCloudCredentialLoginWithoutGuardData(error: Throwable): Boolean {
-    if (SteamCloudErrorClassifier.classify(error) == SteamCloudErrorKind.INVALID_CREDENTIALS) {
-        return true
-    }
-    val normalized = SteamCloudErrorClassifier.meaningfulCause(error)
-        .message
-        .orEmpty()
-        .trim()
-        .lowercase(Locale.US)
-    return normalized.contains("eresult=8") ||
-        normalized.contains("认证请求参数") ||
-        normalized.contains("authentication request parameters")
-}
-
+internal fun shouldRetrySteamCloudCredentialLoginWithoutGuardData(error: Throwable): Boolean =
+    SteamCloudFailureClassifier.classify(error) in setOf(SteamCloudFailureCategory.AUTH_REJECTED,
+        SteamCloudFailureCategory.REQUEST_REJECTED) && SteamCloudFailureClassifier.credentialRequestResult(error) in setOf(5, 8)
 

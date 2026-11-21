@@ -2008,10 +2008,8 @@
     <string name="main_steam_cloud_bar_summary_hidden"></string>
     <string name="main_steam_cloud_bar_summary_conflict_missing">暂时拿不到冲突详情，请先重新检查一次。</string>
     <string name="main_steam_cloud_service_start_blocked">Android 拦截了 Steam Cloud 后台同步启动。请回到启动器前台后重试。</string>
-    <string name="main_steam_auth_circuit_logout_title">Steam 登录已退出</string>
-    <string name="main_steam_auth_circuit_rate_limited_message">Steam 已拒绝频繁的认证请求。启动器已退出当前 Steam 账号并停止自动重试，请稍后手动重新登录。</string>
-    <string name="main_steam_auth_circuit_rejected_message">Steam 已拒绝保存的登录会话。启动器已退出当前 Steam 账号并停止自动重试。详情：%1$s</string>
-    <string name="main_steam_auth_circuit_logout_failed_message">Steam 认证已熔断，但启动器未能完整退出账号：%1$s</string>
+    <string name="steam_cloud_permission_denied">Steam 拒绝了此请求的权限（AccessDenied，EResult=15）。</string>
+    <string name="steam_cloud_rate_limited_retry_later">Steam 请求过于频繁，请至少等待一分钟后再试。</string>
     <string name="main_steam_cloud_action_recheck">重新检查</string>
     <string name="main_steam_cloud_action_retry">重试</string>
     <string name="main_steam_cloud_action_retry_auto">重试（%1$d 秒）</string>
@@ -2918,8 +2916,7 @@
     <string name="workshop_subscriptions_subtitle">查看当前 Steam 账号订阅的创意工坊模组</string>
     <string name="workshop_download_center_title">下载中心</string>
     <string name="workshop_download_center_subtitle">下载进度与任务详情</string>
-    <string name="workshop_market_title">模组市场</string>
-    <string name="workshop_market_subtitle">浏览与下载模组</string>
+    <string name="workshop_market_title">市场</string>
     <string name="workshop_scroll_to_top">回到顶部</string>
     <string name="workshop_section_browse">工坊列表</string>
     <string name="workshop_section_loading">正在加载</string>

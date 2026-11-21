@@ -4,6 +4,10 @@ import io.stamethyst.ui.main.MainScreenViewModel.SteamCloudIndicatorState
 import io.stamethyst.ui.main.MainScreenViewModel.SteamCloudIndicatorUi
 import io.stamethyst.backend.steamcloud.SteamCloudSyncPhase
 
+/** A clean return is a new snapshot requirement, even when this Activity is busy or attaching. */
+internal fun shouldRequestSteamCloudCheck(returnedLaunch: Long?, busy: Boolean, inFlight: Boolean) =
+    returnedLaunch != null || (!busy && !inFlight)
+
 internal fun steamCloudFailureState(cancelled: Boolean, requiresResolution: Boolean): SteamCloudIndicatorState = when {
     cancelled -> SteamCloudIndicatorState.CANCELLED
     requiresResolution -> SteamCloudIndicatorState.RECOVERY_REQUIRED

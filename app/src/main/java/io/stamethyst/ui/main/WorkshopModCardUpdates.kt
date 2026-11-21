@@ -2,6 +2,7 @@ package io.stamethyst.ui.main
 
 import io.stamethyst.backend.workshop.WorkshopDownloadBlocklist
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
+import io.stamethyst.backend.workshop.WorkshopInstalledModRecord
 import io.stamethyst.backend.workshop.WorkshopModStateResolver
 import io.stamethyst.backend.workshop.WorkshopResolvedModStateKind
 import io.stamethyst.backend.workshop.isActiveDownload
@@ -16,6 +17,24 @@ internal data class WorkshopModCardUpdate(
     val hasActiveDownloads: Boolean,
     val needsInstalledModsRefresh: Boolean,
 )
+
+internal fun hasUnscannedWorkshopRecords(
+    scannedRecords: List<WorkshopInstalledModRecord>,
+    currentRecords: List<WorkshopInstalledModRecord>,
+    tasks: List<WorkshopDownloadTaskUi>,
+): Boolean {
+    if (scannedRecords == currentRecords) return false
+    val activeIds = tasks.asSequence()
+        .filter { it.status.isActiveDownload() }
+        .map { it.details.summary.appId to it.publishedFileId }
+        .toSet()
+    // Active downloads also write progress and intermediate import metadata. Leave their
+    // cards to the task overlay until they settle, but still detect changes for other items.
+    fun List<WorkshopInstalledModRecord>.settledRecords() =
+        filterNot { (it.appId to it.publishedFileId) in activeIds }.toSet()
+
+    return scannedRecords.settledRecords() != currentRecords.settledRecords()
+}
 
 internal fun updateWorkshopModCards(
     mods: List<ModItemUi>,
@@ -36,7 +55,7 @@ internal fun updateWorkshopModCards(
         } else {
             if (workshop.state in setOf(WorkshopModState.Queued, WorkshopModState.Downloading, WorkshopModState.Cancelling) &&
                 !task.status.isActiveDownload()) needsRefresh = true
-            mod.copy(
+            val updated = mod.copy(
                 fileSizeBytes = task.fileSizeBytes.takeIf { it > 0L } ?: mod.fileSizeBytes,
                 workshop = workshop.copy(
                     state = if (workshop.hasPendingInstall && !task.status.isActiveDownload())
@@ -46,6 +65,7 @@ internal fun updateWorkshopModCards(
                     hasPendingInstall = workshop.hasPendingInstall && !task.status.isActiveDownload(),
                 ),
             )
+            if (updated == mod) mod else updated
         }
     }.toMutableList()
     val existingIds = updatedMods.mapNotNull { mod ->

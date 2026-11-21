@@ -57,7 +57,8 @@ internal object SteamCloudManifestStore {
         SteamCloudOperationMutex.runExclusive(context) {
             val manifest = manifestFile(context)
             SteamCloudAtomicFileStore.deleteFiles(manifest, SteamCloudAtomicFileStore.backupFile(manifest),
-                pullSummaryFile(context), pullDownloadDetailsFile(context), pushSummaryFile(context))
+                pullSummaryFile(context), pullDownloadDetailsFile(context), pushSummaryFile(context),
+                File(outputDir(context), SteamCloudSyncTrace.FILE_NAME))
         }
     }
 

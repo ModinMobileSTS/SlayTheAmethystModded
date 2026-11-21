@@ -4,6 +4,9 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.SystemClock
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.backend.steamcloud.SteamCloudGameReturn
+import io.stamethyst.backend.steamcloud.SteamCloudLaunchFence
+import io.stamethyst.backend.steamcloud.SteamCloudAtomicFileStore
 import java.io.File
 import java.nio.charset.StandardCharsets
 
@@ -14,8 +17,9 @@ internal object GameLaunchReturnTracker {
     private const val PROCESS_EXIT_POLL_INTERVAL_MS = 80L
     private const val FRESH_LAUNCH_HANDOFF_GRACE_MS = 10_000L
 
-    fun markGameLaunchStarted(context: Context, startedAtMs: Long = System.currentTimeMillis()): Long {
-        writeMarker(pendingGameLaunchMarker(context), startedAtMs)
+    @Synchronized fun markGameLaunchStarted(context: Context, startedAtMs: Long = System.currentTimeMillis(), fence: String? = null): Long {
+        SteamCloudAtomicFileStore.writeTextWithoutBackup(pendingGameLaunchMarker(context),
+            "$startedAtMs\n${fence.orEmpty()}\n${SteamCloudGameReturn.launchScope(context).orEmpty()}")
         return startedAtMs
     }
 
@@ -25,13 +29,26 @@ internal object GameLaunchReturnTracker {
             return null
         }
         return try {
-            markerFile.readText(StandardCharsets.UTF_8).trim().toLongOrNull()
+            markerFile.readLines(StandardCharsets.UTF_8).firstOrNull()?.trim()?.toLongOrNull()
         } catch (_: Throwable) {
             null
         }?.takeIf { it > 0L }
     }
 
-    fun clearPendingGameLaunch(context: Context) {
+    fun pendingFence(context: Context): String? = pendingGameLaunchMarker(context).takeIf { it.isFile }
+        ?.readLines(StandardCharsets.UTF_8)?.getOrNull(1)?.takeIf { it.isNotEmpty() }
+
+    @Synchronized fun cleanReturn(context: Context, launch: Long): SteamCloudGameReturn.Pending? {
+        val lines = pendingGameLaunchMarker(context).takeIf { it.isFile }?.readLines() ?: return null
+        if (lines.firstOrNull()?.toLongOrNull() != launch) return null
+        SteamCloudLaunchFence.release(context, lines.getOrNull(1))
+        val scope = lines.getOrNull(2)?.takeIf { it.isNotEmpty() } ?: return null
+        return SteamCloudGameReturn.Pending(launch, scope).also { SteamCloudGameReturn.record(context, it) }
+    }
+
+    @Synchronized fun clearPendingGameLaunch(context: Context, launch: Long?) {
+        if (launch == null || readPendingGameLaunchStartedAt(context) != launch) return
+        SteamCloudLaunchFence.release(context, pendingFence(context))
         clearMarker(pendingGameLaunchMarker(context))
     }
 
@@ -153,17 +170,6 @@ internal object GameLaunchReturnTracker {
 
     private fun pendingGameLaunchMarker(context: Context): File {
         return File(RuntimePaths.componentRoot(context), PENDING_GAME_LAUNCH_MARKER_FILE_NAME)
-    }
-
-    private fun writeMarker(file: File, timestampMs: Long) {
-        try {
-            val parent = file.parentFile
-            if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                return
-            }
-            file.writeText(timestampMs.toString(), StandardCharsets.UTF_8)
-        } catch (_: Throwable) {
-        }
     }
 
     private fun clearMarker(file: File) {

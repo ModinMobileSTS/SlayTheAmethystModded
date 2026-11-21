@@ -16,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import top.apricityx.workshop.steam.protocol.SteamServiceMethodException
 
 class SteamCloudErrorClassifierTest {
     @Test
@@ -59,13 +60,13 @@ class SteamCloudErrorClassifierTest {
     }
 
     @Test
-    fun classify_treatsSteamInvalidPasswordAsInvalidCredentials() {
+    fun classify_doesNotTreatFreeTextAsInvalidCredentials() {
         val error = CompletionException(
             RuntimeException("Authentication failed via credentials with result: InvalidPassword")
         )
 
         assertEquals(
-            SteamCloudErrorKind.INVALID_CREDENTIALS,
+            SteamCloudErrorKind.OTHER,
             SteamCloudErrorClassifier.classify(error)
         )
     }
@@ -73,7 +74,7 @@ class SteamCloudErrorClassifierTest {
     @Test
     fun classify_treatsProtocolInvalidPasswordResultAsInvalidCredentials() {
         val error = CompletionException(
-            RuntimeException("Steam 登录失败: 账号名或密码错误 (EResult=5)")
+            SteamServiceMethodException("Authentication.BeginAuthSessionViaCredentials#1", 5, null)
         )
 
         assertEquals(
@@ -97,7 +98,7 @@ class SteamCloudErrorClassifierTest {
     @Test
     fun retryWithoutGuardData_treatsInvalidCredentialsAsRetryable() {
         val error = CompletionException(
-            RuntimeException("Steam 登录失败: 账号名或密码错误 (EResult=5)")
+            SteamServiceMethodException("Authentication.BeginAuthSessionViaCredentials#1", 5, null)
         )
 
         assertTrue(shouldRetrySteamCloudCredentialLoginWithoutGuardData(error))
@@ -106,7 +107,7 @@ class SteamCloudErrorClassifierTest {
     @Test
     fun retryWithoutGuardData_treatsInvalidAuthParametersAsRetryable() {
         val error = CompletionException(
-            RuntimeException("Steam 登录失败: Steam 拒绝了当前认证请求参数 (EResult=8)")
+            SteamServiceMethodException("Authentication.BeginAuthSessionViaCredentials#1", 8, null)
         )
 
         assertTrue(shouldRetrySteamCloudCredentialLoginWithoutGuardData(error))
@@ -119,7 +120,8 @@ class SteamCloudErrorClassifierTest {
         )
 
         assertFalse(shouldRetrySteamCloudCredentialLoginWithoutGuardData(error))
+        assertFalse(shouldRetrySteamCloudCredentialLoginWithoutGuardData(IllegalArgumentException("preferences/InvalidPassword EResult=8")))
+        assertFalse(shouldRetrySteamCloudCredentialLoginWithoutGuardData(SteamServiceMethodException("Cloud.CommitHTTPUpload#1", 5, null)))
     }
 }
-
 

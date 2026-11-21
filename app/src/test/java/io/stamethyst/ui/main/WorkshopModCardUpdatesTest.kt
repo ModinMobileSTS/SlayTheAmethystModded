@@ -1,8 +1,11 @@
 package io.stamethyst.ui.main
 
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
+import io.stamethyst.backend.workshop.WorkshopInstalledModRecord
 import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopItemSummary
+import io.stamethyst.backend.workshop.WorkshopModCardState
+import io.stamethyst.backend.workshop.WorkshopPendingInstall
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.model.WorkshopModUi
@@ -104,6 +107,64 @@ class WorkshopModCardUpdatesTest {
         )), updated)
     }
 
+    @Test fun progressOnlyUpdatesTheMatchingCardAndDoesNotRequestAScan() {
+        val downloading = mod(1u, WorkshopModState.Downloading)
+        val unchanged = mod(2u, WorkshopModState.ImportedPatched)
+        val update = updateWorkshopModCards(listOf(downloading, unchanged), listOf(
+            task(1u, WorkshopDownloadTaskStatus.Downloading).copy(progressPercent = 60),
+        ))
+        assertEquals(60, update.mods.first().workshop!!.downloadProgressPercent)
+        assertSame(unchanged, update.mods.last())
+        assertFalse(update.needsInstalledModsRefresh)
+
+        val second = updateWorkshopModCards(update.mods, listOf(
+            task(1u, WorkshopDownloadTaskStatus.Downloading).copy(progressPercent = 60),
+        ))
+        assertSame(update.mods.first(), second.mods.first())
+        assertSame(unchanged, second.mods.last())
+        assertFalse(second.needsInstalledModsRefresh)
+    }
+
+    @Test fun unchangedRecordsAndActiveTaskWritesDoNotRequireARescan() {
+        val installed = record(1u)
+        val downloading = record(2u).copy(cardState = WorkshopModCardState.Downloading)
+        val activeTask = task(2u, WorkshopDownloadTaskStatus.Downloading)
+        assertFalse(hasUnscannedWorkshopRecords(listOf(installed), listOf(installed), emptyList()))
+        assertFalse(hasUnscannedWorkshopRecords(listOf(installed), listOf(downloading, installed), listOf(activeTask)))
+        assertFalse(hasUnscannedWorkshopRecords(
+            listOf(downloading, installed), listOf(installed, downloading.copy(statusText = "60%")), listOf(activeTask),
+        ))
+    }
+
+    @Test fun aDownloadNeverObservedByTheModsPageIsDetectedFromInstalledRecords() {
+        val alreadyInstalled = record(1u)
+        val completedElsewhere = record(2u)
+        val activeTask = task(3u, WorkshopDownloadTaskStatus.Downloading)
+        val current = listOf(completedElsewhere, alreadyInstalled)
+        assertTrue(hasUnscannedWorkshopRecords(listOf(alreadyInstalled), current, emptyList()))
+        assertTrue(hasUnscannedWorkshopRecords(listOf(alreadyInstalled), current, listOf(activeTask)))
+        assertFalse(hasUnscannedWorkshopRecords(current, current.reversed(), listOf(activeTask)))
+    }
+
+    @Test fun restoredCancelledAndPendingInstallRecordsAreDetected() {
+        val original = record(1u)
+        val inProgress = original.copy(cardState = WorkshopModCardState.Downloading, statusText = "Importing")
+        assertTrue(hasUnscannedWorkshopRecords(listOf(inProgress), listOf(original), emptyList()))
+        assertTrue(hasUnscannedWorkshopRecords(listOf(inProgress), emptyList(), emptyList()))
+        val pending = original.copy(pendingInstall = WorkshopPendingInstall(
+            localJarPaths = listOf("new.jar"), updatedAtMillis = 2,
+        ))
+        assertTrue(hasUnscannedWorkshopRecords(listOf(original), listOf(pending), emptyList()))
+    }
+
+    @Test fun onlyTheFirstScanReplacesTheModListWithLoadingContent() {
+        val initial = MainScreenViewModel.UiState()
+        assertTrue(initial.showModListLoading)
+        val loadedEmptyList = initial.copy(initializing = false, hasLoadedModSnapshot = true)
+        assertFalse(loadedEmptyList.copy(initializing = true, controlsEnabled = false).showModListLoading)
+        assertFalse(initial.copy(initializing = false).showModListLoading)
+    }
+
     @Test fun blankNewMessagesDoNotRetainAnEarlierFailure() {
         val card = mod(1u, WorkshopModState.DownloadFailed).let { it.copy(
             workshop = it.workshop!!.copy(statusText = "Old failure")) }
@@ -135,6 +196,12 @@ class WorkshopModCardUpdatesTest {
         name = "Mod $id", version = "1", description = "Description", dependencies = emptyList(),
         required = false, installed = false, enabled = false, explicitPriority = null, effectivePriority = null,
         workshop = WorkshopModUi(646570u, id, state, localJarPath = "mod.jar"),
+    )
+
+    private fun record(id: ULong) = WorkshopInstalledModRecord(
+        appId = 646570u, publishedFileId = id, title = "Mod $id", description = "", previewUrl = "",
+        versionText = "1", updatedAtMillis = 1, installedAtMillis = 1, localJarPath = "/mods/$id.jar",
+        cardState = WorkshopModCardState.ImportedPatched,
     )
 
     private fun task(id: ULong, status: WorkshopDownloadTaskStatus) = WorkshopDownloadTaskUi(

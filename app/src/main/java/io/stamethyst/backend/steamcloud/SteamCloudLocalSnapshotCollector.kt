@@ -24,13 +24,14 @@ internal object SteamCloudLocalSnapshotCollector {
     }
 
     @Throws(IOException::class)
-    fun collect(stsRoot: File): List<SteamCloudLocalFileSnapshotEntry> {
+    fun collect(stsRoot: File, directories: MutableSet<String>? = null): List<SteamCloudLocalFileSnapshotEntry> {
         val entries = mutableListOf<SteamCloudLocalFileSnapshotEntry>()
         SteamCloudRootKind.entries.forEach { rootKind ->
             collectRootEntries(
                 rootKind = rootKind,
                 rootDir = File(stsRoot, rootKind.directoryName),
                 sink = entries,
+                directories = directories,
             )
         }
         return entries.sortedWith(
@@ -45,6 +46,7 @@ internal object SteamCloudLocalSnapshotCollector {
         rootKind: SteamCloudRootKind,
         rootDir: File,
         sink: MutableList<SteamCloudLocalFileSnapshotEntry>,
+        directories: MutableSet<String>?,
     ) {
         if (Files.isSymbolicLink(rootDir.toPath())) throw IOException("Save symlinks are not supported: $rootDir")
         if (!rootDir.exists()) {
@@ -54,7 +56,9 @@ internal object SteamCloudLocalSnapshotCollector {
             throw IOException("Steam Cloud local root is not a directory: ${rootDir.absolutePath}")
         }
         val files = mutableListOf<File>()
-        collectFiles(rootDir, files)
+        collectFiles(rootDir, files) { dir ->
+            directories?.add(rootKind.directoryName + "/" + dir.relativeTo(rootDir).invariantSeparatorsPath)
+        }
         files
             .sortedWith(compareBy<File>({ it.relativeTo(rootDir).path.lowercase(Locale.ROOT) }, { it.path }))
             .forEach { file ->
@@ -66,13 +70,13 @@ internal object SteamCloudLocalSnapshotCollector {
         }
     }
 
-    private fun collectFiles(directory: File, sink: MutableList<File>) {
+    private fun collectFiles(directory: File, sink: MutableList<File>, onDirectory: (File) -> Unit) {
         val children = directory.listFiles()
             ?: throw IOException("Failed to enumerate Steam Cloud local directory: ${directory.absolutePath}")
         children.forEach { child ->
             if (Files.isSymbolicLink(child.toPath())) throw IOException("Save symlinks are not supported: $child")
             when {
-                child.isDirectory -> collectFiles(child, sink)
+                child.isDirectory -> { onDirectory(child); collectFiles(child, sink, onDirectory) }
                 child.isFile -> sink += child
                 else -> throw IOException(
                     "Steam Cloud local path disappeared or has an unsupported type: ${child.absolutePath}"
