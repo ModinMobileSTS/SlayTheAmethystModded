@@ -21,6 +21,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
@@ -261,18 +262,19 @@ class WorkshopMarketNetworkSimulationTest {
         val elapsedMs = (System.nanoTime() - startedAtNs) / 1_000_000L
 
         assertNotNull("all routes down must fail instead of returning a fake market", error)
+        assertEquals(1, fixture.officialRequestCount())
         assertTrue("failure should stay bounded, took ${elapsedMs}ms", elapsedMs < 5_000L)
     }
 
     @Test
     fun networkRecovers_retryLoadsMarketWithoutStayingOnFailedRoutes() {
-        var routeFailuresRemaining = 5
+        val directoryAvailable = AtomicBoolean(false)
         fixture(
             routeResponse = {
-                if (routeFailuresRemaining-- > 0) {
-                    MockResponse.Builder().code(500).build()
-                } else {
+                if (directoryAvailable.get()) {
                     MockResponse.Builder().code(200).body(routePayload()).build()
+                } else {
+                    MockResponse.Builder().code(500).build()
                 }
             },
         ).use { fixture ->
@@ -285,6 +287,7 @@ class WorkshopMarketNetworkSimulationTest {
             assertTrue("first attempt during the outage must fail", firstAttempt.isFailure)
 
             // The node and the Watt directory are reachable again on the next user retry.
+            directoryAvailable.set(true)
             val recovered = fixture.browse()
 
             assertEquals(listOf(SIMULATED_MOD_TITLE), recovered.items.map { it.title })
@@ -443,6 +446,72 @@ class WorkshopMarketNetworkSimulationTest {
         assertEquals(listOf(SIMULATED_MOD_TITLE), result.items.map { it.title })
         assertEquals(1, hop.requestCount())
         assertEquals(1, fixture.officialRequestCount())
+    }
+
+    @Test
+    fun officialGatewayErrorsDuringBundledCooldown_rediscoverAndReuseWorkingNode() {
+        for (code in listOf(502, 503, 504)) {
+            fixture(accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST).use { fixture ->
+                val bundled = fixture.node { resetConnection() }
+                val alternate = fixture.node { okMarket() }
+                fixture.bundledHopTarget = bundled.target
+                fixture.routeTargets = listOf(bundled.target, alternate.target)
+                fixture.officialServer.enqueue(okMarket())
+
+                assertEquals(listOf(SIMULATED_MOD_TITLE), fixture.browse().items.map { it.title })
+                assertEquals(0, fixture.routeRequestCount())
+
+                fixture.officialServer.enqueue(MockResponse.Builder().code(code).build())
+                assertEquals("HTTP $code must recover in the same browse", 1, fixture.browse().items.size)
+                assertEquals(1, fixture.browse().items.size)
+
+                assertEquals(1, bundled.requestCount())
+                assertEquals(2, fixture.officialRequestCount())
+                assertEquals(2, alternate.requestCount())
+                assertEquals(1, fixture.routeRequestCount())
+            }
+        }
+    }
+
+    @Test
+    fun officialForbiddenOrRateLimited_doesNotRediscover() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val bundled = fixture.node { resetConnection() }
+        val alternate = fixture.node { okMarket() }
+        fixture.bundledHopTarget = bundled.target
+        fixture.routeTargets = listOf(alternate.target)
+        fixture.officialServer.enqueue(okMarket())
+        assertEquals(1, fixture.browse().items.size)
+
+        for (code in listOf(403, 429)) {
+            fixture.officialServer.enqueue(MockResponse.Builder().code(code).build())
+            val error = runCatching { fixture.browse() }.exceptionOrNull()
+            assertEquals("Steam workshop browse failed: $code", error?.message)
+        }
+
+        assertEquals(1, bundled.requestCount())
+        assertEquals(3, fixture.officialRequestCount())
+        assertEquals(0, alternate.requestCount())
+        assertEquals(0, fixture.routeRequestCount())
+    }
+
+    @Test
+    fun officialGatewayErrorWithAccelerationOff_doesNotRediscover() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val bundled = fixture.node { okMarket() }
+        fixture.bundledHopTarget = bundled.target
+        fixture.routeTargets = listOf(bundled.target)
+        fixture.accelerationEnabled = false
+        fixture.officialServer.enqueue(MockResponse.Builder().code(503).build())
+
+        val error = runCatching { fixture.browse() }.exceptionOrNull()
+
+        assertEquals("Steam workshop browse failed: 503", error?.message)
+        assertEquals(1, fixture.officialRequestCount())
+        assertEquals(0, bundled.requestCount())
+        assertEquals(0, fixture.routeRequestCount())
     }
 
     private fun fixture(

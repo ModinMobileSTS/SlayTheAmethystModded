@@ -357,6 +357,9 @@ internal fun interface AcceleratedResponseValidator {
     fun validate(response: Response)
 }
 
+/** Opt-in HTTP statuses that invalidate the official route for a replayable request. */
+internal class OfficialRouteFailureCodes(val values: Set<Int>)
+
 /** Logical-origin routing, retry and redirect policy. Network IO belongs to the owning Call. */
 internal class WattRouteExecutor(
     private val routeResolvers: List<WattToolkitGithubRouteResolver>,
@@ -384,7 +387,15 @@ internal class WattRouteExecutor(
             var officialRequestAttempted = false
             val officialRequestExecutor: (Request) -> Response = { official ->
                 officialRequestAttempted = true
-                executeCandidate(official, applyCookieHeader(official, official.url, credentialsAllowed), null)
+                val response = executeCandidate(official, applyCookieHeader(official, official.url, credentialsAllowed), null)
+                val failureCodes = official.tag(OfficialRouteFailureCodes::class.java)
+                if (resolver != null && official.canReplayHttpRequest() &&
+                    failureCodes?.values?.contains(response.code) == true
+                ) {
+                    response.close()
+                    throw IOException("Official route unavailable (HTTP ${response.code})")
+                }
+                response
             }
             var effectiveRoute = route
             var usedForwardTarget: String? = null
