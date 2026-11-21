@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>下载中心 · Amethyst 交互原型</title>
+<style>
+*{box-sizing:border-box}
+:root{color-scheme:light;--bg:#f8f9ff;--ink:#191c20;--sub:#475467;--line:#d8dfe7;--soft:#e9eff6;--primary:#36618e;--tint:#d8e8f8;--err:#943c30;--warn:#fae6dd;--leaf:#23614d;--mint:#d9eee4;--sheet:#fff;--stage:#e9edf4}
+:root.dark{color-scheme:dark;--bg:#111418;--ink:#e1e2e8;--sub:#b2becb;--line:#343e48;--soft:#232b34;--primary:#a0cafd;--tint:#283f55;--err:#ffb4a9;--warn:#432d2d;--leaf:#a1d8c0;--mint:#243c35;--sheet:#1b2026;--stage:#0d1014}
+body{margin:0;background:var(--stage);color:var(--ink);font:1rem/1.5 system-ui,-apple-system,"Noto Sans CJK SC","Microsoft YaHei",sans-serif;-webkit-tap-highlight-color:transparent}
+main{max-width:452px;margin:22px auto;padding:14px 20px 10px;background:var(--bg);border-radius:22px}
+button,summary{color:inherit;font:inherit;cursor:pointer}button{background:none;border:0;padding:0}button:focus-visible,summary:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+button:disabled{cursor:default;opacity:.54}button:hover:not(:disabled),summary:hover{filter:brightness(.93)}h1,h2,h3,p{margin:0}
+.grow{flex:1;min-width:0}.num{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-variant-numeric:tabular-nums}
+.icon{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mast,.brand,.row,.row-main,.spread,.badge,.tags,.toolset,.pill,.history-head,.hero-foot{display:flex;align-items:center}
+.mast,.spread,.hero-foot{justify-content:space-between;gap:10px}.mast{min-height:44px}.brand{gap:9px;color:var(--primary);font-size:.71rem;font-weight:750;letter-spacing:.12em}.brand svg{width:22px;height:24px}
+.kicker{color:var(--sub);font:650 .65rem/1.5 ui-monospace,monospace;letter-spacing:.13em}.mast .icon-btn{margin-right:-8px}.icon-btn{display:grid;place-items:center;width:48px;height:48px;flex:none;border-radius:50%}.icon-btn:hover{background:var(--soft)}
+h1{font-size:1.95rem;line-height:1.25;letter-spacing:-.04em;margin:6px 0 5px}.lede{color:var(--sub);font-size:.84rem;margin-bottom:19px}
+.hero{position:relative;isolation:isolate;overflow:hidden;padding:15px 18px 16px;border-radius:18px;background:linear-gradient(115deg,#183149,#254969 70%,#355d7a);color:#f1f7ff}
+.scene{position:absolute;z-index:-1;top:0;right:0;width:51%;height:145px;pointer-events:none}.hero.paused .scene{opacity:.55}
+.badge{gap:6px;color:#d8edff;font-size:.75rem;font-weight:650}.dot{width:7px;height:7px;background:#a3dbfa;border-radius:50%}.paused .dot{background:#e4d6bf}
+.hero-name{display:block;max-width:85%;text-align:left;font-size:1.57rem;font-weight:700;letter-spacing:-.025em;line-height:1.2;min-height:48px;overflow-wrap:anywhere;text-shadow:0 1px 5px #162d43}.hero button:focus-visible{outline-color:#fff}
+.hero-name .icon{width:14px;height:14px;opacity:.78;margin:0 0 1px 5px}.meter{margin:5px 0 11px}.amount{display:flex;align-items:baseline;gap:2px}.amount b{font:600 1.85rem/1 ui-monospace,monospace;letter-spacing:-.08em}.amount small{color:#c8e1f3;font:.8rem/1 ui-monospace,monospace}
+.track{height:5px;background:#547189;border-radius:5px;margin-top:8px}.fill{height:100%;border-radius:inherit;background:#c1e7ff}.paused .fill{background:#c7d0d7}
+.hero-foot{gap:8px;flex-wrap:wrap}.bytes{font-size:.76rem;line-height:1.6;color:#e4eff9}.speed{display:block;color:#c1ddf4}.hero-action{min-height:48px;padding:0 16px;gap:6px;border-radius:26px;font-size:.83rem;font-weight:650;background:#e1f0ff;color:#173853}.hero-action svg,.pill svg{width:16px;height:16px}
+.notice{font-size:.78rem;margin-top:10px;color:#f6e2b8}.group{margin-top:19px}.group h2,.history-head{font-size:.91rem;letter-spacing:.015em;font-weight:680}.counter{color:var(--sub);font:500 .75rem/1 ui-monospace,monospace;margin-left:8px}
+.row{gap:5px;min-height:64px}.row+.row{border-top:1px solid var(--line)}.row-main{gap:12px;flex:1;min-width:0;text-align:left;min-height:60px}
+.tile{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;flex:none;background:var(--soft);color:var(--sub)}.tile.issue{background:var(--warn);color:var(--err)}.tile.queue{color:var(--leaf);background:var(--mint)}.tile.queue .icon{width:22px}
+.row-main b{font-size:1rem;display:block;overflow-wrap:anywhere;line-height:1.35}.row-main small{display:block;font-size:.77rem;color:var(--sub);line-height:1.45;margin-top:2px}.row-main small.issue{color:var(--err)}
+.pill{justify-content:center;gap:5px;min-height:48px;padding:0 13px;border-radius:30px;font-size:.83rem;font-weight:650;color:var(--primary)}.retry{background:var(--tint)}.trailing{width:16px;height:16px;color:var(--sub);margin-right:4px}
+.hero .hero-action{color:#173853;padding-inline:16px}
+.history{border-top:1px solid var(--line);margin-top:11px}.history-head{min-height:52px;justify-content:space-between;list-style:none}.history-head::-webkit-details-marker{display:none}.history-head svg{color:var(--sub);width:17px}.history[open] .history-head svg{transform:rotate(180deg)}
+.demo{border-top:1px dashed var(--line);color:var(--sub);font-size:.73rem}.demo summary{min-height:44px;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px}.demo summary::-webkit-details-marker{display:none}.toolset{flex-wrap:wrap;gap:5px;margin-bottom:8px}.toolset button,.weak{min-height:44px;padding:0 12px;border-radius:14px;background:var(--soft);font-size:.78rem}
+.sr{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}
+.empty{padding:28px 0;text-align:center}.empty .tile{margin:0 auto 10px}.empty h2{font-size:1.05rem}.empty p{font-size:.84rem;color:var(--sub);margin:5px 0 14px}
+dialog{position:fixed;inset:auto 0 0;margin:0 auto;padding:0;width:min(100%,452px);max-width:100%;max-height:84dvh;border:0;border-radius:24px 24px 0 0;background:var(--sheet);color:var(--ink);overflow:auto;overscroll-behavior:contain}
+dialog::backdrop{background:#101e2c75}body:has(dialog[open]){overflow:hidden}.sheet{padding:8px 22px max(22px,env(safe-area-inset-bottom))}.handle{width:34px;height:4px;margin:0 auto 6px;border-radius:5px;background:var(--line)}
+.sheet h2{font-size:1.36rem;overflow-wrap:anywhere}.sheet .state{color:var(--primary);font-size:.8rem;margin-top:3px;font-weight:650}.sheet .reason{margin:12px 0 16px;font-size:.91rem}
+.facts{background:var(--soft);padding:11px 14px;border-radius:14px}.fact{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:.85rem}.fact+.fact{margin-top:6px}.fact span:first-child{color:var(--sub)}.fact span:last-child{text-align:right;overflow-wrap:anywhere}
+.sheet details{margin-top:10px}.sheet summary{font-weight:600;font-size:.88rem;min-height:44px;align-content:center}.logs{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.73rem;background:var(--soft);padding:10px;border-radius:10px}
+.sheet-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:16px}.danger{color:var(--err)}.sheet .confirm{background:var(--primary);color:var(--bg);min-height:48px;padding:0 16px;border-radius:24px;font-weight:650;font-size:.84rem}.sheet .danger-fill{background:var(--err)}
+@media(max-width:520px){body{background:var(--bg)}main{margin:0 auto;border-radius:0;padding-top:max(8px,env(safe-area-inset-top))}}
+@media(max-width:350px){main{padding-inline:14px}.hero{padding-inline:15px}}
+</style>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <symbol id="jewel" viewBox="0 0 24 24"><path d="m12 2 8 6-2 9-6 5-6-5-2-9Z M12 2 8 9l4 13 4-13Z M4 8l4 1 4-3 4 3 4-1"/></symbol>
+  <symbol id="moon" viewBox="0 0 24 24"><path d="M20 14.3A8.4 8.4 0 0 1 9.7 4a8.5 8.5 0 1 0 10.3 10.3Z"/></symbol>
+  <symbol id="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></symbol>
+  <symbol id="pause" viewBox="0 0 24 24"><path stroke-width="3" d="M8 5v14M16 5v14"/></symbol>
+  <symbol id="play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8Z"/></symbol>
+  <symbol id="retry" viewBox="0 0 24 24"><path d="M4 5v6h6M4 11a8 8 0 1 1 1 7"/></symbol>
+  <symbol id="alert" viewBox="0 0 24 24"><path d="m10 4-8 14q-1 2 2 2h16q3 0 2-2L14 4q-2-3-4 0Z M12 9v4m0 3v.4"/></symbol>
+  <symbol id="leaf" viewBox="0 0 24 24"><path d="M4 18c-1-9 5-13 16-14 0 10-4 16-13 15m-3 2L16 9"/></symbol>
+  <symbol id="layers" viewBox="0 0 24 24"><path d="m2 8 10-5 10 5-10 5Zm1 5 9 5 9-5M3 17l9 5 9-5"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></symbol>
+  <symbol id="next" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="m5 9 7 7 7-7"/></symbol>
+  <symbol id="x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="tray" viewBox="0 0 24 24"><path d="M3 14 6 5h12l3 9v5H3Zm0 0h5l1 3h6l1-3h5"/></symbol>
+  <symbol id="spire" viewBox="0 0 200 148">
+    <g fill="none" stroke="#add6f2" opacity=".27" stroke-width=".8"><circle cx="142" cy="51" r="31"/><circle cx="142" cy="51" r="39" stroke-dasharray="2 5"/><path d="M72 51h112m-42-44v82"/></g>
+    <path fill="#83a9bf" d="m81 119 22-35 7 4 22-41 8-2 7-27 5 28 6 9 5 30 11-13 26 37v30Z"/>
+    <path fill="#426984" d="m147 18-1 40-8 3-9 27-15 13-15 26h101v-20l-26-35-11 13-5-30-6-9Z"/>
+    <path fill="#254863" d="m65 137 43-33 11 1 23-23 17 7 15-10 26 15v54H65Z"/>
+    <path fill="none" stroke="#b8d6e6" stroke-width="1.1" opacity=".65" d="m139 65-9 15 5 4-19 15 9 5-24 14m45-60-2 11 3 4-10 10"/>
+    <path fill="#284c68" d="M0 148v-9l42-13 33 3 27-9 27 3 31-14 40 5v34Z"/>
+    <g fill="#c5deed"><circle cx="89" cy="24" r="1.2"/><circle cx="174" cy="12" r=".9"/><circle cx="116" cy="14" r=".7"/></g>
+  </symbol>
+</defs></svg>
+<main>
+  <header><div class="mast"><div class="brand"><svg class="icon" aria-hidden="true"><use href="#jewel"/></svg>AMETHYST <span aria-hidden="true">/</span> 创意工坊</div><button class="icon-btn" id="theme" aria-label="切换深浅主题"></button></div>
+  <h1>下载中心</h1><p id="summary" class="lede"></p></header>
+  <div id="tasks"></div>
+  <details class="demo" id="controls"><summary><span>交互原型 · 示例快照</span><span>演示控制 ⌄</span></summary><div class="toolset"><button data-do="motion"></button><button data-do="empty">查看空状态</button><button data-do="reset">重置演示</button></div></details>
+  <p class="sr" aria-live="polite" id="announce"></p>
+</main>
+<dialog id="detail" aria-labelledby="detailTitle"><div id="sheet" class="sheet"></div></dialog>
+<script>
+'use strict';
+const $=s=>document.querySelector(s), icon=(name,extra='')=>`<svg aria-hidden="true" class="icon ${extra}"><use href="#${name}"/></svg>`;
+const seed=[
+  {id:'downfall',name:'Downfall',size:200,got:128,rate:2.4,state:'active',workshop:'1610056683'},
+  {id:'stslib',name:'StSLib',size:8,got:0,rate:.8,state:'failed',workshop:'1609158507'},
+  {id:'minty',name:'Minty Spire',size:24,got:0,rate:1.2,state:'queued',workshop:'1812723899'},
+  {id:'base',name:'BaseMod',size:12,got:12,rate:1,state:'done',workshop:'1605833019'},
+  {id:'relic',name:'Relic Stats',size:3,got:0,rate:.6,state:'cancelled',workshop:'2118491069'}
+];
+const labels={active:'正在下载',connecting:'正在连接',paused:'已暂停',queued:'排队中',failed:'下载失败',done:'已完成',cancelled:'已取消'};
+const reasons={active:'正在从创意工坊下载文件。',connecting:'正在连接创意工坊，连接后开始传输。',paused:'继续时会从头下载，之前的进度无法接续。',queued:'前一项结束后将自动开始下载。',failed:'连接创意工坊超时。检查网络后可以重试。',done:'文件已下载完成。',cancelled:'任务已取消，需要时可以重新下载。'};
+const hist=t=>['done','cancelled'].includes(t.state), featured=t=>['active','paused','connecting'].includes(t.state);
+let tasks=[], selected='', confirmCancel=false, historyOpen=false, running=false, lastFocus=null, connectTimer;
+const get=id=>tasks.find(t=>t.id===id), pretty=n=>String(Number(n.toFixed(1))), count=n=>String(n).padStart(2,'0');
+const announce=s=>{$('#announce').textContent=s};
+function button(action,t,text,cls,ico=''){return `<button class="${cls}" data-do="${action}" data-id="${t.id}" aria-label="${text} ${t.name}">${ico?icon(ico):''}${text}</button>`}
+function hero(t){
+  const paused=t.state==='paused',connecting=t.state==='connecting',pct=Math.floor(100*t.got/t.size);
+  return `<article class="hero ${paused?'paused':''}"><svg class="scene" aria-hidden="true"><use href="#spire"/></svg>
+  <div class="badge"><i class="dot"></i>${labels[t.state]}</div><button class="hero-name" data-do="details" data-id="${t.id}" aria-label="查看 ${t.name} 详情">${t.name}${icon('next')}</button>
+  ${connecting?'<p class="meter">正在连接创意工坊…</p>':`<div class="meter"><div class="amount"><b>${pct}</b><small>%</small></div><div class="track" role="progressbar" aria-label="下载进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div class="fill" style="width:${pct}%"></div></div></div>`}
+  <div class="hero-foot"><div class="bytes num">${connecting?`共 ${t.size} MB`:`${pretty(t.got)} / ${t.size} MB`}${t.state==='active'?`<span class="speed">↓ ${t.rate.toFixed(1)} MB/s</span>`:''}</div>
+  ${button(paused?'resume':'pause',t,paused?'重新开始':'暂停','pill hero-action',paused?'play':'pause')}</div>${paused?'<p class="notice">重新开始将从 0 下载。</p>':''}</article>`;
+}
+function row(t){
+  const fail=t.state==='failed',q=t.state==='queued',tone=fail?'issue':q?'queue':'',symbol=fail?'alert':q?(t.id==='minty'?'leaf':'layers'):t.state==='done'?'check':'x';
+  const sub=fail?'连接超时':q?`等待下载 · ${t.size} MB`:`${labels[t.state]} · ${t.size} MB`;
+  return `<div class="row"><button class="row-main" data-do="details" data-id="${t.id}" aria-label="查看 ${t.name} 详情"><span class="tile ${tone}">${icon(symbol)}</span><span class="grow"><b>${t.name}</b><small class="${fail?'issue':''}">${sub}</small></span>${fail?'':icon('next','trailing')}</button>${fail?button('retry',t,'重试','pill retry','retry'):''}</div>`;
+}
+function group(title,items){return items.length?`<section class="group"><h2>${title}<span class="counter">${count(items.length)}</span></h2>${items.map(row).join('')}</section>`:''}
+function render(){
+  const focus=document.activeElement, action=focus?.dataset?.do, target=focus?.dataset?.id, inTasks=$('#tasks').contains(focus);
+  const current=tasks.find(featured), failed=tasks.filter(t=>t.state==='failed'),queue=tasks.filter(t=>t.state==='queued'),history=tasks.filter(hist);
+  const summary=[current?`1 个${{active:'下载中',paused:'已暂停',connecting:'连接中'}[current.state]}`:'',queue.length?`${queue.length} 个排队`:'',failed.length?`${failed.length} 个待处理`:''].filter(Boolean);
+  $('#summary').textContent=summary.join(' · ')||(history.length?'队列已结束，可查看历史记录。':'从创意工坊添加的下载会出现在这里。');
+  $('#tasks').innerHTML=(current?hero(current):'')+group('待处理',failed)+group('下载队列',queue)+(history.length?`<details class="history" ${historyOpen?'open':''}><summary class="history-head"><span>历史记录<span class="counter">${count(history.length)}</span></span>${icon('down')}</summary>${history.map(row).join('')}</details>`:'')+
+    (!tasks.length?`<section class="empty"><span class="tile">${icon('tray')}</span><h2>还没有下载任务</h2><p>载入示例，体验一次完整的下载流程。</p><button class="weak" data-do="reset">载入示例任务</button></section>`:'');
+  const historyEl=$('.history');if(historyEl)historyEl.ontoggle=()=>{if(historyEl.isConnected)historyOpen=historyEl.open};
+  if(inTasks){const replacement=(action&&$(`#tasks [data-do="${action}"][data-id="${target}"]`))||(target&&$(`#tasks [data-id="${target}"]`))||$('.history-head');replacement?.focus({preventScroll:true})}
+  $('[data-do="motion"]').textContent=running?'冻结进度':'播放进度';$('[data-do="motion"]').disabled=!current&&queue.length===0;
+}
+function sheet(){
+  const t=get(selected);if(!t)return;
+  if(confirmCancel){$('#sheet').innerHTML=`<div class="handle"></div><p class="kicker">取消任务</p><h2 id="detailTitle">取消 ${t.name} 的下载？</h2><p class="reason">该任务将移到历史记录，之后仍可重新下载。</p><div class="sheet-actions"><button class="weak" data-do="keep">保留任务</button>${button('cancel',t,'取消下载','confirm danger-fill')}</div>`;return}
+  const act={failed:['retry','重试下载'],paused:['resume','从头下载'],active:['pause','暂停下载'],connecting:['pause','暂停连接'],cancelled:['retry','重新下载']}[t.state];
+  const log=t.events.map(e=>`• ${e}`).join('\n');
+  $('#sheet').innerHTML=`<div class="handle"></div><div class="spread"><span class="kicker">任务详情</span><button class="icon-btn" aria-label="关闭详情" data-do="close">${icon('x')}</button></div>
+  <h2 id="detailTitle">${t.name}</h2><p class="state">${labels[t.state]}</p><p class="reason">${reasons[t.state]}</p>
+  <div class="facts"><div class="fact"><span>文件大小</span><span class="num">${t.size} MB</span></div>${['active','paused','done'].includes(t.state)?`<div class="fact"><span>已下载</span><span class="num" id="sheetBytes">${pretty(t.got)} MB</span></div>`:''}</div>
+  <details id="technical"><summary>技术信息与日志</summary><div class="fact"><span>Workshop ID</span><span class="num">${t.workshop}</span></div><p class="kicker">本次演示日志</p><pre class="logs">${log}</pre><button class="weak" data-do="export" data-id="${t.id}">导出示例日志</button></details>
+  <div class="sheet-actions">${!hist(t)?button('askCancel',t,'取消任务','pill danger'):'<span></span>'}${act?button(act[0],t,act[1],'confirm'):'<button class="confirm" data-do="close">完成</button>'}</div>`;
+}
+function show(t){lastFocus=document.activeElement;selected=t.id;confirmCancel=false;sheet();$('#detail').showModal()}
+function close(){if($('#detail').open)$('#detail').close()}
+$('#detail').addEventListener('close',()=>{selected='';confirmCancel=false;if(lastFocus?.isConnected)lastFocus.focus();else if(lastFocus?.dataset?.id){const b=$(`#tasks [data-id="${lastFocus.dataset.id}"]`);(b?.checkVisibility()?b:$('.history-head')||$('#theme')).focus({preventScroll:true})}});
+$('#detail').addEventListener('click',e=>{if(e.target===$('#detail')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)close()}});
+function fresh(empty=false){
+  clearTimeout(connectTimer);running=false;historyOpen=false;tasks=empty?[]:seed.map(t=>({...t,events:[t.state==='failed'?'连接创意工坊超时':labels[t.state]]}));close();render();
+}
+function start(t){
+  clearTimeout(connectTimer);t.state='connecting';t.got=0;t.events.push('正在连接创意工坊');
+  connectTimer=setTimeout(()=>{if(get(t.id)!==t||t.state!=='connecting')return;t.state='active';t.events.push('连接成功，开始传输');render();if(selected===t.id&&!confirmCancel)sheet();announce(`${t.name} 开始下载`)},1000);
+}
+function next(){if(tasks.some(featured))return;const t=tasks.find(t=>t.state==='queued');if(t)start(t);else running=false}
+function refreshTheme(){const dark=document.documentElement.classList.contains('dark');$('#theme').innerHTML=icon(dark?'sun':'moon');$('#theme').setAttribute('aria-label',dark?'切换到浅色主题':'切换到深色主题')}
+document.documentElement.classList.toggle('dark',matchMedia('(prefers-color-scheme:dark)').matches);refreshTheme();
+$('#theme').onclick=()=>{document.documentElement.classList.toggle('dark');refreshTheme()};
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button[data-do]');if(!b)return;const a=b.dataset.do,t=get(b.dataset.id);
+  if(a==='details'){show(t);return}if(a==='close'){close();return}
+  if(a==='reset'||a==='empty'){fresh(a==='empty');announce(a==='reset'?'示例任务已重置':'已切换到空状态');return}
+  if(a==='motion'){running=!running;render();return}
+  if(a==='keep'||a==='askCancel'){confirmCancel=a==='askCancel';sheet();$('#sheet button').focus();return}
+  if(a==='export'){const blob=new Blob([`${t.name} · 示例任务日志\n${t.events.join('\n')}\n`],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`demo-${t.id}.txt`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return}
+  if(!t)return;
+  if(a==='pause'){clearTimeout(connectTimer);t.state='paused';t.events.push('用户暂停下载')}
+  if(a==='resume'){running=true;start(t)}
+  if(a==='retry'){tasks=tasks.filter(item=>item!==t);t.state='queued';t.got=0;t.events.push('用户重试，加入队尾');tasks.push(t);next()}
+  if(a==='cancel'){if(featured(t))clearTimeout(connectTimer);t.state='cancelled';t.events.push('用户取消任务');next()}
+  close();render();announce(`${t.name}：${labels[t.state]}`);
+});
+setInterval(()=>{if(!running)return;const t=tasks.find(t=>t.state==='active');if(!t)return;t.got=Math.min(t.size,t.got+t.rate);
+  if(t.got>=t.size){t.state='done';t.events.push('下载完成');next();if(selected===t.id){confirmCancel=false;sheet()}announce(`${t.name} 已完成`)}
+  else if(selected===t.id&&$('#sheetBytes'))$('#sheetBytes').textContent=`${pretty(t.got)} MB`;
+  render();
+},1000);
+fresh();
+</script>
+</body>
+</html>

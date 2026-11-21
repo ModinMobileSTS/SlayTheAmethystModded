@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">
+<meta name="color-scheme" content="light dark">
+<title>模组市场 · AI 搜索原型</title>
+<style>
+  :root{--bg:#f8f9ff;--ink:#191c20;--sub:#43474e;--card:#e1e2e8;--field:#e6e8ee;--variant:#dfe2eb;--p:#36618e;--onp:#fff;--secondary:#d7e3f7;--outline:#73777f;--line:#c3c7cf;--off:#a1a3a8;--glass:rgba(248,249,255,.83)}
+  @media(prefers-color-scheme:dark){:root{--bg:#111418;--ink:#e1e2e8;--sub:#c3c7cf;--card:#32353a;--field:#272a2f;--variant:#43474e;--p:#a0cafd;--onp:#003258;--secondary:#3b4858;--outline:#8d9199;--line:#43474e;--off:#717579;--glass:rgba(17,20,24,.82)}}
+  *{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--bg);font:16px/1.5 Roboto,"Noto Sans CJK SC","WenQuanYi Zen Hei",Arial,sans-serif}
+  button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer;background:none;border:none;padding:0}button:disabled{cursor:default}
+  :focus-visible{outline:2px solid var(--p);outline-offset:2px}[hidden]{display:none!important}h1,h2,h3,p,blockquote{margin:0}
+  h1{font-size:24px;line-height:32px}h2,h3{font-size:16px;line-height:24px;font-weight:600}
+  .icon{width:24px;height:24px;display:inline-block;vertical-align:middle;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .screen{--expanded:242px;--f:0;max-width:412px;margin:auto;height:min(812px,100dvh);position:relative;overflow:hidden;background:var(--bg);isolation:isolate}
+  .chrome{background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+  header{position:absolute;inset:0 0 auto;z-index:2;border-radius:0 0 24px 24px;box-shadow:0 3px 6px #0003;overflow:hidden}
+  .status{height:24px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font:500 13px/1 Roboto,Arial,sans-serif}.status svg{width:45px;height:13px;fill:currentColor}
+  .heading{display:flex;align-items:center;gap:calc(12px - 2px * var(--f));padding:calc(18px - 10px * var(--f)) 16px calc(16px - 8px * var(--f))}
+  .store{width:calc(52px - 12px * var(--f));height:calc(52px - 12px * var(--f));border-radius:calc(18px - 4px * var(--f));background:var(--secondary);color:var(--p);display:grid;place-items:center}
+  .store .icon{width:calc(28px - 4px * var(--f));height:auto}.grow{flex:1;min-width:0}
+  .heading h1{font-size:calc(24px - 2px * var(--f))}.subtitle{font-size:14px;line-height:20px;color:var(--sub);margin-top:calc(4px * (1 - var(--f)));max-height:calc(20px * (1 - var(--f)));opacity:calc(1 - var(--f));overflow:hidden}
+  .icon-btn{width:48px;height:48px;flex:none;display:grid;place-items:center;border-radius:50%;color:var(--ink)}
+  .controls{overflow:hidden;max-height:calc(132px * (1 - var(--f)) * (1 - var(--mode,0)));opacity:calc((1 - var(--f)) * var(--browse-alpha,1))}
+  .controls-inner{padding:0 16px 16px;display:grid;gap:12px}.field{display:flex;align-items:center;height:56px;border-radius:28px;background:var(--field);padding:0 8px 0 16px;box-shadow:0 1px 3px #0003}
+  .field input{width:0;flex:1;min-width:0;border:0;background:none;color:var(--ink);padding:6px 0;outline-offset:0}
+  .field input::placeholder{color:var(--sub)}.text,.filled,.outline{font-size:14px;font-weight:500;color:var(--p);min-height:40px;padding:0 12px;border-radius:20px}
+  .filled{background:var(--p);color:var(--onp);padding:0 24px}.filled:disabled{opacity:.44}.outline{border:1px solid var(--outline);padding:0 23px}
+  .filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:center;gap:8px;height:48px}
+  .filters select,.filters button{appearance:none;border:1px solid var(--outline);border-radius:24px;color:var(--p);background:none;text-align:center;text-align-last:center;padding:0 2px;font-size:14px;height:40px;white-space:nowrap;min-width:0}
+  .filters select:disabled{color:var(--off);border-color:var(--line);opacity:1}.filters select option{color:var(--ink);background:var(--bg)}.filters button{border:0}
+  .list{position:absolute;inset:0;overflow:auto;scrollbar-width:none;overscroll-behavior:contain;padding:calc(var(--expanded) + 46px) 16px 132px}.list::-webkit-scrollbar{display:none}
+  #content{display:grid;gap:12px}.section-title,.between{display:flex;justify-content:space-between;align-items:center;gap:8px}.section-title span{font-size:12px;color:var(--sub)}
+  .card,.status-card,.panel,.end{background:var(--card);border-radius:12px;box-shadow:0 1px 3px #0003}.panel,.status-card{padding:16px}.status-card{background:var(--variant);box-shadow:0 3px 6px #0003}.status-card .outline{margin-top:12px}
+  .status-card p,.meta,.panel p,.facts,.source{font-size:14px;line-height:20px;color:var(--sub)}
+  .card-row{display:flex;align-items:center;gap:12px;padding:12px;min-height:96px}.art{width:72px;height:72px;border-radius:12px;object-fit:cover;box-shadow:0 1px 3px #0003;flex:none}
+  .info{display:grid;gap:6px;min-width:0;flex:1}.name{color:var(--ink);text-decoration:none}.facts{display:flex;align-items:center;gap:12px;white-space:nowrap}
+  .facts span{display:inline-flex;gap:5px;align-items:center}.facts span:first-child{width:90px}.facts .icon{width:17px;height:17px}.facts .star{width:18px;height:18px;color:var(--p);fill:currentColor}
+  .end{height:72px;display:grid;place-items:center;color:var(--sub)}
+  .dock{z-index:2;position:absolute;inset:auto 0 0;padding:8px 8px 0}.nav-items{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+  .nav-item{height:58px;display:grid;justify-items:center;align-content:center;font-size:11px;font-weight:500;line-height:16px;color:var(--sub)}
+  .nav-item i{width:56px;height:32px;display:grid;place-items:center;border-radius:16px;font-style:normal}.nav-item.current{color:var(--p)}.current i{background:var(--secondary)}
+  .system-nav{height:30px;display:grid;place-items:center}.system-nav::after{content:"";height:4px;width:108px;border-radius:4px;background:var(--ink)}
+  .source{margin:0 12px 10px;border-top:1px solid var(--line)}.source summary{padding:8px 0 2px;color:var(--p);cursor:pointer;overflow-wrap:anywhere}
+  .source blockquote{margin:7px 0;padding-left:10px;border-left:2px solid var(--outline)}a{color:var(--p)}.source small{display:block}.source a{display:inline-block;padding:5px 0}
+  .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}.panel p{margin-top:4px}.between .text{min-height:32px}
+  dialog{position:fixed;inset:auto;margin:0;border:0;padding:0;max-width:none;max-height:none;background:#0005;color:var(--ink)}
+  dialog[open]{display:grid;place-items:center}dialog::backdrop{background:transparent}.dialog-card{width:calc(100% - 52px);max-height:calc(100% - 40px);overflow:auto;padding:24px;background:var(--field);border-radius:28px;box-shadow:0 6px 18px #0003}
+  .dialog-card h2{font-size:24px;line-height:32px;font-weight:400;margin-bottom:16px}.dialog-card p{font-size:14px;color:var(--sub)}
+  .dialog-card label{display:block;color:var(--p);font-size:12px}.dialog-card input,.dialog-card textarea{width:100%;padding:12px;border:1px solid var(--outline);border-radius:4px;background:none;margin-top:4px;font-size:16px;resize:vertical}
+  .dialog-card textarea{min-height:80px}.dialog-card .actions{justify-content:flex-end;margin-top:24px}.samples{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.samples .outline{font-size:13px;padding:4px 10px;min-height:32px}
+  .review{max-width:412px;margin:12px auto;padding:0 12px 14px;font-size:13px;color:var(--sub)}.review select{background:var(--field);border:1px solid var(--line);border-radius:8px;padding:5px}.review p{margin:6px 0}
+  @media(min-width:520px){body{background:var(--field)}.screen{margin-top:12px;border-radius:20px;height:min(812px,calc(100dvh - 24px));box-shadow:0 1px 8px #0002}}
+  @media(max-width:360px){.card-row{gap:8px}.facts{gap:7px}.facts span:first-child{width:auto}.field .text{padding:0 8px}.filters{gap:5px}.filters select,.filters button{font-size:13px}}
+  .tabs{position:relative;display:flex;flex:none;border-radius:24px;background:var(--field);padding:2px}
+  .tabs::before{content:"";position:absolute;inset:4px auto 4px 4px;width:calc(50% - 4px);border-radius:24px;background:var(--secondary);transform:translateX(calc(100% * var(--mode,0)))}
+  .tabs button{position:relative;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--sub)}
+  .tabs button[aria-selected=true]{color:var(--p)}.tabs .icon{width:20px;height:20px}
+  .heading h1,.subtitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .field-slot{height:56px}.field{margin:0}.field .submit{flex:none}
+  .list{opacity:var(--browse-alpha,1);transform:translateX(calc(-12px * var(--mode,0)))}
+  .chat{opacity:var(--chat-alpha,0);transform:translateX(calc(12px * (1 - var(--mode,0))))}
+  .nav-items{opacity:var(--browse-alpha,1);transform:translateY(calc(16px * var(--mode,0)))}
+  .bottom-slot{position:absolute;inset:auto 16px 30px;opacity:var(--chat-alpha,0);transform:translateY(calc(16px * (1 - var(--mode,0))))}
+  .bottom-slot:empty{pointer-events:none}.ai-mode .nav-items{pointer-events:none}
+  .field.ai-field{padding-right:8px}.ai-field .submit{display:grid;place-items:center;background:var(--p);color:var(--onp);width:40px;height:40px;min-height:0;padding:0}
+  .ai-field .submit:disabled{background:var(--variant);color:var(--outline)}.ai-field .icon{width:20px;height:20px}
+  .chat{position:absolute;inset:var(--chat-top,114px) 0 94px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:16px}
+  .thread{display:flex;flex-direction:column;gap:20px;padding-bottom:5px}.hello{margin:auto 0}
+  .chat:has(.hello:only-child){display:flex;flex-direction:column}.thread:has(.hello:only-child){flex:1}
+  .hello h2{font-size:22px;line-height:30px;margin-top:10px}.hello p{margin:6px 0 18px;font-size:14px;line-height:22px;color:var(--sub)}
+  .stamp{width:40px;height:40px;display:grid;place-items:center;background:var(--secondary);color:var(--p);border-radius:14px}
+  .hello .prompt{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--field);border-radius:12px;margin-top:7px;text-align:left;padding:11px 14px;font-size:14px}
+  .prompt .icon{width:16px;height:16px;color:var(--p)}.turn{display:grid;gap:14px}
+  .utterance{justify-self:end;max-width:88%;border-radius:18px 18px 4px 18px;background:var(--secondary);padding:9px 14px;font-size:15px;overflow-wrap:anywhere;white-space:pre-wrap}
+  .assistant-label{display:flex;align-items:center;gap:6px;font-size:12px;line-height:18px;font-weight:600;color:var(--p);margin-bottom:6px}
+  .assistant-label .icon{width:17px;height:17px}.reply{min-width:0}.blocks{display:grid;gap:9px;font-size:15px;line-height:23px}
+  .blocks .actions,.blocks .samples{margin:0}.blocks .samples{gap:6px}.blocks .source{padding-bottom:8px;margin-bottom:0}.blocks .source summary{font-size:13px}
+  .blocks .search-terms{color:var(--sub);font-size:12px}.blocks .search-terms summary{cursor:pointer}
+  .busy{color:var(--sub)}.busy::before{content:"";display:inline-block;vertical-align:middle;margin-right:8px;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--p);border-radius:100%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.tabs::before{transition:none}.busy::before{animation:none}}
+  @media(max-width:395px){.heading:has(.tabs:not([hidden])){gap:5px}.heading:has(#subscriptions:not([hidden])) .store{width:40px;height:40px}.heading:has(#subscriptions:not([hidden])) .icon-btn{width:40px}}
+  @media(max-width:345px){.heading:has(.tabs:not([hidden])){padding-left:10px;padding-right:8px}.heading:has(.tabs:not([hidden])) h1{font-size:20px}.heading:has(#subscriptions:not([hidden])) .subtitle{font-size:12px}}
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <!-- LauncherNavigationIcons → RendererIcons. Both banner and dock use #store. -->
+  <symbol id="store" viewBox="0 0 24 24"><path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5 M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653 .873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244 M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05"/></symbol>
+  <symbol id="game" viewBox="0 0 24 24"><path d="M6 11h4 M8 9v4 M15 12h.01 M18 10h.01 M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006 .052-.01 .101-.017 .152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414 .586L17 18c.5 .5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/></symbol>
+  <symbol id="box" viewBox="0 0 24 24"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z M12 22V12 M3.29 7 12 12 20.71 7 m-13.21-2.73 9 5.15"/></symbol>
+  <symbol id="settings" viewBox="0 0 24 24"><path d="M14 17H5 M19 7h-9 M17 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M7 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="M12 4h2v6h2.5L12 14.5 M12 4h-2v6H7.5l4.5 4.5 M6 19h12"/></symbol>
+  <symbol id="subs" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M4 5h16v2H4zM4 9h16v2H4zM6 13h12c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2H6c-1.1 0-2-.9-2-2v-4c0-1.1.9-2 2-2zm0 2v4h12v-4zm2 1h8v2H8z"/></symbol>
+  <symbol id="star" viewBox="0 0 24 24"><path d="m12 2.8 2.9 5.9 6.5.95-4.7 4.6 1.1 6.45-5.8-3.05-5.8 3.05 1.1-6.45-4.7-4.6 6.5-.95z"/></symbol>
+  <symbol id="lens" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.8"/><path d="m16 16 5 5"/></symbol>
+  <symbol id="spark" viewBox="0 0 24 24"><path d="M10 3.5c.8 4 2.7 5.9 6.5 6.8-3.8 1-5.7 3-6.5 7-.9-4-2.8-6-6.7-7C7.2 9.4 9.1 7.5 10 3.5zM18.8 2v4.4m-2.2-2.2H21M18.5 15v5m-2.5-2.5h5"/></symbol>
+  <symbol id="send" viewBox="0 0 24 24"><path d="M12 19V5m-6.5 6.5L12 5l6.5 6.5"/></symbol>
+  <symbol id="stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/></symbol>
+  <symbol id="next" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+</defs></svg>
+<div class="screen" id="screen">
+  <header class="chrome">
+    <div class="status" aria-hidden="true"><span>9:41</span><svg viewBox="0 0 45 13"><path d="M0 3q7-6 14 0l-7 8zM15 11 26 0v11zM34 2h3V0h3v2h2v10h-8z"/></svg></div>
+    <div class="heading"><div class="store"><svg class="icon"><use href="#store"/></svg></div><div class="grow"><h1>模组市场</h1><p class="subtitle">浏览与下载模组</p></div>
+      <button id="subscriptions" hidden class="icon-btn" aria-label="已订阅模组"><svg class="icon"><use href="#subs"/></svg></button>
+      <div class="tabs" id="tabs" role="tablist" aria-label="搜索方式">
+        <button id="ordinary" role="tab" aria-controls="list" aria-selected="true" aria-label="普通搜索" title="普通搜索"><svg class="icon"><use href="#lens"/></svg></button>
+        <button id="ai" role="tab" aria-controls="chat" aria-selected="false" tabindex="-1" aria-label="AI 搜索" title="AI 搜索"><svg class="icon"><use href="#spark"/></svg></button>
+      </div>
+      <button id="downloads" class="icon-btn" aria-label="下载中心"><svg class="icon"><use href="#down"/></svg></button>
+    </div>
+    <div class="controls" id="controls"><div class="controls-inner">
+      <div class="field-slot" id="top-slot"><form class="field" id="field"><input id="q" aria-label="搜索模组" placeholder="搜索模组" autocomplete="off" enterkeyhint="search" maxlength="400">
+        <button class="text submit" id="submit">搜索</button></form></div>
+      <div class="filters"><select id="category" aria-label="模组分类"><option>全部</option><option value="Qol">QoL</option><option value="Utility">实用工具</option></select>
+        <select id="time" disabled aria-label="时间范围"><option>本周</option><option>全部时间</option></select>
+        <select id="sort" aria-label="排序"><option>订阅最多</option><option>热门</option><option>最近更新</option><option>最新发布</option></select><button id="by-id">按 ID 下载</button></div>
+    </div></div>
+  </header>
+  <main class="list" id="list" role="tabpanel" aria-labelledby="ordinary"><div id="content" aria-live="polite"></div></main>
+  <section class="chat" id="chat" role="tabpanel" aria-labelledby="ai" hidden><div class="thread" id="thread" role="log" aria-label="工坊搜索对话" aria-live="polite"></div></section>
+  <div class="dock chrome"><div class="bottom-slot" id="bottom-slot"></div><div class="nav-items" id="nav" aria-label="启动器导航：市场"></div><div class="system-nav" aria-hidden="true"></div></div>
+</div>
+<aside class="review"><label>原型对照 <select id="scene">
+  <option value="new">普通搜索</option><option value="original">原市场（按源码还原）</option><option value="chat">AI：开始对话</option>
+  <option value="map">AI：按功能找</option><option value="touch">AI：证据不足</option><option value="clarify">AI：先澄清</option><option value="none">AI：无匹配</option><option value="error">AI：检索失败</option>
+</select></label>　<label><input type="checkbox" id="logged"> 已登录</label>
+<p>同一组工坊快照 · 原市场与新入口可原位切换。系统栏为示意。</p></aside>
+<dialog id="dialog" aria-labelledby="dialog-title"><div class="dialog-card" id="dialog-body"></div></dialog>
+<script type="module">
+  const $ = id=>document.getElementById(id);
+  const svg = (id,cls="")=>`<svg class="icon ${cls}" aria-hidden="true"><use href="#${id}"/></svg>`;
+  const mods=[
+    {id:"1611666859",name:"Colored Map",author:"timeracers",count:"29.9万",tags:["Qol"],updated:"2020-11-30",fact:"可在设置里调整地图图标的颜色，让关心的节点更醒目。",quote:"You can configure the colors of the map in this mod's configuration panel."},
+    {id:"1611047977",name:"Highlight Paths",author:"cringe",count:"24.8万",tags:["Utility","Qol"],updated:"2019-01-03",fact:"可右键高亮选中的地图节点，标出想走的位置。",quote:"Right click on map nodes to highlight them."}
+  ];
+  const cases={
+    map:{q:"想让地图更容易看清",terms:"地图可读性",queries:"map icons / highlight map nodes",ids:[0,1],aliases:["地图","地图辅助","地图更清晰"]},
+    color:{q:"想给地图图标换颜色",terms:"地图图标配色",queries:"colored map / map icons",ids:[0],aliases:["地图配色","彩色地图","colored map","1611666859"]},
+    path:{q:"想标出准备走的地图节点",terms:"手动标记节点",queries:"highlight paths / map nodes",ids:[1],aliases:["地图标记","标记路线","highlight paths","1611047977"]},
+    touch:{q:"想用触屏标记地图节点",terms:"必须支持触屏标记",queries:"highlight paths / map nodes / touch",ids:[1],aliases:["触屏标记","手机标记地图"]},
+    clarify:{q:"推荐一个好用的辅助",aliases:["推荐","辅助"]},
+    none:{q:"想找能朗读卡牌的模组",terms:"卡牌朗读",queries:"card text to speech / read aloud",ids:[],aliases:["朗读卡牌"]}
+  };
+  const steam=m=>`https://steamcommunity.com/sharedfiles/filedetails/?id=${m.id}`;
+  const btn=(action,label,cls="text")=>`<button type="button" data-action="${action}" class="${cls}">${label}</button>`;
+  const section=(s,n)=>`<div class="section-title"><h2>${s}</h2><span>${n}</span></div>`;
+  const panel=(heading,description,actions="")=>`<section class="panel"><h2>${heading}</h2><p>${description}</p>${actions?`<div class="actions">${actions}</div>`:""}</section>`;
+  const source=m=>`<blockquote lang="en">${m.quote}</blockquote><small>作者说明 · 工坊 ID ${m.id} · 条目更新于 ${m.updated}</small><a href="${steam(m)}" target="_blank" rel="noopener noreferrer">打开工坊原页 ↗</a>`;
+  function card(m,evidence=""){
+    return `<article class="card"><div class="card-row"><img class="art" src="workshop-covers/${m.id}.jpg" alt="${m.name} 预览图">
+      <div class="info"><h3><a class="name" href="${steam(m)}" target="_blank" rel="noopener noreferrer">${m.name}</a></h3><p class="meta">${m.author}</p>
+      <div class="facts"><span aria-label="评分 5/5">${svg("star","star")}5/5</span><span aria-label="下载次数 ${m.count}">${svg("down")}${m.count}</span></div></div>
+      <button class="icon-btn" data-action="download:${m.id}" aria-label="下载 ${m.name}">${svg("down")}</button></div>
+      ${evidence?`<details class="source"><summary>${evidence==="partial"?"触屏操作未确认":"匹配依据"} · 查看原文</summary><p>${m.fact}</p>${source(m)}</details>`:""}</article>`;
+  }
+  $("nav").innerHTML=[["game","游戏"],["box","模组"],["store","市场"],["settings","设置"]].map(([i,l])=>`<span class="nav-item ${i==="store"?"current":""}"><i>${svg(i)}</i>${l}</span>`).join("");
+  const login=()=>`<section class="status-card"><p>Steam 尚未登录，部分模组不会显示。</p>${btn("login","登录 Steam","outline")}</section>`;
+  const normalize=s=>s.toLowerCase().replace(/[\s，。！？、?!]+/gu,"");
+  let inChat=false,query="",original=false,pending=null;
+  let position=0,velocity=0,frame=0,previousTime=0,ghost=null;
+  const drafts={ordinary:"",ai:""},turns=[];
+  const byId=new Map(mods.map(m=>[m.id,m]));
+  function renderBrowse(){
+    const logged=$("logged").checked;
+    $("tabs").hidden=original;$("subscriptions").hidden=!logged;
+    $("time").disabled=$("sort").value!=="热门";
+    let html=logged?"":login();
+      const items=mods.filter(m=>([m.name,m.author,m.id].some(s=>s.toLowerCase().includes(query.toLowerCase())))&&($("category").value==="全部"||m.tags.includes($("category").value)));
+      html+=section("工坊列表",items.length?`${items.length} 个条目`:"没有结果")+items.map(m=>card(m)).join("");
+      html+=items.length?'<div class="end">已经到底了</div>':panel("没有搜索结果","试试其他名称、作者或工坊 ID。");
+    $("content").innerHTML=html;
+  }
+  function resetBrowse(){renderBrowse();$("list").scrollTop=0;collapse()}
+  const followups={touch:"那触屏能用吗？",color:"只看能改颜色的",path:"只看能标记节点的"};
+  const text=value=>({type:"text",value});
+  const choice=(key,label)=>({type:"choice",key,label});
+  function replyFor(t){
+    const c=cases[t.key], partial=t.key==="touch";
+    if(t.key==="clarify")return [text("你想把不同类型的地图节点区分开，还是标出这局打算走的路线？"),choice("color","想改图标颜色"),choice("path","想标记路线")];
+    if(!c)return [text("这句话超出了离线演示范围。你可以试试地图配色或路线标记。"),choice("map","找地图辅助")];
+    if(!t.ids.length)return [text("这次核对的条目里，没有找到符合这个条件的作者说明。可以换一个条件，或切回普通搜索。")];
+    const blocks=[text(partial?"现有资料不能确认触屏可用。下面是待核实的条目，不能把右键操作当作触屏支持。":
+      t.ids.length===2?"这两个模组都能让地图更好读，但做法不同。":`找到一项符合「${c.terms}」的模组。`)];
+    for(const id of t.ids){
+      blocks.push(text(byId.get(id).fact),{type:"mod_card",publishedFileId:id,evidence:partial?"partial":"matched"});
+    }
+    blocks.push({type:"terms",value:c.queries});
+    if(partial&&t.ids.includes(mods[1].id))blocks.push(choice("path","只按「标记节点」重搜"));
+    else if(!partial)blocks.push(choice("follow:touch",followups.touch));
+    return blocks;
+  }
+  // Text is always textContent; a card may only reference a known Workshop ID.
+  function displayBlocks(el,blocks){
+    el.replaceChildren();let actions=null;
+    for(const b of blocks){
+      if(b.type==="mod_card"){
+        const m=byId.get(b.publishedFileId);if(m)el.insertAdjacentHTML("beforeend",card(m,b.evidence));
+      }else if(b.type==="choice"){
+        if(!actions){actions=document.createElement("div");actions.className="samples";el.append(actions)}
+        const button=document.createElement("button");button.className="outline";button.dataset.action="choice:"+b.key;button.textContent=b.label;actions.append(button);
+      }else if(b.type==="terms"){
+        const d=document.createElement("details");d.className="search-terms";d.innerHTML="<summary>本次检索词</summary>";d.append(document.createTextNode(b.value));el.append(d);
+      }else if(b.type==="text"){const p=document.createElement("p");p.textContent=b.value;el.append(p)}
+    }
+  }
+  function welcome(){
+    $("thread").innerHTML=`<section class="hello"><span class="stamp">${svg("spark")}</span><h2>想找什么模组？</h2>
+      <p>说说你想改哪种玩法。我会用工坊条目回答，也会指出哪些条件还不能确认。</p>
+      ${["map","touch","clarify"].map(k=>`<button class="prompt" data-action="choice:${k}">${cases[k].q}${svg("next")}</button>`).join("")}</section>`;
+  }
+  function submitTurn(q,fail=false,context=turns.at(-1)){
+    if(!q.trim()||pending)return;
+    const norm=normalize(q),follow=Object.keys(followups).find(k=>normalize(followups[k])===norm);
+    const key=follow||Object.keys(cases).find(k=>[cases[k].q,...cases[k].aliases].some(s=>normalize(s)===norm));
+    const ids=follow&&context?.status==="done"&&context.ids.length
+      ?context.ids.filter(id=>follow==="touch"||cases[key].ids.some(i=>mods[i].id===id))
+      :(cases[key]?.ids||[]).map(i=>mods[i].id);
+    if(!turns.length)$("thread").replaceChildren();
+    const el=document.createElement("section");el.className="turn";el.dataset.index=turns.length;
+    el.innerHTML=`<p class="utterance" aria-label="我的消息"></p><div class="reply"><div class="assistant-label">${svg("spark")}工坊助手</div><div class="blocks"></div></div>`;
+    el.firstChild.textContent=q.trim();$("thread").append(el);
+    const t={el,key,ids,q:q.trim(),status:"",index:turns.length};turns.push(t);
+    $("q").value=drafts.ai="";run(t,fail);
+    $("chat").scrollTop=$("chat").scrollHeight;
+  }
+  function run(t,fail){
+    if(pending)return;
+    const el=t.el.querySelector(".blocks");t.status="loading";el.innerHTML='<p class="busy">正在核对工坊详情…</p>';
+    pending={t,timer:setTimeout(()=>{
+      pending=null;t.status=fail?"error":"done";
+      if(fail){el.innerHTML=`<p>没能读到工坊详情，暂时不能判断有没有匹配。</p><div class="actions">${btn("retry:"+t.index,"重试","outline")}</div>`}
+      else displayBlocks(el,replyFor(t));syncSubmit();
+    },750)};syncSubmit();
+  }
+  function cancel(){
+    if(!pending)return;clearTimeout(pending.timer);const t=pending.t;pending=null;t.status="stopped";
+    t.el.querySelector(".blocks").textContent="已停止本次检索。";syncSubmit();
+  }
+  function alignDialog(){const r=$("screen").getBoundingClientRect();Object.assign($("dialog").style,{top:r.top+"px",left:r.left+"px",width:r.width+"px",height:r.height+"px"})}
+  function dialog(title,body,actions){
+    $("dialog-body").innerHTML=`<h2 id="dialog-title">${title}</h2>${body}<div class="actions">${actions}</div>`;
+    if(!$("dialog").open){alignDialog();$("dialog").showModal()}
+  }
+  function syncSubmit(){
+    const b=$("submit");b.disabled=inChat&&!pending&&!$("q").value.trim();
+    b.setAttribute("aria-label",!inChat?"搜索":pending?"停止检索":"发送消息");
+    b.innerHTML=!inChat?"搜索":svg(pending?"stop":"send");
+  }
+  function step(now){
+    const target=Number(inChat),dt=Math.max(0,(now-previousTime)/1000),omega=Math.sqrt(560);
+    const displacement=position-target,b=velocity+omega*displacement,decay=Math.exp(-omega*dt);
+    position=target+(displacement+b*dt)*decay;velocity=(velocity-omega*b*dt)*decay;previousTime=now;
+    const settled=matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      (Math.abs(target-position)<.002 && Math.abs(velocity)<.12);
+    if(settled){position=target;velocity=0}
+    const style=$("screen").style,p=Math.min(1,Math.max(0,position));style.setProperty("--mode",p);
+    style.setProperty("--browse-alpha",Math.max(0,(.84-p)/.84));
+    style.setProperty("--chat-alpha",Math.max(0,(p-.16)/.84));
+    if(settled){$("list").hidden=inChat;$("chat").hidden=!inChat;ghost?.remove();ghost=null;frame=0}
+    else frame=requestAnimationFrame(step);
+  }
+  function selectMode(ai){
+    if(ai===inChat)return;
+    const field=$("field"),screen=$("screen");
+    ghost?.remove();
+    ghost=field.cloneNode(true);ghost.removeAttribute("id");ghost.querySelectorAll("[id]").forEach(n=>n.removeAttribute("id"));
+    ghost.inert=true;ghost.setAttribute("aria-hidden","true");field.after(ghost);
+    drafts[inChat?"ai":"ordinary"]=$("q").value;inChat=ai;
+    screen.classList.toggle("ai-mode",ai);$("list").hidden=$("chat").hidden=false;
+    $("list").inert=ai;$("chat").inert=!ai;$("bottom-slot").inert=!ai;
+    for(const [id,selected] of [["ai",ai],["ordinary",!ai]]){
+      $(id).setAttribute("aria-selected",String(selected));$(id).tabIndex=selected?0:-1;
+    }
+    $(ai?"bottom-slot":"top-slot").append(field);field.classList.toggle("ai-field",ai);
+    $("q").placeholder=ai?"描述需求，或继续追问…":"搜索模组";$("q").setAttribute("aria-label",ai?"对话输入":"搜索模组");
+    $("q").setAttribute("enterkeyhint",ai?"send":"search");$("q").value=drafts[ai?"ai":"ordinary"];
+    document.querySelector(".subtitle").textContent=ai?"AI 搜索 · 工坊助手":"浏览与下载模组";
+    syncSubmit();measure();$("scene").value=original?"original":ai?"chat":"new";
+    if(frame)cancelAnimationFrame(frame);previousTime=performance.now();step(previousTime);
+  }
+  function close(){if($("dialog").open)$("dialog").close()}
+  function info(h,text){dialog(h,`<p>${text}</p>`,btn("dismiss","关闭"))}
+  function collapse(){
+    const f=inChat?0:Math.max(0,Math.min(1,$("list").scrollTop/140));$("screen").style.setProperty("--f",f);$("controls").inert=inChat||f===1;
+  }
+  function measure(){
+    const screen=$("screen");screen.style.setProperty("--f",0);
+    const title=screen.querySelector(".heading").offsetHeight+screen.querySelector(".status").offsetHeight;
+    screen.style.setProperty("--chat-top",title+"px");screen.style.setProperty("--expanded",(title+screen.querySelector(".controls-inner").offsetHeight)+"px");collapse();if($("dialog").open)alignDialog();
+  }
+  $("list").onscroll=collapse;window.addEventListener("resize",measure);window.addEventListener("scroll",()=>{if($("dialog").open)alignDialog()},{passive:true});
+  $("ai").onclick=()=>selectMode(true);$("ordinary").onclick=()=>selectMode(false);
+  $("tabs").onkeydown=e=>{
+    if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;
+    e.preventDefault();selectMode(e.key==="Home"?false:e.key==="End"?true:!inChat);$(inChat?"ai":"ordinary").focus();
+  };
+  $("q").oninput=syncSubmit;
+  $("field").onsubmit=e=>{e.preventDefault();if(inChat){if(pending)cancel();else submitTurn($("q").value);return}
+    query=$("q").value.trim();$("sort").value="热门";$("time").value="全部时间";resetBrowse()};
+  ["category","time","sort"].forEach(id=>$(id).onchange=resetBrowse);
+  $("downloads").onclick=()=>info("下载中心","原型里没有下载任务。");
+  $("subscriptions").onclick=()=>info("已订阅模组","当前为已登录布局预览。");
+  $("by-id").onclick=()=>dialog("按创意工坊 ID 下载",'<label>创意工坊 ID<input id="file-id" inputmode="numeric" placeholder="例如：1605060445"></label><p id="id-error"></p>',btn("dismiss","取消")+btn("open-id","打开详情","filled"));
+  $("dialog").onclick=e=>{if(e.target===$("dialog"))close()};
+  document.addEventListener("click",e=>{
+    const action=e.target.closest("[data-action]")?.dataset.action;if(!action)return;
+    if(action.startsWith("choice:")){
+      const k=action.slice(7),parent=e.target.closest(".turn");submitTurn(k.startsWith("follow:")?followups[k.slice(7)]:cases[k].q,false,parent?turns[Number(parent.dataset.index)]:undefined);return;
+    }
+    if(action.startsWith("retry:")){const t=turns[Number(action.slice(6))];if(t?.status==="error")run(t,false);return}
+    if(action.startsWith("download:")){info("下载模组",`此处演示 ${mods.find(m=>m.id===action.slice(9)).name} 的下载入口，不创建真实任务。`);return}
+    switch(action){
+      case "dismiss":close();break;
+      case "login":info("登录 Steam","可以在原型下方勾选「已登录」预览登录后的市场。");break;
+      case "open-id":{const m=mods.find(m=>m.id===$("file-id").value.trim());if(m){dialog(m.name,source(m),btn("dismiss","关闭"))}else $("id-error").textContent="示例仅收录 1611666859、1611047977。";break}
+    }
+  });
+  $("logged").onchange=()=>{renderBrowse();measure()};
+  $("scene").onchange=()=>{
+    const s=$("scene").value;original=s==="original";close();
+    renderBrowse();selectMode(!original&&s!=="new");measure();
+    if(inChat&&s!=="chat"){cancel();submitTurn(cases[s==="error"?"map":s].q,s==="error");$("scene").value=s}
+  };
+  welcome();renderBrowse();measure();syncSubmit();
+  if(location.hash==="#ai")selectMode(true);
+</script>
+</html>

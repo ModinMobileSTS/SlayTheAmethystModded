@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>下载中心 · Amethyst Workshop</title>
+<style>
+:root{color-scheme:dark;--bg:#202731;--ink:#f3f6fa;--sub:#b3beca;--muted:#95a5b4;--line:#39434e;--blue:#49b6ff;--green:#9bce53;--warn:#ffbb8c;--panel:#101920;--btn:#35424f}
+*{box-sizing:border-box}html{min-width:0}body{margin:0;background:#171e26;color:var(--ink);font:1rem/1.45 system-ui,-apple-system,"Noto Sans CJK SC","Microsoft Yahei",sans-serif}button,select{font:inherit;color:inherit}button{border:0;padding:0;background:none;cursor:pointer}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #78caff;outline-offset:3px}button:hover{filter:brightness(1.14)}[hidden]{display:none!important}h1,h2,h3,p{margin:0}button,summary{touch-action:manipulation}a{color:#82cdff}.icon{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.shell{max-width:1216px;margin:auto;min-height:100vh;background:linear-gradient(125deg,#2e3741 0,#252d37 52%,#202630 100%)}
+.top{display:flex;align-items:center;gap:15px;min-height:52px;padding:0 clamp(16px,3vw,38px);background:#171e26;color:var(--sub);font-size:.8rem}
+.brand{display:flex;align-items:center;gap:8px;color:#d7e6f6;font-size:.76rem;font-weight:780;letter-spacing:.14em}.brand svg{height:23px;width:21px;color:#82c7f4}.slash{color:#647381}.top .here{position:relative;align-self:stretch;display:grid;place-items:center;color:#d7e9f8;font-weight:650}.top .here::after{content:"";position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--blue);border-radius:3px 3px 0 0}.top-spacer{flex:1}.proto{color:var(--muted);font-size:.72rem}.square{width:44px;height:44px;display:inline-grid;place-items:center;border-radius:3px;background:var(--btn);color:#e4edf7;flex:none}.gear{background:transparent;color:var(--sub)}
+.hero{display:grid;grid-template-columns:minmax(0,.96fr) minmax(0,1.04fr);background:var(--panel);position:relative;isolation:isolate;overflow:hidden}.cover{position:relative;isolation:isolate;min-height:242px;text-align:left;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;padding:24px clamp(18px,3vw,38px);background-size:cover;background-position:center}
+.cover::before,.cover::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none}.cover::before{background:linear-gradient(90deg,transparent 70%,var(--panel)),linear-gradient(0deg,#0c151bee 1%,#10182069 39%,transparent 72%)}.cover::after{background:linear-gradient(130deg,#0d171e7d,transparent 45%)}.cover:focus-visible{outline-offset:-4px}
+.eyebrow,.stamp,.clock,.tiny{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-variant-numeric:tabular-nums}.stamp{display:inline-flex;align-items:center;gap:8px;background:#0d171dda;color:#e5edf4;padding:5px 9px;font-size:.67rem;letter-spacing:.105em;border-left:2px solid var(--blue)}.stamp i{width:6px;height:6px;border-radius:50%;background:var(--blue)}.art-title{min-width:0;padding-top:30px}.eyebrow{font-size:.64rem;letter-spacing:.17em;color:#d9e2e8;font-weight:650}.logotype{font:700 clamp(2.6rem,5.5vw,4.7rem)/1.04 Georgia,"Times New Roman",serif;letter-spacing:-.055em;color:#fff5e3;text-shadow:0 2px 14px #10121560;margin:6px 0 2px;overflow-wrap:anywhere}.art-meta{display:inline-flex;gap:4px;align-items:center;color:#cbd9e5;font-size:.8rem;min-height:28px}.art-meta svg{width:14px;height:14px}
+.monitor{padding:22px clamp(16px,3vw,34px) 19px clamp(13px,2.2vw,28px);min-width:0;background:var(--panel)}.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.metric label{display:flex;gap:6px;align-items:center;color:var(--sub);font-size:.73rem}.mark{display:inline-block;width:11px;height:9px;flex:none;background:repeating-linear-gradient(90deg,var(--blue) 0 2px,transparent 2px 4px);clip-path:polygon(0 100%,0 48%,33% 48%,33% 0,65% 0,65% 30%,100% 30%,100% 100%)}.mark.peak{background:#82a6c0;clip-path:polygon(0 80%,35% 42%,55% 68%,100% 5%,100% 35%,55% 96%,35% 67%,0 100%)}.mark.disk{height:2px;background:var(--green);clip-path:none}
+.v{display:block;font-variant-numeric:tabular-nums;font-size:clamp(1rem,2vw,1.35rem);line-height:1.25;margin-top:3px;font-weight:680;white-space:nowrap}.unit{font-size:.66rem;font-weight:530;color:var(--sub);margin-left:3px}.trace{height:40px;margin:8px 0 10px;position:relative;background:repeating-linear-gradient(0deg,#91a9bb15 0 1px,transparent 1px 13px);border-bottom:1px solid #344550}.trace svg{display:block;width:100%;height:100%}
+.bar-group+.bar-group{margin-top:9px}.bar-label{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:.77rem;color:#d4e0eb}.value{font-variant-numeric:tabular-nums;color:#e4eef8;font-weight:620}.track{height:4px;background:#36434d;margin-top:4px;border-radius:1px;overflow:hidden}.track i{display:block;height:100%;background:var(--blue)}.filebar i{background:var(--green)}.tail{margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}.eta{color:var(--sub);font-size:.76rem;display:flex;gap:6px;align-items:center}.eta svg{width:15px;height:15px}.main-action,.small-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 14px;border-radius:3px;font-size:.8rem;font-weight:650}.main-action{color:white;background:#146ba5}.main-action .icon,.small-action .icon{width:16px;height:16px}.small-action{background:var(--btn);color:#e1eaf2}.under{color:var(--warn);font-size:.77rem;margin-top:7px}
+.groups{padding:6px clamp(16px,3vw,38px) 18px}.group{margin-top:19px}.group-head{display:flex;align-items:center;gap:12px;margin:0 0 5px;min-height:26px}.group-head:after{content:"";height:1px;background:var(--line);flex:1;order:1}.group-head h2,.group-head b{font-size:1.04rem;font-weight:600;line-height:1.3}.group-head b{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:400;margin-left:5px}.aside{order:2;color:var(--muted);font-size:.69rem}
+.row{display:flex;align-items:center;gap:13px;min-height:66px}.row+.row{border-top:1px solid #c9dcef0d}.pick{display:flex;align-items:center;gap:14px;text-align:left;min-width:0;flex:1;min-height:60px}.thumb{width:82px;height:44px;border-radius:2px;background-size:cover;background-position:center;flex:none;position:relative;overflow:hidden;display:grid;place-items:center;color:#ded9fc}.lib{background:repeating-linear-gradient(105deg,transparent 0 13px,#ffffff08 14px 15px),linear-gradient(135deg,#35294d,#514a69)}.base{background:linear-gradient(135deg,#385b67,#263b44)}.thumb svg{width:29px;height:29px;filter:drop-shadow(0 1px 2px #0008)}.pick-text{min-width:0}.pick strong{display:block;font-weight:590;font-size:1.02rem;line-height:1.3;overflow-wrap:anywhere}.pick small{display:block;color:var(--muted);font-size:.73rem;margin-top:3px}.pick small.problem{color:var(--warn)}.pos{color:var(--muted);font-size:.75rem}.empty{padding:12px 0;color:var(--sub);font-size:.84rem}.empty-hero{min-height:110px;background:var(--panel);padding:26px clamp(16px,3vw,38px)}.empty-hero h2{font-size:1.2rem}.empty-hero p{color:var(--sub);font-size:.86rem;margin-top:5px}
+.history>summary{cursor:pointer;list-style:none;min-height:44px}.history>summary::-webkit-details-marker{display:none}.history .group-head{margin:0}.history .toggle{order:2;color:var(--muted);width:16px}.history[open] .toggle{transform:rotate(180deg)}.footer{border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px clamp(16px,3vw,38px);font-size:.69rem;color:var(--muted);background:#1c232b}.footer span:first-child{display:flex;align-items:center;gap:8px}.foot-dot{width:6px;height:6px;border-radius:50%;background:#85a987}
+dialog{padding:0;width:min(410px,calc(100% - 24px));border:1px solid var(--line);border-radius:8px;background:#222c36;color:var(--ink);max-height:85dvh;overflow-y:auto}dialog::backdrop{background:#070e16ac}body:has(dialog[open]){overflow:hidden}.sheet{padding:18px}.dialog-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--muted);font-size:.73rem}.dialog-head button{margin:-9px -8px -5px 0;background:transparent}.sheet h2{font-size:1.4rem;margin:8px 0}.sheet p,.sheet label{font-size:.85rem;color:var(--sub)}.sheet .facts{border-block:1px solid var(--line);padding:9px 0;margin:14px 0;line-height:1.8}.actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:16px}.actions .danger{color:var(--warn);margin-right:auto}.sheet label{display:flex;align-items:center;justify-content:space-between;min-height:48px;gap:9px}.sheet select{background:var(--btn);padding:5px;border:1px solid var(--line);border-radius:3px}.sheet input{accent-color:#45aeef;width:20px;height:20px}.sheet details{font-size:.83rem;color:var(--sub)}.sheet summary{cursor:pointer;padding-block:10px}.sr{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}
+@media(min-width:1100px){.hero{grid-template-columns:1.04fr 1fr}.cover{min-height:285px}.monitor{display:flex;flex-direction:column;justify-content:center}.trace{height:52px}.row{min-height:72px}.thumb{width:94px;height:50px}}
+@media(max-width:620px){.top{gap:10px;min-height:46px}.top .source,.top .slash{display:none}.top .here{margin-left:3px}.hero{grid-template-columns:1fr}.cover{padding:12px 17px 9px;min-height:133px;background-position:center 40%}.cover::before{background:linear-gradient(0deg,var(--panel),transparent 58%),linear-gradient(90deg,#0a111b77,transparent 78%)}.art-title{padding-top:14px}.logotype{font-size:2.35rem;margin:1px 0}.art-meta{position:absolute;right:16px;bottom:12px}.eyebrow{font-size:.59rem}.stamp{font-size:.61rem}.monitor{padding:7px 17px 14px}.v{font-size:1.16rem}.trace{height:31px;margin:7px 0}.tail{margin-top:9px}.bar-group+.bar-group{margin-top:6px}.group{margin-top:13px}.groups{padding-top:2px}.row{gap:8px;min-height:58px}.pick{gap:10px;min-height:54px}.thumb{width:63px;height:38px}.aside{font-size:.65rem}.group-head{gap:8px}.group-head h2,.group-head b{font-size:.96rem}.square{width:44px}.small-action{padding:0 10px}.pick strong{font-size:.93rem}.pos{font-size:.67rem}.footer{font-size:.65rem}dialog{inset:auto 0 0;margin:0 auto;width:100%;max-width:100%;border-radius:14px 14px 0 0}.sheet{padding-bottom:max(18px,env(safe-area-inset-bottom))}}
+@media(prefers-reduced-motion:no-preference){.track i{transition:width .35s linear}}
+.cover.base,.thumb.base{background-size:cover;background-position:center}
+@media(max-width:620px){.cover.base{background-position:50% 40%}}
+</style>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"><defs>
+<symbol id="crystal" viewBox="0 0 24 24"><path d="m12 2 8 6-2 9-6 5-6-5-2-9Zm0 0L8 9l4 13 4-13ZM4 8l4 1 4-3 4 3 4-1"/></symbol>
+<symbol id="gear" viewBox="0 0 24 24"><path d="m10 3-.7 2.4-2 .9-2.3-.7-2 3.3 1.7 1.7v2.8L3 15l2 3.4 2.3-.6 2 .9.7 2.3h4l.7-2.3 2-.9 2.3.6 2-3.4-1.7-1.6v-2.8L21 9l-2-3.4-2.3.7-2-.9L14 3Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="pause" viewBox="0 0 24 24"><path stroke-width="3.4" d="M8 5v14M16 5v14"/></symbol>
+<symbol id="play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8Z"/></symbol>
+<symbol id="time" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+<symbol id="down" viewBox="0 0 24 24"><path d="m5 9 7 7 7-7"/></symbol>
+<symbol id="up" viewBox="0 0 24 24"><path d="M4 5h16m-8 15V9m-6 6 6-6 6 6"/></symbol>
+<symbol id="retry" viewBox="0 0 24 24"><path d="M4 4v6h6M4 10a8 8 0 1 1 1 8"/></symbol>
+<symbol id="close" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19"/></symbol>
+<symbol id="layers" viewBox="0 0 24 24"><path d="m2 8 10-5 10 5-10 5Zm1 5 9 5 9-5M3 17l9 5 9-5"/></symbol>
+</defs></svg>
+<div class="shell">
+<header class="top"><span class="brand"><svg class="icon" aria-hidden="true"><use href="#crystal"/></svg>AMETHYST</span><span class="slash">/</span><span class="source">创意工坊</span><h1 class="here" style="font-size:inherit">下载中心</h1><span class="top-spacer"></span><span class="proto">原型 V2</span><button class="square gear" data-act="settings" aria-label="传输设置" title="传输设置"><svg class="icon" aria-hidden="true"><use href="#gear"/></svg></button></header>
+<main><section id="hero" aria-label="当前任务"></section><div class="groups"><section class="group"><div class="group-head"><h2>即将进行 <b id="qCount"></b></h2><span class="aside">按顺序自动下载</span></div><div id="queue"></div></section>
+<section class="group" id="issues"><div class="group-head"><h2>需要处理 <b id="eCount"></b></h2></div><div id="errors"></div></section>
+<details class="history group" id="history"><summary class="group-head"><span>历史记录 <b id="hCount"></b></span><svg class="icon toggle" aria-hidden="true"><use href="#down"/></svg></summary><div id="past"></div></details></div></main>
+<footer class="footer"><span><i class="foot-dot"></i>本地模拟传输</span><span>AMETHYST WORKSHOP</span></footer></div>
+<dialog id="dialog" aria-labelledby="dtitle"><div class="sheet" id="sheet"></div></dialog><span id="announce" class="sr" aria-live="polite"></span>
+<script>
+'use strict';
+// Source artwork: Downfall library hero, Steam app 1865780; map thumbnails are the corresponding Workshop previews.
+const art={fall:'workshop-covers/downfall-hero.jpg',map:'workshop-covers/1611666859.jpg',path:'workshop-covers/1611047977.jpg'};
+const seed=[
+ {id:'fall',name:'Downfall',category:'SLAY THE SPIRE  /  EXPANSION',size:1374.1,files:248,got:809.2,written:702.5,s:'active'},
+ {id:'map',name:'Colored Map',category:'WORKSHOP  /  QUALITY OF LIFE',size:12.4,files:16,s:'queued'},
+ {id:'path',name:'Highlight Paths',category:'WORKSHOP  /  UTILITY',size:8.6,files:12,s:'queued'},
+ {id:'lib',name:'StSLib',category:'WORKSHOP  /  LIBRARY',size:6.8,files:24,s:'failed'},
+ {id:'base',name:'BaseMod',category:'WORKSHOP  /  LIBRARY',size:14.2,files:32,got:14.2,written:14.2,s:'complete'}
+];
+const $=s=>document.querySelector(s),ico=(id,extra='')=>`<svg class="icon ${extra}" aria-hidden="true"><use href="#${id}"/></svg>`;
+const lbl={active:'正在下载',paused:'已暂停',connecting:'正在连接',queued:'等待下载',failed:'连接超时',complete:'已完成',cancelled:'已取消'};
+let jobs=[],hist=[],peak=0,tick=0,unit='Mbps',showPlot=true,lastFocus=null,selected='',mode='',unitFactor=8;
+const current=()=>jobs.find(j=>['active','paused','connecting'].includes(j.s)),find=id=>jobs.find(j=>j.id===id);
+const rate=n=>(n*unitFactor).toFixed(1),number=n=>n.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}),announce=m=>{$('#announce').textContent=m};
+function sample(i){return [8.4+2.2*Math.sin(i*.38)+1.3*Math.cos(i*.81),8.8+1.5*Math.cos(i*.29)+2.2*Math.sin(i*.55)]}
+function reset(){jobs=seed.map(o=>({got:0,written:0,...o}));tick=36;hist=Array.from({length:36},(_,i)=>sample(i+1));peak=Math.max(...hist.map(p=>p[0]));$('#history').open=false;draw()}
+function button(act,id,label,style='small-action',icon='',symbolOnly=false){return `<button class="${style}" data-act="${act}" ${id?`data-id="${id}"`:''} aria-label="${label}${id?' · '+find(id).name:''}" title="${label}">${icon?ico(icon):''}${symbolOnly?'':label}</button>`}
+const image=t=>art[t.id]?`style="background-image:url('${art[t.id]}')"`:'';
+function metric(c,l,id){return `<div class="metric"><label><i class="mark ${c}"></i>${l}</label><div class="v"><span id="${id}"></span><small class="unit">${unit}</small></div></div>`}
+function bar(l,id,css=''){return `<div class="bar-group"><div class="bar-label"><span>${l}</span><span class="value" id="${id}Text"></span></div><div class="track ${css}" role="progressbar" aria-label="${l}" aria-valuemin="0" aria-valuemax="100" id="${id}"><i></i></div></div>`}
+function drawHero(){
+ const t=current(),box=$('#hero');if(!t){box.className='empty-hero';box.innerHTML='<h2>当前没有传输</h2><p>可重试失败的任务，或在传输设置中重置演示。</p>';return}
+ box.className='hero';const paused=t.s==='paused';
+ box.innerHTML=`<button class="cover ${t.id==='lib'?'lib':'base'}" ${image(t)} data-act="details" data-id="${t.id}" aria-label="查看 ${t.name} 任务详情">
+ <span class="stamp"><i></i>${lbl[t.s]} &nbsp;/&nbsp; CURRENT</span><span class="art-title"><span class="eyebrow">${t.category}</span><strong class="logotype" style="display:block">${t.name}</strong><span class="art-meta">任务详情${ico('right')}</span></span></button>
+ <div class="monitor"><div class="metrics">${metric('','网络','net')}${metric('peak','网络峰值','peak')}${metric('disk','磁盘写入','disk')}</div>
+ <div class="trace" ${showPlot?'':'hidden'}><svg viewBox="0 0 360 40" preserveAspectRatio="none" role="img" aria-label="最近 36 秒：蓝柱为网络速率，绿线为磁盘写入速率"><g id="plot"></g></svg></div>
+ <div style="${showPlot?'':'margin-top:14px'}">${bar('下载数据','bytes')}${bar('写入文件','files','filebar')}</div><div class="tail"><span class="eta">${ico('time')}<span id="eta"></span></span>${button(paused?'restart':'pause',t.id,paused?'重新开始':'暂停','main-action',paused?'play':'pause')}</div>${paused?'<p class="under">重新开始会从 0 下载。</p>':''}</div>`;
+ telemetry()
+}
+function telemetry(){
+ const t=current();if(!t)return;const p=hist.at(-1)||[0,0],live=t.s==='active',f=Math.min(t.files,Math.floor(t.files*t.written/t.size));
+ $('#net').textContent=rate(live?p[0]:0);$('#peak').textContent=rate(peak);$('#disk').textContent=rate(live?p[1]:0);
+ if(showPlot){const scale=Math.max(12,peak,...hist.map(x=>x[1]))*1.05,y=n=>40-38*n/scale,dx=10;
+ $('#plot').innerHTML=hist.map(([n],i)=>`<rect x="${i*dx+1}" y="${y(n)}" width="6" height="${40-y(n)}" fill="#269ce6" opacity=".74"/>`).join('')+`<polyline points="${hist.map((p,i)=>`${i*dx+4},${y(p[1])}`).join(' ')}" fill="none" stroke="#9bce53" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;}
+ for(const [id,n] of [['bytes',t.got/t.size],['files',f/t.files]]){const pc=Math.round(100*n);$('#'+id).setAttribute('aria-valuenow',pc);$('#'+id+' i').style.width=100*n+'%'}
+ $('#bytesText').textContent=`${number(t.got)} / ${number(t.size)} MB`;$('#filesText').textContent=`${f} / ${t.files} · ${Math.floor(100*f/t.files)}%`;
+ const eta=Math.ceil(Math.max((t.size-t.got)/Math.max(.1,p[0]),(t.size-t.written)/Math.max(.1,p[1])));
+ $('#eta').textContent=t.s==='paused'?'传输已暂停':t.s==='connecting'?'正在连接创意工坊…':`预计剩余 ${String(Math.floor(eta/60)).padStart(2,'0')}:${String(eta%60).padStart(2,'0')}`;
+}
+function row(t,i=0){
+ const q=t.s==='queued',e=t.s==='failed',sub=e?'连接超时 · 可重试':`${number(t.size)} MB · ${q?'创意工坊':lbl[t.s]}`;
+ return `<div class="row"><button class="pick" data-act="details" data-id="${t.id}" aria-label="查看 ${t.name} 详情"><span class="thumb ${t.id==='lib'?'lib':'base'}" ${image(t)}>${art[t.id]?'':ico('layers')}</span><span class="pick-text"><strong>${t.name}</strong><small class="${e?'problem':''}">${sub}</small></span></button>
+ ${q?(i===0?'<span class="pos">下一项</span>':button('first',t.id,'移到队首','square','up',true)):e?button('retry',t.id,'重试','small-action','retry'):''}</div>`;
+}
+function draw(){
+ drawHero();const q=jobs.filter(t=>t.s==='queued'),e=jobs.filter(t=>t.s==='failed'),h=jobs.filter(t=>['complete','cancelled'].includes(t.s));
+ $('#qCount').textContent=`(${q.length})`;$('#queue').innerHTML=q.map(row).join('')||'<p class="empty">队列中无下载</p>';
+ $('#issues').hidden=!e.length;$('#eCount').textContent=`(${e.length})`;$('#errors').innerHTML=e.map(row).join('');
+ $('#history').hidden=!h.length;$('#hCount').textContent=`(${h.length})`;$('#past').innerHTML=h.map(row).join('');
+}
+function start(t){t.s='connecting';t.got=t.written=0;hist=Array.from({length:36},()=>[0,0]);peak=0;tick=0}
+function advance(){if(!current()){const t=jobs.find(j=>j.s==='queued');if(t)start(t)}}
+function step(){
+ if(document.hidden||$('#dialog').open)return;const t=current();if(!t||t.s==='paused')return;
+ if(t.s==='connecting'){t.s='active';draw()}
+ const next=sample(++tick),net=Math.min(next[0],t.size-t.got);t.got+=net;
+ const disk=Math.min(next[1],t.got-t.written);t.written+=disk;hist.push([net,disk]);hist.shift();peak=Math.max(peak,net);
+ if(t.written>=t.size-1e-6){t.got=t.written=t.size;t.s='complete';advance();draw();announce(`${t.name} 已完成`)}else telemetry();
+}
+function openPanel(m,id=''){lastFocus=document.activeElement;mode=m;selected=id;panel();$('#dialog').showModal()}
+function panel(){
+ const s=$('#sheet'),t=find(selected),settings=mode==='settings',confirm=mode==='confirm';
+ const heading=`<div class="dialog-head"><span>AMETHYST &nbsp;/&nbsp; ${settings?'演示设置':'创意工坊'}</span>${button('close','','关闭','square','close',true)}</div>`;
+ if(settings){s.innerHTML=heading+`<h2 id="dtitle">传输设置</h2><p>网络与磁盘读数均为原型演示数据。</p><div class="facts"><label>速率单位<select id="units"><option value="Mbps">Mbps</option><option value="MB/s">MB/s</option></select></label><label>显示传输曲线<input id="graph" type="checkbox" ${showPlot?'checked':''}></label></div><div class="actions">${button('reset','','重置演示')}${button('close','','完成','main-action')}</div>`;$('#units').value=unit;return}
+ if(confirm){s.innerHTML=heading+`<h2 id="dtitle">取消 ${t.name}？</h2><p>任务将移到历史记录。之后可重新加入队列。</p><div class="actions">${button('keep',t.id,'保留任务')}${button('cancel',t.id,'取消下载','main-action')}</div>`;return}
+ const action={active:['pause','暂停'],connecting:['pause','暂停'],paused:['restart','从头下载'],failed:['retry','重试'],cancelled:['retry','重新下载']}[t.s];
+ const note={failed:'连接创意工坊超时。重试会将这个 Mod 放回队尾。',paused:'重新开始会从 0 下载，之前的进度无法接续。',queued:'轮到此任务时将自动开始下载。',complete:'文件已全部写入。',cancelled:'可重新加入队列。',active:'正在下载并写入 Mod 文件。',connecting:'正在连接创意工坊。'}[t.s];
+ s.innerHTML=heading+`<h2 id="dtitle">${t.name}</h2><p>${lbl[t.s]} · ${note}</p><div class="facts"><p>文件大小：${number(t.size)} MB</p><p>已下载：${number(t.got)} MB</p></div><details><summary>任务信息</summary><p>${t.files} 个文件 · Steam 创意工坊</p><p>本地示例，不会读写游戏文件。</p></details><div class="actions">${!['complete','cancelled'].includes(t.s)?button('ask',t.id,'取消任务','small-action danger'):''}${action?button(action[0],t.id,action[1],'main-action'):button('close','','完成','main-action')}</div>`;
+}
+function close(){if($('#dialog').open)$('#dialog').close()}
+$('#dialog').addEventListener('close',()=>{const id=lastFocus?.dataset?.id,match=id&&document.querySelector(`main [data-id="${id}"]`);(lastFocus?.isConnected?lastFocus:match?.getClientRects().length?match:document.querySelector('[data-act="settings"]')).focus({preventScroll:true})});
+$('#dialog').addEventListener('click',e=>{if(e.target!==$('#dialog'))return;const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)close()});
+document.addEventListener('change',e=>{if(e.target.id==='units'){unit=e.target.value;unitFactor=unit==='Mbps'?8:1;drawHero()}if(e.target.id==='graph'){showPlot=e.target.checked;drawHero()}});
+document.addEventListener('click',e=>{
+ const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset.act,t=find(b.dataset.id);
+ if(a==='details'||a==='settings'){openPanel(a,b.dataset.id);return}if(a==='close'){close();return}
+ if(a==='reset'){unit='Mbps';unitFactor=8;showPlot=true;reset();close();announce('演示已重置');return}
+ if(a==='ask'||a==='keep'){mode=a==='ask'?'confirm':'details';panel();$('#sheet button').focus();return}
+ if(a==='pause'){t.s='paused'}if(a==='restart'){start(t)}
+ if(a==='retry'){jobs=jobs.filter(j=>j!==t);jobs.push(t);t.s='queued';t.got=t.written=0;advance()}
+ if(a==='first'){jobs=jobs.filter(j=>j!==t);jobs.splice(jobs.findIndex(j=>j.s==='queued'),0,t)}
+ if(a==='cancel'){t.s='cancelled';advance()}
+ close();draw();if(!$('#dialog').open&&!b.isConnected){const dest=a==='pause'||a==='restart'?$('#hero .main-action'):document.querySelector(`main [data-act="details"][data-id="${t.id}"]`);if(dest?.getClientRects().length)dest.focus({preventScroll:true})}
+ announce(a==='first'?`${t.name} 将在当前任务后下载`:`${t.name}：${lbl[t.s]}`);
+});
+reset();setInterval(step,1000);
+</script>
+</body></html>
