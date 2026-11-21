@@ -4,6 +4,7 @@ import android.content.Context
 import dev.langchain4j.agent.tool.ToolSpecification
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema
 import io.stamethyst.backend.mods.AgentInstalledModCatalog
+import io.stamethyst.backend.mods.AgentPatchModManager
 import io.stamethyst.backend.mods.ModManager
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -29,8 +30,10 @@ class AgentListInstalledModsTool(
             "List the mods installed in the launcher: mod_id, manifest_mod_id, name, version, " +
                 "dependencies, whether it is a built-in mod that is always loaded, and whether the " +
                 "user currently has it enabled. Use mod_id with list_agent_mod_entries, inspect_agent_class, " +
-                "decompile_agent_class, and read_agent_mod_resource to read another installed mod. Use the ids with smoke_test_agent_patch_mod's " +
-                "mod_ids to test a patch together with the mods it interacts with.",
+                "decompile_agent_class, and read_agent_mod_resource to read another installed mod. " +
+                "The separate patches list includes enabled and disabled packaged patches for any mod; " +
+                "pass patch_mod_id to the same read tools to inspect one. Use selectable_mod_ids, " +
+                "not patch_mod_id, with smoke_test_agent_patch_mod's mod_ids.",
         )
         .parameters(JsonObjectSchema.builder().additionalProperties(false).build())
         .build()
@@ -61,6 +64,17 @@ class AgentListInstalledModsTool(
             )
             put("built_in_mod_ids", buildJsonArray { builtInModIds.forEach { add(JsonPrimitive(it)) } })
             put("selectable_mod_ids", buildJsonArray { selectableModIds.forEach { add(JsonPrimitive(it)) } })
+            put("patches", buildJsonArray {
+                AgentPatchModManager.listAllPackaged(context).forEach { patch ->
+                    add(buildJsonObject {
+                        put("patch_mod_id", JsonPrimitive(patch.patchModId))
+                        put("parent_mod_id", JsonPrimitive(patch.parentModId))
+                        put("name", JsonPrimitive(patch.name))
+                        put("version", JsonPrimitive(patch.version))
+                        put("enabled", JsonPrimitive(patch.enabled))
+                    })
+                }
+            })
             put("mod_count", JsonPrimitive(entries.size))
             put(
                 "mods",

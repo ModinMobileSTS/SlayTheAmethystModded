@@ -35,8 +35,10 @@ class AgentModReadTargetsTest {
         )
         tools.forEach { tool ->
             val schema = tool.specification.parameters()
-            assertTrue(tool.specification.name(), schema.properties().containsKey("mod_id"))
-            assertFalse(tool.specification.name(), schema.required().orEmpty().contains("mod_id"))
+            for (id in listOf("mod_id", "patch_mod_id")) {
+                assertTrue(tool.specification.name(), schema.properties().containsKey(id))
+                assertFalse(tool.specification.name(), schema.required().orEmpty().contains(id))
+            }
         }
     }
 

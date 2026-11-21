@@ -1092,7 +1092,7 @@ class AgentModClassInspectTool(
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("inspect_agent_class")
         .description(
-            "Inspect one class from the parent or another installed mod without extracting the JAR. Returns the " +
+            "Inspect one class from the parent mod, another installed mod, or a packaged patch without extracting the JAR. Returns the " +
                 "exact bytecode origin and declared public/protected API; use decompile_agent_class " +
                 "when method behavior or private implementation is needed.",
         )
@@ -1101,6 +1101,7 @@ class AgentModClassInspectTool(
                 .addStringProperty("class_name", "Binary class name, for example com.example.MyCard.")
                 .addStringProperty("member_filter", "Optional case-insensitive member-name filter.")
                 .addStringProperty("mod_id", "Optional id from list_installed_mods; defaults to the parent mod.")
+                .addStringProperty("patch_mod_id", "Optional packaged patch ID from list_installed_mods or list_agent_patch_mods. Omit mod_id when using this.")
                 .required("class_name")
                 .additionalProperties(false)
                 .build(),
@@ -1116,8 +1117,9 @@ class AgentModClassInspectTool(
         val className = json["class_name"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
             ?: return failure("invalid_arguments")
         val memberFilter = json["member_filter"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
-        val target = runCatching { readTargets.resolve(json["mod_id"]?.jsonPrimitive?.content) }
-            .getOrElse { return failure(it.message ?: "mod_resolution_failed") }
+        val target = runCatching {
+            readTargets.resolve(json["mod_id"]?.jsonPrimitive?.content, json["patch_mod_id"]?.jsonPrimitive?.content)
+        }.getOrElse { return failure(it.message ?: "mod_resolution_failed") }
         val detail = AgentApiIndex.describe(listOf(target.jar), className, memberFilter)
             ?: return failure("class_not_found")
         val entry = AgentModJarReader.classEntryName(target.jar, className)
@@ -1125,13 +1127,13 @@ class AgentModClassInspectTool(
             put("name", JsonPrimitive(detail.summary.binaryName))
             put("origin", JsonPrimitive(if (entry == null) detail.summary.origin else entry))
             put("parent_mod_id", JsonPrimitive(parentModId))
-            put("mod_id", JsonPrimitive(target.modId))
+            put(if (target.patchParentModId == null) "mod_id" else "patch_mod_id", JsonPrimitive(target.modId))
             put("constructors", members(detail.constructors))
             put("methods", members(detail.methods))
             put("fields", members(detail.fields))
             put(
                 "next_step",
-                JsonPrimitive("Call decompile_agent_class for the implementation of this class."),
+                JsonPrimitive("Call decompile_agent_class with the same target ID for the implementation of this class."),
             )
         }.toString()
     }
@@ -1154,7 +1156,7 @@ class AgentModClassInspectTool(
     }
 }
 
-/** Decompiles one installed-mod class; only parent classes may enter the workspace source cache. */
+/** Decompiles one mod or patch class; only editor parent classes may enter the workspace source cache. */
 class AgentModClassDecompileTool(
     private val context: Context,
     private val parentModId: String,
@@ -1164,17 +1166,18 @@ class AgentModClassDecompileTool(
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("decompile_agent_class")
         .description(
-            "Decompile one class from the parent or another installed mod on demand. Use mod_id from " +
-                "list_installed_mods and list_agent_mod_entries to discover its classes. Other mods " +
-                "are read-only: their source is returned inline, never added to the patch workspace. " +
+            "Decompile one class from the parent mod, another installed mod, or a packaged patch on demand. " +
+                "Get the mod_id or patch_mod_id from list_installed_mods and discover classes with list_agent_mod_entries. " +
+                "Other mods and patches are read-only: their source is returned inline, never added to the patch workspace. " +
                 "For parent classes this tool prepares the source snapshot itself; no separate " +
                 "decompile_agent_mod_source call is needed. Reuse current-version source already in context.",
         )
         .parameters(
             JsonObjectSchema.builder()
                 .addStringProperty("class_name", "Binary class name from search_agent_api or inspect_agent_class.")
-                .addBooleanProperty("materialize", "Cache parent source under source/; defaults to true. Always false for other mods.")
+                .addBooleanProperty("materialize", "Cache parent source under source/; defaults to true. Always false for other mods and patches.")
                 .addStringProperty("mod_id", "Optional id from list_installed_mods; defaults to the parent mod.")
+                .addStringProperty("patch_mod_id", "Optional packaged patch ID from list_installed_mods or list_agent_patch_mods. Omit mod_id when using this.")
                 .required("class_name")
                 .additionalProperties(false)
                 .build(),
@@ -1190,15 +1193,21 @@ class AgentModClassDecompileTool(
             ?: return failure("invalid_arguments")
         val className = json["class_name"]?.jsonPrimitive?.content?.takeIf(String::isNotBlank)
             ?: return failure("invalid_arguments")
-        val target = runCatching { readTargets.resolve(json["mod_id"]?.jsonPrimitive?.content) }
-            .getOrElse { return failure(it.message ?: "mod_resolution_failed") }
-        val isParent = target.jar.canonicalFile == parentJar.canonicalFile
+        val target = runCatching {
+            readTargets.resolve(json["mod_id"]?.jsonPrimitive?.content, json["patch_mod_id"]?.jsonPrimitive?.content)
+        }.getOrElse { return failure(it.message ?: "mod_resolution_failed") }
+        val isParent = target.patchParentModId == null && target.jar.canonicalFile == parentJar.canonicalFile
         val materialize = isParent && (json["materialize"]?.jsonPrimitive?.booleanOrNull ?: true)
         val inspection = if (isParent) runCatching {
             AgentModInspectionManager.createInspection(context, parentModId, parentJar)
         }.getOrElse { return failure(it.message ?: "inspection_failed") } else null
         val classpath = runCatching {
-            AgentPatchSourceCompiler.buildClasspath(context, target.jar)
+            val baseClasspath = AgentPatchSourceCompiler.buildClasspath(context, target.jar)
+            // Resolve the owning mod only for CFR's reads, not for the editor's actual compiler.
+            val ownerJar = target.patchParentModId?.let { runCatching { readTargets.resolve(it).jar }.getOrNull() }
+                ?.takeIf(File::isFile)
+                ?.let { AgentPatchSourceCompiler.resolveCompileClasspathEntry(context, it) }
+            listOfNotNull(baseClasspath.takeIf(String::isNotEmpty), ownerJar?.absolutePath).joinToString(File.pathSeparator)
         }.getOrElse { return failure(it.message ?: "classpath_unavailable") }
         val result = runCatching {
             AgentPatchClassDecompiler.decompileClass(
@@ -1218,7 +1227,7 @@ class AgentModClassDecompileTool(
             put("status", JsonPrimitive("decompiled"))
             put("class_name", JsonPrimitive(result.requestedClass))
             put("class_entry", JsonPrimitive(result.classEntry))
-            put("mod_id", JsonPrimitive(target.modId))
+            put(if (target.patchParentModId == null) "mod_id" else "patch_mod_id", JsonPrimitive(target.modId))
             put("materialized", JsonPrimitive(materialize))
             if (sourceFile != null && inspection != null) {
                 put("source_path", JsonPrimitive(AgentWorkspacePaths(inspection.root).virtual(sourceFile)))
@@ -1512,9 +1521,9 @@ class AgentModResourceReadTool(
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("read_agent_mod_resource")
         .description(
-            "Read a resource entry from the parent mod, another installed mod, or the game desktop-1.0.jar " +
+            "Read a resource entry from the parent mod, another installed mod, a packaged patch, or the game desktop-1.0.jar " +
                 "without extracting the JAR. Set source=game for original game assets; otherwise source defaults to mod. " +
-                "Discover paths with list_agent_mod_entries using the same source and mod_id. Use " +
+                "Discover paths with list_agent_mod_entries using the same source and target ID. Use " +
                 "utf8 for JSON/XML/text and base64 for binary assets; reads are bounded and pageable. " +
                 "PNG, JPEG, WebP and GIF resources are returned as images the model can see, with a short JSON summary.",
         )
@@ -1523,6 +1532,7 @@ class AgentModResourceReadTool(
                 .addStringProperty("entry", "JAR-relative resource path, for example resources/cards.json.")
                 .addStringProperty("source", "mod or game; defaults to mod. game reads the imported desktop-1.0.jar.")
                 .addStringProperty("mod_id", "Optional id from list_installed_mods; defaults to the parent mod. Only valid for source=mod.")
+                .addStringProperty("patch_mod_id", "Optional packaged patch ID from list_installed_mods or list_agent_patch_mods. Only valid for source=mod and without mod_id.")
                 .addStringProperty("encoding", "utf8 or base64; defaults to utf8.")
                 .addStringProperty("offset", "Zero-based byte offset; defaults to 0.")
                 .addStringProperty("limit", "Maximum bytes to return; defaults to 16384.")
@@ -1548,9 +1558,12 @@ class AgentModResourceReadTool(
         val limit = (json["limit"]?.jsonPrimitive?.content?.toIntOrNull() ?: DEFAULT_LIMIT)
             .coerceIn(1, DEFAULT_LIMIT)
         val target = runCatching {
-            resourceTargets.resolve(json["source"]?.jsonPrimitive?.content, json["mod_id"]?.jsonPrimitive?.content)
-        }
-            .getOrElse { return failure(it.message ?: "mod_resolution_failed") }
+            resourceTargets.resolve(
+                json["source"]?.jsonPrimitive?.content,
+                json["mod_id"]?.jsonPrimitive?.content,
+                json["patch_mod_id"]?.jsonPrimitive?.content,
+            )
+        }.getOrElse { return failure(it.message ?: "mod_resolution_failed") }
         if (encoding == "utf8" && offset == 0L) {
             readImage(target, entry)?.let { return it }
         }
@@ -1563,6 +1576,7 @@ class AgentModResourceReadTool(
             put("source", JsonPrimitive(target.source))
             put("archive", JsonPrimitive(target.jar.name))
             target.modId?.let { put("mod_id", JsonPrimitive(it)) }
+            target.patchModId?.let { put("patch_mod_id", JsonPrimitive(it)) }
             put("encoding", JsonPrimitive(encoding))
             put("offset", JsonPrimitive(range.offset))
             put("total_bytes", JsonPrimitive(range.totalBytes))
@@ -1600,6 +1614,7 @@ class AgentModResourceReadTool(
             put("source", JsonPrimitive(target.source))
             put("archive", JsonPrimitive(jar.name))
             target.modId?.let { put("mod_id", JsonPrimitive(it)) }
+            target.patchModId?.let { put("patch_mod_id", JsonPrimitive(it)) }
             put("type", JsonPrimitive("image"))
             put("mime", JsonPrimitive(payload.mime))
             put("total_bytes", JsonPrimitive(payload.bytes))
@@ -1647,7 +1662,7 @@ class AgentModEntriesListTool(
     override val specification: ToolSpecification = ToolSpecification.builder()
         .name("list_agent_mod_entries")
         .description(
-            "List paths in the parent mod, another installed mod, or the game desktop-1.0.jar without extracting it. " +
+            "List paths in the parent mod, another installed mod, a packaged patch, or the game desktop-1.0.jar without extracting it. " +
                 "Set source=game to discover original game assets; otherwise source defaults to mod. Filter with a path prefix " +
                 "and choose resources, classes, or all entries; use read_agent_mod_resource to read resources.",
         )
@@ -1656,6 +1671,7 @@ class AgentModEntriesListTool(
                 .addStringProperty("prefix", "Optional case-sensitive JAR path prefix.")
                 .addStringProperty("source", "mod or game; defaults to mod. game reads the imported desktop-1.0.jar.")
                 .addStringProperty("mod_id", "Optional id from list_installed_mods; defaults to the parent mod. Only valid for source=mod.")
+                .addStringProperty("patch_mod_id", "Optional packaged patch ID from list_installed_mods or list_agent_patch_mods. Only valid for source=mod and without mod_id.")
                 .addStringProperty("entry_type", "resources, classes, or all; defaults to resources.")
                 .addStringProperty("offset", "Zero-based result offset; defaults to 0.")
                 .addStringProperty("limit", "Maximum entries to return; defaults to 100.")
@@ -1677,9 +1693,12 @@ class AgentModEntriesListTool(
         val limit = (json["limit"]?.jsonPrimitive?.content?.toIntOrNull() ?: DEFAULT_LIMIT)
             .coerceIn(1, MAX_LIMIT)
         val target = runCatching {
-            resourceTargets.resolve(json["source"]?.jsonPrimitive?.content, json["mod_id"]?.jsonPrimitive?.content)
-        }
-            .getOrElse { return failure(it.message ?: "mod_resolution_failed") }
+            resourceTargets.resolve(
+                json["source"]?.jsonPrimitive?.content,
+                json["mod_id"]?.jsonPrimitive?.content,
+                json["patch_mod_id"]?.jsonPrimitive?.content,
+            )
+        }.getOrElse { return failure(it.message ?: "mod_resolution_failed") }
         val entries = runCatching {
             AgentModJarReader.listEntries(target.jar)
                 .asSequence()
@@ -1700,6 +1719,7 @@ class AgentModEntriesListTool(
             put("source", JsonPrimitive(target.source))
             put("archive", JsonPrimitive(target.jar.name))
             target.modId?.let { put("mod_id", JsonPrimitive(it)) }
+            target.patchModId?.let { put("patch_mod_id", JsonPrimitive(it)) }
             put("prefix", JsonPrimitive(prefix))
             put("total_entries", JsonPrimitive(entries.size))
             put("offset", JsonPrimitive(offset))

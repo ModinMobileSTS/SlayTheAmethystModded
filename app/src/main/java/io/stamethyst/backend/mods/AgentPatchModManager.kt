@@ -412,10 +412,17 @@ object AgentPatchModManager {
     fun listPackagedForParents(context: Context, parentModIds: Collection<String>): List<AgentPatchModInfo> {
         val parents = parentModIds.mapNotNull { safeSegmentOrNull(ModManager.normalizeModId(it)) }.toSet()
         if (parents.isEmpty()) return emptyList()
+        return listPackagedAcrossParents(context, parents)
+    }
+
+    internal fun listAllPackaged(context: Context): List<AgentPatchModInfo> =
+        listPackagedAcrossParents(context, parents = null)
+
+    private fun listPackagedAcrossParents(context: Context, parents: Set<String>?): List<AgentPatchModInfo> {
         val enabledIds = readEnabledPatchModIds(context)
         return RuntimePaths.agentModsRoot(context).listFiles().orEmpty()
             .asSequence()
-            .filter { it.name in parents && it.isDirectory }
+            .filter { (parents == null || it.name in parents) && it.isDirectory }
             .sortedBy { it.name }
             .flatMap { parent -> listPackagedInDirectory(parent, parent.name, enabledIds).asSequence() }
             .toList()

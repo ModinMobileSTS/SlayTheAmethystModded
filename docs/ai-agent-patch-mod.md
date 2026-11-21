@@ -176,15 +176,15 @@ patch is writable. See [the virtual path contract](ai-agent-local-editing.md#固
 - `delete_agent_workspace_file`: delete files or, with `recursive=true`, non-empty directories only
   inside `/patch_source/<patch_id>/`. Read-only trees, `/`, `/patch_source/` and individual patch roots cannot be deleted by this tool.
 - `decompile_agent_mod_source`: prepare the parent JAR snapshot without extracting it.
-- `list_agent_mod_entries`: discover resource or class paths in the parent or an installed mod JAR without extraction; use `source="game"` for the imported `desktop-1.0.jar`.
-- `inspect_agent_class`: inspect one parent class and its exact declared API without extraction.
-- `decompile_agent_class`: decompile one parent class into the shared on-demand `source/` cache.
+- `list_agent_mod_entries`: discover resource or class paths in a mod or packaged patch JAR without extraction; use `source="game"` for the imported `desktop-1.0.jar`.
+- `inspect_agent_class`: inspect one mod or packaged patch class and its exact declared API without extraction.
+- `decompile_agent_class`: decompile one mod or packaged patch class on demand. Only parent classes can enter the shared `source/` cache.
 - `decompile_agent_api_class`: decompile one or more game, BaseMod, StSLib, ModTheSpire, or bundled
   dependency classes from the compile classpath and return the Java source inline. Several names can
   be passed per call; a class above the inline cap returns a member index plus a signature skeleton,
   and `member` reads one method, constructor, or field body. Use this for vanilla behavior; installed
   mod classes still go through `decompile_agent_class`.
-- `read_agent_mod_resource`: read a bounded byte range from one parent or installed mod JAR resource; use `source="game"` for original game resources, including card art. Whole-image reads return viewable attachments.
+- `read_agent_mod_resource`: read a bounded byte range from a mod or packaged patch JAR resource; use `source="game"` for original game resources, including card art. Whole-image reads return viewable attachments.
   The `source/` tree is available to the agent through read/list tools and cannot be modified
   through workspace write/delete tools. See "On-device decompilation" below.
 - `read_agent_skill`: return a bundled reference skill, or list the available skills when `name` is
@@ -219,8 +219,10 @@ patch is writable. See [the virtual path contract](ai-agent-local-editing.md#固
   `timeout_seconds` (default `240`), and `mod_ids` (extra optional mods to enable for the run). See
   "Smoke test" below.
 - `list_installed_mods`: list the mods the launcher has installed with their `mod_id`,
-  `manifest_mod_id`, name, version, dependencies, built-in flag, and current enabled state. This is
-  how the agent learns which ids it can pass in `mod_ids`.
+  `manifest_mod_id`, name, version, dependencies, built-in flag, and current enabled state.
+  The separate `patches` list includes enabled and disabled local packaged patches from all parents.
+  Use `patch_mod_id` from that list with the four read tools above, instead of `mod_id`.
+  Use `selectable_mod_ids`, not `patch_mod_id`, for extra mods in the smoke test.
 - `set_agent_patch_mod_enabled`: enable or disable a packaged patch revision for the parent mod.
 - `list_agent_patch_mods`: list packaged revisions and their enabled state.
 - `delete_agent_patch_mod`: delete a packaged revision by `patch_id` and clear its enablement.
