@@ -5,8 +5,10 @@
     <string name="market_ai_intro">说说你想找什么模组？我来帮你检索😈</string>
     <string name="market_ai_example_map">有什么大型模组推荐？</string>
     <string name="market_ai_example_touch">有什么可以提升游玩体验的模组？</string>
-    <string name="market_ai_source">匹配依据 · 查看原文</string>
-    <string name="market_ai_partial">部分匹配 · 查看原文</string>
+    <string name="market_ai_source">匹配依据</string>
+    <string name="market_ai_partial">部分匹配</string>
+    <string name="market_ai_expand_source">展开原文</string>
+    <string name="market_ai_collapse_source">收起原文</string>
     <string name="market_ai_hint">描述需求，或继续追问…</string>
     <string name="market_ai_stopped">已停止本次检索。</string>
     <string name="market_ai_configure">前往设置配置 LLM 后搜索</string>

@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -119,7 +120,6 @@ internal fun WorkshopSearchChat(
                 val streaming = chat.busy && index == chat.turns.lastIndex
                 Column(Modifier.fillMaxWidth().padding(bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     MarketMessage(AiEditorMessage(turn.id, true, turn.question))
-                    Text(stringResource(R.string.market_ai_title), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     if (streaming || turn.activityParts.isNotEmpty()) {
                         MarketMessage(AiEditorMessage(
                             id = turn.id,
@@ -145,6 +145,14 @@ internal fun WorkshopSearchChat(
                             var expanded by rememberSaveable(turn.id, citation.item.publishedFileId.toString()) { mutableStateOf(false) }
                             TextButton(onClick = { expanded = !expanded }) {
                                 Text(stringResource(if (citation.partial) R.string.market_ai_partial else R.string.market_ai_source))
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_workshop_evidence_caret),
+                                    contentDescription = stringResource(
+                                        if (expanded) R.string.market_ai_collapse_source else R.string.market_ai_expand_source,
+                                    ),
+                                    modifier = Modifier.size(16.dp).rotate(if (expanded) 180f else 0f),
+                                )
                             }
                             if (expanded) Text("“${citation.quote}”\nSteam Workshop · ${citation.item.publishedFileId}",
                                 style = MaterialTheme.typography.bodySmall)

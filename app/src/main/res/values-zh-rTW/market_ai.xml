@@ -5,8 +5,10 @@
     <string name="market_ai_intro">說說你想找什麼模組？我來幫你搜尋😈</string>
     <string name="market_ai_example_map">有什麼大型模組推薦？</string>
     <string name="market_ai_example_touch">有什麼可以提升遊玩體驗的模組？</string>
-    <string name="market_ai_source">符合依據 · 查看原文</string>
-    <string name="market_ai_partial">部分符合 · 查看原文</string>
+    <string name="market_ai_source">符合依據</string>
+    <string name="market_ai_partial">部分符合</string>
+    <string name="market_ai_expand_source">展開原文</string>
+    <string name="market_ai_collapse_source">收合原文</string>
     <string name="market_ai_hint">描述需求，或繼續追問…</string>
     <string name="market_ai_stopped">已停止本次搜尋。</string>
     <string name="market_ai_configure">前往設定配置 LLM 後搜尋</string>

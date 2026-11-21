@@ -5,8 +5,10 @@
     <string name="market_ai_intro">Tell me what kind of mod you want, and I’ll help you find it 😈</string>
     <string name="market_ai_example_map">What are some big mods you recommend?</string>
     <string name="market_ai_example_touch">What mods can improve the gameplay experience?</string>
-    <string name="market_ai_source">Match evidence · Read source</string>
-    <string name="market_ai_partial">Partial match · Read source</string>
+    <string name="market_ai_source">Match evidence</string>
+    <string name="market_ai_partial">Partial match</string>
+    <string name="market_ai_expand_source">Expand source</string>
+    <string name="market_ai_collapse_source">Collapse source</string>
     <string name="market_ai_hint">Describe a feature, or ask a follow-up…</string>
     <string name="market_ai_stopped">Search stopped.</string>
     <string name="market_ai_configure">Configure your LLM in Settings to search</string>
