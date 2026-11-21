@@ -166,9 +166,7 @@ internal class WorkshopSearchConversation(private val scope: CoroutineScope) {
                     try {
                         network.set(service)
                         control.checkActive()
-                        val tools = WorkshopSearchTools(service::browse, { id, fallback ->
-                            service.getDetails(SEARCH_APP_ID, id, fallback, includeDependencyData = false)
-                        }, ids)
+                        val tools = WorkshopSearchTools.forService(service, ids)
                         workshopSearchTurn(turn.question, tools, control, AgentChatModelFactory.create(config),
                             AgentChatModelFactory.createStreaming(config), previous,
                             timeoutMs = config.requestTimeoutSeconds * 1_000L,

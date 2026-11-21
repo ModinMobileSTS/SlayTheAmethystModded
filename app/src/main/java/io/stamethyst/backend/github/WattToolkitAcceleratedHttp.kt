@@ -357,18 +357,6 @@ internal fun interface AcceleratedResponseValidator {
     fun validate(response: Response)
 }
 
-/** Opt-in for a replayable request that consumes the full response body. */
-internal class RouteRetryQueue(
-    val maxRounds: Int,
-    val candidateTimeoutMs: Long,
-    val officialFailureCodes: Set<Int>,
-) {
-    init {
-        require(maxRounds > 0)
-        require(candidateTimeoutMs > 0)
-    }
-}
-
 /** Logical-origin routing, retry and redirect policy. Network IO belongs to the owning Call. */
 internal class WattRouteExecutor(
     private val routeResolvers: List<WattToolkitGithubRouteResolver>,
@@ -410,28 +398,14 @@ internal class WattRouteExecutor(
             val logicalUrl = logicalRequest.url
             val cookieRequest = applyCookieHeader(logicalRequest, logicalUrl, credentialsAllowed)
             val executed = if (retryQueue != null && resolver != null) {
-                val candidates = routeCandidates(route, includeOfficial = true)
-                    .distinctBy(::candidateKey).toMutableList()
-                val knownKeys = candidates.mapTo(mutableSetOf(), ::candidateKey)
-                val rounds = sequence {
-                    yieldAll(candidates)
+                val rounds = retryQueue.attempts(routeCandidates(route, includeOfficial = true), key = ::candidateKey, additional = {
                     checkActive()
-                    // Only discover more nodes if the preferred paths all fail. Past failures
-                    // affect preference, not eligibility for this queue.
-                    val extraRoutes = sequence {
+                    // Past failures affect preference, not eligibility for this queue.
+                    sequence {
                         yieldAll(resolver.knownRetryQueueRoutes(logicalUrl.host))
                         yieldAll(discoverQueueRoutes(resolver, logicalUrl.host))
-                    }
-                    for (discovered in extraRoutes) {
-                        for (candidate in routeCandidates(discovered, includeOfficial = false)) {
-                            if (knownKeys.add(candidateKey(candidate))) {
-                                candidates += candidate
-                                yield(candidate)
-                            }
-                        }
-                    }
-                    repeat(retryQueue.maxRounds - 1) { yieldAll(candidates) }
-                }
+                    }.flatMap { routeCandidates(it, includeOfficial = false).asSequence() }
+                })
                 executeCandidateRoutes(
                     logicalRequest = logicalRequest,
                     forwardedRequest = cookieRequest,
@@ -678,7 +652,8 @@ internal class WattRouteExecutor(
                 }
             }
         }
-        throw lastError ?: IOException("No acceleration route candidate was available")
+        val error = lastError ?: IOException("No acceleration route candidate was available")
+        throw if (retryQueue != null) RouteQueueExhaustedException(error) else error
     }
 
     private fun reportRouteEvent(request: Request, event: AcceleratedRouteEvent) {
@@ -700,13 +675,14 @@ internal class WattRouteExecutor(
         try {
             request.tag(AcceleratedResponseValidator::class.java)?.validate(response)
             if (retryQueue != null) {
-                if (official && response.code in retryQueue.officialFailureCodes) {
-                    throw IOException("Official route unavailable (HTTP ${response.code})")
+                if (response.code in retryQueue.gatewayFailureCodes) {
+                    val route = if (official) "Official route" else "Forward route"
+                    throw IOException("$route unavailable (HTTP ${response.code})")
                 }
                 if (!official && response.isStaleForwardRouteResponse(request.url)) {
                     throw IOException("HTTP ${response.code}")
                 }
-                // The market reads the whole HTML anyway. Read while the route is still
+                // These callers already consume the full body. Read while the route is still
                 // retryable, so a truncated or stalled body is not recorded as a success.
                 if (response.isSuccessful) {
                     try {

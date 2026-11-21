@@ -77,7 +77,7 @@ internal class WorkshopSearchTools(
         val request = WorkshopBrowseQuery(SEARCH_APP_ID, query, sort,
             WorkshopBrowseTimeFilter.AllTime, category, page, 12)
         pages[request]?.let { return it }
-        if (++searches > 6) return errorResult("search_budget_exhausted")
+        if (++searches > 50) return errorResult("search_budget_exhausted")
         val result = fetch { browse(request) } ?: return errorResult("search_unavailable_not_an_empty_result")
         return buildJsonObject {
             put("page", result.page); put("has_more", result.hasNextPage)
@@ -165,6 +165,13 @@ internal class WorkshopSearchTools(
         catch (_: Exception) { null }
 
     companion object {
+        fun forService(service: WorkshopService, suppliedIds: Set<ULong>): WorkshopSearchTools =
+            WorkshopSearchTools(
+                service::browse,
+                { id, fallback -> service.getDetails(SEARCH_APP_ID, id, fallback, includeDependencyData = false) },
+                suppliedIds,
+            )
+
         private val CARD = Regex("""\[\[mod:([^\]\r\n]*)]]""")
         // getDetails builds summary IDs from the *request*. Verify the actual response before trusting it.
         internal fun isSearchableDetail(id: ULong, detail: WorkshopItemDetails): Boolean {

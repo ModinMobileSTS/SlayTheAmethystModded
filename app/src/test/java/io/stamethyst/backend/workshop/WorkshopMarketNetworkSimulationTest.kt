@@ -24,7 +24,11 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -613,6 +617,156 @@ class WorkshopMarketNetworkSimulationTest {
         assertEquals(listOf(bundled.target, "official", alternate.target), attempts)
     }
 
+    @Test
+    fun aiReadWorkshop_replaysReadOnlyMetadataPostInSecondRound() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+        routeHost = "api.steampowered.com",
+    ).use { fixture ->
+        val firstAttempt = AtomicBoolean(true)
+        val hop = fixture.node { if (firstAttempt.getAndSet(false)) unavailable() else okAiMetadata("API description") }
+        fixture.bundledHopTarget = hop.target
+        fixture.routeTargets = listOf(hop.target)
+        fixture.apiServer.enqueue(unavailable())
+        fixture.officialServer.enqueue(MockResponse.Builder().code(404).build())
+        fixture.officialServer.enqueue(MockResponse.Builder().code(404).build())
+
+        val result = fixture.aiRead()
+
+        assertEquals("API description", result["description_passage"]?.jsonPrimitive?.content)
+        assertEquals(2, hop.requestCount())
+        assertEquals(1, fixture.apiRequestCount())
+        repeat(2) {
+            val request = checkNotNull(hop.server.takeRequest(1, TimeUnit.SECONDS))
+            assertEquals("POST", request.method)
+            assertTrue(checkNotNull(request.body).utf8().contains("publishedfileids%5B0%5D=123"))
+        }
+    }
+
+    @Test
+    fun aiReadWorkshop_recoversCommunityDescriptionInSecondRound() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val firstAttempt = AtomicBoolean(true)
+        val hop = fixture.node {
+            if (firstAttempt.getAndSet(false)) unavailable()
+            else MockResponse.Builder().body(
+                """<div class="workshopItemDescription" id="highlightContent">Community description</div>""",
+            ).build()
+        }
+        fixture.bundledHopTarget = hop.target
+        fixture.routeTargets = listOf(hop.target)
+        fixture.apiServer.enqueue(okAiMetadata(""))
+        fixture.officialServer.enqueue(unavailable())
+
+        val attempts = recordAttempts {
+            assertEquals("Community description", fixture.aiRead()["description_passage"]?.jsonPrimitive?.content)
+        }
+
+        assertEquals(listOf(hop.target, "official", hop.target), attempts)
+    }
+
+    @Test
+    fun aiReadWorkshop_doesNotRestartAnExhaustedCommunityQueue() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val hop = fixture.node { unavailable() }
+        fixture.bundledHopTarget = hop.target
+        fixture.routeTargets = listOf(hop.target)
+        fixture.apiServer.enqueue(okAiMetadata("API description"))
+        repeat(2) { fixture.officialServer.enqueue(unavailable()) }
+
+        val attempts = recordAttempts {
+            assertEquals("API description", fixture.aiRead()["description_passage"]?.jsonPrimitive?.content)
+        }
+
+        assertEquals(listOf(hop.target, "official", hop.target, "official"), attempts)
+    }
+
+    @Test
+    fun workshopComments_replayOnlyTheReadPostInSecondRound() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val firstAttempt = AtomicBoolean(true)
+        val hop = fixture.node {
+            if (firstAttempt.getAndSet(false)) unavailable()
+            else MockResponse.Builder().body("""{"total_count":42,"pagesize":5,"start":5,"comments_html":""}""").build()
+        }
+        fixture.bundledHopTarget = hop.target
+        fixture.routeTargets = listOf(hop.target)
+        fixture.officialServer.enqueue(unavailable())
+
+        val attempts = recordAttempts {
+            val page = fixture.loadComments()
+            assertEquals(42L, page.commentCount)
+            assertEquals(2, page.page)
+        }
+
+        assertEquals(listOf(hop.target, "official", hop.target), attempts)
+        val requests = List(2) { checkNotNull(hop.server.takeRequest(1, TimeUnit.SECONDS)) }
+        assertTrue(requests.all { it.method == "POST" && it.url.encodedPath == "/comment/PublishedFile_Public/render/123/456/" })
+        assertNotNull(requests.first().body)
+        assertEquals(requests.first().body, requests.last().body)
+    }
+
+    @Test
+    fun workshopChangeNotes_retryTheQueueAfterOfficialGatewayFailure() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+    ).use { fixture ->
+        val firstAttempt = AtomicBoolean(true)
+        val hop = fixture.node {
+            if (firstAttempt.getAndSet(false)) unavailable()
+            else MockResponse.Builder().body(
+                """<div class="changeLogCtn"><div class="headline">Nov 21</div><p>Fixed crash</p></div>""",
+            ).build()
+        }
+        fixture.bundledHopTarget = hop.target
+        fixture.routeTargets = listOf(hop.target)
+        fixture.officialServer.enqueue(unavailable())
+
+        val attempts = recordAttempts {
+            assertTrue(fixture.loadChangeNotes().latestMarkdown.contains("Fixed crash"))
+        }
+
+        assertEquals(listOf(hop.target, "official", hop.target), attempts)
+    }
+
+    @Test
+    fun browseMetadata_blackholedCandidateLeavesTimeForOfficial() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+        routeHost = "api.steampowered.com",
+    ).use { fixture ->
+        val hop = fixture.node {
+            MockResponse.Builder().headersDelay(6, TimeUnit.SECONDS).body("{}").build()
+        }
+        fixture.bundledHopTarget = hop.target
+        fixture.apiServer.enqueue(okAiMetadata("API description"))
+
+        val result = fixture.loadMetadata(listOf(WorkshopItemSummary(123uL, SEARCH_APP_ID, "Paths", "", ""))).single()
+
+        assertEquals(4096L, result.fileSizeBytes)
+        assertEquals(42L, result.downloadCount)
+        assertEquals(1, hop.requestCount())
+        assertEquals(1, fixture.apiRequestCount())
+    }
+
+    @Test
+    fun workshopSummaryBatches_retryTheReadOnlyPostAndEmitOnlyOneBatch() = fixture(
+        accelerationStrategy = AccelerationStrategy.RMBGAME_FIRST,
+        routeHost = "api.steampowered.com",
+    ).use { fixture ->
+        val firstAttempt = AtomicBoolean(true)
+        val hop = fixture.node { if (firstAttempt.getAndSet(false)) unavailable() else okAiMetadata("API description") }
+        fixture.bundledHopTarget = hop.target
+        fixture.routeTargets = listOf(hop.target)
+        fixture.apiServer.enqueue(unavailable())
+
+        val batches = fixture.loadSummaryBatches(listOf(123uL))
+
+        assertEquals(listOf(listOf(123uL)), batches.map { batch -> batch.map { it.publishedFileId } })
+        assertEquals(2, hop.requestCount())
+        assertEquals(1, fixture.apiRequestCount())
+    }
+
     private fun recordAttempts(block: () -> Unit): List<String> {
         val attempts = mutableListOf<String>()
         val listener: (AcceleratedRouteEvent) -> Unit = { event ->
@@ -636,14 +790,16 @@ class WorkshopMarketNetworkSimulationTest {
     private fun fixture(
         routeStore: WattToolkitGithubRouteStore? = null,
         accelerationStrategy: AccelerationStrategy = AccelerationStrategy.BEST_PATH,
+        routeHost: String = "steamcommunity.com",
         routeResponse: Fixture.() -> MockResponse = {
             MockResponse.Builder().code(200).body(routePayload()).build()
         },
-    ): Fixture = Fixture(routeStore, accelerationStrategy, routeResponse)
+    ): Fixture = Fixture(routeStore, accelerationStrategy, routeHost, routeResponse)
 
     private inner class Fixture(
         private val routeStore: WattToolkitGithubRouteStore?,
         private val accelerationStrategy: AccelerationStrategy,
+        private val routeHost: String,
         private val routeResponse: Fixture.() -> MockResponse,
     ) : AutoCloseable {
         val officialServer = MockWebServer()
@@ -690,8 +846,29 @@ class WorkshopMarketNetworkSimulationTest {
             service.browse(WorkshopBrowseQuery(pageSize = 30))
         }
 
+        fun aiRead() = Json.parseToJsonElement(
+            WorkshopSearchTools.forService(service, setOf(123uL)).tools
+                .single { it.specification.name() == "read_workshop" }
+                .execute("""{"id":"123"}"""),
+        ).jsonObject
+
         fun loadMetadata(items: List<WorkshopItemSummary>): List<WorkshopItemSummary> =
             runBlocking { service.loadBrowseItemMetadata(items) }
+
+        fun loadSummaryBatches(ids: List<ULong>): List<List<WorkshopItemSummary>> =
+            runBlocking { service.getSummaryBatches(SEARCH_APP_ID, ids).toList() }
+
+        fun loadChangeNotes(): WorkshopChangeNotes = runBlocking { service.getChangeNotes(123uL) }
+
+        fun loadComments(): WorkshopCommentPage = runBlocking {
+            service.getCommentsPage(
+                WorkshopItemDetails(
+                    summary = WorkshopItemSummary(123uL, SEARCH_APP_ID, "Paths", "", ""),
+                    commentThreadContext = WorkshopCommentThreadContext(ownerId = "123", featureId = "456"),
+                ),
+                page = 2,
+            )
+        }
 
         fun browseWithProgress(): WorkshopBrowseResult {
             val sessionId = WorkshopLoadProgressReporter.beginSession()
@@ -738,6 +915,8 @@ class WorkshopMarketNetworkSimulationTest {
             // use the real SNI-cloaking hostname, which would bypass the local MockWebServer.
             val routeProfile = if (accelerationStrategy == AccelerationStrategy.RMBGAME_FIRST) {
                 SteamCommunityWattToolkitRouteProfile.copy(
+                    supportedHosts = setOf(routeHost),
+                    bootstrapSupportedHosts = setOf(routeHost),
                     bootstrapForwardTargets = emptyList(),
                     bootstrapFakeServerName = "",
                     bootstrapIgnoreSslCertVerification = true,
@@ -827,8 +1006,8 @@ class WorkshopMarketNetworkSimulationTest {
                 {
                   "Items": [
                     ${rules.joinToString(",") { targets -> """{
-                      "MatchDomainNames": "steamcommunity.com;www.steamcommunity.com",
-                      "ListenDomainNames": "steamcommunity.com;www.steamcommunity.com",
+                      "MatchDomainNames": "$routeHost",
+                      "ListenDomainNames": "$routeHost",
                       "ForwardDomainNames": "${targets.joinToString(";")}",
                       "ProxyType": 0,
                       "IgnoreSSLCertVerification": true,
@@ -847,6 +1026,12 @@ class WorkshopMarketNetworkSimulationTest {
             fun requestCount(): Int = server.requestCount
         }
     }
+
+    private fun unavailable(): MockResponse = MockResponse.Builder().code(503).build()
+
+    private fun okAiMetadata(description: String): MockResponse = MockResponse.Builder().body(
+        """{"response":{"publishedfiledetails":[{"result":1,"publishedfileid":"123","consumer_app_id":646570,"title":"Paths","file_type":0,"hcontent_file":"456","file_size":"4096","subscriptions":42,"description":"$description"}]}}""",
+    ).build()
 
     private fun okMarket(): MockResponse =
         MockResponse.Builder()

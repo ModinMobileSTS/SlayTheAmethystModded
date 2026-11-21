@@ -7,6 +7,7 @@ import io.stamethyst.backend.github.withHttpOptions
 import io.stamethyst.backend.github.preparingHttpRequests
 import io.stamethyst.backend.github.cancelAllHttpCalls
 import io.stamethyst.backend.github.HttpRetrySafety
+import io.stamethyst.backend.github.RouteQueueExhaustedException
 import io.stamethyst.backend.github.RouteRetryQueue
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
@@ -15,6 +16,7 @@ import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InterruptedIOException
 import java.util.Collections
 import java.util.LinkedHashMap
 import java.util.Locale
@@ -539,6 +541,7 @@ internal class WorkshopService(
                     .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())
                     .post(requestBody)
                     .tag(HttpRetrySafety::class.java, HttpRetrySafety.READ_ONLY)
+                    .withWorkshopReadRouteQueue()
                     .build()
                 val result = runCatching {
                     client.newCall(request).execute().use { response ->
@@ -863,6 +866,7 @@ internal class WorkshopService(
             .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())
             .post(requestBody)
             .tag(HttpRetrySafety::class.java, HttpRetrySafety.READ_ONLY)
+            .withWorkshopReadRouteQueue()
             .build()
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("Steam workshop details failed: ${response.code}")
@@ -900,6 +904,7 @@ internal class WorkshopService(
             )
             .header("Accept-Language", languagePreferenceFor(languageRequestValue).acceptLanguageValue)
             .header("User-Agent", USER_AGENT)
+            .withWorkshopReadRouteQueue()
             .build()
 
         return workshopClient.newCall(request).execute().use { response ->
@@ -956,7 +961,11 @@ internal class WorkshopService(
             }.onFailure { error ->
                 if (error is CancellationException) throw error
                 lastError = error
-                if (error is SteamCommunityRateLimitException) {
+                // Keep the content-level retry, but don't start another queue after the
+                // transport exhausted it or used up the call's time budget.
+                if (error is SteamCommunityRateLimitException || error is RouteQueueExhaustedException ||
+                    error is InterruptedIOException
+                ) {
                     throw error
                 }
                 if (attempt == COMMUNITY_DETAIL_ATTEMPTS - 1) {
@@ -1060,6 +1069,7 @@ internal class WorkshopService(
             .url(buildWorkshopChangeNotesUrl(publishedFileId, languageRequestValue))
             .header("Accept-Language", languagePreferenceFor(languageRequestValue).acceptLanguageValue)
             .header("User-Agent", USER_AGENT)
+            .withWorkshopReadRouteQueue()
             .build()
 
         return workshopClient.newCall(request).execute().use { response ->
@@ -1095,6 +1105,9 @@ internal class WorkshopService(
                     .build(),
             )
             .post(formBody)
+            // This is Steam's comment rendering endpoint, not a comment submission.
+            .tag(HttpRetrySafety::class.java, HttpRetrySafety.READ_ONLY)
+            .withWorkshopReadRouteQueue()
             .header("X-Requested-With", "XMLHttpRequest")
             .header("Accept-Language", languagePreferenceFor(languageRequestValue).acceptLanguageValue)
             .header("User-Agent", USER_AGENT)
@@ -1331,7 +1344,7 @@ internal class WorkshopService(
                     .url(searchUrl)
                     .header("Accept-Language", steamLanguagePreference.acceptLanguageValue)
                     .header("User-Agent", USER_AGENT)
-                    .tag(RouteRetryQueue::class.java, BROWSE_ROUTE_RETRY_QUEUE)
+                    .withWorkshopReadRouteQueue()
                     .get()
                     .build()
             ).execute().use { response ->
@@ -1462,6 +1475,7 @@ internal class WorkshopService(
             .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())
             .post(requestBody)
             .tag(HttpRetrySafety::class.java, HttpRetrySafety.READ_ONLY)
+            .withWorkshopReadRouteQueue(BROWSE_METADATA_ROUTE_QUEUE)
             .build()
         val httpStartedAtMs = SystemClock.elapsedRealtime()
         return browseDetailClient.newCall(request).execute().use { response ->
@@ -2158,11 +2172,17 @@ internal class WorkshopService(
         private const val SUBSCRIPTION_VERIFY_DELAY_MS = 750L
         private const val HTTP_TOO_MANY_REQUESTS = 429
         private const val USER_AGENT = "SlayTheAmethyst/Workshop"
-        private val BROWSE_ROUTE_RETRY_QUEUE = RouteRetryQueue(
+        private val WORKSHOP_READ_ROUTE_QUEUE = RouteRetryQueue(
             maxRounds = 2,
             candidateTimeoutMs = 20_000L,
-            officialFailureCodes = setOf(502, 503, 504),
+            gatewayFailureCodes = setOf(502, 503, 504),
         )
+        // Preserve the background client's 8s total budget but let it reach the next
+        // candidate even if the first one does not return any headers.
+        private val BROWSE_METADATA_ROUTE_QUEUE = WORKSHOP_READ_ROUTE_QUEUE.copy(candidateTimeoutMs = 3_000L)
+        private fun Request.Builder.withWorkshopReadRouteQueue(
+            queue: RouteRetryQueue = WORKSHOP_READ_ROUTE_QUEUE,
+        ): Request.Builder = tag(RouteRetryQueue::class.java, queue)
         private const val COMMENT_INIT_CALL = "InitializeCommentThread"
         private val sessionIdRegex = Regex(
             """g_sessionID\s*=\s*"([^"]+)"""",
