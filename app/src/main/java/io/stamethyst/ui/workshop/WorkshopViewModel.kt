@@ -70,6 +70,8 @@ import kotlinx.coroutines.withContext
 
 @Stable
 internal class WorkshopViewModel : ViewModel() {
+    val searchSessions = WorkshopSearchSessions(viewModelScope)
+    var aiSearchSelected by mutableStateOf(false)
     var uiState by mutableStateOf(WorkshopUiState())
         private set
 
@@ -102,6 +104,7 @@ internal class WorkshopViewModel : ViewModel() {
         (service ?: WorkshopService(context.applicationContext).also { service = it }).social
 
     override fun onCleared() {
+        searchSessions.current.stop()
         if (progressListenerInstalled) WorkshopLoadProgressReporter.setListener(null)
         service?.close()
         service = null
@@ -2069,6 +2072,11 @@ internal class WorkshopViewModel : ViewModel() {
                         updatedAtMillis = System.currentTimeMillis(),
                         progressPercent = resultData.optionalInt(WorkshopDownloadProcessService.EXTRA_PROGRESS_PERCENT) ?: it.progressPercent,
                         downloadedBytes = resultData.optionalLong(WorkshopDownloadProcessService.EXTRA_WRITTEN_BYTES) ?: it.downloadedBytes,
+                        receivedBytes = resultData.optionalLong(WorkshopDownloadProcessService.EXTRA_RECEIVED_BYTES) ?: it.receivedBytes,
+                        diskWriteBytes = resultData.optionalLong(WorkshopDownloadProcessService.EXTRA_DISK_WRITE_BYTES) ?: it.diskWriteBytes,
+                        writeProgressBytes = resultData.optionalLong(WorkshopDownloadProcessService.EXTRA_WRITE_PROGRESS_BYTES) ?: it.writeProgressBytes,
+                        writeTotalBytes = if (resultData.containsKey(WorkshopDownloadProcessService.EXTRA_WRITE_PROGRESS_BYTES))
+                            resultData.optionalLong(WorkshopDownloadProcessService.EXTRA_WRITE_TOTAL_BYTES) else it.writeTotalBytes,
                         totalBytes = resultData.optionalLong(WorkshopDownloadProcessService.EXTRA_TOTAL_BYTES) ?: it.totalBytes,
                         completedFiles = resultData.optionalInt(WorkshopDownloadProcessService.EXTRA_COMPLETED_FILES) ?: it.completedFiles,
                         totalFiles = resultData.optionalInt(WorkshopDownloadProcessService.EXTRA_TOTAL_FILES) ?: it.totalFiles,

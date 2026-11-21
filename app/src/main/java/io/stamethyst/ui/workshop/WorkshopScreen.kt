@@ -24,6 +24,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -79,6 +80,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,6 +92,8 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -121,6 +125,7 @@ import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.LauncherBannerTitleRow
 import io.stamethyst.ui.launcherBannerExpandedHeight
 import io.stamethyst.ui.LocalLauncherBannerPage
+import io.stamethyst.ui.LocalLauncherBannerCollapseFraction
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.SearchHistoryStore
@@ -159,6 +164,7 @@ internal fun WorkshopScreen(
     onOpenDownloadCenter: () -> Unit,
     onOpenSubscriptions: () -> Unit = {},
     onOpenDetails: (WorkshopItemSummary) -> Unit,
+    onMarketLlmSettings: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val state = viewModel.uiState
@@ -171,8 +177,23 @@ internal fun WorkshopScreen(
         }
     }
     val listState = rememberLazyListState()
+    val chatStateHolder = rememberSaveableStateHolder()
+    val showSearchTabs = onMarketLlmSettings != null && initialListMode == WorkshopListMode.Browse && useFloatingHeader
+    val aiMode = showSearchTabs && viewModel.aiSearchSelected
+    val modeMotion = rememberWorkshopModeMotion(aiMode)
     val bannerPage = LocalLauncherBannerPage.current
     val coroutineScope = rememberCoroutineScope()
+    val modeFocus = LocalFocusManager.current
+    val modeKeyboard = LocalSoftwareKeyboardController.current
+    fun selectSearchMode(selected: Boolean) {
+        // The shared header's click handlers can outlive the composition that created them.
+        if (viewModel.aiSearchSelected == selected) return
+        modeFocus.clearFocus()
+        modeKeyboard?.hide()
+        viewModel.aiSearchSelected = selected
+        coroutineScope.launch { bannerPage?.expand() }
+    }
+    androidx.activity.compose.BackHandler(enabled = active && aiMode) { selectSearchMode(false) }
     val density = LocalDensity.current
     val headerHazeState = rememberHazeState()
     val backToTopButtonScrollThresholdPx = with(density) {
@@ -193,7 +214,12 @@ internal fun WorkshopScreen(
         animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
         label = "workshopHeaderProgressHeight",
     )
-    val headerMeasuredHeight = launcherBannerExpandedHeight(headerPlaceholderHeight)
+    // Measure full-sized endpoints, not the intermediate glass height: otherwise the whole
+    // list and transcript relayout on every frame while their header is retracting.
+    var titleHeight by remember { mutableStateOf(102.dp) }
+    var controlsHeight by remember { mutableStateOf(148.dp) }
+    val headerMeasuredHeight = if (showSearchTabs) titleHeight + controlsHeight + headerProgressHeight
+        else launcherBannerExpandedHeight(headerPlaceholderHeight)
     val headerContentTopInset = headerMeasuredHeight + 16.dp
     val refreshIndicatorTopInset = headerMeasuredHeight + 8.dp
     val pullToRefreshState = rememberPullToRefreshState()
@@ -245,8 +271,8 @@ internal fun WorkshopScreen(
         }
     }
 
-    LaunchedEffect(shouldLoadMore, state.items.size, state.hasMorePages) {
-        if (shouldLoadMore) {
+    LaunchedEffect(shouldLoadMore, state.items.size, state.hasMorePages, aiMode) {
+        if (shouldLoadMore && !aiMode) {
             viewModel.loadNextPage(context.applicationContext)
         }
     }
@@ -255,7 +281,7 @@ internal fun WorkshopScreen(
         Box(
             modifier = contentModifier.fillMaxSize()
         ) {
-        PullToRefreshBox(
+        if (modeMotion.hasBrowse || !aiMode) PullToRefreshBox(
             isRefreshing = state.browseLoading && state.items.isNotEmpty(),
             onRefresh = { viewModel.refreshBrowse(context.applicationContext) },
             state = pullToRefreshState,
@@ -270,6 +296,7 @@ internal fun WorkshopScreen(
             },
             modifier = Modifier
                 .fillMaxSize()
+                .then(if (showSearchTabs) Modifier.workshopModePane(modeMotion, chat = false, selected = !aiMode) else Modifier)
                 .then(if (useFloatingHeader) Modifier.hazeSource(state = headerHazeState) else Modifier)
                 .padding(start = 16.dp, top = if (useFloatingHeader) 18.dp else 0.dp, end = 16.dp),
         ) {
@@ -420,6 +447,22 @@ internal fun WorkshopScreen(
             }
         }
 
+        if (modeMotion.hasChat || aiMode) {
+            chatStateHolder.SaveableStateProvider(viewModel.searchSessions.current.sessionId) {
+                WorkshopSearchChat(viewModel.searchSessions, rememberLazyListState(), { onMarketLlmSettings?.invoke() },
+                    Modifier.fillMaxSize().workshopModePane(modeMotion, chat = true, selected = aiMode), Modifier.graphicsLayer {
+                        translationY = 16.dp.toPx() * (1f - modeMotion.progress)
+                    }, active = active && aiMode, titleInset = titleHeight, haze = headerHazeState) { item ->
+                    val downloadState = resolveWorkshopModDownloadState(item, state.installedMods,
+                        downloadTaskStatuses, state.preparingDownloadIds)
+                    WorkshopItemCard(item = item, downloadState = downloadState,
+                        onClick = { onOpenDetails(item) }, onDownload = {
+                            requestNotificationPermissionIfNeeded()
+                            viewModel.download(context.applicationContext, item)
+                        })
+                }
+            }
+        }
         if (useFloatingHeader) {
             CollapsibleFloatingGlassHeader(
                 modifier = Modifier
@@ -428,22 +471,33 @@ internal fun WorkshopScreen(
                 hazeState = headerHazeState,
                 shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
                 contentPadding = PaddingValues(0.dp),
+                expandedContentTopPadding = if (showSearchTabs) 0.dp else 14.dp,
                 pinnedContent = {
-                    WorkshopHeaderPinnedContent(
-                        showBackButton = showBackButton,
-                        activeDownloadTaskCount = activeDownloadTaskCount,
-                        showSubscriptionsButton = showSubscriptionsButton && state.steamLoggedIn,
-                        title = title ?: stringResource(R.string.workshop_market_title),
-                        subtitle = subtitle ?: stringResource(R.string.workshop_market_subtitle),
-                        onBack = onBack,
-                        onOpenSubscriptions = onOpenSubscriptions,
-                        onOpenDownloadCenter = onOpenDownloadCenter,
-                    )
+                    val expanded = LocalLauncherBannerCollapseFraction.current == 0f
+                    Box(if (showSearchTabs) Modifier.onSizeChanged {
+                        if (expanded) titleHeight = with(density) { it.height.toDp() }
+                    } else Modifier) {
+                        WorkshopHeaderPinnedContent(
+                            showBackButton = showBackButton,
+                            activeDownloadTaskCount = activeDownloadTaskCount,
+                            showSubscriptionsButton = showSubscriptionsButton && state.steamLoggedIn,
+                            title = title ?: stringResource(R.string.workshop_market_title),
+                            modeTabs = if (showSearchTabs) {
+                                { WorkshopSearchTabs(aiMode, modeMotion) { selectSearchMode(it) } }
+                            } else null,
+                            onBack = onBack,
+                            onOpenSubscriptions = onOpenSubscriptions,
+                            onOpenDownloadCenter = onOpenDownloadCenter,
+                        )
+                    }
                 },
-                expandedContent = if (state.listMode == WorkshopListMode.Browse) {
+                expandedContent = if ((modeMotion.hasBrowse || !aiMode) && state.listMode == WorkshopListMode.Browse) {
                     {
                         SearchPanel(
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                            modifier = Modifier.then(if (showSearchTabs) Modifier.workshopModeHeader(modeMotion, !aiMode)
+                                .onSizeChanged { controlsHeight = with(density) { it.height.toDp() } }
+                                .padding(top = 14.dp) else Modifier)
+                                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                             query = query,
                             loading = state.browseLoading,
                             sort = sort,
@@ -473,15 +527,19 @@ internal fun WorkshopScreen(
                     null
                 },
                 footerContent = {
-                    WorkshopLoadProgressBar(
-                        progress = state.loadProgress,
-                        revealHeight = headerProgressHeight,
-                    )
+                    if (modeMotion.hasBrowse || !aiMode) Box(
+                        if (showSearchTabs) Modifier.workshopModeHeader(modeMotion, !aiMode) else Modifier,
+                    ) {
+                        WorkshopLoadProgressBar(
+                            progress = state.loadProgress,
+                            revealHeight = headerProgressHeight,
+                        )
+                    }
                 },
             )
         }
         AnimatedVisibility(
-            visible = showBackToTopButton,
+            visible = !aiMode && showBackToTopButton,
             enter = fadeIn() + scaleIn(),
             exit = scaleOut() + fadeOut(),
             modifier = Modifier
@@ -516,7 +574,7 @@ internal fun WorkshopScreen(
                     showBackButton = showBackButton,
                     activeDownloadTaskCount = activeDownloadTaskCount,
                     title = title ?: stringResource(R.string.workshop_market_title),
-                    subtitle = subtitle ?: stringResource(R.string.workshop_market_subtitle),
+                    subtitle = subtitle.orEmpty(),
                     onBack = onBack,
                     onOpenDownloadCenter = onOpenDownloadCenter,
                 )
@@ -573,63 +631,65 @@ internal fun WorkshopSubscriptionsScreen(
 }
 
 @Composable
-private fun WorkshopHeaderPinnedContent(
+internal fun WorkshopHeaderPinnedContent(
     showBackButton: Boolean,
     activeDownloadTaskCount: Int,
     showSubscriptionsButton: Boolean,
     title: String,
-    subtitle: String,
     onBack: () -> Unit,
     onOpenSubscriptions: () -> Unit,
     onOpenDownloadCenter: () -> Unit,
+    modeTabs: (@Composable () -> Unit)?,
 ) {
     val downloadCenterDescription = if (activeDownloadTaskCount > 0) {
         stringResource(R.string.workshop_download_center_with_active_tasks, activeDownloadTaskCount)
     } else {
         stringResource(R.string.workshop_download_center_title)
     }
-    LauncherBannerTitleRow(
-        iconResId = R.drawable.ic_dock_market,
-        title = title,
-        subtitle = subtitle,
-    ) {
-        if (showSubscriptionsButton) {
-            IconButton(
-                onClick = onOpenSubscriptions,
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_workshop_subscriptions),
-                    contentDescription = stringResource(R.string.workshop_subscriptions_title),
-                )
-            }
-        }
-        IconButton(
-            onClick = onOpenDownloadCenter,
-            modifier = Modifier.size(48.dp),
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // On narrow screens give the title room by omitting the decorative icon, not a search tab.
+        // Reserve room for subscriptions even before Steam auth finishes loading.
+        val showMarketIcon = modeTabs == null || maxWidth >= 380.dp + (if (showBackButton) 48.dp else 0.dp)
+        LauncherBannerTitleRow(
+            iconResId = if (showMarketIcon) R.drawable.ic_dock_market else null,
+            title = title,
+            subtitle = "",
         ) {
-            BadgedBox(
-                badge = {
-                    if (activeDownloadTaskCount > 0) {
-                        Badge { Text(if (activeDownloadTaskCount > 99) "99+" else activeDownloadTaskCount.toString()) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                modeTabs?.invoke()
+                if (showBackButton) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            imageVector = Icons.ArrowBack,
+                            contentDescription = stringResource(R.string.common_content_desc_back),
+                        )
                     }
-                },
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_workshop_download),
-                    contentDescription = downloadCenterDescription,
-                )
-            }
-        }
-        if (showBackButton) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.ArrowBack,
-                    contentDescription = stringResource(R.string.common_content_desc_back),
-                )
+                }
+                IconButton(
+                    onClick = onOpenDownloadCenter,
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    BadgedBox(
+                        badge = {
+                            if (activeDownloadTaskCount > 0) {
+                                Badge { Text(if (activeDownloadTaskCount > 99) "99+" else activeDownloadTaskCount.toString()) }
+                            }
+                        },
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_workshop_download),
+                            contentDescription = downloadCenterDescription,
+                        )
+                    }
+                }
+                if (showSubscriptionsButton) {
+                    IconButton(onClick = onOpenSubscriptions, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_workshop_subscriptions),
+                            contentDescription = stringResource(R.string.workshop_subscriptions_title),
+                        )
+                    }
+                }
             }
         }
     }
@@ -657,13 +717,15 @@ private fun WorkshopStandardTopBar(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (subtitle.isNotEmpty()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         },
         navigationIcon = {
